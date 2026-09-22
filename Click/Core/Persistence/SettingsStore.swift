@@ -77,6 +77,26 @@ public final class SettingsStore {
         set { defaults.set(newValue, forKey: Key.legacyMigrationCompleted) }
     }
 
+    private func nativeOnboardingKey(for userId: String) -> String {
+        "click_onboarding_\(userId)"
+    }
+
+    public func onboardingState(for userId: String) -> OnboardingState? {
+        guard let data = defaults.data(forKey: nativeOnboardingKey(for: userId)) else {
+            return nil
+        }
+        return try? JSONDecoder().decode(OnboardingState.self, from: data)
+    }
+
+    public func saveOnboardingState(_ state: OnboardingState, for userId: String) {
+        guard let data = try? JSONEncoder().encode(state) else { return }
+        defaults.set(data, forKey: nativeOnboardingKey(for: userId))
+    }
+
+    public func clearOnboardingState(for userId: String) {
+        defaults.removeObject(forKey: nativeOnboardingKey(for: userId))
+    }
+
     /// Resets non-durable session preferences while preserving account independent settings.
     public func resetSessionScopedData() {
         defaults.removeObject(forKey: Key.onboardingState)
