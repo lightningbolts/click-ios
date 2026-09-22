@@ -115,12 +115,21 @@ public final class PermissionCoordinator: NSObject, @preconcurrency CLLocationMa
 
     public func statusAsync(for type: PermissionType) async -> PermissionStatus {
         guard type == .notifications else { return status(for: type) }
-        let settings = await UNUserNotificationCenter.current().notificationSettings()
-        switch settings.authorizationStatus {
-        case .authorized, .provisional, .ephemeral: return .authorized
-        case .denied: return .denied
-        case .notDetermined: return .notDetermined
-        @unknown default: return .denied
+        return await withCheckedContinuation { continuation in
+            UNUserNotificationCenter.current().getNotificationSettings { settings in
+                let resolved: PermissionStatus
+                switch settings.authorizationStatus {
+                case .authorized, .provisional, .ephemeral:
+                    resolved = .authorized
+                case .denied:
+                    resolved = .denied
+                case .notDetermined:
+                    resolved = .notDetermined
+                @unknown default:
+                    resolved = .denied
+                }
+                continuation.resume(returning: resolved)
+            }
         }
     }
 
