@@ -28,4 +28,23 @@ struct SettingsStoreTests {
 
         UserDefaults.standard.removePersistentDomain(forName: testSuite)
     }
+    @Test("Persists native onboarding state per user")
+    func perUserOnboardingState() {
+        let store = SettingsStore(suiteName: testSuite)
+        let userId = "user_123"
+        let state = OnboardingState(
+            welcomeSeen: true,
+            interestsCompleted: true,
+            personalityCompleted: false,
+            avatarSetOrSkipped: true,
+            priorConnectionsSetOrSkipped: false
+        )
+
+        store.saveOnboardingState(state, for: userId)
+        #expect(store.onboardingState(for: userId) == state)
+
+        store.clearOnboardingState(for: userId)
+        #expect(store.onboardingState(for: userId) == nil)
+    }
+
 }

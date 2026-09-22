@@ -1,5 +1,6 @@
 import SwiftUI
 import AuthenticationServices
+import CryptoKit
 
 public enum AuthMode: String, CaseIterable, Identifiable {
     case signIn = "Sign In"
@@ -26,6 +27,9 @@ public struct AuthView: View {
 
     @State private var isLoading = false
     @State private var errorMessage: String?
+    @State private var infoMessage: String?
+    @State private var appleRawNonce: String?
+    @State private var googleAuthSession: ASWebAuthenticationSession?
 
     public init(initialMode: AuthMode = .signIn) {
         self._mode = State(initialValue: initialMode)
@@ -36,9 +40,17 @@ public struct AuthView: View {
         return age >= 13
     }
 
+    private var isPasswordValid: Bool {
+        if mode == .signUp {
+            return password.count >= 8
+        } else {
+            return !password.isEmpty
+        }
+    }
+
     private var canSubmit: Bool {
         guard !email.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
-              password.count >= 6,
+              isPasswordValid,
               !isLoading else { return false }
 
         if mode == .signUp {
@@ -95,6 +107,22 @@ public struct AuthView: View {
                         .padding(.horizontal, ClickSpacing.lg)
                     }
 
+                    // Info / Verification Banner
+                    if let info = infoMessage {
+                        HStack(spacing: ClickSpacing.sm) {
+                            Image(systemName: "envelope.fill")
+                                .foregroundStyle(ClickColors.primary)
+                            Text(info)
+                                .font(ClickTypography.labelMedium)
+                                .foregroundStyle(ClickColors.primary)
+                            Spacer()
+                        }
+                        .padding(ClickSpacing.sm)
+                        .background(ClickColors.primary.opacity(0.12))
+                        .clipShape(RoundedRectangle(cornerRadius: ClickSpacing.radiusInput))
+                        .padding(.horizontal, ClickSpacing.lg)
+                    }
+
                     // Form Fields
                     VStack(spacing: ClickSpacing.md) {
                         if mode == .signUp {
@@ -140,7 +168,7 @@ public struct AuthView: View {
                                 .overlay(
                                     RoundedRectangle(cornerRadius: ClickSpacing.radiusInput)
                                         .stroke(ClickColors.quietBorder, lineWidth: ClickSpacing.borderQuietWidth)
-                                )
+                                    )
 
                                 if !isAgeValid {
                                     Text("You must be at least 13 years old to use Click.")
@@ -168,32 +196,41 @@ public struct AuthView: View {
                             )
 
                         // Password Field
-                        HStack {
-                            if isPasswordVisible {
-                                TextField("Password", text: $password)
-                                    .font(ClickTypography.bodyMedium)
-                                    .textContentType(mode == .signIn ? .password : .newPassword)
-                            } else {
-                                SecureField("Password", text: $password)
-                                    .font(ClickTypography.bodyMedium)
-                                    .textContentType(mode == .signIn ? .password : .newPassword)
-                            }
+                        VStack(alignment: .leading, spacing: ClickSpacing.xs) {
+                            HStack {
+                                if isPasswordVisible {
+                                    TextField("Password", text: $password)
+                                        .font(ClickTypography.bodyMedium)
+                                        .textContentType(mode == .signIn ? .password : .newPassword)
+                                } else {
+                                    SecureField("Password", text: $password)
+                                        .font(ClickTypography.bodyMedium)
+                                        .textContentType(mode == .signIn ? .password : .newPassword)
+                                }
 
-                            Button {
-                                isPasswordVisible.toggle()
-                            } label: {
-                                Image(systemName: isPasswordVisible ? "eye.slash.fill" : "eye.fill")
-                                    .foregroundStyle(ClickColors.textSecondary)
+                                Button {
+                                    isPasswordVisible.toggle()
+                                } label: {
+                                    Image(systemName: isPasswordVisible ? "eye.slash.fill" : "eye.fill")
+                                        .foregroundStyle(ClickColors.textSecondary)
+                                }
+                            }
+                            .padding(.horizontal, ClickSpacing.md)
+                            .padding(.vertical, 14)
+                            .background(ClickColors.surfaceContainerLow)
+                            .clipShape(RoundedRectangle(cornerRadius: ClickSpacing.radiusInput))
+                            .overlay(
+                                RoundedRectangle(cornerRadius: ClickSpacing.radiusInput)
+                                    .stroke(ClickColors.quietBorder, lineWidth: ClickSpacing.borderQuietWidth)
+                            )
+
+                            if mode == .signUp && !password.isEmpty && password.count < 8 {
+                                Text("Password must be at least 8 characters.")
+                                    .font(ClickTypography.labelSmall)
+                                    .foregroundStyle(ClickColors.error)
+                                    .padding(.leading, ClickSpacing.xs)
                             }
                         }
-                        .padding(.horizontal, ClickSpacing.md)
-                        .padding(.vertical, 14)
-                        .background(ClickColors.surfaceContainerLow)
-                        .clipShape(RoundedRectangle(cornerRadius: ClickSpacing.radiusInput))
-                        .overlay(
-                            RoundedRectangle(cornerRadius: ClickSpacing.radiusInput)
-                                .stroke(ClickColors.quietBorder, lineWidth: ClickSpacing.borderQuietWidth)
-                        )
                     }
                     .padding(.horizontal, ClickSpacing.lg)
 
@@ -254,6 +291,9 @@ public struct AuthView: View {
                             .signIn,
                             onRequest: { request in
                                 request.requestedScopes = [.fullName, .email]
+                                let rawNonce = makeAppleNonce()
+                                appleRawNonce = rawNonce
+                                request.nonce = sha256(rawNonce)
                             },
                             onCompletion: { result in
                                 handleAppleSignIn(result)
@@ -265,9 +305,7 @@ public struct AuthView: View {
 
                         // Google Sign-In
                         Button {
-                            if let url = URL(string: "https://lrgcwnmcscimkmslihxp.supabase.co/auth/v1/authorize?provider=google&redirect_to=click://login") {
-                                UIApplication.shared.open(url)
-                            }
+                            handleGoogleOAuthSignIn()
                         } label: {
                             HStack(spacing: ClickSpacing.sm) {
                                 Image(systemName: "globe")
@@ -317,6 +355,7 @@ public struct AuthView: View {
         ClickHaptics.impact(.medium)
         isLoading = true
         errorMessage = nil
+        infoMessage = nil
 
         Task {
             do {
@@ -326,13 +365,19 @@ public struct AuthView: View {
                         password: password
                     )
                 } else {
-                    try await env.session.signUpWithEmail(
+                    let result = try await env.session.signUpWithEmail(
                         email: email.trimmingCharacters(in: .whitespacesAndNewlines),
                         password: password,
                         firstName: firstName.trimmingCharacters(in: .whitespacesAndNewlines),
                         lastName: lastName.trimmingCharacters(in: .whitespacesAndNewlines),
                         birthday: birthday
                     )
+                    switch result {
+                    case .authenticated:
+                        break
+                    case .verificationRequired(let userEmail):
+                        infoMessage = "Verification email sent to \(userEmail). Please confirm your email before signing in."
+                    }
                 }
                 ClickHaptics.success()
             } catch {
@@ -352,21 +397,163 @@ public struct AuthView: View {
                 errorMessage = "Unable to process Apple authorization credential."
                 return
             }
-            // Supabase auth using id_token
-            let userId = credential.user
-            env.session.signIn(
-                snapshot: SessionSnapshot(
-                    userId: userId,
-                    jwt: token,
-                    refreshToken: "apple_auth_refresh"
-                )
-            )
-            ClickHaptics.success()
+
+            isLoading = true
+            errorMessage = nil
+
+            let nonce = appleRawNonce
+            appleRawNonce = nil
+
+            Task {
+                do {
+                    guard let nonce else {
+                        throw APIError.validation(code: "apple_nonce_missing", message: "Apple sign-in state expired. Please try again.")
+                    }
+                    let authService = SupabaseAuthService()
+                    let snapshot = try await authService.signInWithApple(idToken: token, nonce: nonce)
+                    env.session.signIn(snapshot: snapshot)
+                    ClickHaptics.success()
+                } catch {
+                    errorMessage = error.localizedDescription
+                    ClickHaptics.error()
+                }
+                isLoading = false
+            }
+
         case .failure(let error):
             if (error as NSError).code != ASAuthorizationError.canceled.rawValue {
                 errorMessage = error.localizedDescription
                 ClickHaptics.error()
             }
         }
+    }
+
+    private func handleGoogleOAuthSignIn() {
+        var components = URLComponents(
+            url: AppConfig.shared.supabaseURL.appendingPathComponent("/auth/v1/authorize"),
+            resolvingAgainstBaseURL: false
+        )
+        components?.queryItems = [
+            URLQueryItem(name: "provider", value: "google"),
+            URLQueryItem(name: "redirect_to", value: "click://login")
+        ]
+        guard let authURL = components?.url else {
+            errorMessage = "Unable to start Google sign-in."
+            return
+        }
+
+        let session = ASWebAuthenticationSession(
+            url: authURL,
+            callbackURLScheme: "click"
+        ) { callbackURL, error in
+            Task { @MainActor in
+                self.googleAuthSession = nil
+
+                if let error {
+                    let nsError = error as NSError
+                    if nsError.code != ASWebAuthenticationSessionError.canceledLogin.rawValue {
+                        self.errorMessage = error.localizedDescription
+                    }
+                    return
+                }
+
+                guard let url = callbackURL else {
+                    self.errorMessage = "Google authentication did not return to Click."
+                    return
+                }
+                self.processOAuthCallback(url)
+            }
+        }
+
+        session.presentationContextProvider = AuthContextProvider.shared
+        session.prefersEphemeralWebBrowserSession = false
+        googleAuthSession = session
+        if !session.start() {
+            googleAuthSession = nil
+            errorMessage = "Unable to start Google sign-in."
+        }
+    }
+
+    private func makeAppleNonce() -> String {
+        let key = SymmetricKey(size: .bits256)
+        return key.withUnsafeBytes { rawBuffer in
+            Data(rawBuffer)
+                .base64EncodedString()
+                .replacingOccurrences(of: "+", with: "-")
+                .replacingOccurrences(of: "/", with: "_")
+                .replacingOccurrences(of: "=", with: "")
+        }
+    }
+
+    private func sha256(_ value: String) -> String {
+        SHA256.hash(data: Data(value.utf8))
+            .map { String(format: "%02x", $0) }
+            .joined()
+    }
+
+    private func processOAuthCallback(_ url: URL) {
+        // Parse fragment or query string: access_token, refresh_token, expires_in
+        let urlString = url.absoluteString
+        var params: [String: String] = [:]
+
+        let delimiter = urlString.contains("#") ? "#" : "?"
+        let parts = urlString.components(separatedBy: delimiter)
+        if parts.count > 1 {
+            let pairs = parts[1].components(separatedBy: "&")
+            for pair in pairs {
+                let kv = pair.split(separator: "=", maxSplits: 1, omittingEmptySubsequences: false)
+                if kv.count == 2,
+                   let key = String(kv[0]).removingPercentEncoding,
+                   let val = String(kv[1]).removingPercentEncoding {
+                    params[key] = val
+                }
+            }
+        }
+
+        if let providerError = params["error_description"] ?? params["error"] {
+            errorMessage = providerError
+            return
+        }
+
+        guard let accessToken = params["access_token"],
+              let refreshToken = params["refresh_token"] else {
+            errorMessage = "Google authentication did not return valid session tokens."
+            return
+        }
+
+        guard let userId = LegacyKMPStateMigrator.extractSubFromJWT(accessToken) else {
+            errorMessage = "Unable to determine identity from Google authentication token."
+            return
+        }
+
+        let expiresAt: Date?
+        if let expString = params["expires_in"], let seconds = Double(expString) {
+            expiresAt = Date().addingTimeInterval(seconds)
+        } else {
+            expiresAt = nil
+        }
+
+        let snapshot = SessionSnapshot(
+            userId: userId,
+            jwt: accessToken,
+            refreshToken: refreshToken,
+            expiresAt: expiresAt
+        )
+
+        env.session.signIn(snapshot: snapshot)
+        ClickHaptics.success()
+    }
+}
+
+/// Provides anchor window for ASWebAuthenticationSession
+private final class AuthContextProvider: NSObject, ASWebAuthenticationPresentationContextProviding {
+    static let shared = AuthContextProvider()
+
+    func presentationAnchor(for session: ASWebAuthenticationSession) -> ASPresentationAnchor {
+        guard let windowScene = UIApplication.shared.connectedScenes.first as? UIWindowScene,
+              let window = windowScene.windows.first(where: { $0.isKeyWindow }) else {
+            return ASPresentationAnchor()
+        }
+        return window
     }
 }

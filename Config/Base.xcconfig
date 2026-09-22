@@ -17,5 +17,8 @@ CURRENT_PROJECT_VERSION = 1
 
 // API Configuration defaults
 CLICK_API_BASE_URL = https:/$()/joinclick.co
-SUPABASE_URL = https:/$()/api.joinclick.co
-SUPABASE_ANON_KEY = placeholder
+SUPABASE_URL = https:/$()/lrgcwnmcscimkmslihxp.supabase.co
+SUPABASE_ANON_KEY =
+
+// Local/CI override. Config/Secrets.xcconfig is gitignored.
+#include? "Secrets.xcconfig"

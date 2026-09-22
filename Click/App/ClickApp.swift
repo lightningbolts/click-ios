@@ -2,9 +2,12 @@ import SwiftUI
 
 @main
 struct ClickApp: App {
-    @State private var environment = AppEnvironment()
+    @State private var environment: AppEnvironment
 
     init() {
+        // Explicit State initialization avoids an Xcode 16.4 Swift 6 SILGen crash seen when
+        // lowering the @MainActor AppEnvironment default stored-property initializer.
+        _environment = State(initialValue: AppEnvironment())
         ClickFonts.registerFonts()
     }
 
@@ -41,10 +44,7 @@ struct ClickApp: App {
                     }
                 }
                 .onOpenURL { url in
-                    environment.router.handleIncomingURL(
-                        url,
-                        isAuthenticated: environment.session.currentSession != nil
-                    )
+                    environment.handleIncomingURL(url)
                 }
         }
     }

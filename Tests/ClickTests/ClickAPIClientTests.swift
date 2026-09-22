@@ -2,7 +2,37 @@ import Testing
 import Foundation
 @testable import Click
 
-@Suite("Click API Client & Error Taxonomy Tests")
+final class MockURLProtocol: URLProtocol, @unchecked Sendable {
+    nonisolated(unsafe) static var requestHandler: ((URLRequest) throws -> (HTTPURLResponse, Data))?
+
+    override class func canInit(with request: URLRequest) -> Bool {
+        true
+    }
+
+    override class func canonicalRequest(for request: URLRequest) -> URLRequest {
+        request
+    }
+
+    override func startLoading() {
+        guard let handler = Self.requestHandler else {
+            client?.urlProtocol(self, didFailWithError: URLError(.badURL))
+            return
+        }
+
+        do {
+            let (response, data) = try handler(request)
+            client?.urlProtocol(self, didReceive: response, cacheStoragePolicy: .notAllowed)
+            client?.urlProtocol(self, didLoad: data)
+            client?.urlProtocolDidFinishLoading(self)
+        } catch {
+            client?.urlProtocol(self, didFailWithError: error)
+        }
+    }
+
+    override func stopLoading() {}
+}
+
+@Suite("Click API Client & Error Taxonomy Tests", .serialized)
 struct ClickAPIClientTests {
     @Test("APIError localized descriptions are user-safe and clear")
     func apiErrorDescriptions() {
@@ -25,4 +55,150 @@ struct ClickAPIClientTests {
         #expect(req.body == nil)
         #expect(req.headers.isEmpty)
     }
+
+    private func makeMockSession() -> URLSession {
+        let config = URLSessionConfiguration.ephemeral
+        config.protocolClasses = [MockURLProtocol.self]
+        return URLSession(configuration: config)
+    }
+
+    @Test("401 response triggers token refresher and retries request with new token")
+    func tokenRefreshOn401() async throws {
+        let session = makeMockSession()
+        let baseURL = URL(string: "https://api.joinclick.co")!
+
+        var attemptCount = 0
+        var refreshedTokenPassed = false
+
+        MockURLProtocol.requestHandler = { request in
+            attemptCount += 1
+            if attemptCount == 1 {
+                let response = HTTPURLResponse(
+                    url: request.url!,
+                    statusCode: 401,
+                    httpVersion: nil,
+                    headerFields: nil
+                )!
+                return (response, Data())
+            } else {
+                let authHeader = request.value(forHTTPHeaderField: "Authorization")
+                if authHeader == "Bearer new_refreshed_token_123" {
+                    refreshedTokenPassed = true
+                }
+                let response = HTTPURLResponse(
+                    url: request.url!,
+                    statusCode: 200,
+                    httpVersion: nil,
+                    headerFields: ["Content-Type": "application/json"]
+                )!
+                let responseBody = """
+                {"status":"success"}
+                """.data(using: .utf8)!
+                return (response, responseBody)
+            }
+        }
+
+        final class TestBox: @unchecked Sendable {
+            var refreshCalled = false
+        }
+        let box = TestBox()
+
+        let client = ClickAPIClient(
+            baseURL: baseURL,
+            session: session,
+            tokenProvider: { "expired_initial_token" },
+            tokenRefresher: {
+                box.refreshCalled = true
+                return "new_refreshed_token_123"
+            }
+        )
+
+        struct StatusResponse: Decodable {
+            let status: String
+        }
+
+        let result: StatusResponse = try await client.execute(APIRequest(path: "/api/test"))
+        #expect(result.status == "success")
+        #expect(box.refreshCalled == true)
+        #expect(attemptCount == 2)
+        #expect(refreshedTokenPassed == true)
+
+    }
+
+    @Test("401 response throws unauthorized if token refresher fails")
+    func tokenRefreshFailureThrowsUnauthorized() async {
+        let session = makeMockSession()
+        let baseURL = URL(string: "https://api.joinclick.co")!
+
+        MockURLProtocol.requestHandler = { request in
+            let response = HTTPURLResponse(
+                url: request.url!,
+                statusCode: 401,
+                httpVersion: nil,
+                headerFields: nil
+            )!
+            return (response, Data())
+        }
+
+        let client = ClickAPIClient(
+            baseURL: baseURL,
+            session: session,
+            tokenProvider: { "expired_token" },
+            tokenRefresher: {
+                throw APIError.unauthorized
+            }
+        )
+
+        do {
+            let _: (Data, HTTPURLResponse) = try await client.executeRaw(APIRequest(path: "/api/test"))
+            #expect(Bool(false), "Expected executeRaw to throw unauthorized")
+        } catch let error as APIError {
+            if case .unauthorized = error {
+                #expect(true)
+            } else {
+                #expect(Bool(false), "Expected APIError.unauthorized, got \(error)")
+            }
+        } catch {
+            #expect(Bool(false), "Expected APIError.unauthorized, got \(error)")
+        }
+    }
+    @Test("Post-refresh response preserves non-auth HTTP error")
+    func postRefreshErrorIsNotRewrittenAsUnauthorized() async {
+        let session = makeMockSession()
+        let baseURL = URL(string: "https://api.joinclick.co")!
+        var attemptCount = 0
+
+        MockURLProtocol.requestHandler = { request in
+            attemptCount += 1
+            let status = attemptCount == 1 ? 401 : 429
+            let response = HTTPURLResponse(
+                url: request.url!,
+                statusCode: status,
+                httpVersion: nil,
+                headerFields: status == 429 ? ["Retry-After": "5"] : nil
+            )!
+            return (response, Data())
+        }
+
+        let client = ClickAPIClient(
+            baseURL: baseURL,
+            session: session,
+            tokenProvider: { "old_token" },
+            tokenRefresher: { "new_token" }
+        )
+
+        do {
+            let _: (Data, HTTPURLResponse) = try await client.executeRaw(APIRequest(path: "/api/test"))
+            #expect(Bool(false), "Expected rate limit error")
+        } catch let error as APIError {
+            if case .rateLimited(let retryAfter) = error {
+                #expect(retryAfter == 5)
+            } else {
+                #expect(Bool(false), "Expected rateLimited, got \(error)")
+            }
+        } catch {
+            #expect(Bool(false), "Expected APIError.rateLimited, got \(error)")
+        }
+    }
+
 }

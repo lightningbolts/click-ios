@@ -36,8 +36,10 @@
 		753E31D0F4B10ABEB242AEC8 /* AuthValidationTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = E2EC3690E271F4DA7D73D18B /* AuthValidationTests.swift */; };
 		77E16A225B4E34C27CD1EC85 /* ClickLogo.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1AFAFEA28942252B4C8C3065 /* ClickLogo.swift */; };
 		7B084D4485DF8DDD49429AF8 /* ClickClip.app in Embed App Clips */ = {isa = PBXBuildFile; fileRef = F8AF88527EA315B8FEEC3769 /* ClickClip.app */; settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
+		7DA56504C85E6945007913AA /* AvatarService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 84C3EE0A0BDD6043F907666E /* AvatarService.swift */; };
 		80E0FD617F57A87BEB475744 /* Manrope-Medium.ttf in Resources */ = {isa = PBXBuildFile; fileRef = 2AEC3B2ABCA6FD192389609D /* Manrope-Medium.ttf */; };
 		81D284E168DA086F93011B91 /* SessionController.swift in Sources */ = {isa = PBXBuildFile; fileRef = BC196177165E6C102B1932B4 /* SessionController.swift */; };
+		82E25FFC46E25CC6F76C943F /* AppConfig.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2AD5FF3EB16F83E96A974A83 /* AppConfig.swift */; };
 		8DD8D0AEB2396A470B9CBC66 /* HomeView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 005D701DA8A071928D68AB22 /* HomeView.swift */; };
 		92F27DA0C01DD9C90070F34F /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = 32BCA700988129E7FE7DC06B /* Assets.xcassets */; };
 		960AE12D4E878C46BF271473 /* ProfileBasicsGateView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8DF21D6194CC4FB19507D99C /* ProfileBasicsGateView.swift */; };
@@ -46,12 +48,14 @@
 		B12D7E2CA0F7D433B947DA57 /* Spacing.swift in Sources */ = {isa = PBXBuildFile; fileRef = DE44FFADBC4622D64A3A704E /* Spacing.swift */; };
 		B157719AA85CC74638A6B2F4 /* Typography.swift in Sources */ = {isa = PBXBuildFile; fileRef = 115558E16D558D82B19CEDFD /* Typography.swift */; };
 		B283DB1A8D0D2A02389A7695 /* OnboardingCoordinator.swift in Sources */ = {isa = PBXBuildFile; fileRef = A03E2C3998EE2E05F0385B8E /* OnboardingCoordinator.swift */; };
+		B62EE3AB195522D20D9214A0 /* ContactDiscoveryService.swift in Sources */ = {isa = PBXBuildFile; fileRef = D01BDDB7FD2547E8DFE08814 /* ContactDiscoveryService.swift */; };
 		B741FE5C5E7099D25DF60D0F /* ClickAPIClient.swift in Sources */ = {isa = PBXBuildFile; fileRef = F7C2A0E83548CF65E326CC1E /* ClickAPIClient.swift */; };
 		BBA0C506BD5F9CA0033D890F /* HomeComponents.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1E86F5EC0AC5CAC94C17F8F /* HomeComponents.swift */; };
 		C68531D7713EDA163E2840E8 /* OnboardingShellChrome.swift in Sources */ = {isa = PBXBuildFile; fileRef = 578E139F248C9CF1F7B64C32 /* OnboardingShellChrome.swift */; };
 		CC56BFC382A9C86263741359 /* AppRouter.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7D2D91C12835F0AF71AF14F9 /* AppRouter.swift */; };
 		D3FBC1FCACB9E37591FF9776 /* OnboardingState.swift in Sources */ = {isa = PBXBuildFile; fileRef = BC148FF19C5BC80D4271B273 /* OnboardingState.swift */; };
 		D5294C030B43DFEE5786F7A0 /* AppRouterTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 51101C30845F8D2118C1B819 /* AppRouterTests.swift */; };
+		DCF918349766112AF4A11269 /* PermissionCoordinator.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2C5A7CE7107D552FF7C4C6AC /* PermissionCoordinator.swift */; };
 		DFCC9DF32D532A6567CFF401 /* Manrope-SemiBold.ttf in Resources */ = {isa = PBXBuildFile; fileRef = 24F8E9B9D0F0B51D39CA35F3 /* Manrope-SemiBold.ttf */; };
 		E1A32FEA2DD05DDE9CC3991B /* SettingsStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7A2429F10776DF1079D326B5 /* SettingsStore.swift */; };
 		E1F59976B1B289C600055E22 /* Motion.swift in Sources */ = {isa = PBXBuildFile; fileRef = 94D1D516E85E0C3A40A44899 /* Motion.swift */; };
@@ -64,6 +68,7 @@
 		EF0F90DD03A0C46640DB05AF /* Manrope-ExtraLight.ttf in Resources */ = {isa = PBXBuildFile; fileRef = DBCE1A13DF90B8C97241FE7D /* Manrope-ExtraLight.ttf */; };
 		F9549923EB17C4F1A31929C3 /* LegacyKMPStateMigratorTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2D76120005FD30AE72B1126F /* LegacyKMPStateMigratorTests.swift */; };
 		FAC64483BE0386233DBB0B4F /* LegacyKMPStateMigrator.swift in Sources */ = {isa = PBXBuildFile; fileRef = E6948B635825154782DB64D8 /* LegacyKMPStateMigrator.swift */; };
+		FB674CD4A8616D2FA30C7344 /* OnboardingRepository.swift in Sources */ = {isa = PBXBuildFile; fileRef = B016BAE6D25749FE30CC6AEB /* OnboardingRepository.swift */; };
 		FEEF3EB93549BC0E8570F080 /* ClicksSnapshot.swift in Sources */ = {isa = PBXBuildFile; fileRef = C4BA259925DD4913607E5A68 /* ClicksSnapshot.swift */; };
 /* End PBXBuildFile section */
 
@@ -128,7 +133,9 @@
 		235AD70ADF109B4932E8BC15 /* APIRequest.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = APIRequest.swift; sourceTree = "<group>"; };
 		2363F153118BAC82700FA97A /* OnboardingHeaderView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OnboardingHeaderView.swift; sourceTree = "<group>"; };
 		24F8E9B9D0F0B51D39CA35F3 /* Manrope-SemiBold.ttf */ = {isa = PBXFileReference; lastKnownFileType = file; path = "Manrope-SemiBold.ttf"; sourceTree = "<group>"; };
+		2AD5FF3EB16F83E96A974A83 /* AppConfig.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppConfig.swift; sourceTree = "<group>"; };
 		2AEC3B2ABCA6FD192389609D /* Manrope-Medium.ttf */ = {isa = PBXFileReference; lastKnownFileType = file; path = "Manrope-Medium.ttf"; sourceTree = "<group>"; };
+		2C5A7CE7107D552FF7C4C6AC /* PermissionCoordinator.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PermissionCoordinator.swift; sourceTree = "<group>"; };
 		2D76120005FD30AE72B1126F /* LegacyKMPStateMigratorTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LegacyKMPStateMigratorTests.swift; sourceTree = "<group>"; };
 		32BCA700988129E7FE7DC06B /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
 		352CD16A8EB0AD27BC1F46F7 /* AuthView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AuthView.swift; sourceTree = "<group>"; };
@@ -152,6 +159,7 @@
 		7A2429F10776DF1079D326B5 /* SettingsStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SettingsStore.swift; sourceTree = "<group>"; };
 		7D2D91C12835F0AF71AF14F9 /* AppRouter.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppRouter.swift; sourceTree = "<group>"; };
 		83C5FC83E94C4D0DD1DBBF1D /* PriorConnectionsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PriorConnectionsView.swift; sourceTree = "<group>"; };
+		84C3EE0A0BDD6043F907666E /* AvatarService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AvatarService.swift; sourceTree = "<group>"; };
 		873E049D1811D83AC1D46271 /* PersonalityTaggingView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PersonalityTaggingView.swift; sourceTree = "<group>"; };
 		8C61BB3F2BA82EA2E549C314 /* Haptics.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Haptics.swift; sourceTree = "<group>"; };
 		8DF21D6194CC4FB19507D99C /* ProfileBasicsGateView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ProfileBasicsGateView.swift; sourceTree = "<group>"; };
@@ -161,6 +169,7 @@
 		A0D33AB3B5AE90EA7388EA96 /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist; path = Info.plist; sourceTree = "<group>"; };
 		A1E86F5EC0AC5CAC94C17F8F /* HomeComponents.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HomeComponents.swift; sourceTree = "<group>"; };
 		AAC9E2A2A2CF84BFD5B7C9B3 /* ClicksView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ClicksView.swift; sourceTree = "<group>"; };
+		B016BAE6D25749FE30CC6AEB /* OnboardingRepository.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OnboardingRepository.swift; sourceTree = "<group>"; };
 		B707F36DD15A7BDA013381B5 /* NotificationService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NotificationService.swift; sourceTree = "<group>"; };
 		B7E925958F753D5FBE49A830 /* WelcomeView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WelcomeView.swift; sourceTree = "<group>"; };
 		BB1A77E8E59821A8087FC2A2 /* OnboardingTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OnboardingTests.swift; sourceTree = "<group>"; };
@@ -169,6 +178,7 @@
 		C04BB0EDB80B1C58203CF1B1 /* UserProfileSnapshot.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = UserProfileSnapshot.swift; sourceTree = "<group>"; };
 		C4BA259925DD4913607E5A68 /* ClicksSnapshot.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ClicksSnapshot.swift; sourceTree = "<group>"; };
 		C831A48FD7A6C83981CA5A03 /* HomeFeedSnapshot.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HomeFeedSnapshot.swift; sourceTree = "<group>"; };
+		D01BDDB7FD2547E8DFE08814 /* ContactDiscoveryService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ContactDiscoveryService.swift; sourceTree = "<group>"; };
 		DA0BA02DE0FE06FB525A130A /* RootGateView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RootGateView.swift; sourceTree = "<group>"; };
 		DA511983FBEDC6F47528DD28 /* ClipApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ClipApp.swift; sourceTree = "<group>"; };
 		DBCE1A13DF90B8C97241FE7D /* Manrope-ExtraLight.ttf */ = {isa = PBXFileReference; lastKnownFileType = file; path = "Manrope-ExtraLight.ttf"; sourceTree = "<group>"; };
@@ -297,6 +307,14 @@
 			path = Resources/Fonts;
 			sourceTree = "<group>";
 		};
+		63F315AE89F2071066F5190A /* Config */ = {
+			isa = PBXGroup;
+			children = (
+				2AD5FF3EB16F83E96A974A83 /* AppConfig.swift */,
+			);
+			path = Config;
+			sourceTree = "<group>";
+		};
 		69CC9E775556ED2A8068BE71 /* Config */ = {
 			isa = PBXGroup;
 			children = (
@@ -403,6 +421,23 @@
 			path = Home;
 			sourceTree = "<group>";
 		};
+		AD12D1A484E1A46DF66DBDC9 /* Permissions */ = {
+			isa = PBXGroup;
+			children = (
+				2C5A7CE7107D552FF7C4C6AC /* PermissionCoordinator.swift */,
+			);
+			path = Permissions;
+			sourceTree = "<group>";
+		};
+		BD081FAFEEACAF416BB6FC45 /* Services */ = {
+			isa = PBXGroup;
+			children = (
+				84C3EE0A0BDD6043F907666E /* AvatarService.swift */,
+				D01BDDB7FD2547E8DFE08814 /* ContactDiscoveryService.swift */,
+			);
+			path = Services;
+			sourceTree = "<group>";
+		};
 		C7D7CB833B0579444C261880 /* Interests */ = {
 			isa = PBXGroup;
 			children = (
@@ -432,6 +467,7 @@
 			isa = PBXGroup;
 			children = (
 				A03E2C3998EE2E05F0385B8E /* OnboardingCoordinator.swift */,
+				B016BAE6D25749FE30CC6AEB /* OnboardingRepository.swift */,
 				BC148FF19C5BC80D4271B273 /* OnboardingState.swift */,
 			);
 			path = Onboarding;
@@ -482,10 +518,13 @@
 			children = (
 				4161F9BFCAC59905857001C4 /* API */,
 				F64F09F5FC4B40C90C936EF0 /* Auth */,
+				63F315AE89F2071066F5190A /* Config */,
 				A62AD6EB819FB1DE2AD6C433 /* Feed */,
 				E46A2E015271C95260947EB4 /* Onboarding */,
+				AD12D1A484E1A46DF66DBDC9 /* Permissions */,
 				A28E4ECC812677897DBBFF7C /* Persistence */,
 				7C9982A1FAEF270AE99F6510 /* Profile */,
+				BD081FAFEEACAF416BB6FC45 /* Services */,
 			);
 			path = Core;
 			sourceTree = "<group>";
@@ -641,9 +680,11 @@
 			files = (
 				101AE31A39E97F7A4C83F339 /* APIError.swift in Sources */,
 				0807AC2E7C11A5B869C9A575 /* APIRequest.swift in Sources */,
+				82E25FFC46E25CC6F76C943F /* AppConfig.swift in Sources */,
 				09303B5DAA631E6B94E780FD /* AppEnvironment.swift in Sources */,
 				CC56BFC382A9C86263741359 /* AppRouter.swift in Sources */,
 				14A9ABE1E8C63C81429603EB /* AuthView.swift in Sources */,
+				7DA56504C85E6945007913AA /* AvatarService.swift in Sources */,
 				04FF41E8EFD8116421B309D1 /* AvatarUploadView.swift in Sources */,
 				B741FE5C5E7099D25DF60D0F /* ClickAPIClient.swift in Sources */,
 				141635CE6697C819553C2786 /* ClickApp.swift in Sources */,
@@ -651,6 +692,7 @@
 				FEEF3EB93549BC0E8570F080 /* ClicksSnapshot.swift in Sources */,
 				07E26E70DB1B5BEE2525D0AB /* ClicksView.swift in Sources */,
 				635A0005B6B6C6FDF9BF014B /* Colors.swift in Sources */,
+				B62EE3AB195522D20D9214A0 /* ContactDiscoveryService.swift in Sources */,
 				081AA9386D6FCC4DC3B03DA0 /* Haptics.swift in Sources */,
 				BBA0C506BD5F9CA0033D890F /* HomeComponents.swift in Sources */,
 				EEC3879386A9FBE5A5AB6609 /* HomeFeedSnapshot.swift in Sources */,
@@ -663,8 +705,10 @@
 				B283DB1A8D0D2A02389A7695 /* OnboardingCoordinator.swift in Sources */,
 				68F468332244E066F1EA92F1 /* OnboardingFlowView.swift in Sources */,
 				9A7DDCDDC70230ABCE0DBEC9 /* OnboardingHeaderView.swift in Sources */,
+				FB674CD4A8616D2FA30C7344 /* OnboardingRepository.swift in Sources */,
 				C68531D7713EDA163E2840E8 /* OnboardingShellChrome.swift in Sources */,
 				D3FBC1FCACB9E37591FF9776 /* OnboardingState.swift in Sources */,
+				DCF918349766112AF4A11269 /* PermissionCoordinator.swift in Sources */,
 				4A3E8D24E65F4FC92A145E37 /* PersonalityTaggingView.swift in Sources */,
 				E9BE06D7CA1990F770288CD1 /* PersonalityTaxonomy.swift in Sources */,
 				A938B09C80F37F6A460D5BB6 /* PriorConnectionsView.swift in Sources */,
@@ -735,8 +779,63 @@
 		142A7535322B2CBFB0FBBEDE /* Debug */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
+				ALWAYS_SEARCH_USER_PATHS = NO;
+				CLANG_ANALYZER_NONNULL = YES;
+				CLANG_ANALYZER_NUMBER_OBJECT_CONVERSION = YES_AGGRESSIVE;
+				CLANG_CXX_LANGUAGE_STANDARD = "gnu++14";
+				CLANG_CXX_LIBRARY = "libc++";
+				CLANG_ENABLE_MODULES = YES;
+				CLANG_ENABLE_OBJC_ARC = YES;
+				CLANG_ENABLE_OBJC_WEAK = YES;
+				CLANG_WARN_BLOCK_CAPTURE_AUTORELEASING = YES;
+				CLANG_WARN_BOOL_CONVERSION = YES;
+				CLANG_WARN_COMMA = YES;
+				CLANG_WARN_CONSTANT_CONVERSION = YES;
+				CLANG_WARN_DEPRECATED_OBJC_IMPLEMENTATIONS = YES;
+				CLANG_WARN_DIRECT_OBJC_ISA_USAGE = YES_ERROR;
+				CLANG_WARN_DOCUMENTATION_COMMENTS = YES;
+				CLANG_WARN_EMPTY_BODY = YES;
+				CLANG_WARN_ENUM_CONVERSION = YES;
+				CLANG_WARN_INFINITE_RECURSION = YES;
+				CLANG_WARN_INT_CONVERSION = YES;
+				CLANG_WARN_NON_LITERAL_NULL_CONVERSION = YES;
+				CLANG_WARN_OBJC_IMPLICIT_RETAIN_SELF = YES;
+				CLANG_WARN_OBJC_LITERAL_CONVERSION = YES;
+				CLANG_WARN_OBJC_ROOT_CLASS = YES_ERROR;
+				CLANG_WARN_QUOTED_INCLUDE_IN_FRAMEWORK_HEADER = YES;
+				CLANG_WARN_RANGE_LOOP_ANALYSIS = YES;
+				CLANG_WARN_STRICT_PROTOTYPES = YES;
+				CLANG_WARN_SUSPICIOUS_MOVE = YES;
+				CLANG_WARN_UNGUARDED_AVAILABILITY = YES_AGGRESSIVE;
+				CLANG_WARN_UNREACHABLE_CODE = YES;
+				CLANG_WARN__DUPLICATE_METHOD_MATCH = YES;
+				COPY_PHASE_STRIP = NO;
+				DEBUG_INFORMATION_FORMAT = dwarf;
+				ENABLE_STRICT_OBJC_MSGSEND = YES;
+				ENABLE_TESTABILITY = YES;
+				GCC_C_LANGUAGE_STANDARD = gnu11;
+				GCC_DYNAMIC_NO_PIC = NO;
+				GCC_NO_COMMON_BLOCKS = YES;
+				GCC_OPTIMIZATION_LEVEL = 0;
+				GCC_PREPROCESSOR_DEFINITIONS = (
+					"$(inherited)",
+					"DEBUG=1",
+				);
+				GCC_WARN_64_TO_32_BIT_CONVERSION = YES;
+				GCC_WARN_ABOUT_RETURN_TYPE = YES_ERROR;
+				GCC_WARN_UNDECLARED_SELECTOR = YES;
+				GCC_WARN_UNINITIALIZED_AUTOS = YES_AGGRESSIVE;
+				GCC_WARN_UNUSED_FUNCTION = YES;
+				GCC_WARN_UNUSED_VARIABLE = YES;
 				IPHONEOS_DEPLOYMENT_TARGET = 18.2;
+				MTL_ENABLE_DEBUG_INFO = INCLUDE_SOURCE;
+				MTL_FAST_MATH = YES;
+				ONLY_ACTIVE_ARCH = YES;
+				PRODUCT_NAME = "$(TARGET_NAME)";
 				SDKROOT = iphoneos;
+				SWIFT_ACTIVE_COMPILATION_CONDITIONS = DEBUG;
+				SWIFT_OPTIMIZATION_LEVEL = "-Onone";
+				SWIFT_VERSION = 5.0;
 			};
 			name = Debug;
 		};
@@ -796,7 +895,8 @@
 				INFOPLIST_FILE = Click/Info.plist;
 				INFOPLIST_KEY_CADisableMinimumFrameDurationOnPhone = YES;
 				INFOPLIST_KEY_CFBundleDisplayName = Click;
-				INFOPLIST_KEY_CFBundleURLTypes = "[[\"CFBundleURLSchemes\": [\"click\"], \"CFBundleURLName\": \"compose.project.click.click\", \"CFBundleTypeRole\": \"Editor\"], [\"CFBundleURLName\": \"GoogleSignIn\", \"CFBundleURLSchemes\": [\"com.googleusercontent.apps.530817233802-crnehf5a9duauov4vos4lgsijkgingdj\"], \"CFBundleTypeRole\": \"Editor\"]]";
+				INFOPLIST_KEY_CFBundleURLTypes = "[[\"CFBundleTypeRole\": \"Editor\", \"CFBundleURLName\": \"compose.project.click.click\", \"CFBundleURLSchemes\": [\"click\"]], [\"CFBundleURLSchemes\": [\"com.googleusercontent.apps.530817233802-crnehf5a9duauov4vos4lgsijkgingdj\"], \"CFBundleURLName\": \"GoogleSignIn\", \"CFBundleTypeRole\": \"Editor\"]]";
+				INFOPLIST_KEY_CLICK_API_BASE_URL = "$(CLICK_API_BASE_URL)";
 				INFOPLIST_KEY_GIDClientID = "530817233802-crnehf5a9duauov4vos4lgsijkgingdj.apps.googleusercontent.com";
 				INFOPLIST_KEY_GIDServerClientID = "530817233802-3ki7usecs885vvag9uq92ubu5hgkv2sp.apps.googleusercontent.com";
 				INFOPLIST_KEY_ITSAppUsesNonExemptEncryption = NO;
@@ -810,6 +910,8 @@
 				INFOPLIST_KEY_NSMotionUsageDescription = "Click uses motion context to capture encounter vibe.";
 				INFOPLIST_KEY_NSPhotoLibraryAddUsageDescription = "Click saves photos to your photo library.";
 				INFOPLIST_KEY_NSPhotoLibraryUsageDescription = "Click accesses your photo library to select photos for profile and chat.";
+				INFOPLIST_KEY_SUPABASE_ANON_KEY = "$(SUPABASE_ANON_KEY)";
+				INFOPLIST_KEY_SUPABASE_URL = "$(SUPABASE_URL)";
 				INFOPLIST_KEY_UIBackgroundModes = (
 					"remote-notification",
 					"bluetooth-central",
@@ -856,8 +958,56 @@
 		923299573B6B11DD1C817ED2 /* Release */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
+				ALWAYS_SEARCH_USER_PATHS = NO;
+				CLANG_ANALYZER_NONNULL = YES;
+				CLANG_ANALYZER_NUMBER_OBJECT_CONVERSION = YES_AGGRESSIVE;
+				CLANG_CXX_LANGUAGE_STANDARD = "gnu++14";
+				CLANG_CXX_LIBRARY = "libc++";
+				CLANG_ENABLE_MODULES = YES;
+				CLANG_ENABLE_OBJC_ARC = YES;
+				CLANG_ENABLE_OBJC_WEAK = YES;
+				CLANG_WARN_BLOCK_CAPTURE_AUTORELEASING = YES;
+				CLANG_WARN_BOOL_CONVERSION = YES;
+				CLANG_WARN_COMMA = YES;
+				CLANG_WARN_CONSTANT_CONVERSION = YES;
+				CLANG_WARN_DEPRECATED_OBJC_IMPLEMENTATIONS = YES;
+				CLANG_WARN_DIRECT_OBJC_ISA_USAGE = YES_ERROR;
+				CLANG_WARN_DOCUMENTATION_COMMENTS = YES;
+				CLANG_WARN_EMPTY_BODY = YES;
+				CLANG_WARN_ENUM_CONVERSION = YES;
+				CLANG_WARN_INFINITE_RECURSION = YES;
+				CLANG_WARN_INT_CONVERSION = YES;
+				CLANG_WARN_NON_LITERAL_NULL_CONVERSION = YES;
+				CLANG_WARN_OBJC_IMPLICIT_RETAIN_SELF = YES;
+				CLANG_WARN_OBJC_LITERAL_CONVERSION = YES;
+				CLANG_WARN_OBJC_ROOT_CLASS = YES_ERROR;
+				CLANG_WARN_QUOTED_INCLUDE_IN_FRAMEWORK_HEADER = YES;
+				CLANG_WARN_RANGE_LOOP_ANALYSIS = YES;
+				CLANG_WARN_STRICT_PROTOTYPES = YES;
+				CLANG_WARN_SUSPICIOUS_MOVE = YES;
+				CLANG_WARN_UNGUARDED_AVAILABILITY = YES_AGGRESSIVE;
+				CLANG_WARN_UNREACHABLE_CODE = YES;
+				CLANG_WARN__DUPLICATE_METHOD_MATCH = YES;
+				COPY_PHASE_STRIP = NO;
+				DEBUG_INFORMATION_FORMAT = "dwarf-with-dsym";
+				ENABLE_NS_ASSERTIONS = NO;
+				ENABLE_STRICT_OBJC_MSGSEND = YES;
+				GCC_C_LANGUAGE_STANDARD = gnu11;
+				GCC_NO_COMMON_BLOCKS = YES;
+				GCC_WARN_64_TO_32_BIT_CONVERSION = YES;
+				GCC_WARN_ABOUT_RETURN_TYPE = YES_ERROR;
+				GCC_WARN_UNDECLARED_SELECTOR = YES;
+				GCC_WARN_UNINITIALIZED_AUTOS = YES_AGGRESSIVE;
+				GCC_WARN_UNUSED_FUNCTION = YES;
+				GCC_WARN_UNUSED_VARIABLE = YES;
 				IPHONEOS_DEPLOYMENT_TARGET = 18.2;
+				MTL_ENABLE_DEBUG_INFO = NO;
+				MTL_FAST_MATH = YES;
+				PRODUCT_NAME = "$(TARGET_NAME)";
 				SDKROOT = iphoneos;
+				SWIFT_COMPILATION_MODE = wholemodule;
+				SWIFT_OPTIMIZATION_LEVEL = "-O";
+				SWIFT_VERSION = 5.0;
 			};
 			name = Release;
 		};
@@ -939,7 +1089,8 @@
 				INFOPLIST_FILE = Click/Info.plist;
 				INFOPLIST_KEY_CADisableMinimumFrameDurationOnPhone = YES;
 				INFOPLIST_KEY_CFBundleDisplayName = Click;
-				INFOPLIST_KEY_CFBundleURLTypes = "[[\"CFBundleURLSchemes\": [\"click\"], \"CFBundleURLName\": \"compose.project.click.click\", \"CFBundleTypeRole\": \"Editor\"], [\"CFBundleURLName\": \"GoogleSignIn\", \"CFBundleURLSchemes\": [\"com.googleusercontent.apps.530817233802-crnehf5a9duauov4vos4lgsijkgingdj\"], \"CFBundleTypeRole\": \"Editor\"]]";
+				INFOPLIST_KEY_CFBundleURLTypes = "[[\"CFBundleTypeRole\": \"Editor\", \"CFBundleURLName\": \"compose.project.click.click\", \"CFBundleURLSchemes\": [\"click\"]], [\"CFBundleURLSchemes\": [\"com.googleusercontent.apps.530817233802-crnehf5a9duauov4vos4lgsijkgingdj\"], \"CFBundleURLName\": \"GoogleSignIn\", \"CFBundleTypeRole\": \"Editor\"]]";
+				INFOPLIST_KEY_CLICK_API_BASE_URL = "$(CLICK_API_BASE_URL)";
 				INFOPLIST_KEY_GIDClientID = "530817233802-crnehf5a9duauov4vos4lgsijkgingdj.apps.googleusercontent.com";
 				INFOPLIST_KEY_GIDServerClientID = "530817233802-3ki7usecs885vvag9uq92ubu5hgkv2sp.apps.googleusercontent.com";
 				INFOPLIST_KEY_ITSAppUsesNonExemptEncryption = NO;
@@ -953,6 +1104,8 @@
 				INFOPLIST_KEY_NSMotionUsageDescription = "Click uses motion context to capture encounter vibe.";
 				INFOPLIST_KEY_NSPhotoLibraryAddUsageDescription = "Click saves photos to your photo library.";
 				INFOPLIST_KEY_NSPhotoLibraryUsageDescription = "Click accesses your photo library to select photos for profile and chat.";
+				INFOPLIST_KEY_SUPABASE_ANON_KEY = "$(SUPABASE_ANON_KEY)";
+				INFOPLIST_KEY_SUPABASE_URL = "$(SUPABASE_URL)";
 				INFOPLIST_KEY_UIBackgroundModes = (
 					"remote-notification",
 					"bluetooth-central",

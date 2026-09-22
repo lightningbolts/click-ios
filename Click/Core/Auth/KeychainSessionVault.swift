@@ -29,10 +29,17 @@ public final class KeychainSessionVault: Sendable {
 
     public init() {}
 
-    /// Saves the session snapshot into the Keychain with device-bound encryption.
+    /// Saves a complete v2 session without deleting the previously valid Keychain item first.
+    /// Existing credentials remain intact if an update/add fails.
     @discardableResult
     public func saveSession(_ session: SessionSnapshot) -> Bool {
-        let legacy = LegacyKMPSession(
+        guard !session.jwt.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
+              !session.refreshToken.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
+              !session.userId.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
+            return false
+        }
+
+        let record = LegacyKMPSession(
             version: 2,
             jwt: session.jwt,
             refreshToken: session.refreshToken,
@@ -41,31 +48,45 @@ public final class KeychainSessionVault: Sendable {
             userId: session.userId
         )
 
-        guard let data = try? JSONEncoder().encode(legacy) else {
+        guard let data = try? JSONEncoder().encode(record) else {
             return false
         }
 
-        // Delete any existing record first to ensure atomic overwrite
-        deleteSession()
-
-        let query: [CFString: Any] = [
+        let matchQuery: [CFString: Any] = [
             kSecClass: kSecClassGenericPassword,
             kSecAttrService: Self.serviceName,
-            kSecAttrAccount: Self.accountName,
-            kSecValueData: data,
-            kSecAttrAccessible: kSecAttrAccessibleWhenUnlockedThisDeviceOnly
+            kSecAttrAccount: Self.accountName
+        ]
+        let updateAttributes: [CFString: Any] = [
+            kSecValueData: data
         ]
 
-        let status = SecItemAdd(query as CFDictionary, nil)
+        var status = SecItemUpdate(matchQuery as CFDictionary, updateAttributes as CFDictionary)
+        if status == errSecItemNotFound {
+            let addQuery: [CFString: Any] = [
+                kSecClass: kSecClassGenericPassword,
+                kSecAttrService: Self.serviceName,
+                kSecAttrAccount: Self.accountName,
+                kSecValueData: data,
+                kSecAttrAccessible: kSecAttrAccessibleWhenUnlockedThisDeviceOnly
+            ]
+            status = SecItemAdd(addQuery as CFDictionary, nil)
+        }
+
         if status == -34018 {
-            // Unit test environment missing Keychain entitlement; use thread-safe test fallback
+            // Unit-test environments may lack Keychain entitlements.
             Self.storage.set(session)
             return true
         }
-        return status == errSecSuccess
+        guard status == errSecSuccess else {
+            return false
+        }
+
+        Self.storage.set(nil)
+        return true
     }
 
-    /// Reads and decodes the active session from Keychain.
+    /// Reads and validates the active session from Keychain.
     public func readSession() -> SessionSnapshot? {
         if let fallback = Self.storage.get() {
             return fallback
@@ -82,24 +103,32 @@ public final class KeychainSessionVault: Sendable {
         var item: CFTypeRef?
         let status = SecItemCopyMatching(query as CFDictionary, &item)
 
-        guard status == errSecSuccess, let data = item as? Data else {
+        guard status == errSecSuccess, let data = item as? Data,
+              let record = try? JSONDecoder().decode(LegacyKMPSession.self, from: data),
+              record.version == 2,
+              !record.jwt.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
+              !record.refreshToken.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
             return nil
         }
 
-        guard let legacy = try? JSONDecoder().decode(LegacyKMPSession.self, from: data) else {
+        let storedUserId = record.userId?.trimmingCharacters(in: .whitespacesAndNewlines)
+        let resolvedUserId = storedUserId?.isEmpty == false
+            ? storedUserId
+            : LegacyKMPStateMigrator.extractSubFromJWT(record.jwt)
+        guard let resolvedUserId, !resolvedUserId.isEmpty else {
             return nil
         }
 
-        let expiresAt = legacy.expiresAt.map { Date(timeIntervalSince1970: TimeInterval($0) / 1000.0) }
+        let expiresAt = record.expiresAt.map { Date(timeIntervalSince1970: TimeInterval($0) / 1000.0) }
         return SessionSnapshot(
-            userId: legacy.userId ?? "unknown_user",
-            jwt: legacy.jwt,
-            refreshToken: legacy.refreshToken,
+            userId: resolvedUserId,
+            jwt: record.jwt,
+            refreshToken: record.refreshToken,
             expiresAt: expiresAt
         )
     }
 
-    /// Deletes the session record from Keychain on sign out.
+    /// Deletes the session record on explicit sign-out or hard authentication invalidation.
     @discardableResult
     public func deleteSession() -> Bool {
         Self.storage.set(nil)

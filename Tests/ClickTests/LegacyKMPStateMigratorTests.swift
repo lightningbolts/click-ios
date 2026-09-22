@@ -89,4 +89,44 @@ struct LegacyKMPStateMigratorTests {
             try migrator.decodeSession(from: json)
         }
     }
+
+    @Test("Extracts sub UUID claim from valid JWT payload")
+    func extractSubClaimFromValidJWT() {
+        // payload: {"sub":"456e4567-e89b-12d3-a456-426614174000","exp":1750000000}
+        let jwt = "eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiI0NTZlNDU2Ny1lODliLTEyZDMtYTQ1Ni00MjY2MTQxNzQwMDAiLCJleHAiOjE3NTAwMDAwMDB9.sig"
+        let sub = LegacyKMPStateMigrator.extractSubFromJWT(jwt)
+        #expect(sub == "456e4567-e89b-12d3-a456-426614174000")
+    }
+
+    @Test("Returns nil for malformed or missing sub claim in JWT")
+    func extractSubFromMalformedJWT() {
+        // Missing parts
+        #expect(LegacyKMPStateMigrator.extractSubFromJWT("not-a-jwt") == nil)
+
+        // Invalid base64
+        #expect(LegacyKMPStateMigrator.extractSubFromJWT("header.???invalidbase64???.sig") == nil)
+
+        // Valid JSON payload without 'sub'
+        // payload: {"role":"authenticated"} -> eyJyb2xlIjoiYXV0aGVudGljYXRlZCJ9
+        let jwtWithoutSub = "eyJhbGciOiJIUzI1NiJ9.eyJyb2xlIjoiYXV0aGVudGljYXRlZCJ9.sig"
+        #expect(LegacyKMPStateMigrator.extractSubFromJWT(jwtWithoutSub) == nil)
+    }
+
+    @Test("Purges retired keys during full migration")
+    @MainActor
+    func fullMigrationPurgesRetiredKeys() {
+        let legacyDefaults = UserDefaults(suiteName: LegacyKMPStateMigrator.legacySuiteName) ?? .standard
+        legacyDefaults.set(true, forKey: "call_notifications_enabled")
+        legacyDefaults.set("grid", forKey: "home_layout_mode")
+
+        let settings = SettingsStore(suiteName: "test_settings_\(UUID().uuidString)")
+        settings.legacyMigrationCompleted = false
+
+        migrator.performFullMigration(settings: settings)
+
+        #expect(legacyDefaults.object(forKey: "call_notifications_enabled") == nil)
+        #expect(legacyDefaults.object(forKey: "home_layout_mode") == nil)
+        #expect(settings.legacyMigrationCompleted == true)
+    }
 }
+

@@ -2,6 +2,7 @@ import SwiftUI
 
 /// Top-level coordinator view rendering the Phase 2 onboarding step sequence.
 public struct OnboardingFlowView: View {
+    @Environment(AppEnvironment.self) private var env
     @Bindable var coordinator: OnboardingCoordinator
     let firstName: String?
     let onFinished: () -> Void
@@ -32,28 +33,39 @@ public struct OnboardingFlowView: View {
             Group {
                 switch coordinator.step {
                 case .loading:
-                    LaunchLoadingShimmerView()
+                    if let message = coordinator.loadErrorMessage {
+                        OnboardingLoadErrorView(message: message) {
+                            if let userId = env.session.currentSession?.userId {
+                                env.retryOnboardingResolution(for: userId)
+                            }
+                        }
+                    } else {
+                        LaunchLoadingShimmerView()
+                    }
                 case .welcome:
                     WelcomeView(firstName: firstName) {
                         coordinator.onWelcomeAcknowledged()
                     }
                 case .interests:
                     InterestsPickerView { tags in
-                        // Remote save hook
-                        try? await Task.sleep(nanoseconds: 300_000_000)
+                        guard let userId = env.session.currentSession?.userId else {
+                            throw APIError.unauthorized
+                        }
+                        try await env.onboardingRepository.saveInterests(userId: userId, tags: tags)
                         coordinator.onInterestsSaved()
                     }
                 case .personality:
                     PersonalityTaggingView { traits in
-                        // Remote save hook
-                        try? await Task.sleep(nanoseconds: 300_000_000)
+                        guard let userId = env.session.currentSession?.userId else {
+                            throw APIError.unauthorized
+                        }
+                        try await env.onboardingRepository.savePersonality(userId: userId, traits: traits)
                         coordinator.onPersonalitySaved()
                     }
                 case .avatar:
                     AvatarUploadView(
                         onUpload: { data in
-                            // Remote upload hook
-                            try? await Task.sleep(nanoseconds: 500_000_000)
+                            _ = try await env.avatarService.uploadAvatar(imageData: data, client: env.api)
                             coordinator.onAvatarSetOrSkipped()
                         },
                         onSkip: {
@@ -95,5 +107,35 @@ private struct LaunchLoadingShimmerView: View {
                     .tint(ClickColors.primary)
             }
         }
+    }
+}
+
+
+private struct OnboardingLoadErrorView: View {
+    let message: String
+    let onRetry: () -> Void
+
+    var body: some View {
+        VStack(spacing: ClickSpacing.md) {
+            Spacer()
+            Image(systemName: "wifi.exclamationmark")
+                .font(.system(size: 34, weight: .semibold))
+                .foregroundStyle(ClickColors.primary)
+            Text("Couldn't finish loading")
+                .font(ClickTypography.headlineSmall)
+                .foregroundStyle(ClickColors.textPrimary)
+            Text(message)
+                .font(ClickTypography.bodyMedium)
+                .foregroundStyle(ClickColors.textSecondary)
+                .multilineTextAlignment(.center)
+                .padding(.horizontal, ClickSpacing.xl)
+            Button("Try Again", action: onRetry)
+                .font(ClickTypography.labelLarge)
+                .buttonStyle(.borderedProminent)
+                .tint(ClickColors.primary)
+            Spacer()
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .background(ClickColors.background)
     }
 }

@@ -1,7 +1,7 @@
 import Foundation
 
 /// Comprehensive API error taxonomy for Click networking operations.
-public enum APIError: Error, Equatable, Sendable {
+public enum APIError: Error, LocalizedError, Equatable, Sendable {
     case offline
     case timeout
     case unauthorized
@@ -15,7 +15,7 @@ public enum APIError: Error, Equatable, Sendable {
     case cancelled
     case invalidURL
 
-    public var localizedDescription: String {
+    public var errorDescription: String? {
         switch self {
         case .offline:
             return "You are currently offline. Please check your internet connection."
@@ -42,5 +42,9 @@ public enum APIError: Error, Equatable, Sendable {
         case .invalidURL:
             return "Invalid request destination."
         }
+    }
+
+    public var localizedDescription: String {
+        errorDescription ?? "An unexpected error occurred."
     }
 }
