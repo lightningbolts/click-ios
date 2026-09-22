@@ -3,6 +3,8 @@ import AVFoundation
 import Photos
 import Contacts
 import CoreLocation
+import CoreBluetooth
+import EventKit
 import UserNotifications
 import UIKit
 
@@ -12,6 +14,8 @@ public enum PermissionType: Sendable {
     case contacts
     case microphone
     case locationWhenInUse
+    case calendar
+    case bluetooth
     case notifications
 }
 
@@ -21,26 +25,25 @@ public enum PermissionStatus: Equatable, Sendable {
     case denied
     case restricted
 
-    public var isAuthorized: Bool {
-        self == .authorized
-    }
+    public var isAuthorized: Bool { self == .authorized }
 }
 
-/// Lightweight, contextual coordinator for platform capabilities and permissions.
-/// Avoids eager prompt storms on app launch; prompts only on intentional user gestures.
+/// Lightweight contextual coordinator for platform capabilities.
+/// It never prompts on app launch; requests occur only after explicit feature intent.
 @MainActor
 public final class PermissionCoordinator: NSObject, @preconcurrency CLLocationManagerDelegate {
     public static let shared = PermissionCoordinator()
 
     private let locationManager = CLLocationManager()
-    private var locationContinuation: CheckedContinuation<PermissionStatus, Never>?
+    private var locationContinuations: [CheckedContinuation<PermissionStatus, Never>] = []
 
     public override init() {
         super.init()
         locationManager.delegate = self
     }
 
-    /// Queries the current authorization status for a permission type without prompting the user.
+    /// Synchronous authorization state for capabilities that expose one.
+    /// Notifications should use `statusAsync(for:)` for authoritative state.
     public func status(for type: PermissionType) -> PermissionStatus {
         switch type {
         case .camera:
@@ -87,49 +90,87 @@ public final class PermissionCoordinator: NSObject, @preconcurrency CLLocationMa
             @unknown default: return .denied
             }
 
+        case .calendar:
+            switch EKEventStore.authorizationStatus(for: .event) {
+            case .fullAccess: return .authorized
+            case .writeOnly, .notDetermined: return .notDetermined
+            case .denied: return .denied
+            case .restricted: return .restricted
+            @unknown default: return .denied
+            }
+
+        case .bluetooth:
+            switch CBManager.authorization {
+            case .allowedAlways: return .authorized
+            case .denied: return .denied
+            case .restricted: return .restricted
+            case .notDetermined: return .notDetermined
+            @unknown default: return .denied
+            }
+
         case .notifications:
-            // Sync check is unavailable for UNUserNotificationCenter; default to notDetermined if unknown
             return .notDetermined
         }
     }
 
-    /// Request authorization contextually on explicit user action.
+    public func statusAsync(for type: PermissionType) async -> PermissionStatus {
+        guard type == .notifications else { return status(for: type) }
+        let settings = await UNUserNotificationCenter.current().notificationSettings()
+        switch settings.authorizationStatus {
+        case .authorized, .provisional, .ephemeral: return .authorized
+        case .denied: return .denied
+        case .notDetermined: return .notDetermined
+        @unknown default: return .denied
+        }
+    }
+
+    /// Requests authorization contextually after explicit user intent.
     public func requestPermission(for type: PermissionType) async -> PermissionStatus {
         switch type {
         case .camera:
-            let granted = await AVCaptureDevice.requestAccess(for: .video)
-            return granted ? .authorized : .denied
+            return await AVCaptureDevice.requestAccess(for: .video) ? .authorized : .denied
 
         case .photoLibrary:
-            let status = await PHPhotoLibrary.requestAuthorization(for: .readWrite)
-            return (status == .authorized || status == .limited) ? .authorized : .denied
+            let result = await PHPhotoLibrary.requestAuthorization(for: .readWrite)
+            return (result == .authorized || result == .limited) ? .authorized : .denied
 
         case .contacts:
-            let store = CNContactStore()
             do {
-                let granted = try await store.requestAccess(for: .contacts)
-                return granted ? .authorized : .denied
+                return try await CNContactStore().requestAccess(for: .contacts) ? .authorized : .denied
             } catch {
                 return .denied
             }
 
         case .microphone:
-            let granted = await AVAudioApplication.requestRecordPermission()
-            return granted ? .authorized : .denied
+            return await AVAudioApplication.requestRecordPermission() ? .authorized : .denied
 
         case .locationWhenInUse:
-            let current = locationManager.authorizationStatus
-            if current != .notDetermined {
-                return (current == .authorizedWhenInUse || current == .authorizedAlways) ? .authorized : .denied
-            }
+            let current = status(for: .locationWhenInUse)
+            guard current == .notDetermined else { return current }
             return await withCheckedContinuation { continuation in
-                self.locationContinuation = continuation
-                self.locationManager.requestWhenInUseAuthorization()
+                let shouldRequest = locationContinuations.isEmpty
+                locationContinuations.append(continuation)
+                if shouldRequest {
+                    locationManager.requestWhenInUseAuthorization()
+                }
             }
+
+        case .calendar:
+            do {
+                return try await EKEventStore().requestFullAccessToEvents() ? .authorized : .denied
+            } catch {
+                return .denied
+            }
+
+        case .bluetooth:
+            // CoreBluetooth has no standalone permission-request API. The real proximity
+            // manager triggers the prompt when instantiated after explicit user intent.
+            return status(for: .bluetooth)
 
         case .notifications:
             do {
-                let granted = try await UNUserNotificationCenter.current().requestAuthorization(options: [.alert, .badge, .sound])
+                let granted = try await UNUserNotificationCenter.current()
+                    .requestAuthorization(options: [.alert, .badge, .sound])
                 return granted ? .authorized : .denied
             } catch {
                 return .denied
@@ -138,23 +179,20 @@ public final class PermissionCoordinator: NSObject, @preconcurrency CLLocationMa
     }
 
     public func locationManagerDidChangeAuthorization(_ manager: CLLocationManager) {
-        guard let continuation = locationContinuation else { return }
-        locationContinuation = nil
+        let finalStatus: PermissionStatus
         switch manager.authorizationStatus {
-        case .authorizedWhenInUse, .authorizedAlways:
-            continuation.resume(returning: .authorized)
-        case .denied:
-            continuation.resume(returning: .denied)
-        case .restricted:
-            continuation.resume(returning: .restricted)
-        case .notDetermined:
-            break
-        @unknown default:
-            continuation.resume(returning: .denied)
+        case .authorizedWhenInUse, .authorizedAlways: finalStatus = .authorized
+        case .denied: finalStatus = .denied
+        case .restricted: finalStatus = .restricted
+        case .notDetermined: return
+        @unknown default: finalStatus = .denied
         }
+
+        let continuations = locationContinuations
+        locationContinuations.removeAll()
+        continuations.forEach { $0.resume(returning: finalStatus) }
     }
 
-    /// Deep links the user directly into iOS System Settings for recoverable permission denials.
     public func openSystemSettings() {
         guard let url = URL(string: UIApplication.openSettingsURLString) else { return }
         UIApplication.shared.open(url)

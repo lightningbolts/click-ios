@@ -33,7 +33,15 @@ public struct OnboardingFlowView: View {
             Group {
                 switch coordinator.step {
                 case .loading:
-                    LaunchLoadingShimmerView()
+                    if let message = coordinator.loadErrorMessage {
+                        OnboardingLoadErrorView(message: message) {
+                            if let userId = env.session.currentSession?.userId {
+                                env.retryOnboardingResolution(for: userId)
+                            }
+                        }
+                    } else {
+                        LaunchLoadingShimmerView()
+                    }
                 case .welcome:
                     WelcomeView(firstName: firstName) {
                         coordinator.onWelcomeAcknowledged()
@@ -99,5 +107,35 @@ private struct LaunchLoadingShimmerView: View {
                     .tint(ClickColors.primary)
             }
         }
+    }
+}
+
+
+private struct OnboardingLoadErrorView: View {
+    let message: String
+    let onRetry: () -> Void
+
+    var body: some View {
+        VStack(spacing: ClickSpacing.md) {
+            Spacer()
+            Image(systemName: "wifi.exclamationmark")
+                .font(.system(size: 34, weight: .semibold))
+                .foregroundStyle(ClickColors.primary)
+            Text("Couldn't finish loading")
+                .font(ClickTypography.headlineSmall)
+                .foregroundStyle(ClickColors.textPrimary)
+            Text(message)
+                .font(ClickTypography.bodyMedium)
+                .foregroundStyle(ClickColors.textSecondary)
+                .multilineTextAlignment(.center)
+                .padding(.horizontal, ClickSpacing.xl)
+            Button("Try Again", action: onRetry)
+                .font(ClickTypography.labelLarge)
+                .buttonStyle(.borderedProminent)
+                .tint(ClickColors.primary)
+            Spacer()
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .background(ClickColors.background)
     }
 }

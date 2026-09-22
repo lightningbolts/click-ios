@@ -200,7 +200,10 @@ public final class SessionController: SessionControlling {
 
     /// Resolves profile completion requirements from server truth.
     public func resolveProfileGate(for userId: String) async {
-        guard let api = apiClient else { return }
+        guard let api = apiClient else {
+            state = .terminalError("Session infrastructure is unavailable.")
+            return
+        }
 
         struct ProfileGateResponse: Decodable {
             struct UserRow: Decodable {
@@ -327,16 +330,17 @@ public final class SessionController: SessionControlling {
 
         let bodyData = try JSONSerialization.data(withJSONObject: payload)
 
-        if let api = apiClient {
-            let request = APIRequest(
-                path: "/api/users/\(current.userId)/profile",
-                method: .patch,
-                body: bodyData,
-                requiresAuth: true
-            )
-            _ = try await api.executeRaw(request)
-            await resolveProfileGate(for: current.userId)
+        guard let api = apiClient else {
+            throw SessionError.missingAPIClient
         }
+        let request = APIRequest(
+            path: "/api/users/\(current.userId)/profile",
+            method: .patch,
+            body: bodyData,
+            requiresAuth: true
+        )
+        _ = try await api.executeRaw(request)
+        await resolveProfileGate(for: current.userId)
 
         // The PATCH itself is the durable write. If the follow-up profile fetch was
         // unavailable, do not strand the user on an already-satisfied blocking gate.
@@ -468,5 +472,6 @@ public final class SessionController: SessionControlling {
     public enum SessionError: Error, Equatable {
         case noActiveSession
         case refreshFailed
+        case missingAPIClient
     }
 }

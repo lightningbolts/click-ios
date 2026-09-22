@@ -1,6 +1,6 @@
 import Foundation
 
-/// Centralized typed application configuration loaded from build-time generated Info.plist / xcconfig.
+/// Centralized typed application configuration loaded from generated Info.plist / xcconfig.
 public struct AppConfig: Sendable {
     public static let shared = AppConfig()
 
@@ -9,41 +9,52 @@ public struct AppConfig: Sendable {
     public let supabaseAnonKey: String
 
     public init(bundle: Bundle = .main) {
-        // 1. API Base URL
-        if let rawAPI = bundle.object(forInfoDictionaryKey: "CLICK_API_BASE_URL") as? String,
-           !rawAPI.isEmpty,
-           let url = URL(string: rawAPI) {
-            self.apiBaseURL = url
-        } else {
-            self.apiBaseURL = URL(string: "https://joinclick.co")!
-        }
+        self.apiBaseURL = Self.urlValue(
+            key: "CLICK_API_BASE_URL",
+            bundle: bundle,
+            fallback: URL(string: "https://joinclick.co")!
+        )
+        self.supabaseURL = Self.urlValue(
+            key: "SUPABASE_URL",
+            bundle: bundle,
+            fallback: URL(string: "https://lrgcwnmcscimkmslihxp.supabase.co")!
+        )
 
-        // 2. Supabase URL
-        if let rawSupa = bundle.object(forInfoDictionaryKey: "SUPABASE_URL") as? String,
-           !rawSupa.isEmpty,
-           let url = URL(string: rawSupa) {
-            self.supabaseURL = url
-        } else {
-            self.supabaseURL = URL(string: "https://lrgcwnmcscimkmslihxp.supabase.co")!
+        guard let key = Self.resolvedValue(key: "SUPABASE_ANON_KEY", bundle: bundle),
+              key.count > 20 else {
+            preconditionFailure(
+                "Missing SUPABASE_ANON_KEY. Copy Config/Secrets.example.xcconfig to " +
+                "Config/Secrets.xcconfig and provide the public Supabase anon key."
+            )
         }
-
-        // 3. Supabase Anon Key
-        if let rawKey = bundle.object(forInfoDictionaryKey: "SUPABASE_ANON_KEY") as? String,
-           !rawKey.isEmpty,
-           rawKey != "placeholder" {
-            self.supabaseAnonKey = rawKey
-        } else {
-            self.supabaseAnonKey = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImxyZ2N3bm1jc2NpbWttc2xpaHhwIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NjA1MTgwNDksImV4cCI6MjA3NjA5NDA0OX0.-_LAhv-gUeCvViwTt8QZwM13U7jMIgTbiMZDkFf-oXk"
-        }
+        self.supabaseAnonKey = key
     }
 
-    public init(
-        apiBaseURL: URL,
-        supabaseURL: URL,
-        supabaseAnonKey: String
-    ) {
+    public init(apiBaseURL: URL, supabaseURL: URL, supabaseAnonKey: String) {
+        precondition(!supabaseAnonKey.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
         self.apiBaseURL = apiBaseURL
         self.supabaseURL = supabaseURL
         self.supabaseAnonKey = supabaseAnonKey
+    }
+
+    private static func resolvedValue(key: String, bundle: Bundle) -> String? {
+        guard let raw = bundle.object(forInfoDictionaryKey: key) as? String else { return nil }
+        let value = raw.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !value.isEmpty,
+              !value.contains("$("),
+              value.lowercased() != "placeholder" else {
+            return nil
+        }
+        return value
+    }
+
+    private static func urlValue(key: String, bundle: Bundle, fallback: URL) -> URL {
+        guard let raw = resolvedValue(key: key, bundle: bundle),
+              let url = URL(string: raw),
+              let scheme = url.scheme,
+              scheme == "https" || scheme == "http" else {
+            return fallback
+        }
+        return url
     }
 }

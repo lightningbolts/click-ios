@@ -18,6 +18,7 @@ public final class OnboardingCoordinator {
 
     public private(set) var state: OnboardingState
     public private(set) var step: Step = .loading
+    public private(set) var loadErrorMessage: String?
 
     private var stepOverride: Step?
     private let userId: String
@@ -51,11 +52,22 @@ public final class OnboardingCoordinator {
 
     /// Hydrates remote or cached state into the coordinator.
     public func hydrate(_ next: OnboardingState, hasAvatar: Bool? = nil) {
+        loadErrorMessage = nil
         if let hasAvatar = hasAvatar {
             self.userHasAvatarClosure = { hasAvatar }
         }
         self.state = next
         self.step = computeStep(next)
+    }
+
+    public func beginLoading() {
+        loadErrorMessage = nil
+        step = .loading
+    }
+
+    public func markLoadFailed(_ message: String) {
+        loadErrorMessage = message
+        step = .loading
     }
 
     /// Advances from Loading to the first actionable step once prerequisites are loaded.

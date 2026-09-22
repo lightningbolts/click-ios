@@ -20,7 +20,19 @@ jobs:
 
       - name: Select Xcode Version
         run: |
-          DEVELOPER_DIR=$(find /Applications -maxdepth 1 -name "Xcode_16*.app" | sort -V | tail -n 1)
+          DEVELOPER_DIR=$(python3 - <<'PY'
+          import glob
+          import re
+
+          apps = glob.glob("/Applications/Xcode_16*.app")
+
+          def version(path):
+              match = re.search(r"Xcode_(\\d+)(?:\\.(\\d+))?(?:\\.(\\d+))?\\.app$", path)
+              return tuple(int(value or 0) for value in match.groups()) if match else (0, 0, 0)
+
+          print(max(apps, key=version) if apps else "")
+          PY
+          )
           if [ -n "$DEVELOPER_DIR" ]; then
             sudo xcode-select -s "$DEVELOPER_DIR"
           fi

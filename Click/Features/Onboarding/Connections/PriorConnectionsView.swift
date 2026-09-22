@@ -39,7 +39,7 @@ public struct PriorConnectionsView: View {
                                 .foregroundStyle(ClickColors.textPrimary)
                         }
 
-                        Text("Only cryptographic hashes (SHA-256) of phone numbers are compared against the backend to find mutual connections. Click never reads or saves your address book.")
+                        Text("Click reads phone numbers and email addresses from your address book on this device, normalizes and hashes them locally with SHA-256, and uploads only those hashes for matching. Plaintext contact details are never uploaded or stored by Click.")
                             .font(ClickTypography.bodySmall)
                             .foregroundStyle(ClickColors.textSecondary)
                             .lineSpacing(2)
@@ -215,7 +215,7 @@ public struct PriorConnectionsView: View {
         errorMessage = nil
 
         Task {
-            let status = await PermissionCoordinator.shared.requestPermission(for: .contacts)
+            let status = await env.permissions.requestPermission(for: .contacts)
             guard status.isAuthorized else {
                 isSearching = false
                 searched = true

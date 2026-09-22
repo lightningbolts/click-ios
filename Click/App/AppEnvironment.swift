@@ -59,20 +59,27 @@ public final class AppEnvironment {
         let coordinator = OnboardingCoordinator(userId: userId)
         onboardingCoordinators[userId] = coordinator
 
-        // Reconcile against remote server truth and legacy hints
+        resolveOnboarding(for: userId, coordinator: coordinator)
+        return coordinator
+    }
+
+    public func retryOnboardingResolution(for userId: String) {
+        guard let coordinator = onboardingCoordinators[userId] else { return }
+        coordinator.beginLoading()
+        resolveOnboarding(for: userId, coordinator: coordinator)
+    }
+
+    private func resolveOnboarding(for userId: String, coordinator: OnboardingCoordinator) {
         Task { [weak self, weak coordinator] in
-            guard let self = self, let coordinator = coordinator else { return }
+            guard let self, let coordinator else { return }
             do {
                 let resolved = try await self.onboardingRepository.resolveOnboardingState(for: userId)
                 coordinator.hydrate(resolved.state, hasAvatar: resolved.hasAvatar)
                 self.handlePostAuthResolved()
             } catch {
-                // Keep the coordinator on Loading when neither remote truth nor a trustworthy
-                // per-user cache exists. Showing Welcome here would be a false state.
+                coordinator.markLoadFailed("We couldn't load your onboarding state. Check your connection and try again.")
             }
         }
-
-        return coordinator
     }
 
     /// Handles route flushing only when gates are cleared

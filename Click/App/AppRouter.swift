@@ -166,26 +166,17 @@ public final class AppRouter {
 
     private func parseConnectionInvocation(userID: String, components: URLComponents?) -> ConnectionInvocation {
         let queryItems = components?.queryItems ?? []
-        let token = queryItems.first(where: { $0.name == "token" || $0.name == "t" })?.value
-        let venueID = queryItems.first(where: { $0.name == "venue_id" || $0.name == "venue" })?.value
+        let tokenNames = Set(["token", "qr_token", "qt", "t"])
+        let token = queryItems.first(where: { tokenNames.contains($0.name.lowercased()) })?.value
+        let venueID = queryItems.first(where: { $0.name.lowercased() == "venue_id" })?.value
 
-        var expiresAt: Date? = nil
-        if let expVal = queryItems.first(where: { $0.name == "expires_at" || $0.name == "exp" })?.value {
-            if let interval = Double(expVal) {
-                expiresAt = Date(timeIntervalSince1970: interval)
-            } else {
-                expiresAt = ISO8601DateFormatter().date(from: expVal)
-            }
-        }
+        let expiresAt = queryItems
+            .first(where: { $0.name.lowercased() == "expires_at" || $0.name.lowercased() == "exp" })
+            .flatMap { parseTimestamp($0.value) }
 
-        var issuedAt: Date? = nil
-        if let iatVal = queryItems.first(where: { $0.name == "issued_at" || $0.name == "iat" })?.value {
-            if let interval = Double(iatVal) {
-                issuedAt = Date(timeIntervalSince1970: interval)
-            } else {
-                issuedAt = ISO8601DateFormatter().date(from: iatVal)
-            }
-        }
+        let issuedAt = queryItems
+            .first(where: { $0.name.lowercased() == "issued_at" || $0.name.lowercased() == "iat" })
+            .flatMap { parseTimestamp($0.value) }
 
         return ConnectionInvocation(
             userID: userID,
@@ -194,6 +185,15 @@ public final class AppRouter {
             issuedAt: issuedAt,
             venueID: venueID
         )
+    }
+
+    private func parseTimestamp(_ raw: String?) -> Date? {
+        guard let raw, !raw.isEmpty else { return nil }
+        if let numeric = Double(raw) {
+            let seconds = numeric > 10_000_000_000 ? numeric / 1000.0 : numeric
+            return Date(timeIntervalSince1970: seconds)
+        }
+        return ISO8601DateFormatter().date(from: raw)
     }
 
     /// Enqueues or immediately presents an incoming URL destination.

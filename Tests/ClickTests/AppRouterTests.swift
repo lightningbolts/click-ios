@@ -40,6 +40,25 @@ struct AppRouterTests {
         )))
     }
 
+    @Test("Parses canonical QR token aliases and millisecond timestamps")
+    func parseCanonicalTokenAliasesAndMilliseconds() {
+        let url = URL(string: "https://joinclick.co/c/usr_ms?qr_token=tok_alias&exp=1700000000000&iat=1699990000000&venue_id=ven_99")!
+        let route = router.parseIncomingURL(url)
+        #expect(route == .connectionInvocation(ConnectionInvocation(
+            userID: "usr_ms",
+            token: "tok_alias",
+            expiresAt: Date(timeIntervalSince1970: 1700000000),
+            issuedAt: Date(timeIntervalSince1970: 1699990000),
+            venueID: "ven_99"
+        )))
+
+        let qtURL = URL(string: "click://c/usr_qt?qt=short_token")!
+        #expect(router.parseIncomingURL(qtURL) == .connectionInvocation(ConnectionInvocation(
+            userID: "usr_qt",
+            token: "short_token"
+        )))
+    }
+
     @Test("Parses universal link event URL")
     func parseUniversalLinkEvent() {
         let url = URL(string: "https://joinclick.co/e/bcn_event_555")!
