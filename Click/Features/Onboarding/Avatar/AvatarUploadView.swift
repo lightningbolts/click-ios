@@ -4,11 +4,14 @@ import UIKit
 
 /// Phase 2 Avatar selection & upload screen with live preview and skippable option.
 public struct AvatarUploadView: View {
+    @Environment(AppEnvironment.self) private var env
+
     @State private var selectedItem: PhotosPickerItem?
     @State private var selectedImageData: Data?
     @State private var isUploading: Bool = false
     @State private var errorMessage: String?
     @State private var showCamera: Bool = false
+    @State private var cameraPermissionDenied: Bool = false
 
     let onUpload: (Data) async throws -> Void
     let onSkip: () -> Void
@@ -92,9 +95,7 @@ public struct AvatarUploadView: View {
                             )
                         }
 
-                        Button(action: {
-                            showCamera = true
-                        }) {
+                        Button(action: requestCamera) {
                             HStack(spacing: ClickSpacing.xs) {
                                 Image(systemName: "camera.fill")
                                 Text("Take photo")
@@ -114,10 +115,20 @@ public struct AvatarUploadView: View {
                     .padding(.horizontal, ClickSpacing.lg)
 
                     if let error = errorMessage {
-                        Text(error)
-                            .font(ClickTypography.captionSmall)
-                            .foregroundStyle(ClickColors.error)
-                            .padding(.horizontal, ClickSpacing.lg)
+                        VStack(spacing: ClickSpacing.xs) {
+                            Text(error)
+                                .font(ClickTypography.captionSmall)
+                                .foregroundStyle(ClickColors.error)
+
+                            if cameraPermissionDenied {
+                                Button("Open Settings") {
+                                    env.permissions.openSystemSettings()
+                                }
+                                .font(ClickTypography.labelMedium)
+                                .foregroundStyle(ClickColors.primary)
+                            }
+                        }
+                        .padding(.horizontal, ClickSpacing.lg)
                     }
 
                     Spacer(minLength: ClickSpacing.xl)
@@ -176,6 +187,28 @@ public struct AvatarUploadView: View {
                 selectedImageData = data
                 errorMessage = nil
             })
+        }
+    }
+
+    private func requestCamera() {
+        errorMessage = nil
+        cameraPermissionDenied = false
+
+        // Simulator/no-camera environments may use the picker's photo-library fallback without
+        // asking for a camera permission the device cannot grant.
+        guard UIImagePickerController.isSourceTypeAvailable(.camera) else {
+            showCamera = true
+            return
+        }
+
+        Task {
+            let status = await env.permissions.requestPermission(for: .camera)
+            if status.isAuthorized {
+                showCamera = true
+            } else {
+                cameraPermissionDenied = true
+                errorMessage = "Camera access is required to take a profile photo."
+            }
         }
     }
 
