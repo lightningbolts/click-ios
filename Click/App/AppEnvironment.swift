@@ -26,6 +26,18 @@ public final class AppEnvironment {
         }
     }
 
+    private var onboardingCoordinators: [String: OnboardingCoordinator] = [:]
+
+    /// Retrieves or initializes the OnboardingCoordinator for a given user.
+    public func onboardingCoordinator(for userId: String) -> OnboardingCoordinator {
+        if let existing = onboardingCoordinators[userId] {
+            return existing
+        }
+        let coordinator = OnboardingCoordinator(userId: userId)
+        onboardingCoordinators[userId] = coordinator
+        return coordinator
+    }
+
     /// Initializes and restores local app state.
     public func bootstrap() async {
         await session.restoreSession()

@@ -121,6 +121,11 @@ public enum ClickTypography {
         font(name: FontName.medium, size: 14, relativeTo: .subheadline)
     }
 
+    /// Label Large: 16pt / SemiBold (Relative to .callout)
+    public static var labelLarge: Font {
+        font(name: FontName.semiBold, size: 16, relativeTo: .callout)
+    }
+
     /// Label Bold: 14pt / Bold (Relative to .footnote)
     public static var labelBold: Font {
         font(name: FontName.bold, size: 14, relativeTo: .footnote)

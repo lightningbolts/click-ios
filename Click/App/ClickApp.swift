@@ -23,6 +23,14 @@ struct ClickApp: App {
                                 refreshToken: "mock_refresh"
                             )
                         )
+                    } else if CommandLine.arguments.contains(where: { $0.hasPrefix("-preview-onboarding") }) {
+                        environment.session.signIn(
+                            snapshot: SessionSnapshot(
+                                userId: "usr_preview_onboarding",
+                                jwt: "mock_jwt",
+                                refreshToken: "mock_refresh"
+                            )
+                        )
                     } else if CommandLine.arguments.contains("-preview-signup") || CommandLine.arguments.contains("-preview-signin") {
                         await environment.session.signOut()
                     } else {

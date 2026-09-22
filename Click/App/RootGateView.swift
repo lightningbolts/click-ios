@@ -19,11 +19,61 @@ public struct RootGateView: View {
                 }
             case .profileBasicsRequired(let userId):
                 ProfileBasicsGateView(userId: userId)
-            case .authenticated, .refreshing, .offlineAuthenticated:
-                MainTabShellView()
+            case .authenticated(let snapshot), .refreshing(let snapshot), .offlineAuthenticated(let snapshot):
+                AuthenticatedGateView(snapshot: snapshot)
             }
         }
         .animation(ClickMotion.subtleFade, value: env.session.state)
+    }
+}
+
+/// Routes authenticated sessions through onboarding or into the main tab shell.
+private struct AuthenticatedGateView: View {
+    @Environment(AppEnvironment.self) private var env
+    let snapshot: SessionSnapshot
+
+    var body: some View {
+        let coordinator = env.onboardingCoordinator(for: snapshot.userId)
+
+        Group {
+            if CommandLine.arguments.contains("-preview-onboarding-welcome") {
+                VStack(spacing: 0) {
+                    OnboardingShellChrome(currentStepIndex: 0, totalSteps: 5, canGoBack: false, onBack: {})
+                    WelcomeView(firstName: "Alex") {}
+                }
+            } else if CommandLine.arguments.contains("-preview-onboarding-interests") {
+                VStack(spacing: 0) {
+                    OnboardingShellChrome(currentStepIndex: 1, totalSteps: 5, canGoBack: true, onBack: {})
+                    InterestsPickerView { _ in }
+                }
+            } else if CommandLine.arguments.contains("-preview-onboarding-personality") {
+                VStack(spacing: 0) {
+                    OnboardingShellChrome(currentStepIndex: 2, totalSteps: 5, canGoBack: true, onBack: {})
+                    PersonalityTaggingView { _ in }
+                }
+            } else if CommandLine.arguments.contains("-preview-onboarding-avatar") {
+                VStack(spacing: 0) {
+                    OnboardingShellChrome(currentStepIndex: 3, totalSteps: 5, canGoBack: true, onBack: {})
+                    AvatarUploadView(onUpload: { _ in }, onSkip: {})
+                }
+            } else if CommandLine.arguments.contains("-preview-onboarding-connections") {
+                VStack(spacing: 0) {
+                    OnboardingShellChrome(currentStepIndex: 4, totalSteps: 5, canGoBack: true, onBack: {})
+                    PriorConnectionsView(onComplete: {}, onSkip: {})
+                }
+            } else if CommandLine.arguments.contains("-preview-onboarding-flow") || coordinator.needsOnboarding {
+                OnboardingFlowView(
+                    coordinator: coordinator,
+                    firstName: nil,
+                    onFinished: {
+                        // Triggers state refresh to reveal main tab shell
+                    }
+                )
+            } else {
+                MainTabShellView()
+            }
+        }
+        .animation(ClickMotion.subtleFade, value: coordinator.step)
     }
 }
 
