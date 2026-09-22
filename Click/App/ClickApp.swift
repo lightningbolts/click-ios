@@ -15,7 +15,10 @@ struct ClickApp: App {
                 .task {
                     if CommandLine.arguments.contains("-preview-profile-basics") {
                         environment.session.requireProfileBasics(userId: "usr_preview_99")
-                    } else if CommandLine.arguments.contains("-preview-shell") {
+                    } else if CommandLine.arguments.contains("-preview-shell")
+                        || CommandLine.arguments.contains("-preview-home")
+                        || CommandLine.arguments.contains("-preview-clicks")
+                        || CommandLine.arguments.contains("-preview-profile") {
                         environment.session.signIn(
                             snapshot: SessionSnapshot(
                                 userId: "usr_preview_active",

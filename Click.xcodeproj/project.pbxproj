@@ -9,6 +9,7 @@
 /* Begin PBXBuildFile section */
 		0303E291A9CBE5068AFE7A96 /* Manrope-ExtraBold.ttf in Resources */ = {isa = PBXBuildFile; fileRef = F8B2A1B9A3CEE977F49608DC /* Manrope-ExtraBold.ttf */; };
 		04FF41E8EFD8116421B309D1 /* AvatarUploadView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7932DD36D8B0EFAEF2B85379 /* AvatarUploadView.swift */; };
+		07E26E70DB1B5BEE2525D0AB /* ClicksView.swift in Sources */ = {isa = PBXBuildFile; fileRef = AAC9E2A2A2CF84BFD5B7C9B3 /* ClicksView.swift */; };
 		0807AC2E7C11A5B869C9A575 /* APIRequest.swift in Sources */ = {isa = PBXBuildFile; fileRef = 235AD70ADF109B4932E8BC15 /* APIRequest.swift */; };
 		081AA9386D6FCC4DC3B03DA0 /* Haptics.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8C61BB3F2BA82EA2E549C314 /* Haptics.swift */; };
 		09303B5DAA631E6B94E780FD /* AppEnvironment.swift in Sources */ = {isa = PBXBuildFile; fileRef = 504D5490D94A3C3BD8F57912 /* AppEnvironment.swift */; };
@@ -16,11 +17,13 @@
 		101AE31A39E97F7A4C83F339 /* APIError.swift in Sources */ = {isa = PBXBuildFile; fileRef = 758475F38EA92E1DDE8CB3B9 /* APIError.swift */; };
 		141635CE6697C819553C2786 /* ClickApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = 464D8F9F85AB107124A0DFC4 /* ClickApp.swift */; };
 		14A9ABE1E8C63C81429603EB /* AuthView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 352CD16A8EB0AD27BC1F46F7 /* AuthView.swift */; };
+		15E1002EACD031C0520ECBB1 /* Phase3FeedTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 01DF541D37D451BAB9008186 /* Phase3FeedTests.swift */; };
 		17232594580CD7706A6B9D96 /* Manrope-Bold.ttf in Resources */ = {isa = PBXBuildFile; fileRef = 1CD6B7EAD7CCC02356A0BB25 /* Manrope-Bold.ttf */; };
 		18049CEC4F7138E5BEAACA4C /* InterestsTaxonomy.swift in Sources */ = {isa = PBXBuildFile; fileRef = DDF0ECE7A321253E36201A8D /* InterestsTaxonomy.swift */; };
 		1B134B977C322761A9BE9F57 /* ClipApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = DA511983FBEDC6F47528DD28 /* ClipApp.swift */; };
 		1F1C4D8400E005913567300C /* SettingsStoreTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 09BDA2C2A494538273494E1E /* SettingsStoreTests.swift */; };
 		275EFE64B076F48A594C5D37 /* Manrope-Regular.ttf in Resources */ = {isa = PBXBuildFile; fileRef = 755A67FED214E965F8934FAA /* Manrope-Regular.ttf */; };
+		3396C88A0F195A5E0253B73B /* UserProfileSnapshot.swift in Sources */ = {isa = PBXBuildFile; fileRef = C04BB0EDB80B1C58203CF1B1 /* UserProfileSnapshot.swift */; };
 		39FBC50AAC377A417C47ED3C /* NotificationService.appex in Embed Foundation Extensions */ = {isa = PBXBuildFile; fileRef = 3D70677902656DA92DEB50B3 /* NotificationService.appex */; settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
 		3C38884C9336F3A9474C3CCA /* InterestsPickerView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5FFF30E5C1CD35BF6388FFDA /* InterestsPickerView.swift */; };
 		4162BB108AA253929551DACC /* OnboardingTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB1A77E8E59821A8087FC2A2 /* OnboardingTests.swift */; };
@@ -28,12 +31,14 @@
 		5EAF68E2372DE07743841C1E /* RootGateView.swift in Sources */ = {isa = PBXBuildFile; fileRef = DA0BA02DE0FE06FB525A130A /* RootGateView.swift */; };
 		635A0005B6B6C6FDF9BF014B /* Colors.swift in Sources */ = {isa = PBXBuildFile; fileRef = 51597966A20F5807BFB28499 /* Colors.swift */; };
 		68F468332244E066F1EA92F1 /* OnboardingFlowView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5014EBC6865CB5371A01F981 /* OnboardingFlowView.swift */; };
+		71FD881181695CDCB10FB84C /* ProfileView.swift in Sources */ = {isa = PBXBuildFile; fileRef = ED9FF6290770C75EBD921B16 /* ProfileView.swift */; };
 		72698DEA93E808276C44668E /* KeychainSessionVault.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9F622E14222722E2ACC13BEF /* KeychainSessionVault.swift */; };
 		753E31D0F4B10ABEB242AEC8 /* AuthValidationTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = E2EC3690E271F4DA7D73D18B /* AuthValidationTests.swift */; };
 		77E16A225B4E34C27CD1EC85 /* ClickLogo.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1AFAFEA28942252B4C8C3065 /* ClickLogo.swift */; };
 		7B084D4485DF8DDD49429AF8 /* ClickClip.app in Embed App Clips */ = {isa = PBXBuildFile; fileRef = F8AF88527EA315B8FEEC3769 /* ClickClip.app */; settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
 		80E0FD617F57A87BEB475744 /* Manrope-Medium.ttf in Resources */ = {isa = PBXBuildFile; fileRef = 2AEC3B2ABCA6FD192389609D /* Manrope-Medium.ttf */; };
 		81D284E168DA086F93011B91 /* SessionController.swift in Sources */ = {isa = PBXBuildFile; fileRef = BC196177165E6C102B1932B4 /* SessionController.swift */; };
+		8DD8D0AEB2396A470B9CBC66 /* HomeView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 005D701DA8A071928D68AB22 /* HomeView.swift */; };
 		92F27DA0C01DD9C90070F34F /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = 32BCA700988129E7FE7DC06B /* Assets.xcassets */; };
 		960AE12D4E878C46BF271473 /* ProfileBasicsGateView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8DF21D6194CC4FB19507D99C /* ProfileBasicsGateView.swift */; };
 		9A7DDCDDC70230ABCE0DBEC9 /* OnboardingHeaderView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2363F153118BAC82700FA97A /* OnboardingHeaderView.swift */; };
@@ -42,6 +47,7 @@
 		B157719AA85CC74638A6B2F4 /* Typography.swift in Sources */ = {isa = PBXBuildFile; fileRef = 115558E16D558D82B19CEDFD /* Typography.swift */; };
 		B283DB1A8D0D2A02389A7695 /* OnboardingCoordinator.swift in Sources */ = {isa = PBXBuildFile; fileRef = A03E2C3998EE2E05F0385B8E /* OnboardingCoordinator.swift */; };
 		B741FE5C5E7099D25DF60D0F /* ClickAPIClient.swift in Sources */ = {isa = PBXBuildFile; fileRef = F7C2A0E83548CF65E326CC1E /* ClickAPIClient.swift */; };
+		BBA0C506BD5F9CA0033D890F /* HomeComponents.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1E86F5EC0AC5CAC94C17F8F /* HomeComponents.swift */; };
 		C68531D7713EDA163E2840E8 /* OnboardingShellChrome.swift in Sources */ = {isa = PBXBuildFile; fileRef = 578E139F248C9CF1F7B64C32 /* OnboardingShellChrome.swift */; };
 		CC56BFC382A9C86263741359 /* AppRouter.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7D2D91C12835F0AF71AF14F9 /* AppRouter.swift */; };
 		D3FBC1FCACB9E37591FF9776 /* OnboardingState.swift in Sources */ = {isa = PBXBuildFile; fileRef = BC148FF19C5BC80D4271B273 /* OnboardingState.swift */; };
@@ -54,9 +60,11 @@
 		E9BE06D7CA1990F770288CD1 /* PersonalityTaxonomy.swift in Sources */ = {isa = PBXBuildFile; fileRef = 451FD8B02710D9DABAAF8BD5 /* PersonalityTaxonomy.swift */; };
 		EC7E7A933E08DA51FC8D9A04 /* ClickAPIClientTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 398978787A590D62A0ED1FA6 /* ClickAPIClientTests.swift */; };
 		EE2DD300DD8D42003D87096D /* WelcomeView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B7E925958F753D5FBE49A830 /* WelcomeView.swift */; };
+		EEC3879386A9FBE5A5AB6609 /* HomeFeedSnapshot.swift in Sources */ = {isa = PBXBuildFile; fileRef = C831A48FD7A6C83981CA5A03 /* HomeFeedSnapshot.swift */; };
 		EF0F90DD03A0C46640DB05AF /* Manrope-ExtraLight.ttf in Resources */ = {isa = PBXBuildFile; fileRef = DBCE1A13DF90B8C97241FE7D /* Manrope-ExtraLight.ttf */; };
 		F9549923EB17C4F1A31929C3 /* LegacyKMPStateMigratorTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2D76120005FD30AE72B1126F /* LegacyKMPStateMigratorTests.swift */; };
 		FAC64483BE0386233DBB0B4F /* LegacyKMPStateMigrator.swift in Sources */ = {isa = PBXBuildFile; fileRef = E6948B635825154782DB64D8 /* LegacyKMPStateMigrator.swift */; };
+		FEEF3EB93549BC0E8570F080 /* ClicksSnapshot.swift in Sources */ = {isa = PBXBuildFile; fileRef = C4BA259925DD4913607E5A68 /* ClicksSnapshot.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -109,6 +117,8 @@
 /* End PBXCopyFilesBuildPhase section */
 
 /* Begin PBXFileReference section */
+		005D701DA8A071928D68AB22 /* HomeView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HomeView.swift; sourceTree = "<group>"; };
+		01DF541D37D451BAB9008186 /* Phase3FeedTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Phase3FeedTests.swift; sourceTree = "<group>"; };
 		060946110A08603E44DA7EE0 /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist; path = Info.plist; sourceTree = "<group>"; };
 		09BDA2C2A494538273494E1E /* SettingsStoreTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SettingsStoreTests.swift; sourceTree = "<group>"; };
 		115558E16D558D82B19CEDFD /* Typography.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Typography.swift; sourceTree = "<group>"; };
@@ -149,11 +159,16 @@
 		9F622E14222722E2ACC13BEF /* KeychainSessionVault.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = KeychainSessionVault.swift; sourceTree = "<group>"; };
 		A03E2C3998EE2E05F0385B8E /* OnboardingCoordinator.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OnboardingCoordinator.swift; sourceTree = "<group>"; };
 		A0D33AB3B5AE90EA7388EA96 /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist; path = Info.plist; sourceTree = "<group>"; };
+		A1E86F5EC0AC5CAC94C17F8F /* HomeComponents.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HomeComponents.swift; sourceTree = "<group>"; };
+		AAC9E2A2A2CF84BFD5B7C9B3 /* ClicksView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ClicksView.swift; sourceTree = "<group>"; };
 		B707F36DD15A7BDA013381B5 /* NotificationService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NotificationService.swift; sourceTree = "<group>"; };
 		B7E925958F753D5FBE49A830 /* WelcomeView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WelcomeView.swift; sourceTree = "<group>"; };
 		BB1A77E8E59821A8087FC2A2 /* OnboardingTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OnboardingTests.swift; sourceTree = "<group>"; };
 		BC148FF19C5BC80D4271B273 /* OnboardingState.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OnboardingState.swift; sourceTree = "<group>"; };
 		BC196177165E6C102B1932B4 /* SessionController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SessionController.swift; sourceTree = "<group>"; };
+		C04BB0EDB80B1C58203CF1B1 /* UserProfileSnapshot.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = UserProfileSnapshot.swift; sourceTree = "<group>"; };
+		C4BA259925DD4913607E5A68 /* ClicksSnapshot.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ClicksSnapshot.swift; sourceTree = "<group>"; };
+		C831A48FD7A6C83981CA5A03 /* HomeFeedSnapshot.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HomeFeedSnapshot.swift; sourceTree = "<group>"; };
 		DA0BA02DE0FE06FB525A130A /* RootGateView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RootGateView.swift; sourceTree = "<group>"; };
 		DA511983FBEDC6F47528DD28 /* ClipApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ClipApp.swift; sourceTree = "<group>"; };
 		DBCE1A13DF90B8C97241FE7D /* Manrope-ExtraLight.ttf */ = {isa = PBXFileReference; lastKnownFileType = file; path = "Manrope-ExtraLight.ttf"; sourceTree = "<group>"; };
@@ -162,6 +177,7 @@
 		E2EC3690E271F4DA7D73D18B /* AuthValidationTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AuthValidationTests.swift; sourceTree = "<group>"; };
 		E3B19D4621050199A97E10A9 /* Click.app */ = {isa = PBXFileReference; includeInIndex = 0; lastKnownFileType = wrapper.application; path = Click.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		E6948B635825154782DB64D8 /* LegacyKMPStateMigrator.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LegacyKMPStateMigrator.swift; sourceTree = "<group>"; };
+		ED9FF6290770C75EBD921B16 /* ProfileView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ProfileView.swift; sourceTree = "<group>"; };
 		F7C2A0E83548CF65E326CC1E /* ClickAPIClient.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ClickAPIClient.swift; sourceTree = "<group>"; };
 		F8AF88527EA315B8FEEC3769 /* ClickClip.app */ = {isa = PBXFileReference; includeInIndex = 0; lastKnownFileType = wrapper.application; path = ClickClip.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		F8B2A1B9A3CEE977F49608DC /* Manrope-ExtraBold.ttf */ = {isa = PBXFileReference; lastKnownFileType = file; path = "Manrope-ExtraBold.ttf"; sourceTree = "<group>"; };
@@ -248,6 +264,14 @@
 			);
 			sourceTree = "<group>";
 		};
+		4025CF87ADBA73E739CABC81 /* Clicks */ = {
+			isa = PBXGroup;
+			children = (
+				AAC9E2A2A2CF84BFD5B7C9B3 /* ClicksView.swift */,
+			);
+			path = Clicks;
+			sourceTree = "<group>";
+		};
 		4161F9BFCAC59905857001C4 /* API */ = {
 			isa = PBXGroup;
 			children = (
@@ -299,10 +323,19 @@
 				398978787A590D62A0ED1FA6 /* ClickAPIClientTests.swift */,
 				2D76120005FD30AE72B1126F /* LegacyKMPStateMigratorTests.swift */,
 				BB1A77E8E59821A8087FC2A2 /* OnboardingTests.swift */,
+				01DF541D37D451BAB9008186 /* Phase3FeedTests.swift */,
 				09BDA2C2A494538273494E1E /* SettingsStoreTests.swift */,
 			);
 			name = ClickTests;
 			path = Tests/ClickTests;
+			sourceTree = "<group>";
+		};
+		7C9982A1FAEF270AE99F6510 /* Profile */ = {
+			isa = PBXGroup;
+			children = (
+				C04BB0EDB80B1C58203CF1B1 /* UserProfileSnapshot.swift */,
+			);
+			path = Profile;
 			sourceTree = "<group>";
 		};
 		8FA85ACAEA5871BE3BB4C203 /* Auth */ = {
@@ -352,6 +385,24 @@
 			name = Products;
 			sourceTree = "<group>";
 		};
+		A62AD6EB819FB1DE2AD6C433 /* Feed */ = {
+			isa = PBXGroup;
+			children = (
+				C4BA259925DD4913607E5A68 /* ClicksSnapshot.swift */,
+				C831A48FD7A6C83981CA5A03 /* HomeFeedSnapshot.swift */,
+			);
+			path = Feed;
+			sourceTree = "<group>";
+		};
+		A64B1148129B3E1C382B261A /* Home */ = {
+			isa = PBXGroup;
+			children = (
+				A1E86F5EC0AC5CAC94C17F8F /* HomeComponents.swift */,
+				005D701DA8A071928D68AB22 /* HomeView.swift */,
+			);
+			path = Home;
+			sourceTree = "<group>";
+		};
 		C7D7CB833B0579444C261880 /* Interests */ = {
 			isa = PBXGroup;
 			children = (
@@ -390,9 +441,20 @@
 			isa = PBXGroup;
 			children = (
 				8FA85ACAEA5871BE3BB4C203 /* Auth */,
+				4025CF87ADBA73E739CABC81 /* Clicks */,
+				A64B1148129B3E1C382B261A /* Home */,
 				1A045FCAE9A53803D381DD18 /* Onboarding */,
+				F08A34873394A6C2218CD475 /* Profile */,
 			);
 			path = Features;
+			sourceTree = "<group>";
+		};
+		F08A34873394A6C2218CD475 /* Profile */ = {
+			isa = PBXGroup;
+			children = (
+				ED9FF6290770C75EBD921B16 /* ProfileView.swift */,
+			);
+			path = Profile;
 			sourceTree = "<group>";
 		};
 		F1E64F3B58D637A809FDC3AD /* NotificationService */ = {
@@ -420,8 +482,10 @@
 			children = (
 				4161F9BFCAC59905857001C4 /* API */,
 				F64F09F5FC4B40C90C936EF0 /* Auth */,
+				A62AD6EB819FB1DE2AD6C433 /* Feed */,
 				E46A2E015271C95260947EB4 /* Onboarding */,
 				A28E4ECC812677897DBBFF7C /* Persistence */,
+				7C9982A1FAEF270AE99F6510 /* Profile */,
 			);
 			path = Core;
 			sourceTree = "<group>";
@@ -584,8 +648,13 @@
 				B741FE5C5E7099D25DF60D0F /* ClickAPIClient.swift in Sources */,
 				141635CE6697C819553C2786 /* ClickApp.swift in Sources */,
 				77E16A225B4E34C27CD1EC85 /* ClickLogo.swift in Sources */,
+				FEEF3EB93549BC0E8570F080 /* ClicksSnapshot.swift in Sources */,
+				07E26E70DB1B5BEE2525D0AB /* ClicksView.swift in Sources */,
 				635A0005B6B6C6FDF9BF014B /* Colors.swift in Sources */,
 				081AA9386D6FCC4DC3B03DA0 /* Haptics.swift in Sources */,
+				BBA0C506BD5F9CA0033D890F /* HomeComponents.swift in Sources */,
+				EEC3879386A9FBE5A5AB6609 /* HomeFeedSnapshot.swift in Sources */,
+				8DD8D0AEB2396A470B9CBC66 /* HomeView.swift in Sources */,
 				3C38884C9336F3A9474C3CCA /* InterestsPickerView.swift in Sources */,
 				18049CEC4F7138E5BEAACA4C /* InterestsTaxonomy.swift in Sources */,
 				72698DEA93E808276C44668E /* KeychainSessionVault.swift in Sources */,
@@ -600,12 +669,14 @@
 				E9BE06D7CA1990F770288CD1 /* PersonalityTaxonomy.swift in Sources */,
 				A938B09C80F37F6A460D5BB6 /* PriorConnectionsView.swift in Sources */,
 				960AE12D4E878C46BF271473 /* ProfileBasicsGateView.swift in Sources */,
+				71FD881181695CDCB10FB84C /* ProfileView.swift in Sources */,
 				5EAF68E2372DE07743841C1E /* RootGateView.swift in Sources */,
 				81D284E168DA086F93011B91 /* SessionController.swift in Sources */,
 				E1A32FEA2DD05DDE9CC3991B /* SettingsStore.swift in Sources */,
 				B12D7E2CA0F7D433B947DA57 /* Spacing.swift in Sources */,
 				09B424FA14F8AFB0370CA393 /* SupabaseAuthService.swift in Sources */,
 				B157719AA85CC74638A6B2F4 /* Typography.swift in Sources */,
+				3396C88A0F195A5E0253B73B /* UserProfileSnapshot.swift in Sources */,
 				EE2DD300DD8D42003D87096D /* WelcomeView.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
@@ -627,6 +698,7 @@
 				EC7E7A933E08DA51FC8D9A04 /* ClickAPIClientTests.swift in Sources */,
 				F9549923EB17C4F1A31929C3 /* LegacyKMPStateMigratorTests.swift in Sources */,
 				4162BB108AA253929551DACC /* OnboardingTests.swift in Sources */,
+				15E1002EACD031C0520ECBB1 /* Phase3FeedTests.swift in Sources */,
 				1F1C4D8400E005913567300C /* SettingsStoreTests.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
@@ -724,7 +796,7 @@
 				INFOPLIST_FILE = Click/Info.plist;
 				INFOPLIST_KEY_CADisableMinimumFrameDurationOnPhone = YES;
 				INFOPLIST_KEY_CFBundleDisplayName = Click;
-				INFOPLIST_KEY_CFBundleURLTypes = "[[\"CFBundleURLSchemes\": [\"click\"], \"CFBundleTypeRole\": \"Editor\", \"CFBundleURLName\": \"compose.project.click.click\"], [\"CFBundleURLName\": \"GoogleSignIn\", \"CFBundleURLSchemes\": [\"com.googleusercontent.apps.530817233802-crnehf5a9duauov4vos4lgsijkgingdj\"], \"CFBundleTypeRole\": \"Editor\"]]";
+				INFOPLIST_KEY_CFBundleURLTypes = "[[\"CFBundleURLSchemes\": [\"click\"], \"CFBundleURLName\": \"compose.project.click.click\", \"CFBundleTypeRole\": \"Editor\"], [\"CFBundleURLName\": \"GoogleSignIn\", \"CFBundleURLSchemes\": [\"com.googleusercontent.apps.530817233802-crnehf5a9duauov4vos4lgsijkgingdj\"], \"CFBundleTypeRole\": \"Editor\"]]";
 				INFOPLIST_KEY_GIDClientID = "530817233802-crnehf5a9duauov4vos4lgsijkgingdj.apps.googleusercontent.com";
 				INFOPLIST_KEY_GIDServerClientID = "530817233802-3ki7usecs885vvag9uq92ubu5hgkv2sp.apps.googleusercontent.com";
 				INFOPLIST_KEY_ITSAppUsesNonExemptEncryption = NO;
@@ -867,7 +939,7 @@
 				INFOPLIST_FILE = Click/Info.plist;
 				INFOPLIST_KEY_CADisableMinimumFrameDurationOnPhone = YES;
 				INFOPLIST_KEY_CFBundleDisplayName = Click;
-				INFOPLIST_KEY_CFBundleURLTypes = "[[\"CFBundleURLSchemes\": [\"click\"], \"CFBundleTypeRole\": \"Editor\", \"CFBundleURLName\": \"compose.project.click.click\"], [\"CFBundleURLName\": \"GoogleSignIn\", \"CFBundleURLSchemes\": [\"com.googleusercontent.apps.530817233802-crnehf5a9duauov4vos4lgsijkgingdj\"], \"CFBundleTypeRole\": \"Editor\"]]";
+				INFOPLIST_KEY_CFBundleURLTypes = "[[\"CFBundleURLSchemes\": [\"click\"], \"CFBundleURLName\": \"compose.project.click.click\", \"CFBundleTypeRole\": \"Editor\"], [\"CFBundleURLName\": \"GoogleSignIn\", \"CFBundleURLSchemes\": [\"com.googleusercontent.apps.530817233802-crnehf5a9duauov4vos4lgsijkgingdj\"], \"CFBundleTypeRole\": \"Editor\"]]";
 				INFOPLIST_KEY_GIDClientID = "530817233802-crnehf5a9duauov4vos4lgsijkgingdj.apps.googleusercontent.com";
 				INFOPLIST_KEY_GIDServerClientID = "530817233802-3ki7usecs885vvag9uq92ubu5hgkv2sp.apps.googleusercontent.com";
 				INFOPLIST_KEY_ITSAppUsesNonExemptEncryption = NO;

@@ -36,7 +36,19 @@ private struct AuthenticatedGateView: View {
         let coordinator = env.onboardingCoordinator(for: snapshot.userId)
 
         Group {
-            if CommandLine.arguments.contains("-preview-onboarding-welcome") {
+            if CommandLine.arguments.contains("-preview-home") {
+                NavigationStack {
+                    HomeView()
+                }
+            } else if CommandLine.arguments.contains("-preview-clicks") {
+                NavigationStack {
+                    ClicksView()
+                }
+            } else if CommandLine.arguments.contains("-preview-profile") {
+                NavigationStack {
+                    ProfileView()
+                }
+            } else if CommandLine.arguments.contains("-preview-onboarding-welcome") {
                 VStack(spacing: 0) {
                     OnboardingShellChrome(currentStepIndex: 0, totalSteps: 5, canGoBack: false, onBack: {})
                     WelcomeView(firstName: "Alex") {}
@@ -102,7 +114,7 @@ public struct MainTabShellView: View {
         TabView(selection: $r.selectedTab) {
             Tab("Home", systemImage: "house.fill", value: MainTab.home) {
                 NavigationStack(path: $r.homePath) {
-                    FeedPlaceholderView(title: "Home")
+                    HomeView()
                 }
             }
 
@@ -114,7 +126,7 @@ public struct MainTabShellView: View {
 
             Tab("Clicks", systemImage: "bubble.left.and.bubble.right.fill", value: MainTab.connections) {
                 NavigationStack(path: $r.connectionsPath) {
-                    FeedPlaceholderView(title: "Clicks")
+                    ClicksView()
                 }
             }
 
@@ -126,7 +138,7 @@ public struct MainTabShellView: View {
 
             Tab("Me", systemImage: "person.circle.fill", value: MainTab.settings) {
                 NavigationStack(path: $r.settingsPath) {
-                    SettingsPlaceholderView()
+                    ProfileView()
                 }
             }
         }
