@@ -40,10 +40,12 @@ public final class OnboardingRepository {
         }
     }
 
-    /// Resolves onboarding requirements from server truth and legacy preferences.
-    /// Never marks a step complete locally before durable state is confirmed.
-    public func resolveOnboardingState(for userId: String) async -> (state: OnboardingState, hasAvatar: Bool) {
+    /// Resolves onboarding requirements from server truth plus the minimum local state
+    /// needed for non-server-backed/skippable steps. Remote failure never fabricates a new-user
+    /// state, which would make returning users flash Welcome or Avatar.
+    public func resolveOnboardingState(for userId: String) async throws -> (state: OnboardingState, hasAvatar: Bool) {
         let legacyCompleted = settings.hasCompletedOnboarding
+        let cached = settings.onboardingState(for: userId)
 
         do {
             let request = APIRequest(path: "/api/users/\(userId)/profile", method: .get, requiresAuth: true)
@@ -51,36 +53,62 @@ public final class OnboardingRepository {
 
             let interests = res.tags ?? []
             let personality = res.personalityTags ?? res.user?.personalityTags ?? []
-            let hasAvatar = (res.user?.image != nil && !(res.user?.image?.isEmpty ?? true))
+            let hasAvatar = (res.user?.image?.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty == false)
 
             let interestsDone = interests.count >= 5
             let personalityDone = personality.count == 5
+            let hasProfileIdentity =
+                res.user?.firstName?.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty == false &&
+                res.user?.birthday?.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty == false
 
-            var state = OnboardingState()
-            state.welcomeSeen = true
+            var state = cached ?? OnboardingState()
+
+            // Welcome has no server column. A native signup seeds an explicit empty cached state,
+            // while an account with no native cache but durable profile signals is returning.
+            if cached == nil {
+                state.welcomeSeen = legacyCompleted || interestsDone || hasAvatar || hasProfileIdentity
+            }
+
+            // These two steps are durable server truth.
             state.interestsCompleted = interestsDone
-            state.personalityCompleted = personalityDone
-            state.avatarSetOrSkipped = hasAvatar
-            state.priorConnectionsSetOrSkipped = legacyCompleted || (interestsDone && personalityDone && hasAvatar)
+            state.personalityCompleted = legacyCompleted ? true : personalityDone
 
-            if state.interestsCompleted && (state.personalityCompleted || legacyCompleted) {
-                state.completedAt = Date()
+            // Avatar and Prior Connections are skippable and therefore need their per-user local
+            // completion markers when no remote artifact exists.
+            state.avatarSetOrSkipped = hasAvatar || cached?.avatarSetOrSkipped == true || legacyCompleted
+            state.priorConnectionsSetOrSkipped = cached?.priorConnectionsSetOrSkipped == true || legacyCompleted
+
+            let fullyComplete =
+                state.welcomeSeen &&
+                state.interestsCompleted &&
+                state.personalityCompleted &&
+                state.avatarSetOrSkipped &&
+                state.priorConnectionsSetOrSkipped
+
+            state.completedAt = fullyComplete ? (cached?.completedAt ?? Date()) : nil
+            if fullyComplete {
                 settings.hasCompletedOnboarding = true
             }
-
+            settings.saveOnboardingState(state, for: userId)
             return (state, hasAvatar)
         } catch {
-            // On network failure, retain legacy hints if available to avoid regressively showing finished steps
-            var state = OnboardingState()
+            // Offline/update compatibility: a previously completed legacy account or a native
+            // per-user cache can be admitted without inventing missing server state.
             if legacyCompleted {
-                state.welcomeSeen = true
-                state.interestsCompleted = true
-                state.personalityCompleted = true
-                state.avatarSetOrSkipped = true
-                state.priorConnectionsSetOrSkipped = true
-                state.completedAt = Date()
+                let state = OnboardingState(
+                    welcomeSeen: true,
+                    interestsCompleted: true,
+                    personalityCompleted: true,
+                    avatarSetOrSkipped: true,
+                    priorConnectionsSetOrSkipped: true,
+                    completedAt: cached?.completedAt ?? Date()
+                )
+                return (state, cached?.avatarSetOrSkipped == true)
             }
-            return (state, legacyCompleted)
+            if let cached {
+                return (cached, cached.avatarSetOrSkipped)
+            }
+            throw error
         }
     }
 
