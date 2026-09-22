@@ -9,7 +9,21 @@ struct ClickApp: App {
             RootGateView()
                 .environment(environment)
                 .task {
-                    await environment.bootstrap()
+                    if CommandLine.arguments.contains("-preview-profile-basics") {
+                        environment.session.requireProfileBasics(userId: "usr_preview_99")
+                    } else if CommandLine.arguments.contains("-preview-shell") {
+                        environment.session.signIn(
+                            snapshot: SessionSnapshot(
+                                userId: "usr_preview_active",
+                                jwt: "mock_jwt",
+                                refreshToken: "mock_refresh"
+                            )
+                        )
+                    } else if CommandLine.arguments.contains("-preview-signup") {
+                        await environment.session.signOut()
+                    } else {
+                        await environment.bootstrap()
+                    }
                 }
                 .onOpenURL { url in
                     environment.router.handleIncomingURL(

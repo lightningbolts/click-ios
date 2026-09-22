@@ -1,6 +1,6 @@
 import SwiftUI
 
-/// Top-level gate view that manages authentication and onboarding transitions without visual flash.
+/// Top-level gate view that manages authentication, profile onboarding, and shell transitions without visual flash.
 public struct RootGateView: View {
     @Environment(AppEnvironment.self) private var env
 
@@ -12,7 +12,13 @@ public struct RootGateView: View {
             case .restoring:
                 LaunchLoadingView()
             case .unauthenticated, .terminalError:
-                AuthPlaceholderView()
+                if CommandLine.arguments.contains("-preview-signup") {
+                    AuthView(initialMode: .signUp)
+                } else {
+                    AuthView(initialMode: .signIn)
+                }
+            case .profileBasicsRequired(let userId):
+                ProfileBasicsGateView(userId: userId)
             case .authenticated, .refreshing, .offlineAuthenticated:
                 MainTabShellView()
             }
@@ -38,68 +44,13 @@ private struct LaunchLoadingView: View {
     }
 }
 
-/// Phase 0 auth placeholder. Real email/OAuth auth implemented in Phase 1.
-private struct AuthPlaceholderView: View {
-    @Environment(AppEnvironment.self) private var env
-
-    var body: some View {
-        NavigationStack {
-            VStack(spacing: ClickSpacing.large) {
-                Spacer()
-                Image(systemName: "circle.circle.fill")
-                    .resizable()
-                    .frame(width: 64, height: 64)
-                    .foregroundStyle(ClickColors.brandElectric)
-
-                Text("Click")
-                    .font(ClickTypography.largeTitle)
-                    .foregroundStyle(ClickColors.label)
-
-                Text("In-person first connection & private messaging.")
-                    .font(ClickTypography.body)
-                    .foregroundStyle(ClickColors.secondaryLabel)
-                    .multilineTextAlignment(.center)
-                    .padding(.horizontal, ClickSpacing.large)
-
-                Spacer()
-
-                Button {
-                    // Demo sign-in for testing the shell
-                    env.session.signIn(
-                        snapshot: SessionSnapshot(
-                            userId: "mock_user_\(UUID().uuidString.prefix(8))",
-                            jwt: "mock_jwt_token",
-                            refreshToken: "mock_refresh_token"
-                        )
-                    )
-                } label: {
-                    Text("Continue with Demo Session")
-                        .font(ClickTypography.headline)
-                        .frame(maxWidth: .infinity)
-                        .padding(.vertical, ClickSpacing.medium)
-                        .background(ClickColors.brandElectric)
-                        .foregroundStyle(.white)
-                        .clipShape(RoundedRectangle(cornerRadius: ClickSpacing.radiusMedium))
-                }
-                .padding(.horizontal, ClickSpacing.xLarge)
-                .padding(.bottom, ClickSpacing.xxLarge)
-            }
-            .background(ClickColors.background.ignoresSafeArea())
-        }
-    }
-}
-
 /// The 5-tab main shell view (Home, Add Click, Clicks, Map, Me).
-private struct MainTabShellView: View {
+public struct MainTabShellView: View {
     @Environment(AppEnvironment.self) private var env
-    @Bindable private var router: AppRouter
 
-    init() {
-        // Safe placeholder initialization; router is extracted from env on body
-        self._router = Bindable(AppRouter())
-    }
+    public init() {}
 
-    var body: some View {
+    public var body: some View {
         @Bindable var r = env.router
         TabView(selection: $r.selectedTab) {
             Tab("Home", systemImage: "house.fill", value: MainTab.home) {
@@ -159,6 +110,9 @@ private struct SettingsPlaceholderView: View {
             Section("Account") {
                 if let session = env.session.currentSession {
                     LabeledContent("User ID", value: session.userId)
+                }
+                Button("Test Profile Basics Gate") {
+                    env.session.requireProfileBasics(userId: env.session.currentSession?.userId ?? "test_user")
                 }
                 Button("Sign Out", role: .destructive) {
                     Task {
