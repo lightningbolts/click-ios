@@ -501,13 +501,18 @@ public struct AuthView: View {
         if parts.count > 1 {
             let pairs = parts[1].components(separatedBy: "&")
             for pair in pairs {
-                let kv = pair.components(separatedBy: "=")
+                let kv = pair.split(separator: "=", maxSplits: 1, omittingEmptySubsequences: false)
                 if kv.count == 2,
-                   let key = kv[0].removingPercentEncoding,
-                   let val = kv[1].removingPercentEncoding {
+                   let key = String(kv[0]).removingPercentEncoding,
+                   let val = String(kv[1]).removingPercentEncoding {
                     params[key] = val
                 }
             }
+        }
+
+        if let providerError = params["error_description"] ?? params["error"] {
+            errorMessage = providerError
+            return
         }
 
         guard let accessToken = params["access_token"],
