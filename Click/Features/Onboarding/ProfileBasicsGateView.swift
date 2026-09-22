@@ -104,15 +104,19 @@ public struct ProfileBasicsGateView: View {
                                 .font(ClickTypography.labelSmall)
                                 .foregroundStyle(ClickColors.textSecondary)
 
-                            DatePicker(
-                                "Date of Birth",
-                                selection: $birthday,
-                                in: ...Date(),
-                                displayedComponents: .date
-                            )
-                            .font(ClickTypography.bodyMedium)
+                            HStack {
+                                DatePicker(
+                                    "Date of Birth",
+                                    selection: $birthday,
+                                    in: ...Date(),
+                                    displayedComponents: .date
+                                )
+                                .labelsHidden()
+
+                                Spacer()
+                            }
                             .padding(.horizontal, ClickSpacing.md)
-                            .padding(.vertical, 10)
+                            .padding(.vertical, 8)
                             .background(ClickColors.surfaceContainerLow)
                             .clipShape(RoundedRectangle(cornerRadius: ClickSpacing.radiusInput))
                             .overlay(
