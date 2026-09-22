@@ -77,8 +77,15 @@ public final class AppEnvironment {
 
     /// Handles route flushing only when gates are cleared
     public func handlePostAuthResolved() {
-        guard let session = session.currentSession else { return }
-        let coordinator = onboardingCoordinator(for: session.userId)
+        switch session.state {
+        case .restoring, .profileBasicsRequired, .unauthenticated, .terminalError:
+            return
+        case .authenticated, .refreshing, .offlineAuthenticated:
+            break
+        }
+
+        guard let snapshot = session.currentSession else { return }
+        let coordinator = onboardingCoordinator(for: snapshot.userId)
         if !coordinator.needsOnboarding {
             router.flushPendingRoute()
         }
