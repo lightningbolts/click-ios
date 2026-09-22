@@ -1,5 +1,6 @@
 import SwiftUI
 import AuthenticationServices
+import CryptoKit
 
 public enum AuthMode: String, CaseIterable, Identifiable {
     case signIn = "Sign In"
@@ -27,6 +28,8 @@ public struct AuthView: View {
     @State private var isLoading = false
     @State private var errorMessage: String?
     @State private var infoMessage: String?
+    @State private var appleRawNonce: String?
+    @State private var googleAuthSession: ASWebAuthenticationSession?
 
     public init(initialMode: AuthMode = .signIn) {
         self._mode = State(initialValue: initialMode)
@@ -288,6 +291,9 @@ public struct AuthView: View {
                             .signIn,
                             onRequest: { request in
                                 request.requestedScopes = [.fullName, .email]
+                                let rawNonce = makeAppleNonce()
+                                appleRawNonce = rawNonce
+                                request.nonce = sha256(rawNonce)
                             },
                             onCompletion: { result in
                                 handleAppleSignIn(result)
@@ -395,10 +401,16 @@ public struct AuthView: View {
             isLoading = true
             errorMessage = nil
 
+            let nonce = appleRawNonce
+            appleRawNonce = nil
+
             Task {
                 do {
+                    guard let nonce else {
+                        throw APIError.validation(code: "apple_nonce_missing", message: "Apple sign-in state expired. Please try again.")
+                    }
                     let authService = SupabaseAuthService()
-                    let snapshot = try await authService.signInWithApple(idToken: token, nonce: nil)
+                    let snapshot = try await authService.signInWithApple(idToken: token, nonce: nonce)
                     env.session.signIn(snapshot: snapshot)
                     ClickHaptics.success()
                 } catch {
@@ -417,7 +429,16 @@ public struct AuthView: View {
     }
 
     private func handleGoogleOAuthSignIn() {
-        guard let authURL = URL(string: "https://lrgcwnmcscimkmslihxp.supabase.co/auth/v1/authorize?provider=google&redirect_to=click://login") else {
+        var components = URLComponents(
+            url: AppConfig.shared.supabaseURL.appendingPathComponent("/auth/v1/authorize"),
+            resolvingAgainstBaseURL: false
+        )
+        components?.queryItems = [
+            URLQueryItem(name: "provider", value: "google"),
+            URLQueryItem(name: "redirect_to", value: "click://login")
+        ]
+        guard let authURL = components?.url else {
+            errorMessage = "Unable to start Google sign-in."
             return
         }
 
@@ -425,21 +446,49 @@ public struct AuthView: View {
             url: authURL,
             callbackURLScheme: "click"
         ) { callbackURL, error in
-            if let error = error {
-                let nsError = error as NSError
-                if nsError.code != ASWebAuthenticationSessionError.canceledLogin.rawValue {
-                    self.errorMessage = error.localizedDescription
-                }
-                return
-            }
+            Task { @MainActor in
+                self.googleAuthSession = nil
 
-            guard let url = callbackURL else { return }
-            self.processOAuthCallback(url)
+                if let error {
+                    let nsError = error as NSError
+                    if nsError.code != ASWebAuthenticationSessionError.canceledLogin.rawValue {
+                        self.errorMessage = error.localizedDescription
+                    }
+                    return
+                }
+
+                guard let url = callbackURL else {
+                    self.errorMessage = "Google authentication did not return to Click."
+                    return
+                }
+                self.processOAuthCallback(url)
+            }
         }
 
         session.presentationContextProvider = AuthContextProvider.shared
         session.prefersEphemeralWebBrowserSession = false
-        session.start()
+        googleAuthSession = session
+        if !session.start() {
+            googleAuthSession = nil
+            errorMessage = "Unable to start Google sign-in."
+        }
+    }
+
+    private func makeAppleNonce() -> String {
+        let key = SymmetricKey(size: .bits256)
+        return key.withUnsafeBytes { rawBuffer in
+            Data(rawBuffer)
+                .base64EncodedString()
+                .replacingOccurrences(of: "+", with: "-")
+                .replacingOccurrences(of: "/", with: "_")
+                .replacingOccurrences(of: "=", with: "")
+        }
+    }
+
+    private func sha256(_ value: String) -> String {
+        SHA256.hash(data: Data(value.utf8))
+            .map { String(format: "%02x", $0) }
+            .joined()
     }
 
     private func processOAuthCallback(_ url: URL) {
