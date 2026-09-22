@@ -21,14 +21,14 @@ public final class OnboardingCoordinator {
 
     private var stepOverride: Step?
     private let userId: String
-    private let userHasAvatarClosure: () -> Bool?
+    private var userHasAvatarClosure: () -> Bool?
     private let userDefaults: UserDefaults
 
     public init(
         userId: String,
         initialState: OnboardingState? = nil,
         userHasAvatar: @escaping () -> Bool? = { false },
-        userDefaults: UserDefaults = .standard
+        userDefaults: UserDefaults = UserDefaults(suiteName: "click_auth_prefs") ?? .standard
     ) {
         self.userId = userId
         self.userHasAvatarClosure = userHasAvatar
@@ -47,7 +47,10 @@ public final class OnboardingCoordinator {
     }
 
     /// Hydrates remote or cached state into the coordinator.
-    public func hydrate(_ next: OnboardingState) {
+    public func hydrate(_ next: OnboardingState, hasAvatar: Bool? = nil) {
+        if let hasAvatar = hasAvatar {
+            self.userHasAvatarClosure = { hasAvatar }
+        }
         self.state = next
         self.step = computeStep(next)
     }
@@ -175,6 +178,9 @@ public final class OnboardingCoordinator {
     private func persist(_ s: OnboardingState) {
         if let encoded = try? JSONEncoder().encode(s) {
             userDefaults.set(encoded, forKey: "click_onboarding_\(userId)")
+        }
+        if s.interestsCompleted && (s.personalityCompleted || s.avatarSetOrSkipped) {
+            userDefaults.set(true, forKey: "has_completed_onboarding")
         }
     }
 }

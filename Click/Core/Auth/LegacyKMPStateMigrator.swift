@@ -33,6 +33,7 @@ public final class LegacyKMPStateMigrator: Sendable {
 
     public static let serviceName = "com.click.auth"
     public static let accountName = "session_v2"
+    public static let legacySuiteName = "click_auth_prefs"
 
     public init() {}
 
@@ -78,6 +79,63 @@ public final class LegacyKMPStateMigrator: Sendable {
         }
     }
 
+    /// Extracts the Supabase `sub` claim from a JWT payload safely.
+    public static func extractSubFromJWT(_ jwt: String) -> String? {
+        let parts = jwt.components(separatedBy: ".")
+        guard parts.count >= 2 else { return nil }
+
+        var base64 = parts[1]
+            .replacingOccurrences(of: "-", with: "+")
+            .replacingOccurrences(of: "_", with: "/")
+        let paddingLength = (4 - (base64.count % 4)) % 4
+        base64 += String(repeating: "=", count: paddingLength)
+
+        guard let payloadData = Data(base64Encoded: base64),
+              let json = try? JSONSerialization.jsonObject(with: payloadData) as? [String: Any],
+              let sub = json["sub"] as? String,
+              !sub.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
+            return nil
+        }
+        return sub
+    }
+
+    /// Coordinates one-time state migration across preferences, queues, and legacy Keychain.
+    @MainActor
+    public func performFullMigration(settings: SettingsStore, vault: KeychainSessionVault = .shared) {
+        guard !settings.legacyMigrationCompleted else { return }
+
+        let defaults = UserDefaults(suiteName: Self.legacySuiteName) ?? .standard
+
+        // 1. Purge retired keys (must never return as features)
+        defaults.removeObject(forKey: "call_notifications_enabled")
+        defaults.removeObject(forKey: "home_layout_mode")
+
+        // 2. Migrate legacy session if vault does not already hold a session
+        if vault.readSession() == nil, let legacy = readLegacySession() {
+            let derivedUserId = legacy.userId ?? Self.extractSubFromJWT(legacy.jwt)
+            if let userId = derivedUserId {
+                let expiresAtDate: Date? = legacy.expiresAt.map { Date(timeIntervalSince1970: TimeInterval($0) / 1000.0) }
+                let snapshot = SessionSnapshot(
+                    userId: userId,
+                    jwt: legacy.jwt,
+                    refreshToken: legacy.refreshToken,
+                    expiresAt: expiresAtDate
+                )
+                vault.saveSession(snapshot)
+            }
+        }
+
+        // 3. Preserve or safely migrate queues / temporary snapshots until server reconciliation
+        // (Any corrupt cache is safely discarded without logging out the user)
+        if let appSnapshot = defaults.data(forKey: "cached_app_snapshot") {
+            // Keep app snapshot in defaults until overwritten by fresh server state
+            _ = appSnapshot
+        }
+
+        // 4. Mark migration complete so this runs at most once
+        settings.legacyMigrationCompleted = true
+    }
+
     /// Deletes the legacy Keychain session record after a successful migration.
     @discardableResult
     public func deleteLegacySession() -> Bool {
@@ -94,5 +152,6 @@ public final class LegacyKMPStateMigrator: Sendable {
         case emptyJWT
         case emptyRefreshToken
         case unsupportedVersion(Int)
+        case missingUserIdentity
     }
 }

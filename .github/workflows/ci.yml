@@ -19,7 +19,12 @@ jobs:
         uses: actions/checkout@v4
 
       - name: Select Xcode Version
-        run: sudo xcode-select -s /Applications/Xcode_16.0.app || true
+        run: |
+          DEVELOPER_DIR=$(find /Applications -maxdepth 1 -name "Xcode_16*.app" | sort -V | tail -n 1)
+          if [ -n "$DEVELOPER_DIR" ]; then
+            sudo xcode-select -s "$DEVELOPER_DIR"
+          fi
+          xcodebuild -version
 
       - name: Install XcodeGen
         run: brew install xcodegen
@@ -37,8 +42,10 @@ jobs:
 
       - name: Run Unit Tests
         run: |
+          DEVICE_NAME=$(xcrun simctl list devices available | grep -E "iPhone (16|15)" | head -n 1 | sed -E 's/^[[:space:]]+//; s/[[:space:]]+\(.*\).*$//')
+          if [ -z "$DEVICE_NAME" ]; then DEVICE_NAME="iPhone 16"; fi
           xcodebuild test \
             -project Click.xcodeproj \
             -scheme ClickTests \
-            -destination 'platform=iOS Simulator,name=iPhone 16 Pro' \
+            -destination "platform=iOS Simulator,name=$DEVICE_NAME" \
             CODE_SIGNING_ALLOWED=NO

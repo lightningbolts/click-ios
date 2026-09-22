@@ -11,6 +11,7 @@ public enum MainTab: String, CaseIterable, Hashable, Sendable {
 }
 
 /// Typed destination routes for the application.
+/// Typed destination routes for the application.
 public enum AppRoute: Hashable, Sendable {
     case chat(chatID: String)
     case userProfile(userID: String, connectionID: String?)
@@ -22,6 +23,30 @@ public enum AppRoute: Hashable, Sendable {
     case scanQR
     case tapConnect
     case savedEvents
+    case connectionInvocation(ConnectionInvocation)
+}
+
+/// Invocation payload for canonical connection flow initiated via deep link / QR scan.
+public struct ConnectionInvocation: Hashable, Sendable {
+    public let userID: String
+    public let token: String?
+    public let expiresAt: Date?
+    public let issuedAt: Date?
+    public let venueID: String?
+
+    public init(
+        userID: String,
+        token: String? = nil,
+        expiresAt: Date? = nil,
+        issuedAt: Date? = nil,
+        venueID: String? = nil
+    ) {
+        self.userID = userID
+        self.token = token
+        self.expiresAt = expiresAt
+        self.issuedAt = issuedAt
+        self.venueID = venueID
+    }
 }
 
 /// Coordinates navigation stacks, modal presentations, and deep-link routing.
@@ -88,12 +113,19 @@ public final class AppRouter {
         let scheme = url.scheme?.lowercased()
         let host = url.host?.lowercased()
         let pathComponents = url.pathComponents.filter { $0 != "/" }
+        let components = URLComponents(url: url, resolvingAgainstBaseURL: true)
+
+        // Ignore auth callbacks from product deep-link parsing
+        if host == "login" || host == "auth" {
+            return nil
+        }
 
         // 1. Custom URL Scheme: click://...
         if scheme == "click" {
-            // click://c/{uuid} or click://connect/{uuid}
+            // click://c/{uuid} or click://connect/{uuid} -> canonical connection handshake
             if host == "c" || host == "connect", let id = pathComponents.first {
-                return .userProfile(userID: id, connectionID: nil)
+                let invocation = parseConnectionInvocation(userID: id, components: components)
+                return .connectionInvocation(invocation)
             }
             // click://e/{beaconId}
             if host == "e", let beaconId = pathComponents.first {
@@ -114,8 +146,10 @@ public final class AppRouter {
             guard let first = pathComponents.first else { return nil }
 
             // /c/{uuid} or /connect/{uuid}
-            if first == "c" || first == "connect", pathComponents.count > 1 {
-                return .userProfile(userID: pathComponents[1], connectionID: nil)
+            if (first == "c" || first == "connect"), pathComponents.count > 1 {
+                let id = pathComponents[1]
+                let invocation = parseConnectionInvocation(userID: id, components: components)
+                return .connectionInvocation(invocation)
             }
             // /e/{beaconId}
             if first == "e", pathComponents.count > 1 {
@@ -128,6 +162,38 @@ public final class AppRouter {
         }
 
         return nil
+    }
+
+    private func parseConnectionInvocation(userID: String, components: URLComponents?) -> ConnectionInvocation {
+        let queryItems = components?.queryItems ?? []
+        let token = queryItems.first(where: { $0.name == "token" || $0.name == "t" })?.value
+        let venueID = queryItems.first(where: { $0.name == "venue_id" || $0.name == "venue" })?.value
+
+        var expiresAt: Date? = nil
+        if let expVal = queryItems.first(where: { $0.name == "expires_at" || $0.name == "exp" })?.value {
+            if let interval = Double(expVal) {
+                expiresAt = Date(timeIntervalSince1970: interval)
+            } else {
+                expiresAt = ISO8601DateFormatter().date(from: expVal)
+            }
+        }
+
+        var issuedAt: Date? = nil
+        if let iatVal = queryItems.first(where: { $0.name == "issued_at" || $0.name == "iat" })?.value {
+            if let interval = Double(iatVal) {
+                issuedAt = Date(timeIntervalSince1970: interval)
+            } else {
+                issuedAt = ISO8601DateFormatter().date(from: iatVal)
+            }
+        }
+
+        return ConnectionInvocation(
+            userID: userID,
+            token: token,
+            expiresAt: expiresAt,
+            issuedAt: issuedAt,
+            venueID: venueID
+        )
     }
 
     /// Enqueues or immediately presents an incoming URL destination.
@@ -159,7 +225,7 @@ public final class AppRouter {
         case .hub:
             selectedTab = .map
             mapPath.append(route)
-        case .myQR, .scanQR, .tapConnect:
+        case .myQR, .scanQR, .tapConnect, .connectionInvocation:
             selectedTab = .addClick
             addClickPath.append(route)
         case .savedEvents:

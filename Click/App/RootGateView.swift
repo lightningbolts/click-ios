@@ -78,7 +78,7 @@ private struct AuthenticatedGateView: View {
                     coordinator: coordinator,
                     firstName: nil,
                     onFinished: {
-                        // Triggers state refresh to reveal main tab shell
+                        env.handlePostAuthResolved()
                     }
                 )
             } else {

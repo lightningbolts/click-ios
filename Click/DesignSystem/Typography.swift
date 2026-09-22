@@ -136,9 +136,19 @@ public enum ClickTypography {
         font(name: FontName.semiBold, size: 14, relativeTo: .footnote)
     }
 
-    /// Label Small: 12pt / SemiBold (Relative to .caption)
+    /// Label Small: 14pt / SemiBold (Click 14pt minimum role, Relative to .footnote)
     public static var labelSmall: Font {
+        font(name: FontName.semiBold, size: 14, relativeTo: .footnote)
+    }
+
+    /// Caption Small: 12pt / SemiBold (Platform microcopy, Relative to .caption)
+    public static var captionSmall: Font {
         font(name: FontName.semiBold, size: 12, relativeTo: .caption)
+    }
+
+    /// Microcopy: 11pt / SemiBold (Badges and sub-caption metadata, Relative to .caption2)
+    public static var microcopy: Font {
+        font(name: FontName.semiBold, size: 11, relativeTo: .caption2)
     }
 
     // MARK: - Backward Compatibility Aliases (Preserves Existing Callers)
@@ -151,6 +161,6 @@ public enum ClickTypography {
     public static var callout: Font { titleMedium }
     public static var subheadline: Font { bodySmall }
     public static var footnote: Font { labelMedium }
-    public static var caption: Font { labelSmall }
-    public static var caption2: Font { font(name: FontName.semiBold, size: 11, relativeTo: .caption2) }
+    public static var caption: Font { captionSmall }
+    public static var caption2: Font { microcopy }
 }

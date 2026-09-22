@@ -5,20 +5,23 @@ public actor ClickAPIClient {
     public let baseURL: URL
     private let session: URLSession
     private let tokenProvider: (@Sendable () async -> String?)?
+    private let tokenRefresher: (@Sendable () async throws -> String)?
 
     public init(
         baseURL: URL,
         session: URLSession = .shared,
-        tokenProvider: (@Sendable () async -> String?)? = nil
+        tokenProvider: (@Sendable () async -> String?)? = nil,
+        tokenRefresher: (@Sendable () async throws -> String)? = nil
     ) {
         self.baseURL = baseURL
         self.session = session
         self.tokenProvider = tokenProvider
+        self.tokenRefresher = tokenRefresher
     }
 
     /// Executes an API request and decodes the expected response model.
     public func execute<T: Decodable>(_ request: APIRequest) async throws -> T {
-        let (data, response) = try await executeRaw(request)
+        let (data, _) = try await executeRaw(request)
         do {
             let decoder = JSONDecoder()
             decoder.keyDecodingStrategy = .useDefaultKeys
@@ -30,6 +33,36 @@ public actor ClickAPIClient {
 
     /// Executes an API request and returns the raw response data.
     public func executeRaw(_ request: APIRequest) async throws -> (Data, HTTPURLResponse) {
+        var urlRequest = try buildURLRequest(from: request)
+
+        // Add authentication header if required
+        if request.requiresAuth, let tokenProvider = tokenProvider {
+            if let token = await tokenProvider() {
+                urlRequest.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
+            } else {
+                throw APIError.unauthorized
+            }
+        }
+
+        let (data, httpResponse) = try await send(urlRequest)
+
+        // Handle 401 with single refresh + retry exactly once
+        if httpResponse.statusCode == 401 && request.requiresAuth, let tokenRefresher = tokenRefresher {
+            do {
+                let newToken = try await tokenRefresher()
+                var retryRequest = urlRequest
+                retryRequest.setValue("Bearer \(newToken)", forHTTPHeaderField: "Authorization")
+                let (retryData, retryResponse) = try await send(retryRequest)
+                return try validateResponse(data: retryData, response: retryResponse)
+            } catch {
+                throw APIError.unauthorized
+            }
+        }
+
+        return try validateResponse(data: data, response: httpResponse)
+    }
+
+    private func buildURLRequest(from request: APIRequest) throws -> URLRequest {
         guard var components = URLComponents(url: baseURL.appendingPathComponent(request.path), resolvingAgainstBaseURL: true) else {
             throw APIError.invalidURL
         }
@@ -60,15 +93,10 @@ public actor ClickAPIClient {
             urlRequest.setValue(value, forHTTPHeaderField: key)
         }
 
-        // Authentication Header
-        if request.requiresAuth, let tokenProvider = tokenProvider {
-            if let token = await tokenProvider() {
-                urlRequest.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
-            } else {
-                throw APIError.unauthorized
-            }
-        }
+        return urlRequest
+    }
 
+    private func send(_ urlRequest: URLRequest) async throws -> (Data, HTTPURLResponse) {
         let data: Data
         let response: URLResponse
 
@@ -93,10 +121,13 @@ public actor ClickAPIClient {
             throw APIError.server(status: -1, code: nil, message: "Non-HTTP response")
         }
 
-        // Status code validation
-        switch httpResponse.statusCode {
+        return (data, httpResponse)
+    }
+
+    private func validateResponse(data: Data, response: HTTPURLResponse) throws -> (Data, HTTPURLResponse) {
+        switch response.statusCode {
         case 200...299:
-            return (data, httpResponse)
+            return (data, response)
         case 401:
             throw APIError.unauthorized
         case 403:
@@ -106,16 +137,16 @@ public actor ClickAPIClient {
         case 409:
             throw APIError.conflict(code: nil)
         case 429:
-            let retryAfter = httpResponse.value(forHTTPHeaderField: "Retry-After").flatMap(Double.init)
+            let retryAfter = response.value(forHTTPHeaderField: "Retry-After").flatMap(Double.init)
             throw APIError.rateLimited(retryAfter: retryAfter)
         case 400, 422:
             let message = String(data: data, encoding: .utf8)
-            throw APIError.validation(code: String(httpResponse.statusCode), message: message)
+            throw APIError.validation(code: String(response.statusCode), message: message)
         case 500...599:
             let message = String(data: data, encoding: .utf8)
-            throw APIError.server(status: httpResponse.statusCode, code: nil, message: message)
+            throw APIError.server(status: response.statusCode, code: nil, message: message)
         default:
-            throw APIError.server(status: httpResponse.statusCode, code: nil, message: "Unexpected status code \(httpResponse.statusCode)")
+            throw APIError.server(status: response.statusCode, code: nil, message: "Unexpected status code \(response.statusCode)")
         }
     }
 }

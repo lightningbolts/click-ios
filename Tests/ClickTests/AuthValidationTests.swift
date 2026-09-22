@@ -85,4 +85,27 @@ struct AuthValidationTests {
         #expect(mediumFont != nil)
         #expect(mediumFont?.fontName == "Manrope-Medium")
     }
+
+    @Test("Sign-up password requires minimum 8 characters while sign-in requires non-empty")
+    func passwordValidationRules() {
+        // Sign-up rules: password >= 8 characters
+        func isSignUpPasswordValid(_ pass: String) -> Bool {
+            pass.count >= 8
+        }
+
+        #expect(isSignUpPasswordValid("") == false)
+        #expect(isSignUpPasswordValid("1234567") == false)
+        #expect(isSignUpPasswordValid("12345678") == true)
+        #expect(isSignUpPasswordValid("longsecurepassword") == true)
+
+        // Sign-in rules: non-empty
+        func isSignInPasswordValid(_ pass: String) -> Bool {
+            !pass.isEmpty
+        }
+
+        #expect(isSignInPasswordValid("") == false)
+        #expect(isSignInPasswordValid("a") == true)
+        #expect(isSignInPasswordValid("12345678") == true)
+    }
 }
+

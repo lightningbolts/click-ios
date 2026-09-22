@@ -1,6 +1,8 @@
 import Testing
 import Foundation
+import UIKit
 @testable import Click
+
 
 @Suite("Onboarding Coordinator & Taxonomy Tests")
 struct OnboardingTests {
@@ -140,4 +142,48 @@ struct OnboardingTests {
         let canonical = canonicalizePersonalityTags(sample)
         #expect(canonical == ["Outgoing", "Warm", "Witty"])
     }
+
+    @Test("Contact normalization rules adhere to E.164 and lowercase trimmed email")
+    func contactNormalizationRules() {
+        // Phone numbers
+        #expect(ContactDiscoveryService.normalizePhoneE164("(555) 234-5678") == "+15552345678")
+        #expect(ContactDiscoveryService.normalizePhoneE164("+1 (555) 234-5678") == "+15552345678")
+        #expect(ContactDiscoveryService.normalizePhoneE164("555.234.5678") == "+15552345678")
+        #expect(ContactDiscoveryService.normalizePhoneE164("123") == nil) // Under 10 digits
+
+        // Emails
+        #expect(ContactDiscoveryService.normalizeEmail("  Alice@Example.COM  ") == "alice@example.com")
+        #expect(ContactDiscoveryService.normalizeEmail("invalid-email") == nil)
+    }
+
+    @Test("SHA-256 produces standard lowercase hex digests")
+    func sha256HexCalculation() {
+        let emptyHash = ContactDiscoveryService.sha256Hex("")
+        #expect(emptyHash == "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855")
+
+        let hash = ContactDiscoveryService.sha256Hex("+15552345678")
+        #expect(hash.count == 64)
+        #expect(hash == hash.lowercased())
+    }
+
+    @Test("AvatarService normalizes and compresses image data to within 2 MB")
+    func avatarImageDownsampling() throws {
+        let size = CGSize(width: 2000, height: 2000)
+        let renderer = UIGraphicsImageRenderer(size: size)
+        let testImage = renderer.image { ctx in
+            UIColor.systemBlue.setFill()
+            ctx.fill(CGRect(origin: .zero, size: size))
+        }
+
+        let rawData = testImage.pngData()!
+        let service = AvatarService.shared
+        let preparedData = try service.prepareImageData(rawData)
+
+        #expect(preparedData.count <= 2_000_000)
+        let decoded = UIImage(data: preparedData)
+        #expect(decoded != nil)
+        #expect(decoded!.size.width <= 1200)
+        #expect(decoded!.size.height <= 1200)
+    }
 }
+

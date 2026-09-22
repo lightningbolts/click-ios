@@ -2,6 +2,7 @@ import SwiftUI
 
 /// Top-level coordinator view rendering the Phase 2 onboarding step sequence.
 public struct OnboardingFlowView: View {
+    @Environment(AppEnvironment.self) private var env
     @Bindable var coordinator: OnboardingCoordinator
     let firstName: String?
     let onFinished: () -> Void
@@ -39,21 +40,22 @@ public struct OnboardingFlowView: View {
                     }
                 case .interests:
                     InterestsPickerView { tags in
-                        // Remote save hook
-                        try? await Task.sleep(nanoseconds: 300_000_000)
+                        if let userId = env.session.currentSession?.userId {
+                            try await env.onboardingRepository.saveInterests(userId: userId, tags: tags)
+                        }
                         coordinator.onInterestsSaved()
                     }
                 case .personality:
                     PersonalityTaggingView { traits in
-                        // Remote save hook
-                        try? await Task.sleep(nanoseconds: 300_000_000)
+                        if let userId = env.session.currentSession?.userId {
+                            try await env.onboardingRepository.savePersonality(userId: userId, traits: traits)
+                        }
                         coordinator.onPersonalitySaved()
                     }
                 case .avatar:
                     AvatarUploadView(
                         onUpload: { data in
-                            // Remote upload hook
-                            try? await Task.sleep(nanoseconds: 500_000_000)
+                            _ = try await env.avatarService.uploadAvatar(imageData: data, client: env.api)
                             coordinator.onAvatarSetOrSkipped()
                         },
                         onSkip: {
