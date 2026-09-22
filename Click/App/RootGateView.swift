@@ -32,13 +32,10 @@ private struct LaunchLoadingView: View {
     var body: some View {
         ZStack {
             ClickColors.background.ignoresSafeArea()
-            VStack(spacing: ClickSpacing.medium) {
-                Image(systemName: "circle.circle.fill")
-                    .resizable()
-                    .frame(width: 48, height: 48)
-                    .foregroundStyle(ClickColors.brandElectric)
+            VStack(spacing: ClickSpacing.md) {
+                ClickLogo(style: .mark, size: 52)
                 ProgressView()
-                    .tint(ClickColors.brandElectric)
+                    .tint(ClickColors.primary)
             }
         }
     }

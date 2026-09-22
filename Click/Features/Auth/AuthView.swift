@@ -9,8 +9,10 @@ public enum AuthMode: String, CaseIterable, Identifiable {
 }
 
 /// Native SwiftUI authentication screen supporting Email/Password, Sign in with Apple, and Google OAuth.
+/// Formatted strictly according to Click's purple-first Functional Clarity visual identity.
 public struct AuthView: View {
     @Environment(AppEnvironment.self) private var env
+    @Environment(\.colorScheme) private var colorScheme
 
     @State private var mode: AuthMode = .signIn
     @State private var email = ""
@@ -50,24 +52,21 @@ public struct AuthView: View {
     public var body: some View {
         NavigationStack {
             ScrollView {
-                VStack(spacing: ClickSpacing.large) {
+                VStack(spacing: ClickSpacing.lg) {
                     // Header Brand
-                    VStack(spacing: ClickSpacing.small) {
-                        Image(systemName: "circle.circle.fill")
-                            .resizable()
-                            .frame(width: 52, height: 52)
-                            .foregroundStyle(ClickColors.brandElectric)
-                            .padding(.top, ClickSpacing.medium)
+                    VStack(spacing: ClickSpacing.sm) {
+                        ClickLogo(size: 64)
+                            .padding(.top, ClickSpacing.md)
 
                         Text("Click")
-                            .font(ClickTypography.largeTitle)
-                            .foregroundStyle(ClickColors.label)
+                            .font(ClickTypography.headlineLarge)
+                            .foregroundStyle(ClickColors.textPrimary)
 
                         Text("In-person first connection & private messaging.")
-                            .font(ClickTypography.subheadline)
-                            .foregroundStyle(ClickColors.secondaryLabel)
+                            .font(ClickTypography.bodyMedium)
+                            .foregroundStyle(ClickColors.textSecondary)
                             .multilineTextAlignment(.center)
-                            .padding(.horizontal, ClickSpacing.large)
+                            .padding(.horizontal, ClickSpacing.lg)
                     }
 
                     // Mode Picker
@@ -77,80 +76,105 @@ public struct AuthView: View {
                         }
                     }
                     .pickerStyle(.segmented)
-                    .padding(.horizontal, ClickSpacing.large)
+                    .padding(.horizontal, ClickSpacing.lg)
 
                     // Error Banner
                     if let error = errorMessage {
-                        HStack(spacing: ClickSpacing.small) {
+                        HStack(spacing: ClickSpacing.sm) {
                             Image(systemName: "exclamationmark.triangle.fill")
-                                .foregroundStyle(ClickColors.statusDanger)
+                                .foregroundStyle(ClickColors.error)
                             Text(error)
-                                .font(ClickTypography.footnote)
-                                .foregroundStyle(ClickColors.statusDanger)
+                                .font(ClickTypography.labelMedium)
+                                .foregroundStyle(ClickColors.error)
                             Spacer()
                         }
-                        .padding(ClickSpacing.small)
-                        .background(ClickColors.statusDanger.opacity(0.12))
-                        .clipShape(RoundedRectangle(cornerRadius: ClickSpacing.radiusSmall))
-                        .padding(.horizontal, ClickSpacing.large)
+                        .padding(ClickSpacing.sm)
+                        .background(ClickColors.error.opacity(0.12))
+                        .clipShape(RoundedRectangle(cornerRadius: ClickSpacing.radiusInput))
+                        .padding(.horizontal, ClickSpacing.lg)
                     }
 
                     // Form Fields
-                    VStack(spacing: ClickSpacing.medium) {
+                    VStack(spacing: ClickSpacing.md) {
                         if mode == .signUp {
-                            HStack(spacing: ClickSpacing.small) {
+                            HStack(spacing: ClickSpacing.sm) {
                                 TextField("First name", text: $firstName)
+                                    .font(ClickTypography.bodyMedium)
                                     .textContentType(.givenName)
-                                    .padding()
-                                    .background(ClickColors.secondaryBackground)
-                                    .clipShape(RoundedRectangle(cornerRadius: ClickSpacing.radiusMedium))
+                                    .padding(.horizontal, ClickSpacing.md)
+                                    .padding(.vertical, 14)
+                                    .background(ClickColors.surfaceContainerLow)
+                                    .clipShape(RoundedRectangle(cornerRadius: ClickSpacing.radiusInput))
+                                    .overlay(
+                                        RoundedRectangle(cornerRadius: ClickSpacing.radiusInput)
+                                            .stroke(ClickColors.quietBorder, lineWidth: ClickSpacing.borderQuietWidth)
+                                    )
 
                                 TextField("Last name", text: $lastName)
+                                    .font(ClickTypography.bodyMedium)
                                     .textContentType(.familyName)
-                                    .padding()
-                                    .background(ClickColors.secondaryBackground)
-                                    .clipShape(RoundedRectangle(cornerRadius: ClickSpacing.radiusMedium))
+                                    .padding(.horizontal, ClickSpacing.md)
+                                    .padding(.vertical, 14)
+                                    .background(ClickColors.surfaceContainerLow)
+                                    .clipShape(RoundedRectangle(cornerRadius: ClickSpacing.radiusInput))
+                                    .overlay(
+                                        RoundedRectangle(cornerRadius: ClickSpacing.radiusInput)
+                                            .stroke(ClickColors.quietBorder, lineWidth: ClickSpacing.borderQuietWidth)
+                                    )
                             }
 
                             // Birthday Picker
-                            VStack(alignment: .leading, spacing: ClickSpacing.xxSmall) {
+                            VStack(alignment: .leading, spacing: ClickSpacing.xs) {
                                 DatePicker(
                                     "Date of Birth",
                                     selection: $birthday,
                                     in: ...Date(),
                                     displayedComponents: .date
                                 )
-                                .padding(.horizontal, ClickSpacing.small)
-                                .padding(.vertical, ClickSpacing.xSmall)
-                                .background(ClickColors.secondaryBackground)
-                                .clipShape(RoundedRectangle(cornerRadius: ClickSpacing.radiusMedium))
+                                .font(ClickTypography.bodyMedium)
+                                .padding(.horizontal, ClickSpacing.md)
+                                .padding(.vertical, 10)
+                                .background(ClickColors.surfaceContainerLow)
+                                .clipShape(RoundedRectangle(cornerRadius: ClickSpacing.radiusInput))
+                                .overlay(
+                                    RoundedRectangle(cornerRadius: ClickSpacing.radiusInput)
+                                        .stroke(ClickColors.quietBorder, lineWidth: ClickSpacing.borderQuietWidth)
+                                )
 
                                 if !isAgeValid {
                                     Text("You must be at least 13 years old to use Click.")
-                                        .font(ClickTypography.caption)
-                                        .foregroundStyle(ClickColors.statusDanger)
-                                        .padding(.leading, ClickSpacing.xSmall)
+                                        .font(ClickTypography.labelSmall)
+                                        .foregroundStyle(ClickColors.error)
+                                        .padding(.leading, ClickSpacing.xs)
                                 }
                             }
                         }
 
-                        // Email
+                        // Email Field
                         TextField("Email address", text: $email)
+                            .font(ClickTypography.bodyMedium)
                             .keyboardType(.emailAddress)
                             .textContentType(.emailAddress)
                             .autocorrectionDisabled()
                             .textInputAutocapitalization(.never)
-                            .padding()
-                            .background(ClickColors.secondaryBackground)
-                            .clipShape(RoundedRectangle(cornerRadius: ClickSpacing.radiusMedium))
+                            .padding(.horizontal, ClickSpacing.md)
+                            .padding(.vertical, 14)
+                            .background(ClickColors.surfaceContainerLow)
+                            .clipShape(RoundedRectangle(cornerRadius: ClickSpacing.radiusInput))
+                            .overlay(
+                                RoundedRectangle(cornerRadius: ClickSpacing.radiusInput)
+                                    .stroke(ClickColors.quietBorder, lineWidth: ClickSpacing.borderQuietWidth)
+                            )
 
-                        // Password
+                        // Password Field
                         HStack {
                             if isPasswordVisible {
                                 TextField("Password", text: $password)
+                                    .font(ClickTypography.bodyMedium)
                                     .textContentType(mode == .signIn ? .password : .newPassword)
                             } else {
                                 SecureField("Password", text: $password)
+                                    .font(ClickTypography.bodyMedium)
                                     .textContentType(mode == .signIn ? .password : .newPassword)
                             }
 
@@ -158,38 +182,43 @@ public struct AuthView: View {
                                 isPasswordVisible.toggle()
                             } label: {
                                 Image(systemName: isPasswordVisible ? "eye.slash.fill" : "eye.fill")
-                                    .foregroundStyle(ClickColors.secondaryLabel)
+                                    .foregroundStyle(ClickColors.textSecondary)
                             }
                         }
-                        .padding()
-                        .background(ClickColors.secondaryBackground)
-                        .clipShape(RoundedRectangle(cornerRadius: ClickSpacing.radiusMedium))
+                        .padding(.horizontal, ClickSpacing.md)
+                        .padding(.vertical, 14)
+                        .background(ClickColors.surfaceContainerLow)
+                        .clipShape(RoundedRectangle(cornerRadius: ClickSpacing.radiusInput))
+                        .overlay(
+                            RoundedRectangle(cornerRadius: ClickSpacing.radiusInput)
+                                .stroke(ClickColors.quietBorder, lineWidth: ClickSpacing.borderQuietWidth)
+                        )
                     }
-                    .padding(.horizontal, ClickSpacing.large)
+                    .padding(.horizontal, ClickSpacing.lg)
 
-                    // Primary Action Button
+                    // Primary Action Button (Canonical Click Purple)
                     Button {
                         handlePrimaryAction()
                     } label: {
                         HStack {
                             if isLoading {
                                 ProgressView()
-                                    .tint(.white)
+                                    .tint(ClickColors.onPrimary)
                             } else {
                                 Text(mode == .signIn ? "Sign In" : "Create Account")
-                                    .font(ClickTypography.headline)
+                                    .font(ClickTypography.labelBold)
                             }
                         }
                         .frame(maxWidth: .infinity)
-                        .padding(.vertical, ClickSpacing.medium)
-                        .background(canSubmit ? ClickColors.brandElectric : ClickColors.brandElectric.opacity(0.4))
-                        .foregroundStyle(.white)
-                        .clipShape(RoundedRectangle(cornerRadius: ClickSpacing.radiusMedium))
+                        .frame(height: 48)
+                        .background(canSubmit ? ClickColors.primary : ClickColors.primary.opacity(0.4))
+                        .foregroundStyle(ClickColors.onPrimary)
+                        .clipShape(RoundedRectangle(cornerRadius: ClickSpacing.radiusButton))
                     }
                     .disabled(!canSubmit)
-                    .padding(.horizontal, ClickSpacing.large)
+                    .padding(.horizontal, ClickSpacing.lg)
 
-                    // Forgot Password
+                    // Forgot Password Link
                     if mode == .signIn {
                         Button {
                             if let url = URL(string: "https://joinclick.co/forgot-password") {
@@ -197,25 +226,29 @@ public struct AuthView: View {
                             }
                         } label: {
                             Text("Forgot password?")
-                                .font(ClickTypography.footnote)
-                                .foregroundStyle(ClickColors.brandElectric)
+                                .font(ClickTypography.labelMedium)
+                                .foregroundStyle(ClickColors.primary)
                         }
                     }
 
                     // Divider
                     HStack {
-                        Rectangle().frame(height: 1).foregroundStyle(ClickColors.separator)
+                        Rectangle()
+                            .frame(height: ClickSpacing.borderQuietWidth)
+                            .foregroundStyle(ClickColors.quietBorder)
                         Text("or")
-                            .font(ClickTypography.footnote)
-                            .foregroundStyle(ClickColors.secondaryLabel)
-                            .padding(.horizontal, ClickSpacing.small)
-                        Rectangle().frame(height: 1).foregroundStyle(ClickColors.separator)
+                            .font(ClickTypography.labelMedium)
+                            .foregroundStyle(ClickColors.textSecondary)
+                            .padding(.horizontal, ClickSpacing.sm)
+                        Rectangle()
+                            .frame(height: ClickSpacing.borderQuietWidth)
+                            .foregroundStyle(ClickColors.quietBorder)
                     }
-                    .padding(.horizontal, ClickSpacing.large)
-                    .padding(.vertical, ClickSpacing.xSmall)
+                    .padding(.horizontal, ClickSpacing.lg)
+                    .padding(.vertical, ClickSpacing.xs)
 
-                    // Third Party Sign In
-                    VStack(spacing: ClickSpacing.small) {
+                    // Third-Party Providers
+                    VStack(spacing: ClickSpacing.sm) {
                         SignInWithAppleButton(
                             .signIn,
                             onRequest: { request in
@@ -225,31 +258,35 @@ public struct AuthView: View {
                                 handleAppleSignIn(result)
                             }
                         )
-                        .signInWithAppleButtonStyle(.black)
-                        .frame(height: 50)
-                        .clipShape(RoundedRectangle(cornerRadius: ClickSpacing.radiusMedium))
+                        .signInWithAppleButtonStyle(colorScheme == .dark ? .white : .black)
+                        .frame(height: 48)
+                        .clipShape(RoundedRectangle(cornerRadius: ClickSpacing.radiusButton))
 
                         // Google Sign-In
                         Button {
-                            // Opens Google OAuth callback
                             if let url = URL(string: "https://lrgcwnmcscimkmslihxp.supabase.co/auth/v1/authorize?provider=google&redirect_to=click://login") {
                                 UIApplication.shared.open(url)
                             }
                         } label: {
-                            HStack(spacing: ClickSpacing.small) {
+                            HStack(spacing: ClickSpacing.sm) {
                                 Image(systemName: "globe")
-                                    .foregroundStyle(ClickColors.label)
+                                    .foregroundStyle(ClickColors.textPrimary)
                                 Text("Continue with Google")
-                                    .font(ClickTypography.headline)
-                                    .foregroundStyle(ClickColors.label)
+                                    .font(ClickTypography.labelBold)
+                                    .foregroundStyle(ClickColors.textPrimary)
                             }
                             .frame(maxWidth: .infinity)
-                            .frame(height: 50)
-                            .background(ClickColors.secondaryBackground)
-                            .clipShape(RoundedRectangle(cornerRadius: ClickSpacing.radiusMedium))
+                            .frame(height: 48)
+                            .background(ClickColors.surfaceContainerLow)
+                            .clipShape(RoundedRectangle(cornerRadius: ClickSpacing.radiusButton))
+                            .overlay(
+                                RoundedRectangle(cornerRadius: ClickSpacing.radiusButton)
+                                    .stroke(ClickColors.quietBorder, lineWidth: ClickSpacing.borderQuietWidth)
+                            )
                         }
 
-                        // Demo Mode Bypass (Quick Test)
+                        #if DEBUG
+                        // Demo Mode Bypass (strictly debug-only per Section 9)
                         Button {
                             env.session.signIn(
                                 snapshot: SessionSnapshot(
@@ -260,20 +297,21 @@ public struct AuthView: View {
                             )
                         } label: {
                             Text("Fast Demo Sign-In")
-                                .font(ClickTypography.footnote)
-                                .foregroundStyle(ClickColors.secondaryLabel)
-                                .padding(.top, ClickSpacing.small)
+                                .font(ClickTypography.labelMedium)
+                                .foregroundStyle(ClickColors.textSecondary)
+                                .padding(.top, ClickSpacing.sm)
                         }
+                        #endif
                     }
-                    .padding(.horizontal, ClickSpacing.large)
-                    .padding(.bottom, ClickSpacing.xxLarge)
+                    .padding(.horizontal, ClickSpacing.lg)
                 }
+                .padding(.bottom, ClickSpacing.xxl)
             }
             .background(ClickColors.background.ignoresSafeArea())
-            .animation(ClickMotion.content, value: mode)
         }
     }
 
+    // MARK: - Actions
     private func handlePrimaryAction() {
         ClickHaptics.impact(.medium)
         isLoading = true
@@ -282,20 +320,20 @@ public struct AuthView: View {
         Task {
             do {
                 if mode == .signIn {
-                    try await env.session.signInWithEmail(email: email, password: password)
+                    try await env.session.signInWithEmail(
+                        email: email.trimmingCharacters(in: .whitespacesAndNewlines),
+                        password: password
+                    )
                 } else {
                     try await env.session.signUpWithEmail(
-                        email: email,
+                        email: email.trimmingCharacters(in: .whitespacesAndNewlines),
                         password: password,
-                        firstName: firstName,
-                        lastName: lastName,
+                        firstName: firstName.trimmingCharacters(in: .whitespacesAndNewlines),
+                        lastName: lastName.trimmingCharacters(in: .whitespacesAndNewlines),
                         birthday: birthday
                     )
                 }
                 ClickHaptics.success()
-            } catch let err as APIError {
-                errorMessage = err.localizedDescription
-                ClickHaptics.error()
             } catch {
                 errorMessage = error.localizedDescription
                 ClickHaptics.error()
@@ -307,20 +345,26 @@ public struct AuthView: View {
     private func handleAppleSignIn(_ result: Result<ASAuthorization, Error>) {
         switch result {
         case .success(let auth):
-            if let credential = auth.credential as? ASAuthorizationAppleIDCredential {
-                let userId = credential.user
-                let snapshot = SessionSnapshot(
-                    userId: userId,
-                    jwt: "apple_credential_jwt",
-                    refreshToken: "apple_credential_refresh"
-                )
-                // If account missing names, can transition to ProfileBasics
-                env.session.signIn(snapshot: snapshot)
+            guard let credential = auth.credential as? ASAuthorizationAppleIDCredential,
+                  let tokenData = credential.identityToken,
+                  let token = String(data: tokenData, encoding: .utf8) else {
+                errorMessage = "Unable to process Apple authorization credential."
+                return
             }
-        case .failure(let err):
-            let nsErr = err as NSError
-            if nsErr.code != ASAuthorizationError.canceled.rawValue {
-                errorMessage = err.localizedDescription
+            // Supabase auth using id_token
+            let userId = credential.user
+            env.session.signIn(
+                snapshot: SessionSnapshot(
+                    userId: userId,
+                    jwt: token,
+                    refreshToken: "apple_auth_refresh"
+                )
+            )
+            ClickHaptics.success()
+        case .failure(let error):
+            if (error as NSError).code != ASAuthorizationError.canceled.rawValue {
+                errorMessage = error.localizedDescription
+                ClickHaptics.error()
             }
         }
     }

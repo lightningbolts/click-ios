@@ -1,6 +1,7 @@
 import SwiftUI
 
 /// Blocking gate view required for accounts missing essential profile fields (first name, last name, birthday).
+/// Aligned with Click's Functional Clarity design system (Manrope, Click purple CTA, quiet borders).
 public struct ProfileBasicsGateView: View {
     @Environment(AppEnvironment.self) private var env
 
@@ -33,62 +34,74 @@ public struct ProfileBasicsGateView: View {
     public var body: some View {
         NavigationStack {
             ScrollView {
-                VStack(alignment: .leading, spacing: ClickSpacing.large) {
+                VStack(alignment: .leading, spacing: ClickSpacing.lg) {
                     // Header
-                    VStack(alignment: .leading, spacing: ClickSpacing.xSmall) {
+                    VStack(alignment: .leading, spacing: ClickSpacing.sm) {
                         Text("Complete your profile")
-                            .font(ClickTypography.title)
-                            .foregroundStyle(ClickColors.label)
+                            .font(ClickTypography.headlineLarge)
+                            .foregroundStyle(ClickColors.textPrimary)
 
                         Text("We need your name and date of birth to continue. This keeps Click safe, authenticated, and age-appropriate.")
-                            .font(ClickTypography.body)
-                            .foregroundStyle(ClickColors.secondaryLabel)
+                            .font(ClickTypography.bodyMedium)
+                            .foregroundStyle(ClickColors.textSecondary)
                     }
-                    .padding(.top, ClickSpacing.large)
+                    .padding(.top, ClickSpacing.lg)
 
                     // Error Banner
                     if let error = errorMessage {
-                        HStack(spacing: ClickSpacing.small) {
+                        HStack(spacing: ClickSpacing.sm) {
                             Image(systemName: "exclamationmark.triangle.fill")
-                                .foregroundStyle(ClickColors.statusDanger)
+                                .foregroundStyle(ClickColors.error)
                             Text(error)
-                                .font(ClickTypography.footnote)
-                                .foregroundStyle(ClickColors.statusDanger)
+                                .font(ClickTypography.labelMedium)
+                                .foregroundStyle(ClickColors.error)
                             Spacer()
                         }
-                        .padding(ClickSpacing.small)
-                        .background(ClickColors.statusDanger.opacity(0.12))
-                        .clipShape(RoundedRectangle(cornerRadius: ClickSpacing.radiusSmall))
+                        .padding(ClickSpacing.sm)
+                        .background(ClickColors.error.opacity(0.12))
+                        .clipShape(RoundedRectangle(cornerRadius: ClickSpacing.radiusInput))
                     }
 
                     // Fields
-                    VStack(spacing: ClickSpacing.medium) {
-                        VStack(alignment: .leading, spacing: ClickSpacing.xxSmall) {
+                    VStack(spacing: ClickSpacing.md) {
+                        VStack(alignment: .leading, spacing: ClickSpacing.xs) {
                             Text("FIRST NAME")
-                                .font(ClickTypography.caption2)
-                                .foregroundStyle(ClickColors.secondaryLabel)
+                                .font(ClickTypography.labelSmall)
+                                .foregroundStyle(ClickColors.textSecondary)
                             TextField("First name", text: $firstName)
+                                .font(ClickTypography.bodyMedium)
                                 .textContentType(.givenName)
-                                .padding()
-                                .background(ClickColors.secondaryBackground)
-                                .clipShape(RoundedRectangle(cornerRadius: ClickSpacing.radiusMedium))
+                                .padding(.horizontal, ClickSpacing.md)
+                                .padding(.vertical, 14)
+                                .background(ClickColors.surfaceContainerLow)
+                                .clipShape(RoundedRectangle(cornerRadius: ClickSpacing.radiusInput))
+                                .overlay(
+                                    RoundedRectangle(cornerRadius: ClickSpacing.radiusInput)
+                                        .stroke(ClickColors.quietBorder, lineWidth: ClickSpacing.borderQuietWidth)
+                                )
                         }
 
-                        VStack(alignment: .leading, spacing: ClickSpacing.xxSmall) {
+                        VStack(alignment: .leading, spacing: ClickSpacing.xs) {
                             Text("LAST NAME")
-                                .font(ClickTypography.caption2)
-                                .foregroundStyle(ClickColors.secondaryLabel)
+                                .font(ClickTypography.labelSmall)
+                                .foregroundStyle(ClickColors.textSecondary)
                             TextField("Last name", text: $lastName)
+                                .font(ClickTypography.bodyMedium)
                                 .textContentType(.familyName)
-                                .padding()
-                                .background(ClickColors.secondaryBackground)
-                                .clipShape(RoundedRectangle(cornerRadius: ClickSpacing.radiusMedium))
+                                .padding(.horizontal, ClickSpacing.md)
+                                .padding(.vertical, 14)
+                                .background(ClickColors.surfaceContainerLow)
+                                .clipShape(RoundedRectangle(cornerRadius: ClickSpacing.radiusInput))
+                                .overlay(
+                                    RoundedRectangle(cornerRadius: ClickSpacing.radiusInput)
+                                        .stroke(ClickColors.quietBorder, lineWidth: ClickSpacing.borderQuietWidth)
+                                )
                         }
 
-                        VStack(alignment: .leading, spacing: ClickSpacing.xxSmall) {
+                        VStack(alignment: .leading, spacing: ClickSpacing.xs) {
                             Text("DATE OF BIRTH")
-                                .font(ClickTypography.caption2)
-                                .foregroundStyle(ClickColors.secondaryLabel)
+                                .font(ClickTypography.labelSmall)
+                                .foregroundStyle(ClickColors.textSecondary)
 
                             DatePicker(
                                 "Date of Birth",
@@ -96,15 +109,20 @@ public struct ProfileBasicsGateView: View {
                                 in: ...Date(),
                                 displayedComponents: .date
                             )
-                            .padding(.horizontal, ClickSpacing.small)
-                            .padding(.vertical, ClickSpacing.xSmall)
-                            .background(ClickColors.secondaryBackground)
-                            .clipShape(RoundedRectangle(cornerRadius: ClickSpacing.radiusMedium))
+                            .font(ClickTypography.bodyMedium)
+                            .padding(.horizontal, ClickSpacing.md)
+                            .padding(.vertical, 10)
+                            .background(ClickColors.surfaceContainerLow)
+                            .clipShape(RoundedRectangle(cornerRadius: ClickSpacing.radiusInput))
+                            .overlay(
+                                RoundedRectangle(cornerRadius: ClickSpacing.radiusInput)
+                                    .stroke(ClickColors.quietBorder, lineWidth: ClickSpacing.borderQuietWidth)
+                            )
 
                             if !isAgeValid {
                                 Text("You must be at least 13 years old to use Click.")
-                                    .font(ClickTypography.caption)
-                                    .foregroundStyle(ClickColors.statusDanger)
+                                    .font(ClickTypography.labelSmall)
+                                    .foregroundStyle(ClickColors.error)
                                     .padding(.top, ClickSpacing.xxxSmall)
                             }
                         }
@@ -119,21 +137,21 @@ public struct ProfileBasicsGateView: View {
                         HStack {
                             if isLoading {
                                 ProgressView()
-                                    .tint(.white)
+                                    .tint(ClickColors.onPrimary)
                             } else {
                                 Text("Save and Continue")
-                                    .font(ClickTypography.headline)
+                                    .font(ClickTypography.labelBold)
                             }
                         }
                         .frame(maxWidth: .infinity)
-                        .padding(.vertical, ClickSpacing.medium)
-                        .background(canSave ? ClickColors.brandElectric : ClickColors.brandElectric.opacity(0.4))
-                        .foregroundStyle(.white)
-                        .clipShape(RoundedRectangle(cornerRadius: ClickSpacing.radiusMedium))
+                        .frame(height: 48)
+                        .background(canSave ? ClickColors.primary : ClickColors.primary.opacity(0.4))
+                        .foregroundStyle(ClickColors.onPrimary)
+                        .clipShape(RoundedRectangle(cornerRadius: ClickSpacing.radiusButton))
                     }
                     .disabled(!canSave)
                 }
-                .padding(.horizontal, ClickSpacing.large)
+                .padding(.horizontal, ClickSpacing.lg)
             }
             .background(ClickColors.background.ignoresSafeArea())
         }

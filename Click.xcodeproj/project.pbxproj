@@ -7,6 +7,7 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
+		0303E291A9CBE5068AFE7A96 /* Manrope-ExtraBold.ttf in Resources */ = {isa = PBXBuildFile; fileRef = F8B2A1B9A3CEE977F49608DC /* Manrope-ExtraBold.ttf */; };
 		0807AC2E7C11A5B869C9A575 /* APIRequest.swift in Sources */ = {isa = PBXBuildFile; fileRef = 235AD70ADF109B4932E8BC15 /* APIRequest.swift */; };
 		081AA9386D6FCC4DC3B03DA0 /* Haptics.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8C61BB3F2BA82EA2E549C314 /* Haptics.swift */; };
 		09303B5DAA631E6B94E780FD /* AppEnvironment.swift in Sources */ = {isa = PBXBuildFile; fileRef = 504D5490D94A3C3BD8F57912 /* AppEnvironment.swift */; };
@@ -14,14 +15,18 @@
 		101AE31A39E97F7A4C83F339 /* APIError.swift in Sources */ = {isa = PBXBuildFile; fileRef = 758475F38EA92E1DDE8CB3B9 /* APIError.swift */; };
 		141635CE6697C819553C2786 /* ClickApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = 464D8F9F85AB107124A0DFC4 /* ClickApp.swift */; };
 		14A9ABE1E8C63C81429603EB /* AuthView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 352CD16A8EB0AD27BC1F46F7 /* AuthView.swift */; };
+		17232594580CD7706A6B9D96 /* Manrope-Bold.ttf in Resources */ = {isa = PBXBuildFile; fileRef = 1CD6B7EAD7CCC02356A0BB25 /* Manrope-Bold.ttf */; };
 		1B134B977C322761A9BE9F57 /* ClipApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = DA511983FBEDC6F47528DD28 /* ClipApp.swift */; };
 		1F1C4D8400E005913567300C /* SettingsStoreTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 09BDA2C2A494538273494E1E /* SettingsStoreTests.swift */; };
+		275EFE64B076F48A594C5D37 /* Manrope-Regular.ttf in Resources */ = {isa = PBXBuildFile; fileRef = 755A67FED214E965F8934FAA /* Manrope-Regular.ttf */; };
 		39FBC50AAC377A417C47ED3C /* NotificationService.appex in Embed Foundation Extensions */ = {isa = PBXBuildFile; fileRef = 3D70677902656DA92DEB50B3 /* NotificationService.appex */; settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
 		5EAF68E2372DE07743841C1E /* RootGateView.swift in Sources */ = {isa = PBXBuildFile; fileRef = DA0BA02DE0FE06FB525A130A /* RootGateView.swift */; };
 		635A0005B6B6C6FDF9BF014B /* Colors.swift in Sources */ = {isa = PBXBuildFile; fileRef = 51597966A20F5807BFB28499 /* Colors.swift */; };
 		72698DEA93E808276C44668E /* KeychainSessionVault.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9F622E14222722E2ACC13BEF /* KeychainSessionVault.swift */; };
 		753E31D0F4B10ABEB242AEC8 /* AuthValidationTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = E2EC3690E271F4DA7D73D18B /* AuthValidationTests.swift */; };
+		77E16A225B4E34C27CD1EC85 /* ClickLogo.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1AFAFEA28942252B4C8C3065 /* ClickLogo.swift */; };
 		7B084D4485DF8DDD49429AF8 /* ClickClip.app in Embed App Clips */ = {isa = PBXBuildFile; fileRef = F8AF88527EA315B8FEEC3769 /* ClickClip.app */; settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
+		80E0FD617F57A87BEB475744 /* Manrope-Medium.ttf in Resources */ = {isa = PBXBuildFile; fileRef = 2AEC3B2ABCA6FD192389609D /* Manrope-Medium.ttf */; };
 		81D284E168DA086F93011B91 /* SessionController.swift in Sources */ = {isa = PBXBuildFile; fileRef = BC196177165E6C102B1932B4 /* SessionController.swift */; };
 		92F27DA0C01DD9C90070F34F /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = 32BCA700988129E7FE7DC06B /* Assets.xcassets */; };
 		960AE12D4E878C46BF271473 /* ProfileBasicsGateView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8DF21D6194CC4FB19507D99C /* ProfileBasicsGateView.swift */; };
@@ -30,10 +35,13 @@
 		B741FE5C5E7099D25DF60D0F /* ClickAPIClient.swift in Sources */ = {isa = PBXBuildFile; fileRef = F7C2A0E83548CF65E326CC1E /* ClickAPIClient.swift */; };
 		CC56BFC382A9C86263741359 /* AppRouter.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7D2D91C12835F0AF71AF14F9 /* AppRouter.swift */; };
 		D5294C030B43DFEE5786F7A0 /* AppRouterTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 51101C30845F8D2118C1B819 /* AppRouterTests.swift */; };
+		DFCC9DF32D532A6567CFF401 /* Manrope-SemiBold.ttf in Resources */ = {isa = PBXBuildFile; fileRef = 24F8E9B9D0F0B51D39CA35F3 /* Manrope-SemiBold.ttf */; };
 		E1A32FEA2DD05DDE9CC3991B /* SettingsStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7A2429F10776DF1079D326B5 /* SettingsStore.swift */; };
 		E1F59976B1B289C600055E22 /* Motion.swift in Sources */ = {isa = PBXBuildFile; fileRef = 94D1D516E85E0C3A40A44899 /* Motion.swift */; };
 		E2323AFB20A0A40DBF055431 /* NotificationService.swift in Sources */ = {isa = PBXBuildFile; fileRef = B707F36DD15A7BDA013381B5 /* NotificationService.swift */; };
+		E8B279A7DC09A32C1A81D2D0 /* Manrope-Light.ttf in Resources */ = {isa = PBXBuildFile; fileRef = 70C283525337A2816EC23461 /* Manrope-Light.ttf */; };
 		EC7E7A933E08DA51FC8D9A04 /* ClickAPIClientTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 398978787A590D62A0ED1FA6 /* ClickAPIClientTests.swift */; };
+		EF0F90DD03A0C46640DB05AF /* Manrope-ExtraLight.ttf in Resources */ = {isa = PBXBuildFile; fileRef = DBCE1A13DF90B8C97241FE7D /* Manrope-ExtraLight.ttf */; };
 		F9549923EB17C4F1A31929C3 /* LegacyKMPStateMigratorTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2D76120005FD30AE72B1126F /* LegacyKMPStateMigratorTests.swift */; };
 		FAC64483BE0386233DBB0B4F /* LegacyKMPStateMigrator.swift in Sources */ = {isa = PBXBuildFile; fileRef = E6948B635825154782DB64D8 /* LegacyKMPStateMigrator.swift */; };
 /* End PBXBuildFile section */
@@ -91,8 +99,12 @@
 		060946110A08603E44DA7EE0 /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist; path = Info.plist; sourceTree = "<group>"; };
 		09BDA2C2A494538273494E1E /* SettingsStoreTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SettingsStoreTests.swift; sourceTree = "<group>"; };
 		115558E16D558D82B19CEDFD /* Typography.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Typography.swift; sourceTree = "<group>"; };
+		1AFAFEA28942252B4C8C3065 /* ClickLogo.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ClickLogo.swift; sourceTree = "<group>"; };
+		1CD6B7EAD7CCC02356A0BB25 /* Manrope-Bold.ttf */ = {isa = PBXFileReference; lastKnownFileType = file; path = "Manrope-Bold.ttf"; sourceTree = "<group>"; };
 		221590AAFE8AE01E4E75711D /* SupabaseAuthService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SupabaseAuthService.swift; sourceTree = "<group>"; };
 		235AD70ADF109B4932E8BC15 /* APIRequest.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = APIRequest.swift; sourceTree = "<group>"; };
+		24F8E9B9D0F0B51D39CA35F3 /* Manrope-SemiBold.ttf */ = {isa = PBXFileReference; lastKnownFileType = file; path = "Manrope-SemiBold.ttf"; sourceTree = "<group>"; };
+		2AEC3B2ABCA6FD192389609D /* Manrope-Medium.ttf */ = {isa = PBXFileReference; lastKnownFileType = file; path = "Manrope-Medium.ttf"; sourceTree = "<group>"; };
 		2D76120005FD30AE72B1126F /* LegacyKMPStateMigratorTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LegacyKMPStateMigratorTests.swift; sourceTree = "<group>"; };
 		32BCA700988129E7FE7DC06B /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
 		352CD16A8EB0AD27BC1F46F7 /* AuthView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AuthView.swift; sourceTree = "<group>"; };
@@ -103,6 +115,8 @@
 		51101C30845F8D2118C1B819 /* AppRouterTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppRouterTests.swift; sourceTree = "<group>"; };
 		51597966A20F5807BFB28499 /* Colors.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Colors.swift; sourceTree = "<group>"; };
 		5CE872BED60D02250BA16BD1 /* Debug.xcconfig */ = {isa = PBXFileReference; lastKnownFileType = text.xcconfig; path = Debug.xcconfig; sourceTree = "<group>"; };
+		70C283525337A2816EC23461 /* Manrope-Light.ttf */ = {isa = PBXFileReference; lastKnownFileType = file; path = "Manrope-Light.ttf"; sourceTree = "<group>"; };
+		755A67FED214E965F8934FAA /* Manrope-Regular.ttf */ = {isa = PBXFileReference; lastKnownFileType = file; path = "Manrope-Regular.ttf"; sourceTree = "<group>"; };
 		758475F38EA92E1DDE8CB3B9 /* APIError.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = APIError.swift; sourceTree = "<group>"; };
 		77CF1D6BB251C87ECF61B463 /* ClickTests.xctest */ = {isa = PBXFileReference; includeInIndex = 0; lastKnownFileType = wrapper.cfbundle; path = ClickTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 		7A2429F10776DF1079D326B5 /* SettingsStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SettingsStore.swift; sourceTree = "<group>"; };
@@ -116,12 +130,14 @@
 		BC196177165E6C102B1932B4 /* SessionController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SessionController.swift; sourceTree = "<group>"; };
 		DA0BA02DE0FE06FB525A130A /* RootGateView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RootGateView.swift; sourceTree = "<group>"; };
 		DA511983FBEDC6F47528DD28 /* ClipApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ClipApp.swift; sourceTree = "<group>"; };
+		DBCE1A13DF90B8C97241FE7D /* Manrope-ExtraLight.ttf */ = {isa = PBXFileReference; lastKnownFileType = file; path = "Manrope-ExtraLight.ttf"; sourceTree = "<group>"; };
 		DE44FFADBC4622D64A3A704E /* Spacing.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Spacing.swift; sourceTree = "<group>"; };
 		E2EC3690E271F4DA7D73D18B /* AuthValidationTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AuthValidationTests.swift; sourceTree = "<group>"; };
 		E3B19D4621050199A97E10A9 /* Click.app */ = {isa = PBXFileReference; includeInIndex = 0; lastKnownFileType = wrapper.application; path = Click.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		E6948B635825154782DB64D8 /* LegacyKMPStateMigrator.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LegacyKMPStateMigrator.swift; sourceTree = "<group>"; };
 		F7C2A0E83548CF65E326CC1E /* ClickAPIClient.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ClickAPIClient.swift; sourceTree = "<group>"; };
 		F8AF88527EA315B8FEEC3769 /* ClickClip.app */ = {isa = PBXFileReference; includeInIndex = 0; lastKnownFileType = wrapper.application; path = ClickClip.app; sourceTree = BUILT_PRODUCTS_DIR; };
+		F8B2A1B9A3CEE977F49608DC /* Manrope-ExtraBold.ttf */ = {isa = PBXFileReference; lastKnownFileType = file; path = "Manrope-ExtraBold.ttf"; sourceTree = "<group>"; };
 		FC2D8FD2E9A926E650F8748C /* Release.xcconfig */ = {isa = PBXFileReference; lastKnownFileType = text.xcconfig; path = Release.xcconfig; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
@@ -134,6 +150,14 @@
 			path = Resources;
 			sourceTree = "<group>";
 		};
+		0B56FB38E9498FDA0AC87128 /* Components */ = {
+			isa = PBXGroup;
+			children = (
+				1AFAFEA28942252B4C8C3065 /* ClickLogo.swift */,
+			);
+			path = Components;
+			sourceTree = "<group>";
+		};
 		0F7A4844296E5080F5539E73 /* DesignSystem */ = {
 			isa = PBXGroup;
 			children = (
@@ -142,6 +166,7 @@
 				94D1D516E85E0C3A40A44899 /* Motion.swift */,
 				DE44FFADBC4622D64A3A704E /* Spacing.swift */,
 				115558E16D558D82B19CEDFD /* Typography.swift */,
+				0B56FB38E9498FDA0AC87128 /* Components */,
 			);
 			path = DesignSystem;
 			sourceTree = "<group>";
@@ -172,6 +197,7 @@
 				6DCC6E0F017EAA62C9FBF5CE /* ClickClip */,
 				7C1D5AE71566772AFF0EC6E6 /* ClickTests */,
 				69CC9E775556ED2A8068BE71 /* Config */,
+				4907E577393871CB14533954 /* Fonts */,
 				F1E64F3B58D637A809FDC3AD /* NotificationService */,
 				03950F3931FFAFAC9B390203 /* Resources */,
 				A50918281D6FB4CAE1ED041F /* Products */,
@@ -186,6 +212,21 @@
 				F7C2A0E83548CF65E326CC1E /* ClickAPIClient.swift */,
 			);
 			path = API;
+			sourceTree = "<group>";
+		};
+		4907E577393871CB14533954 /* Fonts */ = {
+			isa = PBXGroup;
+			children = (
+				1CD6B7EAD7CCC02356A0BB25 /* Manrope-Bold.ttf */,
+				F8B2A1B9A3CEE977F49608DC /* Manrope-ExtraBold.ttf */,
+				DBCE1A13DF90B8C97241FE7D /* Manrope-ExtraLight.ttf */,
+				70C283525337A2816EC23461 /* Manrope-Light.ttf */,
+				2AEC3B2ABCA6FD192389609D /* Manrope-Medium.ttf */,
+				755A67FED214E965F8934FAA /* Manrope-Regular.ttf */,
+				24F8E9B9D0F0B51D39CA35F3 /* Manrope-SemiBold.ttf */,
+			);
+			name = Fonts;
+			path = Resources/Fonts;
 			sourceTree = "<group>";
 		};
 		69CC9E775556ED2A8068BE71 /* Config */ = {
@@ -428,6 +469,13 @@
 			buildActionMask = 2147483647;
 			files = (
 				92F27DA0C01DD9C90070F34F /* Assets.xcassets in Resources */,
+				17232594580CD7706A6B9D96 /* Manrope-Bold.ttf in Resources */,
+				0303E291A9CBE5068AFE7A96 /* Manrope-ExtraBold.ttf in Resources */,
+				EF0F90DD03A0C46640DB05AF /* Manrope-ExtraLight.ttf in Resources */,
+				E8B279A7DC09A32C1A81D2D0 /* Manrope-Light.ttf in Resources */,
+				80E0FD617F57A87BEB475744 /* Manrope-Medium.ttf in Resources */,
+				275EFE64B076F48A594C5D37 /* Manrope-Regular.ttf in Resources */,
+				DFCC9DF32D532A6567CFF401 /* Manrope-SemiBold.ttf in Resources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -445,6 +493,7 @@
 				14A9ABE1E8C63C81429603EB /* AuthView.swift in Sources */,
 				B741FE5C5E7099D25DF60D0F /* ClickAPIClient.swift in Sources */,
 				141635CE6697C819553C2786 /* ClickApp.swift in Sources */,
+				77E16A225B4E34C27CD1EC85 /* ClickLogo.swift in Sources */,
 				635A0005B6B6C6FDF9BF014B /* Colors.swift in Sources */,
 				081AA9386D6FCC4DC3B03DA0 /* Haptics.swift in Sources */,
 				72698DEA93E808276C44668E /* KeychainSessionVault.swift in Sources */,
@@ -572,7 +621,7 @@
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_KEY_CADisableMinimumFrameDurationOnPhone = YES;
 				INFOPLIST_KEY_CFBundleDisplayName = Click;
-				INFOPLIST_KEY_CFBundleURLTypes = "[[\"CFBundleURLName\": \"compose.project.click.click\", \"CFBundleURLSchemes\": [\"click\"], \"CFBundleTypeRole\": \"Editor\"], [\"CFBundleURLSchemes\": [\"com.googleusercontent.apps.530817233802-crnehf5a9duauov4vos4lgsijkgingdj\"], \"CFBundleTypeRole\": \"Editor\", \"CFBundleURLName\": \"GoogleSignIn\"]]";
+				INFOPLIST_KEY_CFBundleURLTypes = "[[\"CFBundleTypeRole\": \"Editor\", \"CFBundleURLName\": \"compose.project.click.click\", \"CFBundleURLSchemes\": [\"click\"]], [\"CFBundleTypeRole\": \"Editor\", \"CFBundleURLSchemes\": [\"com.googleusercontent.apps.530817233802-crnehf5a9duauov4vos4lgsijkgingdj\"], \"CFBundleURLName\": \"GoogleSignIn\"]]";
 				INFOPLIST_KEY_GIDClientID = "530817233802-crnehf5a9duauov4vos4lgsijkgingdj.apps.googleusercontent.com";
 				INFOPLIST_KEY_GIDServerClientID = "530817233802-3ki7usecs885vvag9uq92ubu5hgkv2sp.apps.googleusercontent.com";
 				INFOPLIST_KEY_ITSAppUsesNonExemptEncryption = NO;
@@ -586,6 +635,15 @@
 				INFOPLIST_KEY_NSMotionUsageDescription = "Click uses motion context to capture encounter vibe.";
 				INFOPLIST_KEY_NSPhotoLibraryAddUsageDescription = "Click saves photos to your photo library.";
 				INFOPLIST_KEY_NSPhotoLibraryUsageDescription = "Click accesses your photo library to select photos for profile and chat.";
+				INFOPLIST_KEY_UIAppFonts = (
+					"Manrope-Regular.ttf",
+					"Manrope-Medium.ttf",
+					"Manrope-SemiBold.ttf",
+					"Manrope-Bold.ttf",
+					"Manrope-ExtraBold.ttf",
+					"Manrope-Light.ttf",
+					"Manrope-ExtraLight.ttf",
+				);
 				INFOPLIST_KEY_UIBackgroundModes = (
 					"remote-notification",
 					"bluetooth-central",
@@ -714,7 +772,7 @@
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_KEY_CADisableMinimumFrameDurationOnPhone = YES;
 				INFOPLIST_KEY_CFBundleDisplayName = Click;
-				INFOPLIST_KEY_CFBundleURLTypes = "[[\"CFBundleURLName\": \"compose.project.click.click\", \"CFBundleURLSchemes\": [\"click\"], \"CFBundleTypeRole\": \"Editor\"], [\"CFBundleURLSchemes\": [\"com.googleusercontent.apps.530817233802-crnehf5a9duauov4vos4lgsijkgingdj\"], \"CFBundleTypeRole\": \"Editor\", \"CFBundleURLName\": \"GoogleSignIn\"]]";
+				INFOPLIST_KEY_CFBundleURLTypes = "[[\"CFBundleTypeRole\": \"Editor\", \"CFBundleURLName\": \"compose.project.click.click\", \"CFBundleURLSchemes\": [\"click\"]], [\"CFBundleTypeRole\": \"Editor\", \"CFBundleURLSchemes\": [\"com.googleusercontent.apps.530817233802-crnehf5a9duauov4vos4lgsijkgingdj\"], \"CFBundleURLName\": \"GoogleSignIn\"]]";
 				INFOPLIST_KEY_GIDClientID = "530817233802-crnehf5a9duauov4vos4lgsijkgingdj.apps.googleusercontent.com";
 				INFOPLIST_KEY_GIDServerClientID = "530817233802-3ki7usecs885vvag9uq92ubu5hgkv2sp.apps.googleusercontent.com";
 				INFOPLIST_KEY_ITSAppUsesNonExemptEncryption = NO;
@@ -728,6 +786,15 @@
 				INFOPLIST_KEY_NSMotionUsageDescription = "Click uses motion context to capture encounter vibe.";
 				INFOPLIST_KEY_NSPhotoLibraryAddUsageDescription = "Click saves photos to your photo library.";
 				INFOPLIST_KEY_NSPhotoLibraryUsageDescription = "Click accesses your photo library to select photos for profile and chat.";
+				INFOPLIST_KEY_UIAppFonts = (
+					"Manrope-Regular.ttf",
+					"Manrope-Medium.ttf",
+					"Manrope-SemiBold.ttf",
+					"Manrope-Bold.ttf",
+					"Manrope-ExtraBold.ttf",
+					"Manrope-Light.ttf",
+					"Manrope-ExtraLight.ttf",
+				);
 				INFOPLIST_KEY_UIBackgroundModes = (
 					"remote-notification",
 					"bluetooth-central",
