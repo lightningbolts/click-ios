@@ -27,7 +27,7 @@ jobs:
           apps = glob.glob("/Applications/Xcode_16*.app")
 
           def version(path):
-              match = re.search(r"Xcode_(\\d+)(?:\\.(\\d+))?(?:\\.(\\d+))?\\.app$", path)
+              match = re.search(r"Xcode_(\d+)(?:\.(\d+))?(?:\.(\d+))?\.app$", path)
               return tuple(int(value or 0) for value in match.groups()) if match else (0, 0, 0)
 
           print(max(apps, key=version) if apps else "")
