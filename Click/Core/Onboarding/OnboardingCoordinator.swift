@@ -43,7 +43,10 @@ public final class OnboardingCoordinator {
             self.state = OnboardingState()
         }
 
-        self.step = computeStep(self.state)
+        // Production coordinators without an explicit injected state must remain on Loading
+        // until server/cache reconciliation finishes. This prevents Welcome/Avatar flashes for
+        // returning users during cold start.
+        self.step = initialState == nil ? .loading : computeStep(self.state)
     }
 
     /// Hydrates remote or cached state into the coordinator.
@@ -179,7 +182,14 @@ public final class OnboardingCoordinator {
         if let encoded = try? JSONEncoder().encode(s) {
             userDefaults.set(encoded, forKey: "click_onboarding_\(userId)")
         }
-        if s.interestsCompleted && (s.personalityCompleted || s.avatarSetOrSkipped) {
+        let fullyComplete =
+            s.welcomeSeen &&
+            s.interestsCompleted &&
+            s.personalityCompleted &&
+            s.avatarSetOrSkipped &&
+            s.priorConnectionsSetOrSkipped &&
+            s.completedAt != nil
+        if fullyComplete {
             userDefaults.set(true, forKey: "has_completed_onboarding")
         }
     }
