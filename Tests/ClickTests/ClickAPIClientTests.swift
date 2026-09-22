@@ -32,7 +32,7 @@ final class MockURLProtocol: URLProtocol, @unchecked Sendable {
     override func stopLoading() {}
 }
 
-@Suite("Click API Client & Error Taxonomy Tests")
+@Suite("Click API Client & Error Taxonomy Tests", .serialized)
 struct ClickAPIClientTests {
     @Test("APIError localized descriptions are user-safe and clear")
     func apiErrorDescriptions() {
@@ -162,5 +162,43 @@ struct ClickAPIClientTests {
             #expect(Bool(false), "Expected APIError.unauthorized, got \(error)")
         }
     }
-}
+    @Test("Post-refresh response preserves non-auth HTTP error")
+    func postRefreshErrorIsNotRewrittenAsUnauthorized() async {
+        let session = makeMockSession()
+        let baseURL = URL(string: "https://api.joinclick.co")!
+        var attemptCount = 0
 
+        MockURLProtocol.requestHandler = { request in
+            attemptCount += 1
+            let status = attemptCount == 1 ? 401 : 429
+            let response = HTTPURLResponse(
+                url: request.url!,
+                statusCode: status,
+                httpVersion: nil,
+                headerFields: status == 429 ? ["Retry-After": "5"] : nil
+            )!
+            return (response, Data())
+        }
+
+        let client = ClickAPIClient(
+            baseURL: baseURL,
+            session: session,
+            tokenProvider: { "old_token" },
+            tokenRefresher: { "new_token" }
+        )
+
+        do {
+            let _: (Data, HTTPURLResponse) = try await client.executeRaw(APIRequest(path: "/api/test"))
+            #expect(Bool(false), "Expected rate limit error")
+        } catch let error as APIError {
+            if case .rateLimited(let retryAfter) = error {
+                #expect(retryAfter == 5)
+            } else {
+                #expect(Bool(false), "Expected rateLimited, got \(error)")
+            }
+        } catch {
+            #expect(Bool(false), "Expected APIError.rateLimited, got \(error)")
+        }
+    }
+
+}
