@@ -22,37 +22,28 @@ public struct PersonalityTaggingView: View {
 
     public var body: some View {
         VStack(spacing: 0) {
-            // Header
-            VStack(alignment: .leading, spacing: ClickSpacing.xs) {
-                Text("How would friends describe you?")
-                    .font(ClickTypography.headlineLarge)
-                    .tracking(-0.5)
-                    .foregroundStyle(ClickColors.textPrimary)
+            OnboardingHeaderView(
+                title: "How would friends describe you?",
+                subtitle: "Pick exactly 5 traits that capture how you show up in the world."
+            )
 
-                Text("Pick exactly 5 traits that capture how you show up in the world.")
-                    .font(ClickTypography.bodyMedium)
-                    .foregroundStyle(ClickColors.textSecondary)
+            // Counter indicator
+            HStack(spacing: ClickSpacing.xs) {
+                Text("\(selectedTraits.count) of \(kPersonalityRequiredTagCount) selected")
+                    .font(ClickTypography.titleSmall)
+                    .fontWeight(.semibold)
 
-                // Counter indicator
-                HStack(spacing: ClickSpacing.xs) {
-                    Text("\(selectedTraits.count) of \(kPersonalityRequiredTagCount) selected")
+                if selectedTraits.count == kPersonalityRequiredTagCount {
+                    Text("✓")
                         .font(ClickTypography.titleSmall)
-                        .fontWeight(.semibold)
-
-                    if selectedTraits.count == kPersonalityRequiredTagCount {
-                        Text("✓")
-                            .font(ClickTypography.titleSmall)
-                            .fontWeight(.bold)
-                            .foregroundStyle(ClickColors.primary)
-                    }
-                    Spacer()
+                        .fontWeight(.bold)
+                        .foregroundStyle(ClickColors.primary)
                 }
-                .padding(.top, ClickSpacing.xxs)
-                .foregroundStyle(selectedTraits.count == kPersonalityRequiredTagCount ? ClickColors.primary : ClickColors.textPrimary)
+                Spacer()
             }
             .padding(.horizontal, ClickSpacing.lg)
-            .padding(.top, ClickSpacing.md)
             .padding(.bottom, ClickSpacing.sm)
+            .foregroundStyle(selectedTraits.count == kPersonalityRequiredTagCount ? ClickColors.primary : ClickColors.textPrimary)
 
             if let error = errorMessage {
                 Text(error)

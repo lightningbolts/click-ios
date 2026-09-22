@@ -16,30 +16,15 @@ public struct PriorConnectionsView: View {
     }
 
     public var body: some View {
-        ScrollView {
-            VStack(spacing: ClickSpacing.xl) {
-                // Header Brand
-                VStack(spacing: ClickSpacing.md) {
-                    Image(systemName: "person.2.badge.shield.checkmark.fill")
-                        .font(.system(size: 64))
-                        .foregroundStyle(ClickColors.primary)
-                        .padding(.top, ClickSpacing.xl)
+        VStack(spacing: 0) {
+            OnboardingHeaderView(
+                title: "Find your friends",
+                subtitle: "Find people you already know on Click. Your contacts are hashed locally on your device and never stored in plain text."
+            )
 
-                    VStack(spacing: ClickSpacing.xs) {
-                        Text("Find your friends")
-                            .font(ClickTypography.headlineLarge)
-                            .tracking(-0.5)
-                            .foregroundStyle(ClickColors.textPrimary)
-
-                        Text("Find people you already know on Click. Your contacts are hashed locally on your device and never stored in plain text.")
-                            .font(ClickTypography.bodyMedium)
-                            .foregroundStyle(ClickColors.textSecondary)
-                            .multilineTextAlignment(.center)
-                            .padding(.horizontal, ClickSpacing.md)
-                    }
-                }
-
-                // Privacy Trust Box
+            ScrollView {
+                VStack(spacing: ClickSpacing.lg) {
+                    // Privacy Trust Box
                 VStack(alignment: .leading, spacing: ClickSpacing.sm) {
                     HStack(spacing: ClickSpacing.sm) {
                         Image(systemName: "lock.shield.fill")
@@ -112,6 +97,7 @@ public struct PriorConnectionsView: View {
                 .padding(.horizontal, ClickSpacing.lg)
                 .padding(.bottom, ClickSpacing.xl)
             }
+        }
         }
         .background(ClickColors.background.ignoresSafeArea())
     }

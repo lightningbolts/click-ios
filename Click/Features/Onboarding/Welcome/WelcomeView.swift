@@ -11,30 +11,17 @@ public struct WelcomeView: View {
     }
 
     public var body: some View {
-        ScrollView {
-            VStack(spacing: ClickSpacing.xl) {
-                // Hero Header
+        VStack(spacing: 0) {
+            OnboardingHeaderView(
+                title: headlineText,
+                subtitle: "Real connections with the people around you — without the feed, ads, or the performance."
+            ) {
+                ClickLogo(style: .mark, size: 40)
+            }
+
+            ScrollView {
                 VStack(spacing: ClickSpacing.md) {
-                    ClickLogo(size: 72)
-                        .padding(.top, ClickSpacing.lg)
-
-                    VStack(spacing: ClickSpacing.xs) {
-                        Text(headlineText)
-                            .font(ClickTypography.headlineLarge)
-                            .tracking(-0.5)
-                            .foregroundStyle(ClickColors.textPrimary)
-                            .multilineTextAlignment(.center)
-
-                        Text("Real connections with the people around you — without the feed, ads, or the performance.")
-                            .font(ClickTypography.bodyMedium)
-                            .foregroundStyle(ClickColors.textSecondary)
-                            .multilineTextAlignment(.center)
-                            .padding(.horizontal, ClickSpacing.sm)
-                    }
-                }
-
-                // 3 Value Pillars
-                VStack(spacing: ClickSpacing.md) {
+                    // 3 Value Pillars
                     WelcomePill(
                         systemImage: "person.2.circle.fill",
                         title: "In-person first",

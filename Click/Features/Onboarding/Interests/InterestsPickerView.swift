@@ -48,17 +48,13 @@ public struct InterestsPickerView: View {
 
     public var body: some View {
         VStack(spacing: 0) {
-            // Header & Counter
+            OnboardingHeaderView(
+                title: "What are you into?",
+                subtitle: "Pick at least \(minTags) interests to help find common ground with your connections."
+            )
+
+            // Counter & Search Bar
             VStack(alignment: .leading, spacing: ClickSpacing.xs) {
-                Text("What are you into?")
-                    .font(ClickTypography.headlineLarge)
-                    .tracking(-0.5)
-                    .foregroundStyle(ClickColors.textPrimary)
-
-                Text("Pick at least \(minTags) interests to help find common ground with your connections.")
-                    .font(ClickTypography.bodyMedium)
-                    .foregroundStyle(ClickColors.textSecondary)
-
                 // Selection Counter Badge
                 HStack(spacing: ClickSpacing.xs) {
                     Text("\(selectedTags.count) selected")
@@ -77,7 +73,6 @@ public struct InterestsPickerView: View {
                     }
                     Spacer()
                 }
-                .padding(.top, ClickSpacing.xxs)
                 .foregroundStyle(selectedTags.count >= minTags ? ClickColors.primary : ClickColors.textPrimary)
 
                 // Search Bar
@@ -104,7 +99,6 @@ public struct InterestsPickerView: View {
                 .padding(.top, ClickSpacing.xs)
             }
             .padding(.horizontal, ClickSpacing.lg)
-            .padding(.top, ClickSpacing.md)
             .padding(.bottom, ClickSpacing.sm)
 
             if let error = errorMessage {

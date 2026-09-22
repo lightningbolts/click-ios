@@ -36,6 +36,7 @@
 		81D284E168DA086F93011B91 /* SessionController.swift in Sources */ = {isa = PBXBuildFile; fileRef = BC196177165E6C102B1932B4 /* SessionController.swift */; };
 		92F27DA0C01DD9C90070F34F /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = 32BCA700988129E7FE7DC06B /* Assets.xcassets */; };
 		960AE12D4E878C46BF271473 /* ProfileBasicsGateView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8DF21D6194CC4FB19507D99C /* ProfileBasicsGateView.swift */; };
+		9A7DDCDDC70230ABCE0DBEC9 /* OnboardingHeaderView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2363F153118BAC82700FA97A /* OnboardingHeaderView.swift */; };
 		A938B09C80F37F6A460D5BB6 /* PriorConnectionsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 83C5FC83E94C4D0DD1DBBF1D /* PriorConnectionsView.swift */; };
 		B12D7E2CA0F7D433B947DA57 /* Spacing.swift in Sources */ = {isa = PBXBuildFile; fileRef = DE44FFADBC4622D64A3A704E /* Spacing.swift */; };
 		B157719AA85CC74638A6B2F4 /* Typography.swift in Sources */ = {isa = PBXBuildFile; fileRef = 115558E16D558D82B19CEDFD /* Typography.swift */; };
@@ -115,6 +116,7 @@
 		1CD6B7EAD7CCC02356A0BB25 /* Manrope-Bold.ttf */ = {isa = PBXFileReference; lastKnownFileType = file; path = "Manrope-Bold.ttf"; sourceTree = "<group>"; };
 		221590AAFE8AE01E4E75711D /* SupabaseAuthService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SupabaseAuthService.swift; sourceTree = "<group>"; };
 		235AD70ADF109B4932E8BC15 /* APIRequest.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = APIRequest.swift; sourceTree = "<group>"; };
+		2363F153118BAC82700FA97A /* OnboardingHeaderView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OnboardingHeaderView.swift; sourceTree = "<group>"; };
 		24F8E9B9D0F0B51D39CA35F3 /* Manrope-SemiBold.ttf */ = {isa = PBXFileReference; lastKnownFileType = file; path = "Manrope-SemiBold.ttf"; sourceTree = "<group>"; };
 		2AEC3B2ABCA6FD192389609D /* Manrope-Medium.ttf */ = {isa = PBXFileReference; lastKnownFileType = file; path = "Manrope-Medium.ttf"; sourceTree = "<group>"; };
 		2D76120005FD30AE72B1126F /* LegacyKMPStateMigratorTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LegacyKMPStateMigratorTests.swift; sourceTree = "<group>"; };
@@ -200,6 +202,7 @@
 			isa = PBXGroup;
 			children = (
 				5014EBC6865CB5371A01F981 /* OnboardingFlowView.swift */,
+				2363F153118BAC82700FA97A /* OnboardingHeaderView.swift */,
 				578E139F248C9CF1F7B64C32 /* OnboardingShellChrome.swift */,
 				8DF21D6194CC4FB19507D99C /* ProfileBasicsGateView.swift */,
 				91B8F90EFFDE45917A536C1A /* Avatar */,
@@ -590,6 +593,7 @@
 				E1F59976B1B289C600055E22 /* Motion.swift in Sources */,
 				B283DB1A8D0D2A02389A7695 /* OnboardingCoordinator.swift in Sources */,
 				68F468332244E066F1EA92F1 /* OnboardingFlowView.swift in Sources */,
+				9A7DDCDDC70230ABCE0DBEC9 /* OnboardingHeaderView.swift in Sources */,
 				C68531D7713EDA163E2840E8 /* OnboardingShellChrome.swift in Sources */,
 				D3FBC1FCACB9E37591FF9776 /* OnboardingState.swift in Sources */,
 				4A3E8D24E65F4FC92A145E37 /* PersonalityTaggingView.swift in Sources */,
@@ -720,7 +724,7 @@
 				INFOPLIST_FILE = Click/Info.plist;
 				INFOPLIST_KEY_CADisableMinimumFrameDurationOnPhone = YES;
 				INFOPLIST_KEY_CFBundleDisplayName = Click;
-				INFOPLIST_KEY_CFBundleURLTypes = "[[\"CFBundleURLName\": \"compose.project.click.click\", \"CFBundleTypeRole\": \"Editor\", \"CFBundleURLSchemes\": [\"click\"]], [\"CFBundleURLName\": \"GoogleSignIn\", \"CFBundleURLSchemes\": [\"com.googleusercontent.apps.530817233802-crnehf5a9duauov4vos4lgsijkgingdj\"], \"CFBundleTypeRole\": \"Editor\"]]";
+				INFOPLIST_KEY_CFBundleURLTypes = "[[\"CFBundleURLSchemes\": [\"click\"], \"CFBundleTypeRole\": \"Editor\", \"CFBundleURLName\": \"compose.project.click.click\"], [\"CFBundleURLName\": \"GoogleSignIn\", \"CFBundleURLSchemes\": [\"com.googleusercontent.apps.530817233802-crnehf5a9duauov4vos4lgsijkgingdj\"], \"CFBundleTypeRole\": \"Editor\"]]";
 				INFOPLIST_KEY_GIDClientID = "530817233802-crnehf5a9duauov4vos4lgsijkgingdj.apps.googleusercontent.com";
 				INFOPLIST_KEY_GIDServerClientID = "530817233802-3ki7usecs885vvag9uq92ubu5hgkv2sp.apps.googleusercontent.com";
 				INFOPLIST_KEY_ITSAppUsesNonExemptEncryption = NO;
@@ -863,7 +867,7 @@
 				INFOPLIST_FILE = Click/Info.plist;
 				INFOPLIST_KEY_CADisableMinimumFrameDurationOnPhone = YES;
 				INFOPLIST_KEY_CFBundleDisplayName = Click;
-				INFOPLIST_KEY_CFBundleURLTypes = "[[\"CFBundleURLName\": \"compose.project.click.click\", \"CFBundleTypeRole\": \"Editor\", \"CFBundleURLSchemes\": [\"click\"]], [\"CFBundleURLName\": \"GoogleSignIn\", \"CFBundleURLSchemes\": [\"com.googleusercontent.apps.530817233802-crnehf5a9duauov4vos4lgsijkgingdj\"], \"CFBundleTypeRole\": \"Editor\"]]";
+				INFOPLIST_KEY_CFBundleURLTypes = "[[\"CFBundleURLSchemes\": [\"click\"], \"CFBundleTypeRole\": \"Editor\", \"CFBundleURLName\": \"compose.project.click.click\"], [\"CFBundleURLName\": \"GoogleSignIn\", \"CFBundleURLSchemes\": [\"com.googleusercontent.apps.530817233802-crnehf5a9duauov4vos4lgsijkgingdj\"], \"CFBundleTypeRole\": \"Editor\"]]";
 				INFOPLIST_KEY_GIDClientID = "530817233802-crnehf5a9duauov4vos4lgsijkgingdj.apps.googleusercontent.com";
 				INFOPLIST_KEY_GIDServerClientID = "530817233802-3ki7usecs885vvag9uq92ubu5hgkv2sp.apps.googleusercontent.com";
 				INFOPLIST_KEY_ITSAppUsesNonExemptEncryption = NO;

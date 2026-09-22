@@ -25,24 +25,15 @@ public struct AvatarUploadView: View {
     }
 
     public var body: some View {
-        ScrollView {
-            VStack(spacing: ClickSpacing.xl) {
-                // Header
-                VStack(spacing: ClickSpacing.xs) {
-                    Text("Add a photo")
-                        .font(ClickTypography.headlineLarge)
-                        .tracking(-0.5)
-                        .foregroundStyle(ClickColors.textPrimary)
+        VStack(spacing: 0) {
+            OnboardingHeaderView(
+                title: "Add a photo",
+                subtitle: "A real face goes a long way — but you can skip and add it later from Settings."
+            )
 
-                    Text("A real face goes a long way — but you can skip and add it later from Settings.")
-                        .font(ClickTypography.bodyMedium)
-                        .foregroundStyle(ClickColors.textSecondary)
-                        .multilineTextAlignment(.center)
-                        .padding(.horizontal, ClickSpacing.md)
-                }
-                .padding(.top, ClickSpacing.lg)
-
-                // Circular Preview (168pt)
+            ScrollView {
+                VStack(spacing: ClickSpacing.lg) {
+                    // Circular Preview (168pt)
                 ZStack {
                     Circle()
                         .fill(ClickColors.surfaceContainerLow)
@@ -168,6 +159,7 @@ public struct AvatarUploadView: View {
                 .padding(.horizontal, ClickSpacing.lg)
                 .padding(.bottom, ClickSpacing.xl)
             }
+        }
         }
         .background(ClickColors.background.ignoresSafeArea())
         .onChange(of: selectedItem) { _, newItem in
