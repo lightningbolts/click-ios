@@ -40,16 +40,18 @@ public struct OnboardingFlowView: View {
                     }
                 case .interests:
                     InterestsPickerView { tags in
-                        if let userId = env.session.currentSession?.userId {
-                            try await env.onboardingRepository.saveInterests(userId: userId, tags: tags)
+                        guard let userId = env.session.currentSession?.userId else {
+                            throw APIError.unauthorized
                         }
+                        try await env.onboardingRepository.saveInterests(userId: userId, tags: tags)
                         coordinator.onInterestsSaved()
                     }
                 case .personality:
                     PersonalityTaggingView { traits in
-                        if let userId = env.session.currentSession?.userId {
-                            try await env.onboardingRepository.savePersonality(userId: userId, traits: traits)
+                        guard let userId = env.session.currentSession?.userId else {
+                            throw APIError.unauthorized
                         }
+                        try await env.onboardingRepository.savePersonality(userId: userId, traits: traits)
                         coordinator.onPersonalitySaved()
                     }
                 case .avatar:
