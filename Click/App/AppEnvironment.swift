@@ -62,9 +62,14 @@ public final class AppEnvironment {
         // Reconcile against remote server truth and legacy hints
         Task { [weak self, weak coordinator] in
             guard let self = self, let coordinator = coordinator else { return }
-            let resolved = await self.onboardingRepository.resolveOnboardingState(for: userId)
-            coordinator.hydrate(resolved.state, hasAvatar: resolved.hasAvatar)
-            self.handlePostAuthResolved()
+            do {
+                let resolved = try await self.onboardingRepository.resolveOnboardingState(for: userId)
+                coordinator.hydrate(resolved.state, hasAvatar: resolved.hasAvatar)
+                self.handlePostAuthResolved()
+            } catch {
+                // Keep the coordinator on Loading when neither remote truth nor a trustworthy
+                // per-user cache exists. Showing Welcome here would be a false state.
+            }
         }
 
         return coordinator
@@ -76,6 +81,31 @@ public final class AppEnvironment {
         let coordinator = onboardingCoordinator(for: session.userId)
         if !coordinator.needsOnboarding {
             router.flushPendingRoute()
+        }
+    }
+
+    /// Gate-aware deep-link entry. Authenticated is not enough: blocking profile/onboarding
+    /// gates must finish before the route is executed.
+    public func handleIncomingURL(_ url: URL) {
+        guard let route = router.parseIncomingURL(url) else { return }
+        guard let snapshot = session.currentSession else {
+            router.pendingRoute = route
+            return
+        }
+
+        switch session.state {
+        case .profileBasicsRequired, .restoring:
+            router.pendingRoute = route
+            return
+        default:
+            break
+        }
+
+        let coordinator = onboardingCoordinator(for: snapshot.userId)
+        if coordinator.needsOnboarding {
+            router.pendingRoute = route
+        } else {
+            router.resolveRoute(route)
         }
     }
 
