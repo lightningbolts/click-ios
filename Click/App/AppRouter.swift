@@ -168,7 +168,8 @@ public final class AppRouter {
         let queryItems = components?.queryItems ?? []
         let tokenNames = Set(["token", "qr_token", "qt", "t"])
         let token = queryItems.first(where: { tokenNames.contains($0.name.lowercased()) })?.value
-        let venueID = queryItems.first(where: { $0.name.lowercased() == "venue_id" })?.value
+        let venueNames = Set(["venue_id", "venue"])
+        let venueID = queryItems.first(where: { venueNames.contains($0.name.lowercased()) })?.value
 
         let expiresAt = queryItems
             .first(where: { $0.name.lowercased() == "expires_at" || $0.name.lowercased() == "exp" })
