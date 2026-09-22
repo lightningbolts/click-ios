@@ -55,6 +55,9 @@ public final class SessionController: SessionControlling {
     private let vault: KeychainSessionVault
     private let authService: SupabaseAuthService
     private var refreshTask: Task<SessionSnapshot, Error>?
+    /// The authenticated bearer session remains available while a blocking gate is visible.
+    /// UI state must not destroy the credentials required to complete that gate.
+    private var retainedSession: SessionSnapshot?
 
     public var apiClient: ClickAPIClient?
     public var settingsStore: SettingsStore?
@@ -80,13 +83,16 @@ public final class SessionController: SessionControlling {
              .refreshing(let snapshot),
              .offlineAuthenticated(let snapshot):
             return snapshot
-        case .restoring, .unauthenticated, .profileBasicsRequired, .terminalError:
+        case .restoring, .profileBasicsRequired:
+            return retainedSession
+        case .unauthenticated, .terminalError:
             return nil
         }
     }
 
     /// Restores the existing session from Keychain or migrates from legacy KMP with full validation.
     public func restoreSession() async {
+        retainedSession = nil
         state = .restoring
 
         if let settings = settingsStore {
@@ -95,6 +101,7 @@ public final class SessionController: SessionControlling {
 
         // 1. Check native Keychain vault first
         if let current = vault.readSession() {
+            retainedSession = current
             await evaluateAndAdmitSession(current)
             return
         }
@@ -115,11 +122,13 @@ public final class SessionController: SessionControlling {
                 expiresAt: expiresAtDate
             )
             vault.saveSession(snapshot)
+            retainedSession = snapshot
             await evaluateAndAdmitSession(snapshot)
             return
         }
 
         // 3. Default to unauthenticated
+        retainedSession = nil
         state = .unauthenticated
     }
 
@@ -128,6 +137,7 @@ public final class SessionController: SessionControlling {
         guard !snapshot.userId.isEmpty && snapshot.userId != "unknown_user" && snapshot.userId != "legacy_user" else {
             vault.deleteSession()
             migrator.deleteLegacySession()
+            retainedSession = nil
             state = .unauthenticated
             return
         }
@@ -141,7 +151,9 @@ public final class SessionController: SessionControlling {
         }
 
         if isFresh {
-            state = .authenticated(snapshot)
+            retainedSession = snapshot
+            // Keep the root on the launch gate until server-backed profile requirements resolve.
+            state = .restoring
             await resolveProfileGate(for: snapshot.userId)
             onPostAuthResolved?()
 
@@ -156,25 +168,30 @@ public final class SessionController: SessionControlling {
             do {
                 let refreshed = try await authService.refreshToken(snapshot.refreshToken)
                 vault.saveSession(refreshed)
-                state = .authenticated(refreshed)
+                retainedSession = refreshed
+                state = .restoring
                 await resolveProfileGate(for: refreshed.userId)
                 onPostAuthResolved?()
             } catch let apiErr as APIError {
                 switch apiErr {
                 case .offline, .timeout:
                     // Preserve offline identity if network unavailable
+                    retainedSession = snapshot
                     state = .offlineAuthenticated(snapshot)
                     onPostAuthResolved?()
                 case .unauthorized, .forbidden, .validation:
                     // Hard refresh-token rejection
                     vault.deleteSession()
                     migrator.deleteLegacySession()
+                    retainedSession = nil
                     state = .unauthenticated
                 default:
+                    retainedSession = snapshot
                     state = .offlineAuthenticated(snapshot)
                     onPostAuthResolved?()
                 }
             } catch {
+                retainedSession = snapshot
                 state = .offlineAuthenticated(snapshot)
                 onPostAuthResolved?()
             }
@@ -211,13 +228,28 @@ public final class SessionController: SessionControlling {
 
             if firstName == nil || firstName?.isEmpty == true || birthday == nil || birthday?.isEmpty == true {
                 state = .profileBasicsRequired(userId: userId)
-            } else {
-                if case .profileBasicsRequired = state, let current = currentSession {
+            } else if let current = currentSession {
+                retainedSession = current
+                state = .authenticated(current)
+            }
+        } catch let apiError as APIError {
+            // Never flash onboarding while profile truth is still being resolved. If the
+            // profile endpoint is unavailable, keep the authenticated identity and let the
+            // onboarding resolver use its durable/cache fallback policy.
+            if let current = currentSession {
+                retainedSession = current
+                switch apiError {
+                case .offline, .timeout:
+                    state = .offlineAuthenticated(current)
+                default:
                     state = .authenticated(current)
                 }
             }
         } catch {
-            // Network failure during gate resolution does not lock out an authenticated user
+            if let current = currentSession {
+                retainedSession = current
+                state = .authenticated(current)
+            }
         }
     }
 
@@ -225,7 +257,8 @@ public final class SessionController: SessionControlling {
     public func signInWithEmail(email: String, password: String) async throws {
         let snapshot = try await authService.signIn(email: email, password: password)
         vault.saveSession(snapshot)
-        state = .authenticated(snapshot)
+        retainedSession = snapshot
+        state = .restoring
         await resolveProfileGate(for: snapshot.userId)
         onPostAuthResolved?()
     }
@@ -254,7 +287,12 @@ public final class SessionController: SessionControlling {
         switch result {
         case .authenticated(let snapshot):
             vault.saveSession(snapshot)
-            state = .authenticated(snapshot)
+            retainedSession = snapshot
+            // An explicitly fresh native signup must enter the native onboarding flow as new,
+            // rather than being mistaken for a returning account from its populated profile.
+            settingsStore?.saveOnboardingState(OnboardingState(), for: snapshot.userId)
+            settingsStore?.hasCompletedOnboarding = false
+            state = .restoring
             await resolveProfileGate(for: snapshot.userId)
             onPostAuthResolved?()
             return result
@@ -293,7 +331,10 @@ public final class SessionController: SessionControlling {
             await resolveProfileGate(for: current.userId)
         }
 
+        // The PATCH itself is the durable write. If the follow-up profile fetch was
+        // unavailable, do not strand the user on an already-satisfied blocking gate.
         if case .profileBasicsRequired = state {
+            retainedSession = current
             state = .authenticated(current)
         }
         onPostAuthResolved?()
@@ -302,7 +343,8 @@ public final class SessionController: SessionControlling {
     /// Signs in directly with a given snapshot (for testing or external OAuth coordinators).
     public func signIn(snapshot: SessionSnapshot) {
         vault.saveSession(snapshot)
-        state = .authenticated(snapshot)
+        retainedSession = snapshot
+        state = .restoring
         Task { [weak self] in
             await self?.resolveProfileGate(for: snapshot.userId)
             self?.onPostAuthResolved?()
@@ -311,17 +353,25 @@ public final class SessionController: SessionControlling {
 
     /// Triggers the ProfileBasics gate for accounts needing profile completion.
     public func requireProfileBasics(userId: String) {
+        if retainedSession == nil {
+            retainedSession = vault.readSession()
+        }
         state = .profileBasicsRequired(userId: userId)
     }
 
     /// Signs out the active user and clears secure credentials.
     public func signOut() async {
+        let signingOutUserId = currentSession?.userId
         if let session = currentSession {
             await authService.signOut(jwt: session.jwt)
         }
         vault.deleteSession()
         migrator.deleteLegacySession()
+        if let userId = signingOutUserId {
+            settingsStore?.clearOnboardingState(for: userId)
+        }
         settingsStore?.resetSessionScopedData()
+        retainedSession = nil
         state = .unauthenticated
     }
 
@@ -337,7 +387,22 @@ public final class SessionController: SessionControlling {
             return try await existingTask.value
         }
 
-        state = .refreshing(current)
+        let wasProfileGated: Bool
+        if case .profileBasicsRequired = state {
+            wasProfileGated = true
+        } else {
+            wasProfileGated = false
+        }
+        let wasResolvingProfile: Bool
+        if case .restoring = state {
+            wasResolvingProfile = true
+        } else {
+            wasResolvingProfile = false
+        }
+
+        if !wasProfileGated && !wasResolvingProfile {
+            state = .refreshing(current)
+        }
 
         let task = Task<SessionSnapshot, Error> {
             let refreshed = try await self.authService.refreshToken(current.refreshToken)
@@ -350,22 +415,45 @@ public final class SessionController: SessionControlling {
         do {
             let refreshed = try await task.value
             self.vault.saveSession(refreshed)
-            self.state = .authenticated(refreshed)
+            self.retainedSession = refreshed
+            if wasProfileGated {
+                self.state = .profileBasicsRequired(userId: refreshed.userId)
+            } else if wasResolvingProfile {
+                self.state = .restoring
+            } else {
+                self.state = .authenticated(refreshed)
+            }
             return refreshed
         } catch let apiErr as APIError {
             switch apiErr {
             case .offline, .timeout:
-                self.state = .offlineAuthenticated(current)
+                self.retainedSession = current
+                if wasProfileGated {
+                    self.state = .profileBasicsRequired(userId: current.userId)
+                } else {
+                    self.state = .offlineAuthenticated(current)
+                }
             case .unauthorized, .forbidden, .validation:
                 self.vault.deleteSession()
                 self.migrator.deleteLegacySession()
+                self.retainedSession = nil
                 self.state = .unauthenticated
             default:
-                self.state = .offlineAuthenticated(current)
+                self.retainedSession = current
+                if wasProfileGated {
+                    self.state = .profileBasicsRequired(userId: current.userId)
+                } else {
+                    self.state = .offlineAuthenticated(current)
+                }
             }
             throw apiErr
         } catch {
-            self.state = .offlineAuthenticated(current)
+            self.retainedSession = current
+            if wasProfileGated {
+                self.state = .profileBasicsRequired(userId: current.userId)
+            } else {
+                self.state = .offlineAuthenticated(current)
+            }
             throw error
         }
     }
