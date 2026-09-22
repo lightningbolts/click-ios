@@ -48,15 +48,25 @@ public actor ClickAPIClient {
 
         // Handle 401 with single refresh + retry exactly once
         if httpResponse.statusCode == 401 && request.requiresAuth, let tokenRefresher = tokenRefresher {
+            let newToken: String
             do {
-                let newToken = try await tokenRefresher()
-                var retryRequest = urlRequest
-                retryRequest.setValue("Bearer \(newToken)", forHTTPHeaderField: "Authorization")
-                let (retryData, retryResponse) = try await send(retryRequest)
-                return try validateResponse(data: retryData, response: retryResponse)
+                newToken = try await tokenRefresher()
+            } catch let error as APIError {
+                switch error {
+                case .offline, .timeout, .cancelled:
+                    throw error
+                default:
+                    throw APIError.unauthorized
+                }
             } catch {
                 throw APIError.unauthorized
             }
+
+            var retryRequest = urlRequest
+            retryRequest.setValue("Bearer \(newToken)", forHTTPHeaderField: "Authorization")
+            let (retryData, retryResponse) = try await send(retryRequest)
+            // Preserve the actual second response. A post-refresh 429/500 is not an auth error.
+            return try validateResponse(data: retryData, response: retryResponse)
         }
 
         return try validateResponse(data: data, response: httpResponse)
