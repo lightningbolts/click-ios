@@ -284,6 +284,14 @@ public actor SupabaseAuthService {
     }
 
     private func execute(_ request: URLRequest) async throws -> SupabaseAuthResponse {
+        guard !anonKey.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
+            throw APIError.server(
+                status: -1,
+                code: "configuration_missing",
+                message: "Authentication is unavailable because the Supabase public client key is not configured."
+            )
+        }
+
         let data: Data
         let response: URLResponse
         do {
