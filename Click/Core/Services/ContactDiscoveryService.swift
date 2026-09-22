@@ -27,6 +27,26 @@ public struct DiscoverContactsResponse: Decodable, Sendable {
     public let matches: [DiscoveredContactCard]
 }
 
+public enum PriorKnownSince: String, CaseIterable, Identifiable, Sendable {
+    case childhood
+    case highSchool = "high_school"
+    case college
+    case thisYear = "this_year"
+    case unspecified
+
+    public var id: String { rawValue }
+
+    public var label: String {
+        switch self {
+        case .childhood: return "Childhood"
+        case .highSchool: return "High School"
+        case .college: return "College"
+        case .thisYear: return "This Year"
+        case .unspecified: return "Unspecified"
+        }
+    }
+}
+
 /// Service that performs privacy-preserving on-device contact hashing and server matching.
 public final class ContactDiscoveryService: Sendable {
     public static let shared = ContactDiscoveryService()
@@ -119,9 +139,15 @@ public final class ContactDiscoveryService: Sendable {
     }
 
     /// Sends a self-reported prior connection request for a discovered user.
-    public func requestPriorConnection(targetUserId: String, contextTag: String? = nil, client: ClickAPIClient) async throws {
+    public func requestPriorConnection(
+        targetUserId: String,
+        knownSince: PriorKnownSince = .unspecified,
+        contextTag: String? = nil,
+        client: ClickAPIClient
+    ) async throws {
         var payload: [String: Any] = [
-            "target_user_id": targetUserId
+            "target_user_id": targetUserId,
+            "known_since": knownSince.rawValue
         ]
         if let context = contextTag, !context.isEmpty {
             payload["context_tag"] = context
