@@ -1,0 +1,26 @@
+# Xcode & Swift
+.DS_Store
+xcuserdata/
+DerivedData/
+.derivedData/
+build/
+.build/
+*.xcodeproj/project.xcworkspace/xcuserdata/
+*.xcodeproj/xcuserdata/
+*.xcworkspace/xcuserdata/
+
+# Swift Package Manager
+.swiftpm/
+Package.resolved
+
+# Secrets
+Config/Secrets.xcconfig
+Secrets.xcconfig
+*.env
+*.env.local
+
+# Fastlane / CI artifacts
+fastlane/report.xml
+fastlane/Preview.html
+fastlane/screenshots
+fastlane/test_output

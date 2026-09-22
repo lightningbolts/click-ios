@@ -1,0 +1,21 @@
+// Base.xcconfig
+DEVELOPMENT_TEAM = W4C3V9Z2N4
+SWIFT_VERSION = 6.0
+IPHONEOS_DEPLOYMENT_TARGET = 18.2
+ENABLE_USER_SCRIPT_SANDBOXING = YES
+CLANG_ENABLE_MODULES = YES
+SWIFT_STRICT_CONCURRENCY = complete
+
+// Bundle Identifiers
+APP_BUNDLE_IDENTIFIER = compose.project.click.click
+CLIP_BUNDLE_IDENTIFIER = compose.project.click.click.Clip
+NOTIFICATION_SERVICE_BUNDLE_IDENTIFIER = compose.project.click.click.NotificationService
+
+// Marketing & Build Version
+MARKETING_VERSION = 1.1.0
+CURRENT_PROJECT_VERSION = 1
+
+// API Configuration defaults
+CLICK_API_BASE_URL = https:/$()/joinclick.co
+SUPABASE_URL = https:/$()/api.joinclick.co
+SUPABASE_ANON_KEY = placeholder
