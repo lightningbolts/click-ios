@@ -8,6 +8,7 @@ public struct PriorConnectionsView: View {
     @State private var searched: Bool = false
     @State private var matches: [DiscoveredContactCard] = []
     @State private var requestedUserIds: Set<String> = []
+    @State private var knownSinceByUser: [String: PriorKnownSince] = [:]
     @State private var errorMessage: String?
 
     let onComplete: () -> Void
@@ -107,6 +108,23 @@ public struct PriorConnectionsView: View {
                                                     .font(ClickTypography.captionSmall)
                                                     .foregroundStyle(ClickColors.textSecondary)
                                             }
+
+                                            Menu {
+                                                ForEach(PriorKnownSince.allCases) { option in
+                                                    Button(option.label) {
+                                                        knownSinceByUser[match.id] = option
+                                                    }
+                                                }
+                                            } label: {
+                                                HStack(spacing: ClickSpacing.xxxSmall) {
+                                                    Text("Known since: \((knownSinceByUser[match.id] ?? .unspecified).label)")
+                                                        .font(ClickTypography.captionSmall)
+                                                    Image(systemName: "chevron.down")
+                                                        .font(.caption2)
+                                                }
+                                                .foregroundStyle(ClickColors.textSecondary)
+                                            }
+                                            .disabled(requestedUserIds.contains(match.id))
                                         }
 
                                         Spacer()
@@ -228,7 +246,8 @@ public struct PriorConnectionsView: View {
             do {
                 try await ContactDiscoveryService.shared.requestPriorConnection(
                     targetUserId: targetUserId,
-                    contextTag: "known_prior",
+                    knownSince: knownSinceByUser[targetUserId] ?? .unspecified,
+                    contextTag: nil,
                     client: env.api
                 )
                 ClickHaptics.success()
