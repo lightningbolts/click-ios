@@ -284,19 +284,43 @@ public actor SupabaseAuthService {
     }
 
     private func execute(_ request: URLRequest) async throws -> SupabaseAuthResponse {
-        let (data, response) = try await session.data(for: request)
+        let data: Data
+        let response: URLResponse
+        do {
+            (data, response) = try await session.data(for: request)
+        } catch let urlError as URLError {
+            switch urlError.code {
+            case .notConnectedToInternet, .networkConnectionLost:
+                throw APIError.offline
+            case .timedOut:
+                throw APIError.timeout
+            case .cancelled:
+                throw APIError.cancelled
+            default:
+                throw APIError.server(status: urlError.errorCode, code: nil, message: urlError.localizedDescription)
+            }
+        } catch {
+            throw APIError.server(status: -1, code: nil, message: error.localizedDescription)
+        }
+
         guard let httpResponse = response as? HTTPURLResponse else {
             throw APIError.server(status: -1, code: nil, message: "Invalid network response")
         }
 
         guard (200...299).contains(httpResponse.statusCode) else {
-            if httpResponse.statusCode == 400 || httpResponse.statusCode == 401 {
-                // Parse error message
-                let errObj = try? JSONSerialization.jsonObject(with: data) as? [String: Any]
-                let message = errObj?["msg"] as? String ?? errObj?["error_description"] as? String ?? errObj?["error"] as? String ?? "Invalid credentials"
+            let errObj = try? JSONSerialization.jsonObject(with: data) as? [String: Any]
+            let message = errObj?["msg"] as? String ?? errObj?["error_description"] as? String ?? errObj?["error"] as? String ?? "Authentication failed"
+
+            switch httpResponse.statusCode {
+            case 400, 422:
                 throw APIError.validation(code: String(httpResponse.statusCode), message: message)
+            case 401:
+                throw APIError.unauthorized
+            case 403:
+                throw APIError.forbidden
+            default:
+                throw APIError.server(status: httpResponse.statusCode, code: nil, message: message)
             }
-            throw APIError.server(status: httpResponse.statusCode, code: nil, message: "Authentication failed")
         }
 
         do {
