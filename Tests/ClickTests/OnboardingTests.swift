@@ -185,5 +185,69 @@ struct OnboardingTests {
         #expect(decoded!.size.width <= 1200)
         #expect(decoded!.size.height <= 1200)
     }
-}
+    @Test("Production coordinator stays loading until reconciliation")
+    func coordinatorDoesNotFlashWelcomeBeforeHydration() async {
+        let suiteName = "test_onboarding_loading_\(UUID().uuidString)"
+        let defaults = UserDefaults(suiteName: suiteName)!
 
+        let coordinator = await MainActor.run {
+            OnboardingCoordinator(
+                userId: "returning_user",
+                userHasAvatar: { false },
+                userDefaults: defaults
+            )
+        }
+
+        await MainActor.run {
+            #expect(coordinator.step == .loading)
+            #expect(coordinator.needsOnboarding == true)
+
+            coordinator.hydrate(OnboardingState(), hasAvatar: false)
+            #expect(coordinator.step == .welcome)
+        }
+
+        defaults.removePersistentDomain(forName: suiteName)
+    }
+
+    @Test("Onboarding completion is not persisted before Prior Connections")
+    func completionIsNotPersistedEarly() async {
+        let suiteName = "test_onboarding_completion_\(UUID().uuidString)"
+        let defaults = UserDefaults(suiteName: suiteName)!
+
+        let coordinator = await MainActor.run {
+            OnboardingCoordinator(
+                userId: "new_user",
+                initialState: OnboardingState(),
+                userHasAvatar: { false },
+                userDefaults: defaults
+            )
+        }
+
+        await MainActor.run {
+            coordinator.onWelcomeAcknowledged()
+            coordinator.onInterestsSaved()
+            coordinator.onPersonalitySaved()
+            coordinator.onAvatarSetOrSkipped()
+
+            #expect(coordinator.step == .priorConnections)
+            #expect(defaults.bool(forKey: "has_completed_onboarding") == false)
+
+            coordinator.onPriorConnectionsSetOrSkipped()
+
+            #expect(coordinator.step == .complete)
+            #expect(defaults.bool(forKey: "has_completed_onboarding") == true)
+        }
+
+        defaults.removePersistentDomain(forName: suiteName)
+    }
+
+    @Test("Prior Connections known-since values match backend contract")
+    func priorKnownSinceContract() {
+        #expect(PriorKnownSince.childhood.rawValue == "childhood")
+        #expect(PriorKnownSince.highSchool.rawValue == "high_school")
+        #expect(PriorKnownSince.college.rawValue == "college")
+        #expect(PriorKnownSince.thisYear.rawValue == "this_year")
+        #expect(PriorKnownSince.unspecified.rawValue == "unspecified")
+    }
+
+}
