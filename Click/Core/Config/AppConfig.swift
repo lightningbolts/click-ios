@@ -20,18 +20,13 @@ public struct AppConfig: Sendable {
             fallback: URL(string: "https://lrgcwnmcscimkmslihxp.supabase.co")!
         )
 
-        guard let key = Self.resolvedValue(key: "SUPABASE_ANON_KEY", bundle: bundle),
-              key.count > 20 else {
-            preconditionFailure(
-                "Missing SUPABASE_ANON_KEY. Copy Config/Secrets.example.xcconfig to " +
-                "Config/Secrets.xcconfig and provide the public Supabase anon key."
-            )
-        }
-        self.supabaseAnonKey = key
+        // Do not crash the process when public runtime configuration is absent.
+        // Test hosts and previews intentionally run without production credentials.
+        // SupabaseAuthService reports a typed configuration error only when auth is used.
+        self.supabaseAnonKey = Self.resolvedValue(key: "SUPABASE_ANON_KEY", bundle: bundle) ?? ""
     }
 
     public init(apiBaseURL: URL, supabaseURL: URL, supabaseAnonKey: String) {
-        precondition(!supabaseAnonKey.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
         self.apiBaseURL = apiBaseURL
         self.supabaseURL = supabaseURL
         self.supabaseAnonKey = supabaseAnonKey
