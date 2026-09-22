@@ -57,6 +57,9 @@ public final class OnboardingRepository {
 
             let interestsDone = interests.count >= 5
             let personalityDone = personality.count == 5
+            // A user with the pre-Phase-2 durable combination of interests + avatar and no
+            // native per-user onboarding cache is a returning legacy account.
+            let inferredLegacyComplete = legacyCompleted || (cached == nil && interestsDone && hasAvatar)
             let hasProfileIdentity =
                 res.user?.firstName?.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty == false &&
                 res.user?.birthday?.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty == false
@@ -66,17 +69,17 @@ public final class OnboardingRepository {
             // Welcome has no server column. A native signup seeds an explicit empty cached state,
             // while an account with no native cache but durable profile signals is returning.
             if cached == nil {
-                state.welcomeSeen = legacyCompleted || interestsDone || hasAvatar || hasProfileIdentity
+                state.welcomeSeen = inferredLegacyComplete || interestsDone || hasAvatar || hasProfileIdentity
             }
 
             // These two steps are durable server truth.
             state.interestsCompleted = interestsDone
-            state.personalityCompleted = legacyCompleted ? true : personalityDone
+            state.personalityCompleted = inferredLegacyComplete ? true : personalityDone
 
             // Avatar and Prior Connections are skippable and therefore need their per-user local
             // completion markers when no remote artifact exists.
-            state.avatarSetOrSkipped = hasAvatar || cached?.avatarSetOrSkipped == true || legacyCompleted
-            state.priorConnectionsSetOrSkipped = cached?.priorConnectionsSetOrSkipped == true || legacyCompleted
+            state.avatarSetOrSkipped = hasAvatar || cached?.avatarSetOrSkipped == true || inferredLegacyComplete
+            state.priorConnectionsSetOrSkipped = cached?.priorConnectionsSetOrSkipped == true || inferredLegacyComplete
 
             let fullyComplete =
                 state.welcomeSeen &&
