@@ -4,6 +4,10 @@ import SwiftUI
 struct ClickApp: App {
     @State private var environment = AppEnvironment()
 
+    init() {
+        ClickFonts.registerFonts()
+    }
+
     var body: some Scene {
         WindowGroup {
             RootGateView()
@@ -19,7 +23,7 @@ struct ClickApp: App {
                                 refreshToken: "mock_refresh"
                             )
                         )
-                    } else if CommandLine.arguments.contains("-preview-signup") {
+                    } else if CommandLine.arguments.contains("-preview-signup") || CommandLine.arguments.contains("-preview-signin") {
                         await environment.session.signOut()
                     } else {
                         await environment.bootstrap()

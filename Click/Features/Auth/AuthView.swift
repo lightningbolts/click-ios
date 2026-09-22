@@ -60,6 +60,7 @@ public struct AuthView: View {
 
                         Text("Click")
                             .font(ClickTypography.headlineLarge)
+                            .tracking(-0.5)
                             .foregroundStyle(ClickColors.textPrimary)
 
                         Text("In-person first connection & private messaging.")

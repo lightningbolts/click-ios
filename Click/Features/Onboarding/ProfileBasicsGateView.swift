@@ -39,6 +39,7 @@ public struct ProfileBasicsGateView: View {
                     VStack(alignment: .leading, spacing: ClickSpacing.sm) {
                         Text("Complete your profile")
                             .font(ClickTypography.headlineLarge)
+                            .tracking(-0.5)
                             .foregroundStyle(ClickColors.textPrimary)
 
                         Text("We need your name and date of birth to continue. This keeps Click safe, authenticated, and age-appropriate.")

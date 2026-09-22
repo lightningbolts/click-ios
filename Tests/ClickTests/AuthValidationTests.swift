@@ -1,5 +1,6 @@
 import Testing
 import Foundation
+import UIKit
 @testable import Click
 
 @Suite("Auth Validation and Keychain Vault Tests")
@@ -50,5 +51,38 @@ struct AuthValidationTests {
 
         let readAfterDelete = vault.readSession()
         #expect(readAfterDelete == nil)
+    }
+
+    @Test("Manrope font resources register and load in UIKit/SwiftUI")
+    func manropeFontsRegister() {
+        ClickFonts.registerFonts()
+
+        let requiredFonts = [
+            "Manrope-Regular",
+            "Manrope-Medium",
+            "Manrope-SemiBold",
+            "Manrope-Bold",
+            "Manrope-ExtraBold"
+        ]
+
+        for fontName in requiredFonts {
+            let font = UIFont(name: fontName, size: 16)
+            print(">>> FONT TEST: \(fontName) -> font: \(String(describing: font)), familyName: \(String(describing: font?.familyName)), fontName: \(String(describing: font?.fontName))")
+            #expect(font != nil, "Expected font \(fontName) to be loadable")
+            #expect(font?.familyName.contains("Manrope") == true, "Expected font family name to contain Manrope for \(fontName)")
+        }
+
+        for family in UIFont.familyNames.filter({ $0.contains("Manrope") }) {
+            print(">>> MANROPE FAMILY: \(family) -> names: \(UIFont.fontNames(forFamilyName: family))")
+        }
+
+        // Test UIFont creation
+        let boldFont = UIFont(name: "Manrope-Bold", size: 32)
+        #expect(boldFont != nil)
+        #expect(boldFont?.fontName == "Manrope-Bold")
+
+        let mediumFont = UIFont(name: "Manrope-Medium", size: 16)
+        #expect(mediumFont != nil)
+        #expect(mediumFont?.fontName == "Manrope-Medium")
     }
 }

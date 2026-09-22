@@ -114,6 +114,7 @@
 		504D5490D94A3C3BD8F57912 /* AppEnvironment.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppEnvironment.swift; sourceTree = "<group>"; };
 		51101C30845F8D2118C1B819 /* AppRouterTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppRouterTests.swift; sourceTree = "<group>"; };
 		51597966A20F5807BFB28499 /* Colors.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Colors.swift; sourceTree = "<group>"; };
+		5B25B865B17C60099FB2E33C /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist; path = Info.plist; sourceTree = "<group>"; };
 		5CE872BED60D02250BA16BD1 /* Debug.xcconfig */ = {isa = PBXFileReference; lastKnownFileType = text.xcconfig; path = Debug.xcconfig; sourceTree = "<group>"; };
 		70C283525337A2816EC23461 /* Manrope-Light.ttf */ = {isa = PBXFileReference; lastKnownFileType = file; path = "Manrope-Light.ttf"; sourceTree = "<group>"; };
 		755A67FED214E965F8934FAA /* Manrope-Regular.ttf */ = {isa = PBXFileReference; lastKnownFileType = file; path = "Manrope-Regular.ttf"; sourceTree = "<group>"; };
@@ -271,6 +272,7 @@
 		9A2D124674FA7491AADE3AE6 /* Click */ = {
 			isa = PBXGroup;
 			children = (
+				5B25B865B17C60099FB2E33C /* Info.plist */,
 				22258974525B79165A83FCB5 /* App */,
 				FDAC9137FA28BA7987722C2E /* Core */,
 				0F7A4844296E5080F5539E73 /* DesignSystem */,
@@ -619,9 +621,10 @@
 				CODE_SIGN_STYLE = Automatic;
 				DEVELOPMENT_TEAM = W4C3V9Z2N4;
 				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_FILE = Click/Info.plist;
 				INFOPLIST_KEY_CADisableMinimumFrameDurationOnPhone = YES;
 				INFOPLIST_KEY_CFBundleDisplayName = Click;
-				INFOPLIST_KEY_CFBundleURLTypes = "[[\"CFBundleTypeRole\": \"Editor\", \"CFBundleURLName\": \"compose.project.click.click\", \"CFBundleURLSchemes\": [\"click\"]], [\"CFBundleTypeRole\": \"Editor\", \"CFBundleURLSchemes\": [\"com.googleusercontent.apps.530817233802-crnehf5a9duauov4vos4lgsijkgingdj\"], \"CFBundleURLName\": \"GoogleSignIn\"]]";
+				INFOPLIST_KEY_CFBundleURLTypes = "[[\"CFBundleURLName\": \"compose.project.click.click\", \"CFBundleTypeRole\": \"Editor\", \"CFBundleURLSchemes\": [\"click\"]], [\"CFBundleURLName\": \"GoogleSignIn\", \"CFBundleURLSchemes\": [\"com.googleusercontent.apps.530817233802-crnehf5a9duauov4vos4lgsijkgingdj\"], \"CFBundleTypeRole\": \"Editor\"]]";
 				INFOPLIST_KEY_GIDClientID = "530817233802-crnehf5a9duauov4vos4lgsijkgingdj.apps.googleusercontent.com";
 				INFOPLIST_KEY_GIDServerClientID = "530817233802-3ki7usecs885vvag9uq92ubu5hgkv2sp.apps.googleusercontent.com";
 				INFOPLIST_KEY_ITSAppUsesNonExemptEncryption = NO;
@@ -635,15 +638,6 @@
 				INFOPLIST_KEY_NSMotionUsageDescription = "Click uses motion context to capture encounter vibe.";
 				INFOPLIST_KEY_NSPhotoLibraryAddUsageDescription = "Click saves photos to your photo library.";
 				INFOPLIST_KEY_NSPhotoLibraryUsageDescription = "Click accesses your photo library to select photos for profile and chat.";
-				INFOPLIST_KEY_UIAppFonts = (
-					"Manrope-Regular.ttf",
-					"Manrope-Medium.ttf",
-					"Manrope-SemiBold.ttf",
-					"Manrope-Bold.ttf",
-					"Manrope-ExtraBold.ttf",
-					"Manrope-Light.ttf",
-					"Manrope-ExtraLight.ttf",
-				);
 				INFOPLIST_KEY_UIBackgroundModes = (
 					"remote-notification",
 					"bluetooth-central",
@@ -770,9 +764,10 @@
 				CODE_SIGN_STYLE = Automatic;
 				DEVELOPMENT_TEAM = W4C3V9Z2N4;
 				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_FILE = Click/Info.plist;
 				INFOPLIST_KEY_CADisableMinimumFrameDurationOnPhone = YES;
 				INFOPLIST_KEY_CFBundleDisplayName = Click;
-				INFOPLIST_KEY_CFBundleURLTypes = "[[\"CFBundleTypeRole\": \"Editor\", \"CFBundleURLName\": \"compose.project.click.click\", \"CFBundleURLSchemes\": [\"click\"]], [\"CFBundleTypeRole\": \"Editor\", \"CFBundleURLSchemes\": [\"com.googleusercontent.apps.530817233802-crnehf5a9duauov4vos4lgsijkgingdj\"], \"CFBundleURLName\": \"GoogleSignIn\"]]";
+				INFOPLIST_KEY_CFBundleURLTypes = "[[\"CFBundleURLName\": \"compose.project.click.click\", \"CFBundleTypeRole\": \"Editor\", \"CFBundleURLSchemes\": [\"click\"]], [\"CFBundleURLName\": \"GoogleSignIn\", \"CFBundleURLSchemes\": [\"com.googleusercontent.apps.530817233802-crnehf5a9duauov4vos4lgsijkgingdj\"], \"CFBundleTypeRole\": \"Editor\"]]";
 				INFOPLIST_KEY_GIDClientID = "530817233802-crnehf5a9duauov4vos4lgsijkgingdj.apps.googleusercontent.com";
 				INFOPLIST_KEY_GIDServerClientID = "530817233802-3ki7usecs885vvag9uq92ubu5hgkv2sp.apps.googleusercontent.com";
 				INFOPLIST_KEY_ITSAppUsesNonExemptEncryption = NO;
@@ -786,15 +781,6 @@
 				INFOPLIST_KEY_NSMotionUsageDescription = "Click uses motion context to capture encounter vibe.";
 				INFOPLIST_KEY_NSPhotoLibraryAddUsageDescription = "Click saves photos to your photo library.";
 				INFOPLIST_KEY_NSPhotoLibraryUsageDescription = "Click accesses your photo library to select photos for profile and chat.";
-				INFOPLIST_KEY_UIAppFonts = (
-					"Manrope-Regular.ttf",
-					"Manrope-Medium.ttf",
-					"Manrope-SemiBold.ttf",
-					"Manrope-Bold.ttf",
-					"Manrope-ExtraBold.ttf",
-					"Manrope-Light.ttf",
-					"Manrope-ExtraLight.ttf",
-				);
 				INFOPLIST_KEY_UIBackgroundModes = (
 					"remote-notification",
 					"bluetooth-central",
