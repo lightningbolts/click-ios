@@ -227,6 +227,13 @@ public final class SessionController: SessionControlling {
             let birthday = res.user?.birthday?.trimmingCharacters(in: .whitespacesAndNewlines)
 
             if firstName == nil || firstName?.isEmpty == true || birthday == nil || birthday?.isEmpty == true {
+                // A newly-created OAuth account has no explicit native signup hook. Seed an
+                // empty onboarding state only when there is no legacy completion or per-user
+                // state, so completing Profile Basics still leads to Welcome.
+                if settingsStore?.hasCompletedOnboarding == false,
+                   settingsStore?.onboardingState(for: userId) == nil {
+                    settingsStore?.saveOnboardingState(OnboardingState(), for: userId)
+                }
                 state = .profileBasicsRequired(userId: userId)
             } else if let current = currentSession {
                 retainedSession = current
