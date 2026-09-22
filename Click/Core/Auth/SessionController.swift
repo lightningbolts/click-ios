@@ -227,9 +227,12 @@ public final class SessionController: SessionControlling {
             let res: ProfileGateResponse = try await api.execute(request)
 
             let firstName = res.user?.firstName?.trimmingCharacters(in: .whitespacesAndNewlines)
+            let lastName = res.user?.lastName?.trimmingCharacters(in: .whitespacesAndNewlines)
             let birthday = res.user?.birthday?.trimmingCharacters(in: .whitespacesAndNewlines)
 
-            if firstName == nil || firstName?.isEmpty == true || birthday == nil || birthday?.isEmpty == true {
+            if firstName == nil || firstName?.isEmpty == true ||
+                lastName == nil || lastName?.isEmpty == true ||
+                birthday == nil || birthday?.isEmpty == true {
                 // A newly-created OAuth account has no explicit native signup hook. Seed an
                 // empty onboarding state only when there is no legacy completion or per-user
                 // state, so completing Profile Basics still leads to Welcome.
