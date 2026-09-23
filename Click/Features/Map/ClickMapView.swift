@@ -397,3 +397,155 @@ private struct NativeMapBeacon: Identifiable, Hashable {
         return nil
     }
 }
+
+
+public enum MapRouteDetailKind: Sendable {
+    case beacon
+    case hub
+}
+
+public struct MapRouteDetailView: View {
+    @Environment(AppEnvironment.self) private var env
+
+    public let kind: MapRouteDetailKind
+    public let id: String
+
+    @State private var title = "Loading…"
+    @State private var subtitle: String?
+    @State private var detail: String?
+    @State private var systemImage = "mappin"
+    @State private var isLoading = true
+    @State private var errorMessage: String?
+
+    public init(kind: MapRouteDetailKind, id: String) {
+        self.kind = kind
+        self.id = id
+    }
+
+    public var body: some View {
+        Group {
+            if isLoading {
+                ProgressView()
+                    .tint(ClickColors.primary)
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+            } else if let errorMessage {
+                ContentUnavailableView {
+                    Label("Couldn't load this item", systemImage: "exclamationmark.triangle")
+                } description: {
+                    Text(errorMessage)
+                } actions: {
+                    Button("Try Again") {
+                        Task { await load() }
+                    }
+                    .buttonStyle(.borderedProminent)
+                    .tint(ClickColors.primary)
+                }
+            } else {
+                ScrollView {
+                    VStack(alignment: .leading, spacing: 18) {
+                        HStack(spacing: 14) {
+                            ZStack {
+                                Circle()
+                                    .fill(ClickColors.primary.opacity(0.14))
+                                    .frame(width: 56, height: 56)
+                                Image(systemName: systemImage)
+                                    .font(.system(size: 22, weight: .semibold))
+                                    .foregroundStyle(ClickColors.primary)
+                            }
+
+                            VStack(alignment: .leading, spacing: 3) {
+                                Text(title)
+                                    .font(ClickTypography.headlineSmall)
+                                    .foregroundStyle(ClickColors.textPrimary)
+                                if let subtitle {
+                                    Text(subtitle)
+                                        .font(ClickTypography.bodySmall)
+                                        .foregroundStyle(ClickColors.textSecondary)
+                                }
+                            }
+                        }
+
+                        if let detail, !detail.isEmpty {
+                            Text(detail)
+                                .font(ClickTypography.bodyMedium)
+                                .foregroundStyle(ClickColors.textPrimary)
+                                .fixedSize(horizontal: false, vertical: true)
+                        }
+                    }
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .padding(20)
+                }
+            }
+        }
+        .background(ClickColors.background.ignoresSafeArea())
+        .navigationTitle(kind == .hub ? "Community Hub" : "Event")
+        .navigationBarTitleDisplayMode(.inline)
+        .toolbar(.hidden, for: .tabBar)
+        .task { await load() }
+    }
+
+    @MainActor
+    private func load() async {
+        guard !id.isEmpty else { return }
+        isLoading = true
+        defer { isLoading = false }
+
+        do {
+            switch kind {
+            case .beacon:
+                let request = APIRequest(
+                    path: "/api/beacons/\(id)",
+                    method: .get,
+                    requiresAuth: true
+                )
+                let (data, _) = try await env.api.executeRaw(request)
+                guard
+                    let root = try JSONSerialization.jsonObject(with: data) as? [String: Any],
+                    let beacon = root["beacon"] as? [String: Any]
+                else { throw APIError.decoding }
+
+                let metadata = beacon["metadata"] as? [String: Any] ?? [:]
+                let type = (beacon["beacon_type"] as? String) ?? "event"
+                title =
+                    firstString(metadata, keys: ["title", "label", "name", "track_name"])
+                    ?? type.replacingOccurrences(of: "_", with: " ").capitalized
+                subtitle = firstString(metadata, keys: ["location_name", "place_name", "venue_name"])
+                detail = firstString(metadata, keys: ["description", "text", "message", "body"])
+                systemImage = type == "event" ? "calendar" : "mappin"
+                errorMessage = nil
+
+            case .hub:
+                let request = APIRequest(
+                    path: "/api/hub/\(id)",
+                    method: .get,
+                    requiresAuth: true
+                )
+                let (data, _) = try await env.api.executeRaw(request)
+                guard
+                    let root = try JSONSerialization.jsonObject(with: data) as? [String: Any],
+                    let hub = root["hub"] as? [String: Any]
+                else { throw APIError.decoding }
+
+                title = (hub["name"] as? String)?.trimmingCharacters(in: .whitespacesAndNewlines)
+                    .flatMap { $0.isEmpty ? nil : $0 }
+                    ?? "Community Hub"
+                subtitle = hub["category"] as? String
+                detail = nil
+                systemImage = "person.3.fill"
+                errorMessage = nil
+            }
+        } catch {
+            errorMessage = error.localizedDescription
+        }
+    }
+
+    private func firstString(_ dictionary: [String: Any], keys: [String]) -> String? {
+        for key in keys {
+            if let raw = dictionary[key] as? String {
+                let clean = raw.trimmingCharacters(in: .whitespacesAndNewlines)
+                if !clean.isEmpty { return clean }
+            }
+        }
+        return nil
+    }
+}
