@@ -172,6 +172,16 @@ public struct MainTabShellView: View {
             Tab("Map", systemImage: "location.fill", value: MainTab.map) {
                 NavigationStack(path: $r.mapPath) {
                     ClickMapView()
+                        .navigationDestination(for: AppRoute.self) { route in
+                            switch route {
+                            case .event(let beaconID), .beacon(let beaconID):
+                                MapRouteDetailView(kind: .beacon, id: beaconID)
+                            case .hub(let hubID):
+                                MapRouteDetailView(kind: .hub, id: hubID)
+                            default:
+                                EmptyView()
+                            }
+                        }
                 }
             }
 
