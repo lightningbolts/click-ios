@@ -400,7 +400,7 @@ public enum ClickCryptoV2 {
         return Data(okm).prefix(epochKeyBytes)
     }
 
-    private static func parseMessageEnvelope(wire: String) throws -> MessageEnvelope {
+    public static func parseMessageEnvelope(wire: String) throws -> MessageEnvelope {
         guard wire.hasPrefix(prefix) else { throw V2Error.notAnEnvelope }
         let base64 = String(wire.dropFirst(prefix.count))
         guard let data = Data(base64Encoded: base64),
@@ -429,7 +429,7 @@ public enum ClickCryptoV2 {
         )
     }
 
-    private static func parseWrapEnvelope(wire: String) throws -> EpochKeyWrapEnvelope {
+    public static func parseWrapEnvelope(wire: String) throws -> EpochKeyWrapEnvelope {
         guard wire.hasPrefix(prefix) else { throw V2Error.notAnEnvelope }
         let base64 = String(wire.dropFirst(prefix.count))
         guard let data = Data(base64Encoded: base64),
