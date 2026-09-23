@@ -38,15 +38,15 @@ private struct AuthenticatedGateView: View {
         Group {
             if CommandLine.arguments.contains("-preview-home") {
                 NavigationStack {
-                    HomeView()
+                    HomeView(initialSnapshot: .preview)
                 }
             } else if CommandLine.arguments.contains("-preview-clicks") {
                 NavigationStack {
-                    ClicksView()
+                    ClicksView(initialSnapshot: .preview)
                 }
             } else if CommandLine.arguments.contains("-preview-profile") {
                 NavigationStack {
-                    ProfileView()
+                    ProfileView(initialProfile: .preview)
                 }
             } else if CommandLine.arguments.contains("-preview-onboarding-welcome") {
                 VStack(spacing: 0) {
@@ -127,6 +127,14 @@ public struct MainTabShellView: View {
             Tab("Clicks", systemImage: "bubble.left.and.bubble.right.fill", value: MainTab.connections) {
                 NavigationStack(path: $r.connectionsPath) {
                     ClicksView()
+                        .navigationDestination(for: AppRoute.self) { route in
+                            switch route {
+                            case .userProfile(let userID, let connectionID):
+                                ProfileView(userID: userID, connectionID: connectionID)
+                            default:
+                                FeedPlaceholderView(title: "Coming Soon")
+                            }
+                        }
                 }
             }
 

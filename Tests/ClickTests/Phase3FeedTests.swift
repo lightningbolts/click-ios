@@ -2,6 +2,30 @@ import Testing
 import Foundation
 @testable import Click
 
+final class Phase3MockURLProtocol: URLProtocol, @unchecked Sendable {
+    nonisolated(unsafe) static var requestHandler: ((URLRequest) throws -> (HTTPURLResponse, Data))?
+
+    override class func canInit(with request: URLRequest) -> Bool { true }
+    override class func canonicalRequest(for request: URLRequest) -> URLRequest { request }
+
+    override func startLoading() {
+        guard let handler = Self.requestHandler else {
+            client?.urlProtocol(self, didFailWithError: URLError(.badServerResponse))
+            return
+        }
+        do {
+            let (response, data) = try handler(request)
+            client?.urlProtocol(self, didReceive: response, cacheStoragePolicy: .notAllowed)
+            client?.urlProtocol(self, didLoad: data)
+            client?.urlProtocolDidFinishLoading(self)
+        } catch {
+            client?.urlProtocol(self, didFailWithError: error)
+        }
+    }
+
+    override func stopLoading() {}
+}
+
 @Suite("Phase 3 Feeds, Clicks, and Profile Tests")
 struct Phase3FeedTests {
     @Test("Time-based salutation handles different hours correctly")
@@ -84,5 +108,53 @@ struct Phase3FeedTests {
         #expect(decoded.interests.count == 6)
         #expect(decoded.personalityTraits.count == 5)
         #expect(decoded.totalClicks == 28)
+    }
+
+    @Test("Phase 3 repository maps authenticated backend data and never fabricates presence")
+    func testRepositoryUsesBackendData() async throws {
+        let config = URLSessionConfiguration.ephemeral
+        config.protocolClasses = [Phase3MockURLProtocol.self]
+        let session = URLSession(configuration: config)
+
+        Phase3MockURLProtocol.requestHandler = { request in
+            let path = request.url?.path ?? ""
+            let body: String
+            if path == "/api/connections" {
+                body = """
+                {"connections":[{"id":"conn_1","user_ids":["self","peer"],"created":1700000000000,"connection_encounters":[{"location_name":"UW Quad","encountered_at":"2026-09-22T19:00:00Z"}]}]}
+                """
+            } else if path == "/api/users/peer/profile" {
+                body = """
+                {"user":{"id":"peer","first_name":"Taylor","last_name":"Kim","full_name":"Taylor Kim","image":"https://example.com/taylor.jpg","email":"taylor@example.com","personality_tags":["Curious","Calm","Funny","Thoughtful","Active"]},"tags":["Hiking","Jazz"],"availabilityIntents":[]}
+                """
+            } else {
+                body = "{}"
+            }
+            let response = HTTPURLResponse(
+                url: request.url!,
+                statusCode: 200,
+                httpVersion: nil,
+                headerFields: ["Content-Type":"application/json"]
+            )!
+            return (response, Data(body.utf8))
+        }
+
+        let client = ClickAPIClient(
+            baseURL: URL(string: "https://api.joinclick.co")!,
+            session: session,
+            tokenProvider: { "token" }
+        )
+        let defaults = UserDefaults(suiteName: "Phase3FeedTests.\(UUID().uuidString)")!
+        let repository = Phase3Repository(api: client, defaults: defaults)
+
+        let snapshot = try await repository.refreshClicks(for: "self")
+        #expect(snapshot.connections.count == 1)
+        #expect(snapshot.connections[0].displayName == "Taylor Kim")
+        #expect(snapshot.connections[0].encounterLocation == "UW Quad")
+        #expect(snapshot.connections[0].presenceKnown == false)
+        #expect(snapshot.connections[0].isOnline == false)
+
+        let cached = await repository.cachedClicks(for: "self")
+        #expect(cached == snapshot)
     }
 }
