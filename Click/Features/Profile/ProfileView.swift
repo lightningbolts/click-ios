@@ -137,14 +137,14 @@ public struct ProfileView: View {
     }
 
     private func relationshipActions(_ profile: UserProfileSnapshot) -> some View {
-        VStack(spacing: 10) {
+        VStack(spacing: 12) {
             Button {
                 openChat(profile)
             } label: {
                 Label("Message", systemImage: "message.fill")
-                    .font(ClickTypography.labelLarge)
+                    .font(ClickTypography.titleMedium)
                     .frame(maxWidth: .infinity)
-                    .frame(height: 50)
+                    .frame(height: 52)
             }
             .buttonStyle(.borderedProminent)
             .tint(ClickColors.primary)
@@ -154,37 +154,24 @@ public struct ProfileView: View {
                 Button {
                     Task { await sendNudge(profile) }
                 } label: {
-                    if isSendingNudge {
-                        ProgressView()
-                            .controlSize(.small)
-                            .frame(maxWidth: .infinity)
-                            .frame(height: 44)
-                    } else {
-                        Label("Nudge", systemImage: "bell.badge")
-                            .frame(maxWidth: .infinity)
-                            .frame(height: 44)
-                    }
+                    Label("Nudge", systemImage: "bell.badge.fill")
+                        .font(ClickTypography.labelLarge)
+                        .frame(maxWidth: .infinity)
+                        .frame(height: 48)
                 }
                 .buttonStyle(.bordered)
-                .disabled(connectionID == nil || isSendingNudge)
+                .disabled(connectionID == nil)
 
                 Button {
-                    selectedTab = .beacons
+                    selectedTab = .media
                     ClickHaptics.selection()
                 } label: {
-                    Label("Shared", systemImage: "photo.on.rectangle")
+                    Label("Drops", systemImage: "camera.fill")
+                        .font(ClickTypography.labelLarge)
                         .frame(maxWidth: .infinity)
-                        .frame(height: 44)
+                        .frame(height: 48)
                 }
                 .buttonStyle(.bordered)
-            }
-            .font(ClickTypography.labelMedium)
-
-            if let nudgeStatus {
-                Text(nudgeStatus)
-                    .font(ClickTypography.captionSmall)
-                    .foregroundStyle(ClickColors.textSecondary)
-                    .transition(.opacity)
             }
         }
     }
@@ -222,7 +209,9 @@ public struct ProfileView: View {
                     selectedTab = tab
                     ClickHaptics.selection()
                 } label: {
-                    VStack(spacing: 8) {
+                    VStack(spacing: 7) {
+                        Image(systemName: tab.systemImage)
+                            .font(.system(size: 17, weight: .semibold))
                         Text(tab.title)
                             .font(ClickTypography.captionSmall)
                             .foregroundStyle(selectedTab == tab ? ClickColors.textPrimary : ClickColors.textSecondary)
@@ -246,21 +235,21 @@ public struct ProfileView: View {
     private func timelineTab(_ entries: [ProfileTimelineEntry]) -> some View {
         VStack(alignment: .leading, spacing: 14) {
             VStack(alignment: .leading, spacing: 10) {
-                TextField("Add to timeline…", text: $timelineDraft, axis: .vertical)
-                    .font(ClickTypography.bodyMedium)
-                    .lineLimit(2...5)
-                    .padding(12)
+                TextField("Write a quick memory, note, or plan…", text: $timelineDraft, axis: .vertical)
+                    .font(ClickTypography.bodyLarge)
+                    .lineLimit(4...7)
+                    .padding(14)
+                    .frame(minHeight: 118, alignment: .topLeading)
                     .background(ClickColors.surfaceContainerLow)
-                    .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
-
-                HStack {
-                    Picker("Visibility", selection: $timelineVisibility) {
-                        ForEach(TimelineVisibility.allCases) { value in
-                            Text(value.label).tag(value)
-                        }
+                    .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
+                    .overlay {
+                        RoundedRectangle(cornerRadius: 16, style: .continuous)
+                            .stroke(ClickColors.quietBorder.opacity(0.7), lineWidth: 1)
                     }
-                    .pickerStyle(.segmented)
-                    .frame(maxWidth: 220)
+
+                HStack(spacing: 10) {
+                    visibilityButton(.privateOnly)
+                    visibilityButton(.shared)
 
                     Spacer()
 
@@ -269,8 +258,11 @@ public struct ProfileView: View {
                     } label: {
                         if isPostingTimeline {
                             ProgressView().controlSize(.small)
+                                .frame(minWidth: 54)
                         } else {
                             Text("Add")
+                                .font(ClickTypography.labelLarge)
+                                .frame(minWidth: 54)
                         }
                     }
                     .buttonStyle(.borderedProminent)
@@ -288,6 +280,11 @@ public struct ProfileView: View {
                 RoundedRectangle(cornerRadius: 16, style: .continuous)
                     .stroke(ClickColors.quietBorder.opacity(0.65), lineWidth: 1)
             }
+
+            Text("Journal")
+                .font(ClickTypography.titleSmall)
+                .foregroundStyle(ClickColors.textSecondary)
+                .padding(.top, 8)
 
             if entries.isEmpty {
                 profileEmpty(
@@ -463,6 +460,66 @@ public struct ProfileView: View {
         )
     }
 
+    private func visibilityButton(_ value: TimelineVisibility) -> some View {
+        Button {
+            timelineVisibility = value
+            ClickHaptics.selection()
+        } label: {
+            Text(value.label)
+                .font(ClickTypography.labelMedium)
+                .foregroundStyle(timelineVisibility == value ? ClickColors.primary : ClickColors.textPrimary)
+                .padding(.horizontal, 14)
+                .frame(height: 40)
+                .background(
+                    timelineVisibility == value
+                        ? ClickColors.primary.opacity(0.10)
+                        : ClickColors.surfaceContainerLow
+                )
+                .clipShape(Capsule())
+                .overlay {
+                    Capsule().stroke(
+                        timelineVisibility == value
+                            ? ClickColors.primary.opacity(0.8)
+                            : ClickColors.quietBorder.opacity(0.7),
+                        lineWidth: 1
+                    )
+                }
+        }
+        .buttonStyle(.plain)
+    }
+
+    @MainActor
+    private func sendNudge(_ profile: UserProfileSnapshot) async {
+        guard
+            let connectionID,
+            let currentUserID = env.session.currentSession?.userId,
+            let peerUserID = resolvedUserID
+        else { return }
+
+        do {
+            let chatID = try await env.chat.resolveCanonicalChatID(
+                chatID: connectionID,
+                connectionID: connectionID
+            )
+            _ = try await env.chat.sendMessage(
+                chatID: chatID,
+                connectionID: connectionID,
+                peerUserID: peerUserID,
+                currentUserID: currentUserID,
+                currentUserName: "Someone",
+                content: "👋 Someone nudged you!",
+                replyToID: nil,
+                replyToSnippet: nil,
+                replyToSenderName: nil,
+                clientMessageID: UUID().uuidString
+            )
+            ClickHaptics.success()
+        } catch {
+            refreshError = error.localizedDescription
+            ClickHaptics.error()
+        }
+    }
+
     @MainActor
     private func bootstrap() async {
         guard data == nil, let userID = resolvedUserID else { return }
@@ -589,6 +646,15 @@ private enum ProfileTab: String, CaseIterable, Identifiable {
 
     var id: String { rawValue }
     var title: String { rawValue.capitalized }
+
+    var systemImage: String {
+        switch self {
+        case .timeline: return "clock.arrow.circlepath"
+        case .beacons: return "mappin"
+        case .media: return "photo"
+        case .links: return "link"
+        }
+    }
 }
 
 private enum TimelineVisibility: String, CaseIterable, Identifiable {
