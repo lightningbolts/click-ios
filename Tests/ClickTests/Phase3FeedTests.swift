@@ -2,7 +2,7 @@ import Testing
 import Foundation
 @testable import Click
 
-final class Phase3Phase3MockURLProtocol: URLProtocol, @unchecked Sendable {
+final class Phase3MockURLProtocol: URLProtocol, @unchecked Sendable {
     nonisolated(unsafe) static var requestHandler: ((URLRequest) throws -> (HTTPURLResponse, Data))?
 
     override class func canInit(with request: URLRequest) -> Bool { true }
