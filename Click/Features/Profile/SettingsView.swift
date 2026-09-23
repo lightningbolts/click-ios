@@ -149,16 +149,6 @@ public struct SettingsView: View {
         .background(ClickColors.background.ignoresSafeArea())
         .navigationTitle("Settings")
         .navigationBarTitleDisplayMode(.large)
-        .toolbar {
-            ToolbarItem(placement: .topBarTrailing) {
-                Button {
-                    ClickHaptics.selection()
-                } label: {
-                    Image(systemName: "magnifyingglass")
-                }
-                .accessibilityLabel("Search")
-            }
-        }
         .task { await bootstrap() }
         .refreshable { await refresh() }
     }
