@@ -10,98 +10,78 @@ public struct AddClickView: View {
 
     public var body: some View {
         ScrollView {
-            VStack(alignment: .leading, spacing: 22) {
+            VStack(alignment: .leading, spacing: 24) {
                 VStack(alignment: .leading, spacing: 4) {
-                    Text("Connect in person")
-                        .font(ClickTypography.titleMedium)
+                    Text("Add Click")
+                        .font(ClickTypography.headlineLarge)
                         .foregroundStyle(ClickColors.textPrimary)
-                    Text("Use Tap to Connect when you're together, or exchange a short-lived QR code.")
-                        .font(ClickTypography.bodySmall)
+                    Text("Connect in person or join a nearby community")
+                        .font(ClickTypography.bodyMedium)
                         .foregroundStyle(ClickColors.textSecondary)
-                        .fixedSize(horizontal: false, vertical: true)
                 }
 
                 Button {
                     ClickHaptics.impact(.medium)
                     env.router.addClickPath.append(.tapConnect)
                 } label: {
-                    HStack(spacing: 14) {
+                    HStack(spacing: 18) {
                         ZStack {
                             Circle()
-                                .fill(ClickColors.primary)
-                                .frame(width: 52, height: 52)
-                            Image(systemName: "bolt.horizontal.fill")
-                                .font(.system(size: 21, weight: .bold))
-                                .foregroundStyle(ClickColors.onPrimary)
+                                .fill(ClickColors.primary.opacity(0.18))
+                                .frame(width: 58, height: 58)
+                            Image(systemName: "wave.3.right.circle.fill")
+                                .font(.system(size: 30, weight: .semibold))
+                                .foregroundStyle(ClickColors.primary)
                         }
 
-                        VStack(alignment: .leading, spacing: 3) {
+                        VStack(alignment: .leading, spacing: 4) {
                             Text("Tap to Connect")
-                                .font(ClickTypography.titleMedium)
+                                .font(ClickTypography.headlineSmall)
                                 .foregroundStyle(ClickColors.textPrimary)
-                            Text("Verified nearby connection")
-                                .font(ClickTypography.bodySmall)
+                            Text("Nearby handshake with Bluetooth and audio")
+                                .font(ClickTypography.bodyMedium)
                                 .foregroundStyle(ClickColors.textSecondary)
+                                .fixedSize(horizontal: false, vertical: true)
                         }
 
                         Spacer()
                         Image(systemName: "chevron.right")
-                            .font(.system(size: 13, weight: .bold))
+                            .font(.system(size: 14, weight: .bold))
                             .foregroundStyle(ClickColors.textSecondary)
                     }
-                    .padding(16)
+                    .padding(18)
                     .frame(maxWidth: .infinity)
-                    .background(ClickColors.surface)
-                    .clipShape(RoundedRectangle(cornerRadius: 18, style: .continuous))
-                    .overlay {
-                        RoundedRectangle(cornerRadius: 18, style: .continuous)
-                            .stroke(ClickColors.primary.opacity(0.8), lineWidth: 1.5)
-                    }
+                    .background(ClickColors.surfaceContainerLow)
+                    .clipShape(RoundedRectangle(cornerRadius: 20, style: .continuous))
                 }
                 .buttonStyle(.plain)
 
-                HStack(spacing: 12) {
-                    AddClickActionCard(
-                        title: "My Code",
-                        subtitle: "Let someone scan you",
-                        systemImage: "qrcode"
-                    ) {
+                VStack(spacing: 0) {
+                    addClickRow(title: "My QR", subtitle: "Share your code", systemImage: "qrcode") {
                         env.router.addClickPath.append(.myQR)
                     }
-
-                    AddClickActionCard(
-                        title: "Scan Code",
-                        subtitle: "Scan someone nearby",
-                        systemImage: "viewfinder"
-                    ) {
+                    Divider().padding(.leading, 62)
+                    addClickRow(title: "Scan QR", subtitle: "Friend or hub code", systemImage: "viewfinder") {
                         env.router.addClickPath.append(.scanQR)
                     }
-                }
-
-                VStack(alignment: .leading, spacing: 10) {
-                    Text("Community")
-                        .font(ClickTypography.titleSmall)
-                        .foregroundStyle(ClickColors.textPrimary)
-
-                    VStack(spacing: 0) {
-                        communityRow(
-                            title: "Create hub",
-                            subtitle: "Start a place-scoped community",
-                            systemImage: "person.3.fill"
-                        )
-                        Divider().padding(.leading, 52)
-                        communityRow(
-                            title: "Join hub",
-                            subtitle: "Scan a venue or community code",
-                            systemImage: "rectangle.and.hand.point.up.left.fill"
-                        )
-                    }
-                    .background(ClickColors.surface)
-                    .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
-                    .overlay {
-                        RoundedRectangle(cornerRadius: 16, style: .continuous)
-                            .stroke(ClickColors.quietBorder.opacity(0.65), lineWidth: 1)
-                    }
+                    Divider().padding(.leading, 62)
+                    addClickUnavailableRow(
+                        title: "Create Group Chat",
+                        subtitle: "Start a verified group with your Clicks",
+                        systemImage: "person.3.fill"
+                    )
+                    Divider().padding(.leading, 62)
+                    addClickUnavailableRow(
+                        title: "Create Community Hub",
+                        subtitle: "Host a venue for nearby Clicks",
+                        systemImage: "megaphone.fill"
+                    )
+                    Divider().padding(.leading, 62)
+                    addClickUnavailableRow(
+                        title: "Join Community Hub",
+                        subtitle: "Enter a venue code",
+                        systemImage: "person.badge.plus"
+                    )
                 }
             }
             .padding(.horizontal, 18)
@@ -109,8 +89,25 @@ public struct AddClickView: View {
             .padding(.bottom, 28)
         }
         .background(ClickColors.background.ignoresSafeArea())
-        .navigationTitle("Add Click")
-        .navigationBarTitleDisplayMode(.large)
+        .navigationBarTitleDisplayMode(.inline)
+        .toolbar {
+            ToolbarItem(placement: .topBarLeading) {
+                Menu {
+                    Button("My QR", systemImage: "qrcode") {
+                        env.router.addClickPath.append(.myQR)
+                    }
+                    Button("Scan QR", systemImage: "viewfinder") {
+                        env.router.addClickPath.append(.scanQR)
+                    }
+                } label: {
+                    Image(systemName: "ellipsis")
+                        .font(.system(size: 16, weight: .bold))
+                        .frame(width: 36, height: 36)
+                        .background(.regularMaterial)
+                        .clipShape(Circle())
+                }
+            }
+        }
         .navigationDestination(for: AppRoute.self) { route in
             switch route {
             case .myQR:
@@ -127,66 +124,65 @@ public struct AddClickView: View {
         }
     }
 
-    private func communityRow(title: String, subtitle: String, systemImage: String) -> some View {
-        HStack(spacing: 12) {
-            Image(systemName: systemImage)
-                .font(.system(size: 16, weight: .semibold))
-                .foregroundStyle(ClickColors.primary)
-                .frame(width: 28)
-            VStack(alignment: .leading, spacing: 2) {
-                Text(title)
-                    .font(ClickTypography.bodyMedium)
-                    .foregroundStyle(ClickColors.textPrimary)
-                Text(subtitle)
-                    .font(ClickTypography.captionSmall)
-                    .foregroundStyle(ClickColors.textSecondary)
-            }
-            Spacer()
-            Text("Later phase")
-                .font(ClickTypography.microcopy)
-                .foregroundStyle(ClickColors.tertiaryLabel)
-        }
-        .padding(.horizontal, 14)
-        .padding(.vertical, 12)
-    }
-}
-
-private struct AddClickActionCard: View {
-    let title: String
-    let subtitle: String
-    let systemImage: String
-    let action: () -> Void
-
-    var body: some View {
+    private func addClickRow(
+        title: String,
+        subtitle: String,
+        systemImage: String,
+        action: @escaping () -> Void
+    ) -> some View {
         Button {
             ClickHaptics.selection()
             action()
         } label: {
-            VStack(alignment: .leading, spacing: 12) {
-                Image(systemName: systemImage)
-                    .font(.system(size: 24, weight: .semibold))
-                    .foregroundStyle(ClickColors.primary)
-                VStack(alignment: .leading, spacing: 2) {
-                    Text(title)
-                        .font(ClickTypography.titleSmall)
-                        .foregroundStyle(ClickColors.textPrimary)
-                    Text(subtitle)
-                        .font(ClickTypography.captionSmall)
-                        .foregroundStyle(ClickColors.textSecondary)
-                        .multilineTextAlignment(.leading)
-                }
-            }
-            .padding(15)
-            .frame(maxWidth: .infinity, minHeight: 126, alignment: .topLeading)
-            .background(ClickColors.surface)
-            .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
-            .overlay {
-                RoundedRectangle(cornerRadius: 16, style: .continuous)
-                    .stroke(ClickColors.quietBorder.opacity(0.65), lineWidth: 1)
-            }
+            addClickRowContent(title: title, subtitle: subtitle, systemImage: systemImage, trailing: "chevron.right")
         }
         .buttonStyle(.plain)
     }
+
+    private func addClickUnavailableRow(
+        title: String,
+        subtitle: String,
+        systemImage: String
+    ) -> some View {
+        addClickRowContent(title: title, subtitle: subtitle, systemImage: systemImage, trailing: nil)
+            .opacity(0.72)
+            .accessibilityHint("Not yet available in the native rebuild")
+    }
+
+    private func addClickRowContent(
+        title: String,
+        subtitle: String,
+        systemImage: String,
+        trailing: String?
+    ) -> some View {
+        HStack(spacing: 16) {
+            Image(systemName: systemImage)
+                .font(.system(size: 20, weight: .semibold))
+                .foregroundStyle(ClickColors.textSecondary)
+                .frame(width: 34)
+
+            VStack(alignment: .leading, spacing: 2) {
+                Text(title)
+                    .font(ClickTypography.titleMedium)
+                    .foregroundStyle(ClickColors.textPrimary)
+                Text(subtitle)
+                    .font(ClickTypography.bodySmall)
+                    .foregroundStyle(ClickColors.textSecondary)
+                    .lineLimit(1)
+            }
+
+            Spacer()
+
+            if let trailing {
+                Image(systemName: trailing)
+                    .font(.system(size: 13, weight: .semibold))
+                    .foregroundStyle(ClickColors.textSecondary)
+            }
+        }
+        .padding(.vertical, 14)
+        .contentShape(Rectangle())
+    }
+
 }
 
 private struct MyClickCodeView: View {
