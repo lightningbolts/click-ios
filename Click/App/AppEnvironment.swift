@@ -106,6 +106,11 @@ public final class AppEnvironment {
     /// gates must finish before the route is executed.
     public func handleIncomingURL(_ url: URL) {
         guard let route = router.parseIncomingURL(url) else { return }
+        handleIncomingRoute(route)
+    }
+
+    /// Gate-aware entry for typed intents originating from push notifications and native services.
+    public func handleIncomingRoute(_ route: AppRoute) {
         guard let snapshot = session.currentSession else {
             router.pendingRoute = route
             return
