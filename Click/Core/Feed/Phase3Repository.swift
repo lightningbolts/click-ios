@@ -88,7 +88,8 @@ public actor Phase3Repository {
                 totalClicks: clicks.connections.count,
                 totalEncounters: encounterCount,
                 totalCircles: clicks.connections.filter { $0.segment == .circles }.count
-            )
+            ),
+            recap: recap.activity
         )
         store(snapshot, key: "phase3.home.\(userID)")
         return snapshot
@@ -258,6 +259,7 @@ public actor Phase3Repository {
 
     private struct RecapPayload: Sendable {
         let subtitle: String
+        let activity: HomeActivityRecap
     }
 
     private func fetchProfile(userID: String, connectionID: String?) async throws -> ProfilePayload {
@@ -348,13 +350,22 @@ public actor Phase3Repository {
         let recap = root["recap"] as? [String: Any] ?? [:]
         let connections = Self.int(recap["connections_formed"]) ?? 0
         let messages = (Self.int(recap["messages_sent"]) ?? 0) + (Self.int(recap["messages_received"]) ?? 0)
+        let activity = HomeActivityRecap(
+            connectionsFormed: connections,
+            messagesSent: Self.int(recap["messages_sent"]) ?? 0,
+            messagesReceived: Self.int(recap["messages_received"]) ?? 0,
+            beaconsCreated: Self.int(recap["beacons_created"]) ?? 0,
+            eventsRSVPed: Self.int(recap["events_rsvped"]) ?? 0,
+            eventsCheckedIn: Self.int(recap["events_checked_in"]) ?? 0,
+            eventsSaved: Self.int(recap["events_saved"]) ?? 0
+        )
         if connections == 0 && messages == 0 {
-            return RecapPayload(subtitle: "Ready to connect today?")
+            return RecapPayload(subtitle: "Ready to connect today?", activity: activity)
         }
         var parts: [String] = []
         if connections > 0 { parts.append("\(connections) new Click\(connections == 1 ? "" : "s") this week") }
         if messages > 0 { parts.append("\(messages) messages this week") }
-        return RecapPayload(subtitle: parts.joined(separator: " · "))
+        return RecapPayload(subtitle: parts.joined(separator: " · "), activity: activity)
     }
 
     private func cached<T: Codable>(_ type: T.Type, key: String) -> T? {
