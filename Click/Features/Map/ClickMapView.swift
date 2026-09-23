@@ -526,9 +526,9 @@ public struct MapRouteDetailView: View {
                     let hub = root["hub"] as? [String: Any]
                 else { throw APIError.decoding }
 
-                title = (hub["name"] as? String)?.trimmingCharacters(in: .whitespacesAndNewlines)
-                    .flatMap { $0.isEmpty ? nil : $0 }
-                    ?? "Community Hub"
+                let rawHubName = (hub["name"] as? String)?
+                    .trimmingCharacters(in: .whitespacesAndNewlines)
+                title = (rawHubName?.isEmpty == false ? rawHubName : nil) ?? "Community Hub"
                 subtitle = hub["category"] as? String
                 detail = nil
                 systemImage = "person.3.fill"
