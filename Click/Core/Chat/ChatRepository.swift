@@ -731,6 +731,8 @@ public actor ChatRepository: ChatRepositoryProtocol {
             deliveryStatus = .delivered
         }
 
+        let isEdited = raw.metadata?.isEdited == true || raw.timeEdited != nil
+
         return ChatMessageItem(
             id: raw.id,
             chatID: canonicalChatID,
@@ -747,7 +749,7 @@ public actor ChatRepository: ChatRepositoryProtocol {
             replyToSnippet: raw.metadata?.replyToSnippet,
             replyToSenderName: raw.metadata?.replyToSenderName,
             reactions: reactions,
-            isEdited: raw.metadata?.isEdited ?? raw.timeEdited != nil
+            isEdited: isEdited
         )
     }
 
