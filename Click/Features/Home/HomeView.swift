@@ -143,39 +143,30 @@ public struct HomeView: View {
     }
 
     private func recapSection(_ recap: HomeActivityRecap) -> some View {
-        VStack(alignment: .leading, spacing: 11) {
-            HStack {
-                sectionHeader("Your recap")
+        VStack(alignment: .leading, spacing: 14) {
+            sectionHeader("Your recap")
+
+            HStack(spacing: 10) {
+                recapWindowButton(.day)
+                recapWindowButton(.week)
                 Spacer()
-                HStack(spacing: 4) {
-                    recapWindowButton(.day)
-                    recapWindowButton(.week)
-                }
-                .padding(3)
-                .background(ClickColors.surfaceContainerLow)
-                .clipShape(Capsule())
             }
 
             VStack(spacing: 0) {
                 recapRow("Connections formed", value: recap.connectionsFormed)
-                Divider()
-                recapRow("Messages sent", value: recap.messagesSent)
-                Divider()
+                recapRow("Messages sent", value: recap.messagesSent, emphasized: true)
                 recapRow("Messages received", value: recap.messagesReceived)
-                Divider()
                 recapRow("Beacons created", value: recap.beaconsCreated)
-                Divider()
                 recapRow("Events RSVP'd", value: recap.eventsRSVPed)
-                Divider()
                 recapRow("Check-ins", value: recap.eventsCheckedIn)
-                Divider()
                 recapRow("Events saved", value: recap.eventsSaved)
             }
-            .background(ClickColors.surface)
-            .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
+            .padding(.vertical, 8)
+            .background(ClickColors.surfaceContainerLow)
+            .clipShape(RoundedRectangle(cornerRadius: 18, style: .continuous))
             .overlay {
-                RoundedRectangle(cornerRadius: 16, style: .continuous)
-                    .stroke(ClickColors.quietBorder.opacity(0.65), lineWidth: 1)
+                RoundedRectangle(cornerRadius: 18, style: .continuous)
+                    .stroke(ClickColors.quietBorder.opacity(0.72), lineWidth: 1)
             }
         }
     }
@@ -186,28 +177,35 @@ public struct HomeView: View {
             ClickHaptics.selection()
         } label: {
             Text(value == .day ? "Day" : "Week")
-                .font(ClickTypography.captionSmall)
-                .foregroundStyle(recapWindow == value ? ClickColors.onPrimary : ClickColors.textSecondary)
-                .padding(.horizontal, 11)
-                .frame(height: 28)
-                .background(recapWindow == value ? ClickColors.primary : .clear)
-                .clipShape(Capsule())
+                .font(ClickTypography.labelLarge)
+                .foregroundStyle(recapWindow == value ? ClickColors.onPrimary : ClickColors.textPrimary)
+                .padding(.horizontal, 18)
+                .frame(minWidth: 92, minHeight: 44)
+                .background(recapWindow == value ? ClickColors.primary : ClickColors.surfaceContainerLow)
+                .clipShape(RoundedRectangle(cornerRadius: 15, style: .continuous))
+                .overlay {
+                    RoundedRectangle(cornerRadius: 15, style: .continuous)
+                        .stroke(
+                            recapWindow == value ? ClickColors.primary : ClickColors.quietBorder.opacity(0.72),
+                            lineWidth: 1
+                        )
+                }
         }
         .buttonStyle(.plain)
     }
 
-    private func recapRow(_ title: String, value: Int) -> some View {
+    private func recapRow(_ title: String, value: Int, emphasized: Bool = false) -> some View {
         HStack {
             Text(title)
-                .font(ClickTypography.bodySmall)
-                .foregroundStyle(ClickColors.textSecondary)
+                .font(emphasized ? ClickTypography.titleMedium : ClickTypography.bodyLarge)
+                .foregroundStyle(emphasized ? ClickColors.textPrimary : ClickColors.textSecondary)
             Spacer()
             Text("\(value)")
-                .font(ClickTypography.labelLarge)
-                .foregroundStyle(ClickColors.textPrimary)
+                .font(emphasized ? ClickTypography.titleMedium : ClickTypography.bodyLarge)
+                .foregroundStyle(emphasized ? ClickColors.textPrimary : ClickColors.textSecondary)
                 .monospacedDigit()
         }
-        .padding(.horizontal, 15)
+        .padding(.horizontal, 16)
         .frame(height: 44)
     }
 
