@@ -70,11 +70,16 @@ public struct SettingsView: View {
 
                 settingsSection("Privacy & data") {
                     VStack(spacing: 0) {
-                        settingInfoRow(
-                            title: "Permissions Hub",
-                            subtitle: "Review camera, microphone, location, contacts, and Bluetooth access.",
-                            systemImage: "hand.raised.fill"
-                        )
+                        Button {
+                            env.permissions.openSystemSettings()
+                        } label: {
+                            settingInfoRow(
+                                title: "Permissions Hub",
+                                subtitle: "Review camera, microphone, location, contacts, and Bluetooth access.",
+                                systemImage: "hand.raised.fill"
+                            )
+                        }
+                        .buttonStyle(.plain)
 
                         Divider().padding(.leading, 52)
 
