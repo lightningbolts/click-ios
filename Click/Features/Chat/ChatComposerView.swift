@@ -1,8 +1,9 @@
 import SwiftUI
 
-/// Chat message composer with reply preview, edit mode, 1000-character count, and haptic send.
+/// Native chat composer using Click's Functional Clarity surfaces and iOS keyboard behavior.
 public struct ChatComposerView: View {
     @Binding var text: String
+    let placeholder: String
     let replyTarget: ChatMessageItem?
     let editTarget: ChatMessageItem?
     let isSending: Bool
@@ -16,6 +17,7 @@ public struct ChatComposerView: View {
 
     public init(
         text: Binding<String>,
+        placeholder: String = "Message…",
         replyTarget: ChatMessageItem? = nil,
         editTarget: ChatMessageItem? = nil,
         isSending: Bool = false,
@@ -25,6 +27,7 @@ public struct ChatComposerView: View {
         onTypingChanged: @escaping (Bool) -> Void = { _ in }
     ) {
         self._text = text
+        self.placeholder = placeholder
         self.replyTarget = replyTarget
         self.editTarget = editTarget
         self.isSending = isSending
@@ -39,127 +42,156 @@ public struct ChatComposerView: View {
     }
 
     private var canSend: Bool {
-        let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
-        return !trimmed.isEmpty && remainingCharacters >= 0 && !isSending
+        !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+            && remainingCharacters >= 0
     }
 
     public var body: some View {
         VStack(spacing: 0) {
-            Divider()
-                .background(ClickColors.outline.opacity(0.2))
-
-            // Reply or Edit Banner
-            if let edit = editTarget {
-                contextBanner(
+            if let editTarget {
+                contextStrip(
                     title: "Editing message",
-                    content: edit.content,
+                    content: editTarget.content,
                     icon: "pencil",
-                    tint: ClickColors.primary,
                     onCancel: onCancelEdit
                 )
-            } else if let reply = replyTarget {
-                contextBanner(
-                    title: "Replying to \(reply.senderName)",
-                    content: reply.content,
+                .transition(.move(edge: .bottom).combined(with: .opacity))
+            } else if let replyTarget {
+                contextStrip(
+                    title: "Replying to \(replyTarget.senderName)",
+                    content: replyTarget.content,
                     icon: "arrowshape.turn.up.left.fill",
-                    tint: ClickColors.primary,
                     onCancel: onCancelReply
                 )
+                .transition(.move(edge: .bottom).combined(with: .opacity))
             }
 
-            // Input Bar
-            HStack(alignment: .bottom, spacing: ClickSpacing.sm) {
-                // Multiline text input
-                TextField("Message…", text: $text, axis: .vertical)
-                    .focused($isFocused)
-                    .lineLimit(1...5)
-                    .font(ClickTypography.bodyMedium)
-                    .padding(.horizontal, ClickSpacing.sm)
-                    .padding(.vertical, 8)
-                    .background(ClickColors.surfaceContainerLow)
-                    .clipShape(RoundedRectangle(cornerRadius: ClickSpacing.radiusInput))
-                    .onChange(of: text) { oldValue, newValue in
-                        if newValue.count > characterLimit {
-                            text = String(newValue.prefix(characterLimit))
-                        }
-                        onTypingChanged(!newValue.isEmpty)
+            HStack(alignment: .bottom, spacing: 8) {
+                TextField(
+                    editTarget == nil ? placeholder : "Edit message…",
+                    text: $text,
+                    axis: .vertical
+                )
+                .focused($isFocused)
+                .lineLimit(1...5)
+                .font(ClickTypography.bodyMedium)
+                .foregroundStyle(ClickColors.textPrimary)
+                .padding(.horizontal, 14)
+                .padding(.vertical, 10)
+                .background(ClickColors.surfaceContainerLow)
+                .clipShape(RoundedRectangle(cornerRadius: 20, style: .continuous))
+                .overlay {
+                    RoundedRectangle(cornerRadius: 20, style: .continuous)
+                        .stroke(
+                            isFocused ? ClickColors.primary.opacity(0.55) : ClickColors.quietBorder,
+                            lineWidth: isFocused
+                                ? ClickSpacing.borderFocusWidth
+                                : ClickSpacing.borderQuietWidth
+                        )
+                }
+                .submitLabel(.send)
+                .onSubmit {
+                    guard canSend else { return }
+                    ClickHaptics.impact(.light)
+                    onSend()
+                }
+                .onChange(of: text) { _, newValue in
+                    if newValue.count > characterLimit {
+                        text = String(newValue.prefix(characterLimit))
                     }
-
-                // Character counter warning if low
-                if remainingCharacters < 100 {
-                    Text("\(remainingCharacters)")
-                        .font(ClickTypography.labelSmall)
-                        .foregroundStyle(remainingCharacters < 0 ? ClickColors.error : ClickColors.textSecondary)
-                        .padding(.bottom, 8)
+                    onTypingChanged(!newValue.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
                 }
 
-                // Send Button
+                if remainingCharacters < 80 {
+                    Text("\(remainingCharacters)")
+                        .font(ClickTypography.microcopy)
+                        .foregroundStyle(
+                            remainingCharacters < 20
+                                ? ClickColors.error
+                                : ClickColors.textSecondary
+                        )
+                        .padding(.bottom, 12)
+                        .monospacedDigit()
+                }
+
                 Button {
-                    ClickHaptics.selection()
+                    guard canSend else { return }
+                    ClickHaptics.impact(.light)
                     onSend()
                 } label: {
-                    ZStack {
-                        Circle()
-                            .fill(canSend ? ClickColors.primary : ClickColors.outline.opacity(0.3))
-                            .frame(width: 36, height: 36)
-
-                        if isSending {
-                            ProgressView()
-                                .tint(ClickColors.onPrimary)
-                                .scaleEffect(0.8)
-                        } else {
-                            Image(systemName: editTarget != nil ? "checkmark" : "arrow.up")
-                                .font(.system(size: 16, weight: .bold))
-                                .foregroundStyle(canSend ? ClickColors.onPrimary : ClickColors.textSecondary)
-                        }
-                    }
+                    Image(systemName: editTarget == nil ? "arrow.up" : "checkmark")
+                        .font(.system(size: 17, weight: .bold))
+                        .foregroundStyle(
+                            canSend ? ClickColors.onPrimary : ClickColors.tertiaryLabel
+                        )
+                        .frame(width: 40, height: 40)
+                        .background(
+                            canSend ? ClickColors.primary : ClickColors.surfaceContainerHigh
+                        )
+                        .clipShape(Circle())
                 }
+                .buttonStyle(.plain)
                 .disabled(!canSend)
+                .accessibilityLabel(editTarget == nil ? "Send message" : "Save edit")
             }
-            .padding(.horizontal, ClickSpacing.md)
-            .padding(.vertical, ClickSpacing.sm)
-            .background(ClickColors.background)
+            .padding(.horizontal, 12)
+            .padding(.vertical, 8)
         }
+        .background(ClickColors.surface)
+        .overlay(alignment: .top) {
+            Rectangle()
+                .fill(ClickColors.quietBorder.opacity(0.65))
+                .frame(height: 0.5)
+        }
+        .animation(ClickMotion.selection, value: replyTarget?.id)
+        .animation(ClickMotion.selection, value: editTarget?.id)
     }
 
-    private func contextBanner(
+    private func contextStrip(
         title: String,
         content: String,
         icon: String,
-        tint: Color,
         onCancel: @escaping () -> Void
     ) -> some View {
-        HStack(spacing: ClickSpacing.sm) {
-            Image(systemName: icon)
-                .font(.system(size: 14))
-                .foregroundStyle(tint)
+        HStack(spacing: 10) {
+            RoundedRectangle(cornerRadius: 2)
+                .fill(ClickColors.primary)
+                .frame(width: 3)
 
-            VStack(alignment: .leading, spacing: 2) {
+            Image(systemName: icon)
+                .font(.system(size: 13, weight: .semibold))
+                .foregroundStyle(ClickColors.primary)
+
+            VStack(alignment: .leading, spacing: 1) {
                 Text(title)
-                    .font(ClickTypography.labelSmall)
-                    .fontWeight(.semibold)
-                    .foregroundStyle(tint)
+                    .font(ClickTypography.captionSmall)
+                    .foregroundStyle(ClickColors.primary)
+                    .lineLimit(1)
 
                 Text(content)
                     .font(ClickTypography.bodySmall)
-                    .lineLimit(1)
                     .foregroundStyle(ClickColors.textSecondary)
+                    .lineLimit(1)
             }
 
-            Spacer()
+            Spacer(minLength: 8)
 
             Button {
                 ClickHaptics.selection()
                 onCancel()
             } label: {
-                Image(systemName: "xmark.circle.fill")
-                    .font(.system(size: 18))
-                    .foregroundStyle(ClickColors.outline)
+                Image(systemName: "xmark")
+                    .font(.system(size: 12, weight: .bold))
+                    .foregroundStyle(ClickColors.textSecondary)
+                    .frame(width: 30, height: 30)
+                    .background(ClickColors.surfaceContainerLow)
+                    .clipShape(Circle())
             }
+            .buttonStyle(.plain)
         }
-        .padding(.horizontal, ClickSpacing.md)
-        .padding(.vertical, ClickSpacing.xs)
-        .background(ClickColors.surfaceContainerLow)
-        .transition(.move(edge: .bottom).combined(with: .opacity))
+        .padding(.horizontal, 14)
+        .padding(.top, 8)
+        .padding(.bottom, 4)
+        .background(ClickColors.surface)
     }
 }
