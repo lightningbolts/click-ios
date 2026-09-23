@@ -9,7 +9,9 @@ public struct RootGateView: View {
     public var body: some View {
         Group {
             if CommandLine.arguments.contains("-preview-chat") {
-                ChatView(model: .preview)
+                NavigationStack {
+                    ChatView(model: .preview)
+                }
             } else if CommandLine.arguments.contains("-preview-clicks") {
                 NavigationStack {
                     ClicksView(initialSnapshot: .preview)
@@ -53,7 +55,9 @@ private struct AuthenticatedGateView: View {
 
         Group {
             if CommandLine.arguments.contains("-preview-chat") {
-                ChatView(model: .preview)
+                NavigationStack {
+                    ChatView(model: .preview)
+                }
             } else if CommandLine.arguments.contains("-preview-home") {
                 NavigationStack {
                     HomeView(initialSnapshot: .preview)
@@ -149,8 +153,15 @@ public struct MainTabShellView: View {
                             switch route {
                             case .userProfile(let userID, let connectionID):
                                 ProfileView(userID: userID, connectionID: connectionID)
-                            case .chat(let chatID):
-                                ChatView(chatID: chatID, peerUserID: "", peerDisplayName: "Chat")
+                            case .chat(let route):
+                                ChatView(
+                                    model: ConversationModel(
+                                        identity: route.conversationIdentity,
+                                        chatRepository: env.chat,
+                                        currentUserID: env.session.currentSession?.userId ?? "",
+                                        currentUserName: "You"
+                                    )
+                                )
                             default:
                                 FeedPlaceholderView(title: "Coming Soon")
                             }
@@ -170,6 +181,7 @@ public struct MainTabShellView: View {
                 }
             }
         }
+        .tint(ClickColors.primary)
     }
 }
 
