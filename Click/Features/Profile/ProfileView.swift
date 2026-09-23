@@ -489,38 +489,6 @@ public struct ProfileView: View {
     }
 
     @MainActor
-    private func sendNudge(_ profile: UserProfileSnapshot) async {
-        guard
-            let connectionID,
-            let currentUserID = env.session.currentSession?.userId,
-            let peerUserID = resolvedUserID
-        else { return }
-
-        do {
-            let chatID = try await env.chat.resolveCanonicalChatID(
-                chatID: connectionID,
-                connectionID: connectionID
-            )
-            _ = try await env.chat.sendMessage(
-                chatID: chatID,
-                connectionID: connectionID,
-                peerUserID: peerUserID,
-                currentUserID: currentUserID,
-                currentUserName: "Someone",
-                content: "👋 Someone nudged you!",
-                replyToID: nil,
-                replyToSnippet: nil,
-                replyToSenderName: nil,
-                clientMessageID: UUID().uuidString
-            )
-            ClickHaptics.success()
-        } catch {
-            refreshError = error.localizedDescription
-            ClickHaptics.error()
-        }
-    }
-
-    @MainActor
     private func bootstrap() async {
         guard data == nil, let userID = resolvedUserID else { return }
         if let cached = await env.phase3.cachedProfile(for: userID) {
