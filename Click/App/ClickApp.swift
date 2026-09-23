@@ -19,6 +19,9 @@ struct ClickApp: App {
         WindowGroup {
             RootGateView()
                 .environment(environment)
+                // Preserve the existing Click appearance preference across the KMP -> native
+                // in-place upgrade instead of silently falling back to the simulator/system theme.
+                .preferredColorScheme(environment.settings.darkModeEnabled ? .dark : .light)
                 .task {
                     if CommandLine.arguments.contains("-preview-profile-basics") {
                         environment.session.requireProfileBasics(userId: "usr_preview_99")

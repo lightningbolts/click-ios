@@ -88,7 +88,8 @@ public actor Phase3Repository {
                 totalClicks: clicks.connections.count,
                 totalEncounters: encounterCount,
                 totalCircles: clicks.connections.filter { $0.segment == .circles }.count
-            )
+            ),
+            recap: recap.activity
         )
         store(snapshot, key: "phase3.home.\(userID)")
         return snapshot
@@ -98,14 +99,19 @@ public actor Phase3Repository {
         let request = APIRequest(
             path: "/api/connections",
             method: .get,
-            queryItems: [URLQueryItem(name: "limit", value: "50")],
+            queryItems: [URLQueryItem(name: "bundle", value: "dashboard")],
             requiresAuth: true
         )
         let (data, _) = try await api.executeRaw(request)
         let root = try Self.jsonObject(data)
-        let rows = root["connections"] as? [[String: Any]] ?? []
+        let activeRows =
+            root["active"] as? [[String: Any]]
+            ?? root["connections"] as? [[String: Any]]
+            ?? []
+        let archivedRows = root["archived"] as? [[String: Any]] ?? []
+        let allRows = activeRows + archivedRows
 
-        let identities: [(connectionID: String, peerID: String)] = rows.compactMap { row in
+        let identities: [(connectionID: String, peerID: String)] = allRows.compactMap { row in
             guard
                 let connectionID = Self.string(row["id"]),
                 let userIDs = row["user_ids"] as? [String],
@@ -132,30 +138,41 @@ public actor Phase3Repository {
             }
         }
 
-        var items: [ConnectionItem] = []
-        items.reserveCapacity(rows.count)
+        func items(from rows: [[String: Any]]) -> [ConnectionItem] {
+            rows.compactMap { row in
+                guard
+                    let connectionID = Self.string(row["id"]),
+                    let userIDs = row["user_ids"] as? [String],
+                    let peerID = userIDs.first(where: { $0 != userID })
+                else { return nil }
 
-        for row in rows {
-            guard
-                let connectionID = Self.string(row["id"]),
-                let userIDs = row["user_ids"] as? [String],
-                let peerID = userIDs.first(where: { $0 != userID })
-            else { continue }
+                let profile = profiles[connectionID]
+                let encounters = row["connection_encounters"] as? [[String: Any]] ?? []
+                let latestEncounter = encounters.first
+                let location = Self.string(latestEncounter?["location_name"])
+                    ?? Self.string(latestEncounter?["display_location"])
+                    ?? Self.string(row["location_name"])
+                    ?? ""
+                let activityDate = Self.timestamp(row["last_message_at"])
+                    ?? Self.timestamp(latestEncounter?["encountered_at"])
+                    ?? Self.timestamp(row["created"])
+                let lastActive = activityDate.map(Self.relativeDescription) ?? ""
+                let hasBegun = Self.bool(row["has_begun"]) ?? false
 
-            let profile = profiles[connectionID]
-            let encounters = row["connection_encounters"] as? [[String: Any]] ?? []
-            let latestEncounter = encounters.first
-            let location = Self.string(latestEncounter?["location_name"])
-                ?? Self.string(row["location_name"])
-                ?? ""
-            let activityDate = Self.timestamp(row["last_message_at"])
-                ?? Self.timestamp(latestEncounter?["encountered_at"])
-                ?? Self.timestamp(row["created"])
-            let lastActive = activityDate.map(Self.relativeDescription) ?? ""
-            let tags = profile?.tags ?? []
+                let preview: String = {
+                    if let explicit = Self.string(row["last_message_preview"]) {
+                        return explicit
+                    }
+                    if hasBegun {
+                        return "Open conversation"
+                    }
+                    if !location.isEmpty {
+                        return "Met at \(location)"
+                    }
+                    return "New Click"
+                }()
 
-            items.append(
-                ConnectionItem(
+                return ConnectionItem(
                     id: connectionID,
                     userID: peerID,
                     connectionID: connectionID,
@@ -167,14 +184,19 @@ public actor Phase3Repository {
                     presenceKnown: false,
                     lastActiveRelative: lastActive,
                     encounterLocation: location,
-                    mutualTags: tags,
+                    mutualTags: profile?.tags ?? [],
                     encounterCount: encounters.count,
-                    segment: .all
+                    segment: .all,
+                    lastMessagePreview: preview
                 )
-            )
+            }
         }
 
-        let snapshot = ClicksSnapshot(connections: items)
+        let snapshot = ClicksSnapshot(
+            connections: items(from: activeRows),
+            archivedConnections: items(from: archivedRows),
+            groups: []
+        )
         store(snapshot, key: "phase3.clicks.\(userID)")
         return snapshot
     }
@@ -220,7 +242,7 @@ public actor Phase3Repository {
             personalityTraits: base.profile.personalityTraits,
             totalClicks: clicks.connections.count,
             totalEncounters: clicks.connections.reduce(0) { $0 + $1.encounterCount },
-            totalCircles: clicks.connections.filter { $0.segment == .circles }.count,
+            totalCircles: clicks.cliques.count,
             memberSince: base.profile.memberSince
         )
 
@@ -258,6 +280,7 @@ public actor Phase3Repository {
 
     private struct RecapPayload: Sendable {
         let subtitle: String
+        let activity: HomeActivityRecap
     }
 
     private func fetchProfile(userID: String, connectionID: String?) async throws -> ProfilePayload {
@@ -348,13 +371,22 @@ public actor Phase3Repository {
         let recap = root["recap"] as? [String: Any] ?? [:]
         let connections = Self.int(recap["connections_formed"]) ?? 0
         let messages = (Self.int(recap["messages_sent"]) ?? 0) + (Self.int(recap["messages_received"]) ?? 0)
+        let activity = HomeActivityRecap(
+            connectionsFormed: connections,
+            messagesSent: Self.int(recap["messages_sent"]) ?? 0,
+            messagesReceived: Self.int(recap["messages_received"]) ?? 0,
+            beaconsCreated: Self.int(recap["beacons_created"]) ?? 0,
+            eventsRSVPed: Self.int(recap["events_rsvped"]) ?? 0,
+            eventsCheckedIn: Self.int(recap["events_checked_in"]) ?? 0,
+            eventsSaved: Self.int(recap["events_saved"]) ?? 0
+        )
         if connections == 0 && messages == 0 {
-            return RecapPayload(subtitle: "Ready to connect today?")
+            return RecapPayload(subtitle: "Ready to connect today?", activity: activity)
         }
         var parts: [String] = []
         if connections > 0 { parts.append("\(connections) new Click\(connections == 1 ? "" : "s") this week") }
         if messages > 0 { parts.append("\(messages) messages this week") }
-        return RecapPayload(subtitle: parts.joined(separator: " · "))
+        return RecapPayload(subtitle: parts.joined(separator: " · "), activity: activity)
     }
 
     private func cached<T: Codable>(_ type: T.Type, key: String) -> T? {
@@ -388,6 +420,16 @@ public actor Phase3Repository {
         if let value = value as? Int { return value }
         if let value = value as? NSNumber { return value.intValue }
         if let value = value as? String { return Int(value) }
+        return nil
+    }
+
+    private nonisolated static func bool(_ value: Any?) -> Bool? {
+        if let value = value as? Bool { return value }
+        if let value = value as? NSNumber { return value.boolValue }
+        if let value = value as? String {
+            if value == "true" || value == "1" { return true }
+            if value == "false" || value == "0" { return false }
+        }
         return nil
     }
 

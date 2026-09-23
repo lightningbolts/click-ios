@@ -9,6 +9,7 @@ public struct HomeFeedSnapshot: Codable, Equatable, Sendable {
     public let nearbyBeacons: [ExploreBeaconItem]
     public let recentConnections: [RecentConnectionSummary]
     public let stats: HomeStats
+    public let recap: HomeActivityRecap?
 
     public init(
         greetingName: String,
@@ -17,7 +18,8 @@ public struct HomeFeedSnapshot: Codable, Equatable, Sendable {
         featuredEvent: HomeFeaturedEvent?,
         nearbyBeacons: [ExploreBeaconItem],
         recentConnections: [RecentConnectionSummary],
-        stats: HomeStats
+        stats: HomeStats,
+        recap: HomeActivityRecap? = nil
     ) {
         self.greetingName = greetingName
         self.greetingSubtitle = greetingSubtitle
@@ -26,6 +28,7 @@ public struct HomeFeedSnapshot: Codable, Equatable, Sendable {
         self.nearbyBeacons = nearbyBeacons
         self.recentConnections = recentConnections
         self.stats = stats
+        self.recap = recap
     }
 
     public static func timeBasedSalutation(for name: String, date: Date = Date()) -> String {
@@ -44,6 +47,35 @@ public struct HomeFeedSnapshot: Codable, Equatable, Sendable {
         }
         let cleanName = name.trimmingCharacters(in: .whitespacesAndNewlines)
         return cleanName.isEmpty ? "\(prefix)." : "\(prefix), \(cleanName)."
+    }
+}
+
+
+public struct HomeActivityRecap: Codable, Equatable, Sendable {
+    public let connectionsFormed: Int
+    public let messagesSent: Int
+    public let messagesReceived: Int
+    public let beaconsCreated: Int
+    public let eventsRSVPed: Int
+    public let eventsCheckedIn: Int
+    public let eventsSaved: Int
+
+    public init(
+        connectionsFormed: Int = 0,
+        messagesSent: Int = 0,
+        messagesReceived: Int = 0,
+        beaconsCreated: Int = 0,
+        eventsRSVPed: Int = 0,
+        eventsCheckedIn: Int = 0,
+        eventsSaved: Int = 0
+    ) {
+        self.connectionsFormed = connectionsFormed
+        self.messagesSent = messagesSent
+        self.messagesReceived = messagesReceived
+        self.beaconsCreated = beaconsCreated
+        self.eventsRSVPed = eventsRSVPed
+        self.eventsCheckedIn = eventsCheckedIn
+        self.eventsSaved = eventsSaved
     }
 }
 
@@ -251,6 +283,15 @@ extension HomeFeedSnapshot {
                 totalClicks: 28,
                 totalEncounters: 34,
                 totalCircles: 6
+            ),
+            recap: HomeActivityRecap(
+                connectionsFormed: 2,
+                messagesSent: 14,
+                messagesReceived: 18,
+                beaconsCreated: 1,
+                eventsRSVPed: 2,
+                eventsCheckedIn: 1,
+                eventsSaved: 3
             )
         )
     }

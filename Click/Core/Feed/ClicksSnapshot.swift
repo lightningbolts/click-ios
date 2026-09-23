@@ -26,6 +26,7 @@ public struct ConnectionItem: Codable, Equatable, Identifiable, Sendable {
     public let mutualTags: [String]
     public let encounterCount: Int
     public let segment: ConnectionSegment
+    public let lastMessagePreview: String?
 
     public init(
         id: String,
@@ -41,7 +42,8 @@ public struct ConnectionItem: Codable, Equatable, Identifiable, Sendable {
         encounterLocation: String,
         mutualTags: [String] = [],
         encounterCount: Int = 0,
-        segment: ConnectionSegment = .all
+        segment: ConnectionSegment = .all,
+        lastMessagePreview: String? = nil
     ) {
         self.id = id
         self.userID = userID
@@ -57,16 +59,57 @@ public struct ConnectionItem: Codable, Equatable, Identifiable, Sendable {
         self.mutualTags = mutualTags
         self.encounterCount = encounterCount
         self.segment = segment
+        self.lastMessagePreview = lastMessagePreview
+    }
+}
+
+
+public struct CliqueItem: Codable, Equatable, Identifiable, Sendable {
+    public let id: String
+    public let chatID: String
+    public let name: String
+    public let memberCount: Int
+    public let lastActiveRelative: String
+
+    public init(
+        id: String,
+        chatID: String,
+        name: String,
+        memberCount: Int,
+        lastActiveRelative: String = ""
+    ) {
+        self.id = id
+        self.chatID = chatID
+        self.name = name
+        self.memberCount = memberCount
+        self.lastActiveRelative = lastActiveRelative
+    }
+
+    public var initials: String {
+        let words = name.split(separator: " ")
+        let value = words.prefix(2).compactMap(\.first).map(String.init).joined()
+        return value.isEmpty ? "C" : value.uppercased()
     }
 }
 
 /// Snapshot representation of the Clicks tab.
 public struct ClicksSnapshot: Codable, Equatable, Sendable {
     public let connections: [ConnectionItem]
+    public let archivedConnections: [ConnectionItem]?
+    public let groups: [CliqueItem]?
 
-    public init(connections: [ConnectionItem]) {
+    public init(
+        connections: [ConnectionItem],
+        archivedConnections: [ConnectionItem]? = nil,
+        groups: [CliqueItem]? = nil
+    ) {
         self.connections = connections
+        self.archivedConnections = archivedConnections
+        self.groups = groups
     }
+
+    public var archived: [ConnectionItem] { archivedConnections ?? [] }
+    public var cliques: [CliqueItem] { groups ?? [] }
 
     public func filtered(by segment: ConnectionSegment, query: String = "") -> [ConnectionItem] {
         let cleanQuery = query.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
