@@ -4,6 +4,9 @@ import Foundation
 
 @Suite("Chat Conversation Model Tests")
 struct ChatConversationTests {
+    private enum MockError: Error {
+        case forced
+    }
 
     private final class MockChatRepo: ChatRepositoryProtocol, @unchecked Sendable {
         var messagesToReturn: [ChatMessageItem] = []
@@ -12,6 +15,14 @@ struct ChatConversationTests {
         var markedDeliveredIDs: [String] = []
         var editedIDs: [String: String] = [:]
         var deletedIDs: [String] = []
+        var reactionWrites: [(messageID: String, reactionType: String, adding: Bool)] = []
+        var failDelete = false
+        var failReaction = false
+        var failEdit = false
+
+        func resolveCanonicalChatID(chatID: String, connectionID: String?) async throws -> String {
+            chatID
+        }
 
         func fetchMessages(
             chatID: String,
@@ -52,12 +63,25 @@ struct ChatConversationTests {
             return item
         }
 
-        func editMessage(messageID: String, newContent: String) async throws {
-            editedIDs[messageID] = newContent
+        func editMessage(
+            message: ChatMessageItem,
+            connectionID: String?,
+            peerUserID: String,
+            currentUserID: String,
+            newContent: String
+        ) async throws {
+            if failEdit { throw MockError.forced }
+            editedIDs[message.id] = newContent
         }
 
         func deleteMessage(messageID: String) async throws {
+            if failDelete { throw MockError.forced }
             deletedIDs.append(messageID)
+        }
+
+        func setReaction(messageID: String, reactionType: String, adding: Bool) async throws {
+            if failReaction { throw MockError.forced }
+            reactionWrites.append((messageID, reactionType, adding))
         }
 
         func markRead(chatID: String, messageIDs: [String]) async throws {
@@ -69,32 +93,55 @@ struct ChatConversationTests {
         }
 
         func registerDevice() async throws {}
+
+        func decodeRealtimeMessage(
+            _ payload: RealtimeMessagePayload,
+            connectionID: String?,
+            peerUserID: String,
+            peerDisplayName: String,
+            currentUserID: String
+        ) async throws -> ChatMessageItem {
+            ChatMessageItem(
+                id: payload.id,
+                chatID: payload.chatID,
+                senderID: payload.senderID,
+                senderName: payload.senderID == currentUserID ? "You" : peerDisplayName,
+                content: payload.content,
+                createdAt: Date(timeIntervalSince1970: Double(payload.timeCreated) / 1000.0),
+                deliveryStatus: .delivered,
+                isOutgoing: payload.senderID == currentUserID
+            )
+        }
+    }
+
+    private func makeIdentity() -> ConversationIdentity {
+        ConversationIdentity(
+            chatID: "chat-1",
+            connectionID: "conn-1",
+            peerUserID: "user-peer",
+            peerDisplayName: "Peer User"
+        )
     }
 
     @Test("ConversationModel loads messages and marks unread messages as read")
     @MainActor
     func testLoadMessages() async {
         let repo = MockChatRepo()
-        let unreadPeerMessage = ChatMessageItem(
-            id: "msg-unread-1",
-            chatID: "chat-1",
-            senderID: "user-peer",
-            senderName: "Peer",
-            content: "Hey!",
-            createdAt: Date(),
-            deliveryStatus: .delivered,
-            isOutgoing: false
-        )
-        repo.messagesToReturn = [unreadPeerMessage]
+        repo.messagesToReturn = [
+            ChatMessageItem(
+                id: "msg-unread-1",
+                chatID: "chat-1",
+                senderID: "user-peer",
+                senderName: "Peer",
+                content: "Hey!",
+                createdAt: Date(),
+                deliveryStatus: .delivered,
+                isOutgoing: false
+            )
+        ]
 
-        let identity = ConversationIdentity(
-            chatID: "chat-1",
-            connectionID: "conn-1",
-            peerUserID: "user-peer",
-            peerDisplayName: "Peer User"
-        )
         let model = ConversationModel(
-            identity: identity,
+            identity: makeIdentity(),
             chatRepository: repo,
             currentUserID: "user-self",
             currentUserName: "Self"
@@ -111,14 +158,8 @@ struct ChatConversationTests {
     @MainActor
     func testSendMessageOptimistic() async {
         let repo = MockChatRepo()
-        let identity = ConversationIdentity(
-            chatID: "chat-1",
-            connectionID: "conn-1",
-            peerUserID: "user-peer",
-            peerDisplayName: "Peer User"
-        )
         let model = ConversationModel(
-            identity: identity,
+            identity: makeIdentity(),
             chatRepository: repo,
             currentUserID: "user-self",
             currentUserName: "Self"
@@ -138,13 +179,7 @@ struct ChatConversationTests {
     @MainActor
     func testReplyMessage() async {
         let repo = MockChatRepo()
-        let identity = ConversationIdentity(
-            chatID: "chat-1",
-            connectionID: "conn-1",
-            peerUserID: "user-peer",
-            peerDisplayName: "Peer User"
-        )
-        let initialMsg = ChatMessageItem(
+        let initial = ChatMessageItem(
             id: "msg-orig",
             chatID: "chat-1",
             senderID: "user-peer",
@@ -154,14 +189,14 @@ struct ChatConversationTests {
             isOutgoing: false
         )
         let model = ConversationModel(
-            identity: identity,
+            identity: makeIdentity(),
             chatRepository: repo,
             currentUserID: "user-self",
             currentUserName: "Self",
-            initialItems: [initialMsg]
+            initialItems: [initial]
         )
 
-        model.replyTarget = initialMsg
+        model.replyTarget = initial
         model.composerText = "Flat white, please!"
         await model.sendOrUpdateMessage()
 
@@ -177,13 +212,7 @@ struct ChatConversationTests {
     @MainActor
     func testEditMessage() async {
         let repo = MockChatRepo()
-        let identity = ConversationIdentity(
-            chatID: "chat-1",
-            connectionID: "conn-1",
-            peerUserID: "user-peer",
-            peerDisplayName: "Peer User"
-        )
-        let initialMsg = ChatMessageItem(
+        let initial = ChatMessageItem(
             id: "msg-edit-1",
             chatID: "chat-1",
             senderID: "user-self",
@@ -193,14 +222,14 @@ struct ChatConversationTests {
             isOutgoing: true
         )
         let model = ConversationModel(
-            identity: identity,
+            identity: makeIdentity(),
             chatRepository: repo,
             currentUserID: "user-self",
             currentUserName: "Self",
-            initialItems: [initialMsg]
+            initialItems: [initial]
         )
 
-        model.editTarget = initialMsg
+        model.editTarget = initial
         model.composerText = "Fixed corrected text"
         await model.sendOrUpdateMessage()
 
@@ -211,17 +240,42 @@ struct ChatConversationTests {
         #expect(model.editTarget == nil)
     }
 
+    @Test("Failed edit restores both content and edited state")
+    @MainActor
+    func testFailedEditRollsBack() async {
+        let repo = MockChatRepo()
+        repo.failEdit = true
+        let initial = ChatMessageItem(
+            id: "msg-edit-fail",
+            chatID: "chat-1",
+            senderID: "user-self",
+            senderName: "Self",
+            content: "Original",
+            deliveryStatus: .sent,
+            isOutgoing: true,
+            isEdited: false
+        )
+        let model = ConversationModel(
+            identity: makeIdentity(),
+            chatRepository: repo,
+            currentUserID: "user-self",
+            initialItems: [initial]
+        )
+
+        model.editTarget = initial
+        model.composerText = "Changed"
+        await model.sendOrUpdateMessage()
+
+        #expect(model.items.first?.content == "Original")
+        #expect(model.items.first?.isEdited == false)
+        #expect(model.operationError != nil)
+    }
+
     @Test("ConversationModel deletes message from list")
     @MainActor
     func testDeleteMessage() async {
         let repo = MockChatRepo()
-        let identity = ConversationIdentity(
-            chatID: "chat-1",
-            connectionID: "conn-1",
-            peerUserID: "user-peer",
-            peerDisplayName: "Peer User"
-        )
-        let msg = ChatMessageItem(
+        let message = ChatMessageItem(
             id: "msg-delete-1",
             chatID: "chat-1",
             senderID: "user-self",
@@ -231,30 +285,51 @@ struct ChatConversationTests {
             isOutgoing: true
         )
         let model = ConversationModel(
-            identity: identity,
+            identity: makeIdentity(),
             chatRepository: repo,
             currentUserID: "user-self",
             currentUserName: "Self",
-            initialItems: [msg]
+            initialItems: [message]
         )
 
-        await model.deleteMessage(item: msg)
+        await model.deleteMessage(item: message)
 
         #expect(model.items.isEmpty)
         #expect(repo.deletedIDs.contains("msg-delete-1"))
     }
 
-    @Test("ConversationModel toggles emoji reaction and updates count")
+    @Test("Failed delete restores the message")
     @MainActor
-    func testToggleReaction() {
+    func testFailedDeleteRollsBack() async {
         let repo = MockChatRepo()
-        let identity = ConversationIdentity(
+        repo.failDelete = true
+        let message = ChatMessageItem(
+            id: "msg-delete-fail",
             chatID: "chat-1",
-            connectionID: "conn-1",
-            peerUserID: "user-peer",
-            peerDisplayName: "Peer User"
+            senderID: "user-self",
+            senderName: "Self",
+            content: "Keep me",
+            deliveryStatus: .sent,
+            isOutgoing: true
         )
-        let msg = ChatMessageItem(
+        let model = ConversationModel(
+            identity: makeIdentity(),
+            chatRepository: repo,
+            currentUserID: "user-self",
+            initialItems: [message]
+        )
+
+        await model.deleteMessage(item: message)
+
+        #expect(model.items.map(\.id) == ["msg-delete-fail"])
+        #expect(model.operationError != nil)
+    }
+
+    @Test("Reaction writes persist through repository")
+    @MainActor
+    func testToggleReactionPersists() async {
+        let repo = MockChatRepo()
+        let message = ChatMessageItem(
             id: "msg-react-1",
             chatID: "chat-1",
             senderID: "user-peer",
@@ -264,21 +339,50 @@ struct ChatConversationTests {
             isOutgoing: false
         )
         let model = ConversationModel(
-            identity: identity,
+            identity: makeIdentity(),
             chatRepository: repo,
             currentUserID: "user-self",
             currentUserName: "Self",
-            initialItems: [msg]
+            initialItems: [message]
         )
 
-        // Add reaction
-        model.toggleReaction(item: msg, reactionType: "🔥")
+        await model.toggleReaction(item: message, reactionType: "🔥")
         #expect(model.items.first?.reactions.first?.reactionType == "🔥")
         #expect(model.items.first?.reactions.first?.count == 1)
         #expect(model.items.first?.reactions.first?.userReacted == true)
+        #expect(repo.reactionWrites.count == 1)
+        #expect(repo.reactionWrites.first?.adding == true)
 
-        // Toggle off
-        model.toggleReaction(item: model.items.first!, reactionType: "🔥")
+        await model.toggleReaction(item: model.items.first!, reactionType: "🔥")
         #expect(model.items.first?.reactions.isEmpty == true)
+        #expect(repo.reactionWrites.count == 2)
+        #expect(repo.reactionWrites.last?.adding == false)
+    }
+
+    @Test("Failed reaction restores prior state")
+    @MainActor
+    func testFailedReactionRollsBack() async {
+        let repo = MockChatRepo()
+        repo.failReaction = true
+        let message = ChatMessageItem(
+            id: "msg-react-fail",
+            chatID: "chat-1",
+            senderID: "user-peer",
+            senderName: "Peer",
+            content: "Hello",
+            deliveryStatus: .read,
+            isOutgoing: false
+        )
+        let model = ConversationModel(
+            identity: makeIdentity(),
+            chatRepository: repo,
+            currentUserID: "user-self",
+            initialItems: [message]
+        )
+
+        await model.toggleReaction(item: message, reactionType: "❤️")
+
+        #expect(model.items.first?.reactions.isEmpty == true)
+        #expect(model.operationError != nil)
     }
 }
