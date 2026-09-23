@@ -14,6 +14,8 @@ public struct ProfileView: View {
     @State private var timelineVisibility: TimelineVisibility = .privateOnly
     @State private var isPostingTimeline = false
     @State private var tabPayload = ProfileTabPayload.empty
+    @State private var isSendingNudge = false
+    @State private var nudgeStatus: String?
 
     public init(
         userID: String? = nil,
@@ -150,26 +152,40 @@ public struct ProfileView: View {
 
             HStack(spacing: 10) {
                 Button {
-                    selectedTab = .timeline
-                    ClickHaptics.selection()
+                    Task { await sendNudge(profile) }
                 } label: {
-                    Label("Add note", systemImage: "square.and.pencil")
-                        .frame(maxWidth: .infinity)
-                        .frame(height: 44)
+                    if isSendingNudge {
+                        ProgressView()
+                            .controlSize(.small)
+                            .frame(maxWidth: .infinity)
+                            .frame(height: 44)
+                    } else {
+                        Label("Nudge", systemImage: "bell.badge")
+                            .frame(maxWidth: .infinity)
+                            .frame(height: 44)
+                    }
                 }
                 .buttonStyle(.bordered)
+                .disabled(connectionID == nil || isSendingNudge)
 
                 Button {
                     selectedTab = .beacons
                     ClickHaptics.selection()
                 } label: {
-                    Label("Shared places", systemImage: "mappin")
+                    Label("Shared", systemImage: "photo.on.rectangle")
                         .frame(maxWidth: .infinity)
                         .frame(height: 44)
                 }
                 .buttonStyle(.bordered)
             }
             .font(ClickTypography.labelMedium)
+
+            if let nudgeStatus {
+                Text(nudgeStatus)
+                    .font(ClickTypography.captionSmall)
+                    .foregroundStyle(ClickColors.textSecondary)
+                    .transition(.opacity)
+            }
         }
     }
 
@@ -472,6 +488,46 @@ public struct ProfileView: View {
     }
 
     @MainActor
+    private func sendNudge(_ profile: UserProfileSnapshot) async {
+        guard
+            let connectionID,
+            let peerUserID = resolvedUserID,
+            let currentUserID = env.session.currentSession?.userId
+        else { return }
+
+        isSendingNudge = true
+        defer { isSendingNudge = false }
+
+        do {
+            let currentProfile =
+                await env.phase3.cachedProfile(for: currentUserID)
+                ?? (try? await env.phase3.refreshSelfProfile(userID: currentUserID))
+            let senderName = currentProfile?.profile.displayName.nonEmpty ?? "Someone"
+            let canonicalChatID = try await env.chat.resolveCanonicalChatID(
+                chatID: connectionID,
+                connectionID: connectionID
+            )
+            _ = try await env.chat.sendMessage(
+                chatID: canonicalChatID,
+                connectionID: connectionID,
+                peerUserID: peerUserID,
+                currentUserID: currentUserID,
+                currentUserName: senderName,
+                content: "👋 \(senderName) nudged you!",
+                replyToID: nil,
+                replyToSnippet: nil,
+                replyToSenderName: nil,
+                clientMessageID: UUID().uuidString.lowercased()
+            )
+            nudgeStatus = "Nudge sent to \(profile.displayName)."
+            ClickHaptics.success()
+        } catch {
+            nudgeStatus = error.localizedDescription
+            ClickHaptics.error()
+        }
+    }
+
+    @MainActor
     private func postTimeline() async {
         guard let userID = resolvedUserID else { return }
         let clean = timelineDraft.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -593,5 +649,13 @@ private struct ProfileTabPayload {
             media: makeItems(root["media"] as? [[String: Any]] ?? [], fallbackIcon: "photo"),
             beacons: makeItems(root["beacons"] as? [[String: Any]] ?? [], fallbackIcon: "mappin")
         )
+    }
+}
+
+
+private extension String {
+    var nonEmpty: String? {
+        let value = trimmingCharacters(in: .whitespacesAndNewlines)
+        return value.isEmpty ? nil : value
     }
 }
