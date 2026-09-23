@@ -1,259 +1,357 @@
 import SwiftUI
 
-/// Primary direct chat timeline and interaction view.
-/// Conforms to §31-§35 of CLICK_NATIVE_IOS_REBUILD_SPEC.
+/// Native direct-chat destination.
+///
+/// Navigation chrome, interactive back progress, keyboard, and tab-bar visibility are owned by
+/// SwiftUI rather than a second custom navigation hierarchy.
 public struct ChatView: View {
     @Environment(AppEnvironment.self) private var env
-    @Environment(\.dismiss) private var dismiss
     @State private var model: ConversationModel
+    @State private var isNearBottom = true
 
     public init(model: ConversationModel) {
         self._model = State(initialValue: model)
     }
 
-    public init(
-        chatID: String,
-        connectionID: String? = nil,
-        peerUserID: String,
-        peerDisplayName: String,
-        peerHandle: String = "",
-        peerAvatarURL: String? = nil,
-        isOnline: Bool = false
-    ) {
-        let identity = ConversationIdentity(
-            chatID: chatID,
-            connectionID: connectionID,
-            peerUserID: peerUserID,
-            peerDisplayName: peerDisplayName,
-            peerHandle: peerHandle,
-            peerAvatarURL: peerAvatarURL,
-            isOnline: isOnline
-        )
-        // Temporary placeholder model until onAppear resolves environment
-        let dummy = ConversationModel(
-            identity: identity,
-            chatRepository: DummyChatRepository(),
-            currentUserID: "",
-            currentUserName: "You"
-        )
-        self._model = State(initialValue: dummy)
-    }
-
     public var body: some View {
-        VStack(spacing: 0) {
-            // Custom Navigation Header
-            navigationHeader
+        ScrollViewReader { proxy in
+            Group {
+                switch model.phase {
+                case .initial, .loading where model.items.isEmpty:
+                    loadingState
 
-            Divider()
-                .background(ClickColors.outline.opacity(0.15))
+                case .failed(let message) where model.items.isEmpty:
+                    failureState(message: message)
 
-            // Timeline area
-            ScrollViewReader { proxy in
-                ScrollView {
-                    LazyVStack(spacing: ClickSpacing.xs) {
-                        // Date separator
-                        dateHeader("Today")
-
-                        // Message bubbles
-                        ForEach(model.items) { item in
-                            MessageBubbleView(
-                                message: item,
-                                onReply: { target in
-                                    withAnimation(ClickMotion.subtleFade) {
-                                        model.editTarget = nil
-                                        model.replyTarget = target
-                                    }
-                                },
-                                onEdit: { target in
-                                    withAnimation(ClickMotion.subtleFade) {
-                                        model.replyTarget = nil
-                                        model.editTarget = target
-                                        model.composerText = target.content
-                                    }
-                                },
-                                onDelete: { target in
-                                    Task { await model.deleteMessage(item: target) }
-                                },
-                                onToggleReaction: { target, emoji in
-                                    model.toggleReaction(item: target, reactionType: emoji)
-                                },
-                                onRetrySend: { target in
-                                    Task { await model.retrySend(item: target) }
-                                }
-                            )
-                            .id(item.id)
-                        }
-
-                        // Peer typing indicator
-                        if model.isPeerTyping {
-                            typingIndicatorBubble
-                                .id("typing-indicator")
-                        }
-
-                        Color.clear
-                            .frame(height: 1)
-                            .id("bottom-anchor")
-                    }
-                    .padding(.top, ClickSpacing.sm)
-                    .padding(.bottom, ClickSpacing.sm)
+                default:
+                    timeline(proxy: proxy)
                 }
-                .scrollDismissesKeyboard(.interactively)
-                .onChange(of: model.items.count) { _, _ in
-                    withAnimation(ClickMotion.selection) {
-                        proxy.scrollTo("bottom-anchor", anchor: .bottom)
+            }
+            .background(ClickColors.background.ignoresSafeArea())
+            .safeAreaInset(edge: .bottom, spacing: 0) {
+                ChatComposerView(
+                    text: $model.composerText,
+                    placeholder: "Message \(model.identity.peerDisplayName)…",
+                    replyTarget: model.replyTarget,
+                    editTarget: model.editTarget,
+                    isSending: model.isSending,
+                    onCancelReply: {
+                        withAnimation(ClickMotion.selection) {
+                            model.replyTarget = nil
+                        }
+                    },
+                    onCancelEdit: {
+                        withAnimation(ClickMotion.selection) {
+                            model.editTarget = nil
+                            model.composerText = ""
+                        }
+                    },
+                    onSend: {
+                        Task {
+                            await model.sendOrUpdateMessage()
+                        }
+                    },
+                    onTypingChanged: { hasText in
+                        model.noteTypingActivity(hasText: hasText)
                     }
+                )
+            }
+            .overlay(alignment: .top) {
+                if let error = model.operationError, !model.items.isEmpty {
+                    operationBanner(error)
+                        .padding(.horizontal, 12)
+                        .padding(.top, 8)
+                        .transition(.move(edge: .top).combined(with: .opacity))
                 }
-                .onAppear {
+            }
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar(.hidden, for: .tabBar)
+            .toolbar {
+                ToolbarItem(placement: .principal) {
+                    conversationTitle
+                }
+            }
+            .toolbarBackground(ClickColors.background, for: .navigationBar)
+            .toolbarBackground(.visible, for: .navigationBar)
+            .task {
+                await model.onAppear(
+                    supabaseURL: AppConfig.shared.supabaseURL,
+                    anonKey: AppConfig.shared.supabaseAnonKey,
+                    authToken: env.session.currentSession?.jwt
+                )
+            }
+            .onDisappear {
+                model.onDisappear()
+            }
+            .onChange(of: model.phase) { _, newPhase in
+                guard newPhase == .loaded else { return }
+                DispatchQueue.main.async {
                     proxy.scrollTo("bottom-anchor", anchor: .bottom)
                 }
             }
-
-            // Composer bar
-            ChatComposerView(
-                text: $model.composerText,
-                replyTarget: model.replyTarget,
-                editTarget: model.editTarget,
-                isSending: model.isSending,
-                onCancelReply: {
-                    withAnimation(ClickMotion.subtleFade) {
-                        model.replyTarget = nil
-                    }
-                },
-                onCancelEdit: {
-                    withAnimation(ClickMotion.subtleFade) {
-                        model.editTarget = nil
-                        model.composerText = ""
-                    }
-                },
-                onSend: {
-                    Task {
-                        await model.sendOrUpdateMessage()
-                    }
-                },
-                onTypingChanged: { isTyping in
-                    model.setTyping(isTyping: isTyping)
+            .onChange(of: model.items.count) { oldCount, newCount in
+                guard newCount > oldCount else { return }
+                guard isNearBottom || model.items.last?.isOutgoing == true else { return }
+                withAnimation(ClickMotion.selection) {
+                    proxy.scrollTo("bottom-anchor", anchor: .bottom)
                 }
-            )
-        }
-        .background(ClickColors.background.ignoresSafeArea())
-        .navigationBarBackButtonHidden(true)
-        .task {
-            // If initialized with dummy repo, bind real environment repo
-            if model.items.isEmpty, let currentUserID = env.session.currentSession?.userId {
-                let identity = model.identity
-                let realModel = ConversationModel(
-                    identity: identity,
-                    chatRepository: env.chat,
-                    currentUserID: currentUserID,
-                    currentUserName: "You"
-                )
-                self.model = realModel
-                let supabaseURL = AppConfig.shared.supabaseURL
-                let anonKey = AppConfig.shared.supabaseAnonKey
-                let jwt = env.session.currentSession?.jwt
-                await realModel.onAppear(supabaseURL: supabaseURL, anonKey: anonKey, authToken: jwt)
             }
-        }
-        .onDisappear {
-            model.onDisappear()
+            .onChange(of: model.isPeerTyping) { _, isTyping in
+                guard isTyping, isNearBottom else { return }
+                withAnimation(ClickMotion.selection) {
+                    proxy.scrollTo("bottom-anchor", anchor: .bottom)
+                }
+            }
         }
     }
 
-    // MARK: - Subviews
+    private func timeline(proxy: ScrollViewProxy) -> some View {
+        ScrollView {
+            LazyVStack(spacing: 2) {
+                ForEach(Array(model.items.enumerated()), id: \.element.id) { index, item in
+                    if shouldShowDateHeader(at: index) {
+                        dateHeader(item.createdAt)
+                    }
 
-    private var navigationHeader: some View {
-        HStack(spacing: ClickSpacing.sm) {
-            Button {
-                ClickHaptics.selection()
-                dismiss()
-            } label: {
-                HStack(spacing: 2) {
-                    Image(systemName: "chevron.left")
-                        .font(.system(size: 16, weight: .semibold))
-                    Text("Clicks")
-                        .font(ClickTypography.bodyMedium)
+                    MessageBubbleView(
+                        message: item,
+                        onReply: { target in
+                            withAnimation(ClickMotion.selection) {
+                                model.editTarget = nil
+                                model.replyTarget = target
+                            }
+                        },
+                        onEdit: { target in
+                            withAnimation(ClickMotion.selection) {
+                                model.replyTarget = nil
+                                model.editTarget = target
+                                model.composerText = target.content
+                            }
+                        },
+                        onDelete: { target in
+                            Task { await model.deleteMessage(item: target) }
+                        },
+                        onToggleReaction: { target, emoji in
+                            Task { await model.toggleReaction(item: target, reactionType: emoji) }
+                        },
+                        onRetrySend: { target in
+                            Task { await model.retrySend(item: target) }
+                        }
+                    )
+                    .id(item.id)
                 }
-                .foregroundStyle(ClickColors.primary)
+
+                if model.isPeerTyping {
+                    typingIndicator
+                        .id("typing-indicator")
+                }
+
+                Color.clear
+                    .frame(height: 1)
+                    .id("bottom-anchor")
             }
+            .padding(.top, 8)
+            .padding(.bottom, 8)
+        }
+        .scrollDismissesKeyboard(.interactively)
+        .onScrollGeometryChange(for: Bool.self) { geometry in
+            geometry.visibleRect.maxY >= geometry.contentSize.height - 90
+        } action: { _, nearBottom in
+            isNearBottom = nearBottom
+        }
+    }
 
-            Spacer()
+    private var conversationTitle: some View {
+        Button {
+            guard !model.identity.peerUserID.isEmpty else { return }
+            ClickHaptics.selection()
+            env.router.connectionsPath.append(
+                .userProfile(
+                    userID: model.identity.peerUserID,
+                    connectionID: model.identity.connectionID
+                )
+            )
+        } label: {
+            HStack(spacing: 8) {
+                peerAvatar(size: 32)
 
-            // Peer Identity info
-            VStack(spacing: 2) {
-                HStack(spacing: ClickSpacing.xxs) {
+                VStack(alignment: .leading, spacing: 0) {
                     Text(model.identity.peerDisplayName)
                         .font(ClickTypography.titleSmall)
-                        .fontWeight(.bold)
                         .foregroundStyle(ClickColors.textPrimary)
+                        .lineLimit(1)
 
-                    if model.identity.isOnline {
-                        Circle()
-                            .fill(Color(hex: "#10B981"))
-                            .frame(width: 8, height: 8)
-                    }
+                    Text(statusText)
+                        .font(ClickTypography.microcopy)
+                        .foregroundStyle(
+                            model.isPeerTyping
+                                ? ClickColors.primary
+                                : ClickColors.textSecondary
+                        )
+                        .lineLimit(1)
+                        .animation(.none, value: statusText)
                 }
-
-                Text(model.identity.isOnline ? "Active now" : (model.identity.peerHandle.isEmpty ? "Direct Chat" : model.identity.peerHandle))
-                    .font(ClickTypography.labelSmall)
-                    .foregroundStyle(ClickColors.textSecondary)
             }
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .accessibilityLabel("\(model.identity.peerDisplayName), \(statusText)")
+    }
 
-            Spacer()
+    private var statusText: String {
+        if model.isPeerTyping {
+            return "typing…"
+        }
+        if model.identity.isOnline {
+            return "Active now"
+        }
+        if !model.identity.lastActiveText.isEmpty {
+            return model.identity.lastActiveText
+        }
+        if !model.identity.peerHandle.isEmpty {
+            return model.identity.peerHandle
+        }
+        return "Click"
+    }
 
-            // Peer Avatar
-            ZStack {
-                Circle()
-                    .fill(ClickColors.primaryFixed.opacity(0.4))
-                    .frame(width: 36, height: 36)
+    @ViewBuilder
+    private func peerAvatar(size: CGFloat) -> some View {
+        if let raw = model.identity.peerAvatarURL,
+           let url = URL(string: raw) {
+            AsyncImage(url: url) { image in
+                image
+                    .resizable()
+                    .scaledToFill()
+            } placeholder: {
+                avatarFallback(size: size)
+            }
+            .frame(width: size, height: size)
+            .clipShape(Circle())
+        } else {
+            avatarFallback(size: size)
+        }
+    }
+
+    private func avatarFallback(size: CGFloat) -> some View {
+        Circle()
+            .fill(ClickColors.primaryFixed.opacity(0.55))
+            .frame(width: size, height: size)
+            .overlay {
                 Text(model.identity.initials)
-                    .font(ClickTypography.labelSmall)
-                    .fontWeight(.bold)
+                    .font(ClickTypography.microcopy)
                     .foregroundStyle(ClickColors.primary)
             }
+    }
+
+    private var loadingState: some View {
+        VStack(spacing: 10) {
+            ProgressView()
+                .tint(ClickColors.primary)
+
+            Text("Loading conversation…")
+                .font(ClickTypography.bodySmall)
+                .foregroundStyle(ClickColors.textSecondary)
         }
-        .padding(.horizontal, ClickSpacing.md)
-        .padding(.vertical, ClickSpacing.xs)
-        .background(ClickColors.background)
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
     }
 
-    private func dateHeader(_ text: String) -> some View {
-        Text(text)
-            .font(ClickTypography.labelSmall)
-            .fontWeight(.semibold)
-            .foregroundStyle(ClickColors.textSecondary)
-            .padding(.horizontal, ClickSpacing.sm)
-            .padding(.vertical, 4)
-            .background(ClickColors.surfaceContainerLow)
-            .clipShape(Capsule())
-            .padding(.vertical, ClickSpacing.xs)
+    private func failureState(message: String) -> some View {
+        ContentUnavailableView {
+            Label("Conversation unavailable", systemImage: "bubble.left.and.exclamationmark.bubble.right")
+        } description: {
+            Text(message)
+        } actions: {
+            Button("Try Again") {
+                Task { await model.loadMessages() }
+            }
+            .buttonStyle(.borderedProminent)
+            .tint(ClickColors.primary)
+        }
     }
 
-    private var typingIndicatorBubble: some View {
+    private func operationBanner(_ message: String) -> some View {
+        HStack(spacing: 8) {
+            Image(systemName: "exclamationmark.triangle.fill")
+                .font(.system(size: 12, weight: .semibold))
+
+            Text(message)
+                .font(ClickTypography.captionSmall)
+                .lineLimit(2)
+
+            Spacer(minLength: 8)
+
+            Button {
+                withAnimation(ClickMotion.subtleFade) {
+                    model.operationError = nil
+                }
+            } label: {
+                Image(systemName: "xmark")
+                    .font(.system(size: 11, weight: .bold))
+            }
+            .buttonStyle(.plain)
+        }
+        .foregroundStyle(ClickColors.textPrimary)
+        .padding(.horizontal, 12)
+        .padding(.vertical, 9)
+        .background(ClickColors.surface)
+        .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
+        .overlay {
+            RoundedRectangle(cornerRadius: 10, style: .continuous)
+                .stroke(ClickColors.quietBorder, lineWidth: 1)
+        }
+    }
+
+    private var typingIndicator: some View {
         HStack {
             HStack(spacing: 4) {
-                Circle().fill(ClickColors.textSecondary).frame(width: 6, height: 6)
-                Circle().fill(ClickColors.textSecondary.opacity(0.7)).frame(width: 6, height: 6)
-                Circle().fill(ClickColors.textSecondary.opacity(0.4)).frame(width: 6, height: 6)
+                ForEach(0..<3, id: \.self) { index in
+                    Circle()
+                        .fill(ClickColors.textSecondary.opacity(0.85 - Double(index) * 0.2))
+                        .frame(width: 5, height: 5)
+                }
             }
-            .padding(.horizontal, ClickSpacing.md)
+            .padding(.horizontal, 12)
             .padding(.vertical, 10)
-            .background(ClickColors.surfaceContainerHigh)
-            .clipShape(RoundedRectangle(cornerRadius: ClickSpacing.radiusCard))
+            .background(ClickColors.surface)
+            .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
+            .overlay {
+                RoundedRectangle(cornerRadius: 16, style: .continuous)
+                    .stroke(ClickColors.quietBorder.opacity(0.78), lineWidth: 1)
+            }
 
             Spacer()
         }
-        .padding(.horizontal, ClickSpacing.md)
+        .padding(.horizontal, 12)
+        .padding(.vertical, 2)
     }
-}
 
-private struct DummyChatRepository: ChatRepositoryProtocol {
-    func fetchMessages(chatID: String, connectionID: String?, peerUserID: String, currentUserID: String, cursor: Int64?, limit: Int) async throws -> [ChatMessageItem] { [] }
-    func sendMessage(chatID: String, connectionID: String?, peerUserID: String, currentUserID: String, currentUserName: String, content: String, replyToID: String?, replyToSnippet: String?, replyToSenderName: String?, clientMessageID: String) async throws -> ChatMessageItem {
-        ChatMessageItem(id: clientMessageID, chatID: chatID, senderID: currentUserID, senderName: currentUserName, content: content, isOutgoing: true)
+    private func shouldShowDateHeader(at index: Int) -> Bool {
+        guard model.items.indices.contains(index) else { return false }
+        guard index > 0 else { return true }
+        return !Calendar.current.isDate(
+            model.items[index - 1].createdAt,
+            inSameDayAs: model.items[index].createdAt
+        )
     }
-    func editMessage(messageID: String, newContent: String) async throws {}
-    func deleteMessage(messageID: String) async throws {}
-    func markRead(chatID: String, messageIDs: [String]) async throws {}
-    func markDelivered(chatID: String, messageIDs: [String]) async throws {}
-    func registerDevice() async throws {}
+
+    private func dateHeader(_ date: Date) -> some View {
+        Text(dateLabel(date))
+            .font(ClickTypography.microcopy)
+            .foregroundStyle(ClickColors.textSecondary)
+            .padding(.horizontal, 10)
+            .padding(.vertical, 5)
+            .background(ClickColors.surfaceContainerLow)
+            .clipShape(Capsule())
+            .padding(.vertical, 8)
+    }
+
+    private func dateLabel(_ date: Date) -> String {
+        if Calendar.current.isDateInToday(date) {
+            return "Today"
+        }
+        if Calendar.current.isDateInYesterday(date) {
+            return "Yesterday"
+        }
+        return date.formatted(.dateTime.month(.abbreviated).day())
+    }
 }
