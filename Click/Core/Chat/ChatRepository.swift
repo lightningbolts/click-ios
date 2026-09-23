@@ -150,7 +150,7 @@ public actor ChatRepository: ChatRepositoryProtocol {
 
         do {
             _ = try await apiClient.executeRaw(request)
-        } catch APIError.conflict {
+        } catch APIError.conflict(_) {
             // Registration is idempotent from the client's perspective.
         }
     }
@@ -200,7 +200,7 @@ public actor ChatRepository: ChatRepositoryProtocol {
                     devices: devices,
                     epoch: 1
                 )
-            } catch APIError.conflict {
+            } catch APIError.conflict(_) {
                 // Another active device may have created epoch 1 concurrently.
             }
             state = try await fetchEpochState(chatID: chatID, deviceID: identity.info.deviceID)
@@ -222,7 +222,7 @@ public actor ChatRepository: ChatRepositoryProtocol {
                         devices: devices,
                         epoch: currentEpoch + 1
                     )
-                } catch APIError.conflict {
+                } catch APIError.conflict(_) {
                     // A peer device can rotate first; fresh state below is authoritative.
                 }
                 state = try await fetchEpochState(chatID: chatID, deviceID: identity.info.deviceID)
