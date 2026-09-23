@@ -142,11 +142,11 @@ public struct MainTabShellView: View {
 
             Tab("Add Click", systemImage: "plus.circle.fill", value: MainTab.addClick) {
                 NavigationStack(path: $r.addClickPath) {
-                    FeedPlaceholderView(title: "Add Click")
+                    AddClickView()
                 }
             }
 
-            Tab("Clicks", systemImage: "bubble.left.and.bubble.right.fill", value: MainTab.connections) {
+            Tab("Clicks", systemImage: "person.2.fill", value: MainTab.connections) {
                 NavigationStack(path: $r.connectionsPath) {
                     ClicksView()
                         .navigationDestination(for: AppRoute.self) { route in
@@ -163,68 +163,24 @@ public struct MainTabShellView: View {
                                     )
                                 )
                             default:
-                                FeedPlaceholderView(title: "Coming Soon")
+                                EmptyView()
                             }
                         }
                 }
             }
 
-            Tab("Map", systemImage: "map.fill", value: MainTab.map) {
+            Tab("Map", systemImage: "location.fill", value: MainTab.map) {
                 NavigationStack(path: $r.mapPath) {
-                    FeedPlaceholderView(title: "Map")
+                    ClickMapView()
                 }
             }
 
-            Tab("Me", systemImage: "person.circle.fill", value: MainTab.settings) {
+            Tab("Me", systemImage: "person.crop.circle.fill", value: MainTab.settings) {
                 NavigationStack(path: $r.settingsPath) {
-                    ProfileView()
+                    SettingsView()
                 }
             }
         }
         .tint(ClickColors.primary)
-    }
-}
-
-private struct FeedPlaceholderView: View {
-    let title: String
-
-    var body: some View {
-        VStack(spacing: ClickSpacing.medium) {
-            Text(title)
-                .font(ClickTypography.title)
-            Text("Native implementation vertical slice")
-                .font(ClickTypography.subheadline)
-                .foregroundStyle(ClickColors.secondaryLabel)
-        }
-        .navigationTitle(title)
-        .background(ClickColors.background)
-    }
-}
-
-private struct SettingsPlaceholderView: View {
-    @Environment(AppEnvironment.self) private var env
-
-    var body: some View {
-        List {
-            Section("Account") {
-                if let session = env.session.currentSession {
-                    LabeledContent("User ID", value: session.userId)
-                }
-                Button("Test Profile Basics Gate") {
-                    env.session.requireProfileBasics(userId: env.session.currentSession?.userId ?? "test_user")
-                }
-                Button("Sign Out", role: .destructive) {
-                    Task {
-                        await env.session.signOut()
-                    }
-                }
-            }
-
-            Section("Preferences") {
-                Toggle("Dark Mode", isOn: Bindable(env.settings).darkModeEnabled)
-                Toggle("Message Notifications", isOn: Bindable(env.settings).messageNotificationsEnabled)
-            }
-        }
-        .navigationTitle("Me")
     }
 }
