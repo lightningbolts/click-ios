@@ -106,6 +106,7 @@ public struct ProfileView: View {
         HStack(spacing: 15) {
             AvatarView(
                 imageURL: profile.avatarUrl,
+                seed: profile.userId,
                 initials: profile.initials,
                 size: ClickMetrics.Avatar.identity
             )

@@ -42,7 +42,11 @@ public final class AppEnvironment {
         )
         self.api = resolvedAPI
         self.onboardingRepository = OnboardingRepository(client: resolvedAPI, settings: settings)
-        self.phase3 = Phase3Repository(api: resolvedAPI)
+        self.phase3 = Phase3Repository(
+            api: resolvedAPI,
+            supabaseURL: AppConfig.shared.supabaseURL,
+            supabaseAnonKey: AppConfig.shared.supabaseAnonKey
+        )
         self.chat = ChatRepository(apiClient: resolvedAPI)
 
         // Connect dependencies to session controller

@@ -116,16 +116,22 @@ struct Phase3FeedTests {
         config.protocolClasses = [Phase3MockURLProtocol.self]
         let session = URLSession(configuration: config)
 
+        let requests = Phase3RequestLog()
         Phase3MockURLProtocol.requestHandler = { request in
             let path = request.url?.path ?? ""
+            requests.append(request)
             let body: String
             if path == "/api/connections" {
                 body = """
-                {"connections":[{"id":"conn_1","user_ids":["self","peer"],"created":1700000000000,"connection_encounters":[{"location_name":"UW Quad","encountered_at":"2026-09-22T19:00:00Z"}]}]}
+                {"active":[{"id":"conn_1","user_ids":["self","peer"],"created":1700000000000,"has_begun":true,"connection_encounters":[{"location_name":"UW Quad","encountered_at":"2026-09-22T19:00:00Z"}]}],"archived":[],"core":["conn_1"]}
                 """
-            } else if path == "/api/users/peer/profile" {
+            } else if path == "/api/users/display-names" {
                 body = """
-                {"user":{"id":"peer","first_name":"Taylor","last_name":"Kim","full_name":"Taylor Kim","image":"https://example.com/taylor.jpg","email":"taylor@example.com","personality_tags":["Curious","Calm","Funny","Thoughtful","Active"]},"tags":["Hiking","Jazz"],"availabilityIntents":[]}
+                {"names":{"peer":"Taylor Kim"},"images":{"peer":"https://example.com/taylor.jpg"}}
+                """
+            } else if path == "/rest/v1/rpc/get_inbox_previews" {
+                body = """
+                [{"chat_id":"chat_1","connection_id":"conn_1","last_message_user_id":"peer","last_message_content":"hey!","last_message_time_created":1790000000000,"last_message_type":"text","last_message_is_read":false,"unread_count":2}]
                 """
             } else {
                 body = "{}"
@@ -145,16 +151,50 @@ struct Phase3FeedTests {
             tokenProvider: { "token" }
         )
         let defaults = UserDefaults(suiteName: "Phase3FeedTests.\(UUID().uuidString)")!
-        let repository = Phase3Repository(api: client, defaults: defaults)
+        let repository = Phase3Repository(
+            api: client,
+            defaults: defaults,
+            supabaseURL: URL(string: "https://project.supabase.co")!,
+            supabaseAnonKey: "anon-key"
+        )
 
         let snapshot = try await repository.refreshClicks(for: "self")
         #expect(snapshot.connections.count == 1)
         #expect(snapshot.connections[0].displayName == "Taylor Kim")
+        #expect(snapshot.connections[0].avatarUrl == "https://example.com/taylor.jpg")
         #expect(snapshot.connections[0].encounterLocation == "UW Quad")
         #expect(snapshot.connections[0].presenceKnown == false)
         #expect(snapshot.connections[0].isOnline == false)
+        #expect(snapshot.connections[0].unreadCount == 2)
+        #expect(snapshot.connections[0].isCore)
+        #expect(snapshot.connections[0].chatID == "chat_1")
+
+        // Three requests regardless of inbox size: no per-connection profile fetches.
+        let recorded = requests.all
+        #expect(recorded.count == 3)
+        #expect(!recorded.contains { ($0.url?.path ?? "").hasPrefix("/api/users/peer") })
+        let rpc = try #require(recorded.first { $0.url?.path == "/rest/v1/rpc/get_inbox_previews" })
+        #expect(rpc.url?.host == "project.supabase.co")
+        #expect(rpc.value(forHTTPHeaderField: "apikey") == "anon-key")
+        #expect(rpc.value(forHTTPHeaderField: "Authorization") == "Bearer token")
 
         let cached = await repository.cachedClicks(for: "self")
         #expect(cached == snapshot)
+    }
+}
+
+/// Thread-safe capture of requests seen by the mock protocol.
+private final class Phase3RequestLog: @unchecked Sendable {
+    private let lock = NSLock()
+    private var requests: [URLRequest] = []
+
+    func append(_ request: URLRequest) {
+        lock.lock(); defer { lock.unlock() }
+        requests.append(request)
+    }
+
+    var all: [URLRequest] {
+        lock.lock(); defer { lock.unlock() }
+        return requests
     }
 }

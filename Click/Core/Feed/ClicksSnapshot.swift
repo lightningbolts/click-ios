@@ -28,6 +28,17 @@ public struct ConnectionItem: Codable, Equatable, Identifiable, Sendable {
     public let segment: ConnectionSegment
     public let lastMessagePreview: String?
 
+    // Inbox state. Optional so snapshots cached by earlier builds still decode.
+    public let chatID: String?
+    public let lastMessage: InboxLastMessage?
+    public let lastActivityAt: Date?
+    public let sayHiDeadline: Date?
+    private let unread: Int?
+    private let core: Bool?
+
+    public var unreadCount: Int { unread ?? 0 }
+    public var isCore: Bool { core ?? false }
+
     public init(
         id: String,
         userID: String = "",
@@ -43,7 +54,13 @@ public struct ConnectionItem: Codable, Equatable, Identifiable, Sendable {
         mutualTags: [String] = [],
         encounterCount: Int = 0,
         segment: ConnectionSegment = .all,
-        lastMessagePreview: String? = nil
+        lastMessagePreview: String? = nil,
+        chatID: String? = nil,
+        lastMessage: InboxLastMessage? = nil,
+        lastActivityAt: Date? = nil,
+        sayHiDeadline: Date? = nil,
+        unreadCount: Int = 0,
+        isCore: Bool = false
     ) {
         self.id = id
         self.userID = userID
@@ -60,6 +77,45 @@ public struct ConnectionItem: Codable, Equatable, Identifiable, Sendable {
         self.encounterCount = encounterCount
         self.segment = segment
         self.lastMessagePreview = lastMessagePreview
+        self.chatID = chatID
+        self.lastMessage = lastMessage
+        self.lastActivityAt = lastActivityAt
+        self.sayHiDeadline = sayHiDeadline
+        self.unread = unreadCount
+        self.core = isCore
+    }
+
+    /// Returns a copy with inbox-local state changed (optimistic updates).
+    public func with(unreadCount: Int? = nil, isCore: Bool? = nil) -> ConnectionItem {
+        ConnectionItem(
+            id: id, userID: userID, connectionID: connectionID, displayName: displayName,
+            handle: handle, avatarUrl: avatarUrl, initials: initials, isOnline: isOnline,
+            presenceKnown: presenceKnown, lastActiveRelative: lastActiveRelative,
+            encounterLocation: encounterLocation, mutualTags: mutualTags,
+            encounterCount: encounterCount, segment: segment, lastMessagePreview: lastMessagePreview,
+            chatID: chatID, lastMessage: lastMessage, lastActivityAt: lastActivityAt,
+            sayHiDeadline: sayHiDeadline, unreadCount: unreadCount ?? self.unreadCount,
+            isCore: isCore ?? self.isCore
+        )
+    }
+}
+
+/// The newest message of a direct conversation, as returned by `get_inbox_previews`.
+/// `content` is the wire value — ciphertext for encrypted chats — so it is safe to cache;
+/// decrypted preview text is only ever held in memory.
+public struct InboxLastMessage: Codable, Equatable, Sendable {
+    public let content: String
+    public let messageType: String
+    public let isOutgoing: Bool
+    public let isRead: Bool
+    public let isDisposable: Bool
+
+    public init(content: String, messageType: String, isOutgoing: Bool, isRead: Bool, isDisposable: Bool = false) {
+        self.content = content
+        self.messageType = messageType
+        self.isOutgoing = isOutgoing
+        self.isRead = isRead
+        self.isDisposable = isDisposable
     }
 }
 
@@ -155,7 +211,11 @@ extension ClicksSnapshot {
                     lastActiveRelative: "Active now",
                     encounterLocation: "Sightglass Coffee",
                     mutualTags: ["Coffee", "Producing", "Synthesizers"],
-                    encounterCount: 3
+                    encounterCount: 3,
+                    lastMessage: InboxLastMessage(content: "", messageType: "audio", isOutgoing: false, isRead: false),
+                    lastActivityAt: Date().addingTimeInterval(-12 * 60),
+                    unreadCount: 2,
+                    isCore: true
                 ),
                 ConnectionItem(
                     id: "conn_elena",
@@ -168,7 +228,10 @@ extension ClicksSnapshot {
                     lastActiveRelative: "5m ago",
                     encounterLocation: "Mission Climbing Gym",
                     mutualTags: ["Bouldering", "Hiking", "Techno"],
-                    encounterCount: 2
+                    encounterCount: 2,
+                    lastMessage: InboxLastMessage(content: "lifesaver. coffee on me", messageType: "text", isOutgoing: true, isRead: true),
+                    lastActivityAt: Date().addingTimeInterval(-26 * 3600),
+                    isCore: true
                 ),
                 ConnectionItem(
                     id: "conn_sam",
@@ -181,7 +244,9 @@ extension ClicksSnapshot {
                     lastActiveRelative: "2h ago",
                     encounterLocation: "Dolores Park Sunset",
                     mutualTags: ["Film Photography", "Reading", "Philosophy"],
-                    encounterCount: 1
+                    encounterCount: 1,
+                    lastMessage: InboxLastMessage(content: "see you at hack night!", messageType: "text", isOutgoing: true, isRead: false),
+                    lastActivityAt: Date().addingTimeInterval(-3 * 86_400)
                 ),
                 ConnectionItem(
                     id: "conn_jordan",
@@ -194,7 +259,9 @@ extension ClicksSnapshot {
                     lastActiveRelative: "Yesterday",
                     encounterLocation: "Crypto Corner Meetup",
                     mutualTags: ["Hardware", "Rust", "Startups"],
-                    encounterCount: 1
+                    encounterCount: 1,
+                    lastActivityAt: Date().addingTimeInterval(-2 * 3600),
+                    sayHiDeadline: Date().addingTimeInterval(36 * 3600)
                 ),
                 ConnectionItem(
                     id: "conn_chloe",

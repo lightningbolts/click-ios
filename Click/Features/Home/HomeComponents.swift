@@ -265,6 +265,7 @@ public struct RecentConnectionRowItem: View {
     private var avatar: some View {
         AvatarView(
             imageURL: connection.avatarUrl,
+            seed: connection.userID,
             initials: connection.initials,
             size: ClickMetrics.Avatar.row,
             presence: AvatarView.Presence(isOnline: connection.isOnline, known: connection.presenceKnown)

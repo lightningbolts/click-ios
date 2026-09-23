@@ -59,8 +59,8 @@ public enum ClickMetrics {
         /// Standard list/person rows.
         public static let row: CGFloat = 44
         /// Conversation rows and horizontal people strips.
-        public static let conversation: CGFloat = 56
+        public static let conversation: CGFloat = 54
         /// Identity headers (Me, profiles).
-        public static let identity: CGFloat = 96
+        public static let identity: CGFloat = 104
     }
 }

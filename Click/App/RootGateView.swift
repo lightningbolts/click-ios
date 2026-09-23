@@ -13,9 +13,7 @@ public struct RootGateView: View {
                     ChatView(model: .preview)
                 }
             } else if CommandLine.arguments.contains("-preview-clicks") {
-                NavigationStack {
-                    ClicksView(initialSnapshot: .preview)
-                }
+                ClicksPreviewHost()
             } else if CommandLine.arguments.contains("-preview-home") {
                 NavigationStack {
                     HomeView(initialSnapshot: .preview)
@@ -64,9 +62,7 @@ private struct AuthenticatedGateView: View {
                     HomeView(initialSnapshot: .preview)
                 }
             } else if CommandLine.arguments.contains("-preview-clicks") {
-                NavigationStack {
-                    ClicksView(initialSnapshot: .preview)
-                }
+                ClicksPreviewHost()
             } else if CommandLine.arguments.contains("-preview-profile") {
                 NavigationStack {
                     ProfileView(initialProfile: .preview)
@@ -132,6 +128,7 @@ private struct LaunchLoadingView: View {
 public struct MainTabShellView: View {
     @Environment(AppEnvironment.self) private var env
     @State private var meTabAvatar = MeTabAvatarModel()
+    @State private var conversations = ConversationListModel()
 
     public init() {}
 
@@ -157,10 +154,11 @@ public struct MainTabShellView: View {
 
             Tab("Clicks", systemImage: "person.2.fill", value: MainTab.connections) {
                 NavigationStack(path: $r.connectionsPath) {
-                    ClicksView()
+                    ClicksView(model: conversations)
                         .appRouteDestinations()
                 }
             }
+            .badge(conversations.unreadTotal)
 
             Tab("Map", systemImage: "location.fill", value: MainTab.map) {
                 NavigationStack(path: $r.mapPath) {
@@ -191,6 +189,11 @@ public struct MainTabShellView: View {
         .task(id: env.session.currentSession?.userId) {
             await seedMeTabAvatar()
         }
+        .task(id: env.session.currentSession?.userId) {
+            // Loaded at the shell so the Clicks badge is right before the tab is opened.
+            conversations.attach(env)
+            await conversations.load()
+        }
     }
 
     /// Seeds the Me tab from the cached self profile, fetching it only when nothing is cached.
@@ -206,6 +209,17 @@ public struct MainTabShellView: View {
             // A failed fetch intentionally leaves the fallback symbol; the Me root refreshes
             // the profile itself and forwards the avatar when it succeeds.
             meTabAvatar.update(avatarURL: fresh.profile.avatarUrl)
+        }
+    }
+}
+
+/// Hosts the Clicks design preview with a seeded, network-free inbox model.
+private struct ClicksPreviewHost: View {
+    @State private var model = ConversationListModel(initialSnapshot: .preview)
+
+    var body: some View {
+        NavigationStack {
+            ClicksView(model: model)
         }
     }
 }

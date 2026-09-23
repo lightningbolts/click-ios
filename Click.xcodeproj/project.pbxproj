@@ -38,6 +38,7 @@
 		4A3E8D24E65F4FC92A145E37 /* PersonalityTaggingView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 873E049D1811D83AC1D46271 /* PersonalityTaggingView.swift */; };
 		5644CD79052856D5EBB5002A /* ClickCryptoV1.swift in Sources */ = {isa = PBXBuildFile; fileRef = DF1EEA7316772A0B9800A223 /* ClickCryptoV1.swift */; };
 		5B7B2613D4B9042F81200881 /* MeTabAvatarModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9E1DF371E97CE2C8CBF99560 /* MeTabAvatarModel.swift */; };
+		5C1D1F2D08A908C936D43701 /* ConversationListModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = B2CF3C0CEF71E64672F79F3E /* ConversationListModel.swift */; };
 		5EAF68E2372DE07743841C1E /* RootGateView.swift in Sources */ = {isa = PBXBuildFile; fileRef = DA0BA02DE0FE06FB525A130A /* RootGateView.swift */; };
 		625357C7B3AC7DD95115FC6B /* ChatMessage.swift in Sources */ = {isa = PBXBuildFile; fileRef = BEC22CD1ECDF9E342ACCC942 /* ChatMessage.swift */; };
 		632401178D9A54865EF78E3D /* Phase3Repository.swift in Sources */ = {isa = PBXBuildFile; fileRef = 78C43D61D08B8E0F50B37997 /* Phase3Repository.swift */; };
@@ -50,6 +51,7 @@
 		753E31D0F4B10ABEB242AEC8 /* AuthValidationTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = E2EC3690E271F4DA7D73D18B /* AuthValidationTests.swift */; };
 		772DB2063A845310BCE94CBA /* ClickCryptoV2.swift in Sources */ = {isa = PBXBuildFile; fileRef = 819744403B53A100BF880F1B /* ClickCryptoV2.swift */; };
 		77E16A225B4E34C27CD1EC85 /* ClickLogo.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1AFAFEA28942252B4C8C3065 /* ClickLogo.swift */; };
+		78E23D9CF63E068FA3ADFF76 /* ClicksInboxTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 74BFF7B0D6FD295C17BDCAFD /* ClicksInboxTests.swift */; };
 		7B084D4485DF8DDD49429AF8 /* ClickClip.app in Embed App Clips */ = {isa = PBXBuildFile; fileRef = F8AF88527EA315B8FEEC3769 /* ClickClip.app */; settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
 		7C2D27682F203AA8E50135DD /* ButtonStyles.swift in Sources */ = {isa = PBXBuildFile; fileRef = B67AD6209B5DAB6EC962D28A /* ButtonStyles.swift */; };
 		7DA56504C85E6945007913AA /* AvatarService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 84C3EE0A0BDD6043F907666E /* AvatarService.swift */; };
@@ -68,6 +70,7 @@
 		B283DB1A8D0D2A02389A7695 /* OnboardingCoordinator.swift in Sources */ = {isa = PBXBuildFile; fileRef = A03E2C3998EE2E05F0385B8E /* OnboardingCoordinator.swift */; };
 		B62EE3AB195522D20D9214A0 /* ContactDiscoveryService.swift in Sources */ = {isa = PBXBuildFile; fileRef = D01BDDB7FD2547E8DFE08814 /* ContactDiscoveryService.swift */; };
 		B741FE5C5E7099D25DF60D0F /* ClickAPIClient.swift in Sources */ = {isa = PBXBuildFile; fileRef = F7C2A0E83548CF65E326CC1E /* ClickAPIClient.swift */; };
+		B85F5B2F36C2D270F522FB44 /* InboxFormatting.swift in Sources */ = {isa = PBXBuildFile; fileRef = DFFB60FCF05BC5CD192D91F3 /* InboxFormatting.swift */; };
 		BBA0C506BD5F9CA0033D890F /* HomeComponents.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1E86F5EC0AC5CAC94C17F8F /* HomeComponents.swift */; };
 		C13ECD3297594A3A79DED444 /* ChatConversationTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 06A226829E2A5C6E96399ECB /* ChatConversationTests.swift */; };
 		C47D3FFBBB3736906CCB13AC /* AppRouteDestination.swift in Sources */ = {isa = PBXBuildFile; fileRef = FF26912F27B4E25BACF33C07 /* AppRouteDestination.swift */; };
@@ -184,6 +187,7 @@
 		5CE872BED60D02250BA16BD1 /* Debug.xcconfig */ = {isa = PBXFileReference; lastKnownFileType = text.xcconfig; path = Debug.xcconfig; sourceTree = "<group>"; };
 		5FFF30E5C1CD35BF6388FFDA /* InterestsPickerView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = InterestsPickerView.swift; sourceTree = "<group>"; };
 		70C283525337A2816EC23461 /* Manrope-Light.ttf */ = {isa = PBXFileReference; lastKnownFileType = file; path = "Manrope-Light.ttf"; sourceTree = "<group>"; };
+		74BFF7B0D6FD295C17BDCAFD /* ClicksInboxTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ClicksInboxTests.swift; sourceTree = "<group>"; };
 		755A67FED214E965F8934FAA /* Manrope-Regular.ttf */ = {isa = PBXFileReference; lastKnownFileType = file; path = "Manrope-Regular.ttf"; sourceTree = "<group>"; };
 		758475F38EA92E1DDE8CB3B9 /* APIError.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = APIError.swift; sourceTree = "<group>"; };
 		77CF1D6BB251C87ECF61B463 /* ClickTests.xctest */ = {isa = PBXFileReference; includeInIndex = 0; lastKnownFileType = wrapper.cfbundle; path = ClickTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
@@ -208,6 +212,7 @@
 		AAC9E2A2A2CF84BFD5B7C9B3 /* ClicksView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ClicksView.swift; sourceTree = "<group>"; };
 		AB9A71018D3F776F0EF48368 /* ClickCryptoTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ClickCryptoTests.swift; sourceTree = "<group>"; };
 		B016BAE6D25749FE30CC6AEB /* OnboardingRepository.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OnboardingRepository.swift; sourceTree = "<group>"; };
+		B2CF3C0CEF71E64672F79F3E /* ConversationListModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ConversationListModel.swift; sourceTree = "<group>"; };
 		B5503A75FDC271224C037F0F /* ConversationModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ConversationModel.swift; sourceTree = "<group>"; };
 		B67AD6209B5DAB6EC962D28A /* ButtonStyles.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ButtonStyles.swift; sourceTree = "<group>"; };
 		B707F36DD15A7BDA013381B5 /* NotificationService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NotificationService.swift; sourceTree = "<group>"; };
@@ -229,6 +234,7 @@
 		DDF0ECE7A321253E36201A8D /* InterestsTaxonomy.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = InterestsTaxonomy.swift; sourceTree = "<group>"; };
 		DE44FFADBC4622D64A3A704E /* Spacing.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Spacing.swift; sourceTree = "<group>"; };
 		DF1EEA7316772A0B9800A223 /* ClickCryptoV1.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ClickCryptoV1.swift; sourceTree = "<group>"; };
+		DFFB60FCF05BC5CD192D91F3 /* InboxFormatting.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = InboxFormatting.swift; sourceTree = "<group>"; };
 		E2EC3690E271F4DA7D73D18B /* AuthValidationTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AuthValidationTests.swift; sourceTree = "<group>"; };
 		E3B19D4621050199A97E10A9 /* Click.app */ = {isa = PBXFileReference; includeInIndex = 0; lastKnownFileType = wrapper.application; path = Click.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		E6948B635825154782DB64D8 /* LegacyKMPStateMigrator.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LegacyKMPStateMigrator.swift; sourceTree = "<group>"; };
@@ -341,6 +347,8 @@
 			isa = PBXGroup;
 			children = (
 				AAC9E2A2A2CF84BFD5B7C9B3 /* ClicksView.swift */,
+				B2CF3C0CEF71E64672F79F3E /* ConversationListModel.swift */,
+				DFFB60FCF05BC5CD192D91F3 /* InboxFormatting.swift */,
 			);
 			path = Clicks;
 			sourceTree = "<group>";
@@ -422,6 +430,7 @@
 				06A226829E2A5C6E96399ECB /* ChatConversationTests.swift */,
 				398978787A590D62A0ED1FA6 /* ClickAPIClientTests.swift */,
 				AB9A71018D3F776F0EF48368 /* ClickCryptoTests.swift */,
+				74BFF7B0D6FD295C17BDCAFD /* ClicksInboxTests.swift */,
 				2D76120005FD30AE72B1126F /* LegacyKMPStateMigratorTests.swift */,
 				BB1A77E8E59821A8087FC2A2 /* OnboardingTests.swift */,
 				01DF541D37D451BAB9008186 /* Phase3FeedTests.swift */,
@@ -826,6 +835,7 @@
 				07E26E70DB1B5BEE2525D0AB /* ClicksView.swift in Sources */,
 				635A0005B6B6C6FDF9BF014B /* Colors.swift in Sources */,
 				B62EE3AB195522D20D9214A0 /* ContactDiscoveryService.swift in Sources */,
+				5C1D1F2D08A908C936D43701 /* ConversationListModel.swift in Sources */,
 				E57BD1A4E46637EA2ED8E2C9 /* ConversationModel.swift in Sources */,
 				D3646E36CA545C20E2D35A93 /* DeviceIdentityVault.swift in Sources */,
 				8D75F15C30FE0E789CC024BD /* GroupedSurface.swift in Sources */,
@@ -834,6 +844,7 @@
 				EEC3879386A9FBE5A5AB6609 /* HomeFeedSnapshot.swift in Sources */,
 				8DD8D0AEB2396A470B9CBC66 /* HomeView.swift in Sources */,
 				2AE58F26B4198628E285BCD4 /* ImagePipeline.swift in Sources */,
+				B85F5B2F36C2D270F522FB44 /* InboxFormatting.swift in Sources */,
 				3C38884C9336F3A9474C3CCA /* InterestsPickerView.swift in Sources */,
 				18049CEC4F7138E5BEAACA4C /* InterestsTaxonomy.swift in Sources */,
 				72698DEA93E808276C44668E /* KeychainSessionVault.swift in Sources */,
@@ -885,6 +896,7 @@
 				C13ECD3297594A3A79DED444 /* ChatConversationTests.swift in Sources */,
 				EC7E7A933E08DA51FC8D9A04 /* ClickAPIClientTests.swift in Sources */,
 				1ED39C3ECEE0BD874E98A0BC /* ClickCryptoTests.swift in Sources */,
+				78E23D9CF63E068FA3ADFF76 /* ClicksInboxTests.swift in Sources */,
 				F9549923EB17C4F1A31929C3 /* LegacyKMPStateMigratorTests.swift in Sources */,
 				4162BB108AA253929551DACC /* OnboardingTests.swift in Sources */,
 				15E1002EACD031C0520ECBB1 /* Phase3FeedTests.swift in Sources */,
@@ -1041,7 +1053,7 @@
 				INFOPLIST_FILE = Click/Info.plist;
 				INFOPLIST_KEY_CADisableMinimumFrameDurationOnPhone = YES;
 				INFOPLIST_KEY_CFBundleDisplayName = Click;
-				INFOPLIST_KEY_CFBundleURLTypes = "[[\"CFBundleURLSchemes\": [\"click\"], \"CFBundleURLName\": \"compose.project.click.click\", \"CFBundleTypeRole\": \"Editor\"], [\"CFBundleURLName\": \"GoogleSignIn\", \"CFBundleTypeRole\": \"Editor\", \"CFBundleURLSchemes\": [\"com.googleusercontent.apps.530817233802-crnehf5a9duauov4vos4lgsijkgingdj\"]]]";
+				INFOPLIST_KEY_CFBundleURLTypes = "[[\"CFBundleURLName\": \"compose.project.click.click\", \"CFBundleURLSchemes\": [\"click\"], \"CFBundleTypeRole\": \"Editor\"], [\"CFBundleTypeRole\": \"Editor\", \"CFBundleURLName\": \"GoogleSignIn\", \"CFBundleURLSchemes\": [\"com.googleusercontent.apps.530817233802-crnehf5a9duauov4vos4lgsijkgingdj\"]]]";
 				INFOPLIST_KEY_CLICK_API_BASE_URL = "$(CLICK_API_BASE_URL)";
 				INFOPLIST_KEY_GIDClientID = "530817233802-crnehf5a9duauov4vos4lgsijkgingdj.apps.googleusercontent.com";
 				INFOPLIST_KEY_GIDServerClientID = "530817233802-3ki7usecs885vvag9uq92ubu5hgkv2sp.apps.googleusercontent.com";
@@ -1235,7 +1247,7 @@
 				INFOPLIST_FILE = Click/Info.plist;
 				INFOPLIST_KEY_CADisableMinimumFrameDurationOnPhone = YES;
 				INFOPLIST_KEY_CFBundleDisplayName = Click;
-				INFOPLIST_KEY_CFBundleURLTypes = "[[\"CFBundleURLSchemes\": [\"click\"], \"CFBundleURLName\": \"compose.project.click.click\", \"CFBundleTypeRole\": \"Editor\"], [\"CFBundleURLName\": \"GoogleSignIn\", \"CFBundleTypeRole\": \"Editor\", \"CFBundleURLSchemes\": [\"com.googleusercontent.apps.530817233802-crnehf5a9duauov4vos4lgsijkgingdj\"]]]";
+				INFOPLIST_KEY_CFBundleURLTypes = "[[\"CFBundleURLName\": \"compose.project.click.click\", \"CFBundleURLSchemes\": [\"click\"], \"CFBundleTypeRole\": \"Editor\"], [\"CFBundleTypeRole\": \"Editor\", \"CFBundleURLName\": \"GoogleSignIn\", \"CFBundleURLSchemes\": [\"com.googleusercontent.apps.530817233802-crnehf5a9duauov4vos4lgsijkgingdj\"]]]";
 				INFOPLIST_KEY_CLICK_API_BASE_URL = "$(CLICK_API_BASE_URL)";
 				INFOPLIST_KEY_GIDClientID = "530817233802-crnehf5a9duauov4vos4lgsijkgingdj.apps.googleusercontent.com";
 				INFOPLIST_KEY_GIDServerClientID = "530817233802-3ki7usecs885vvag9uq92ubu5hgkv2sp.apps.googleusercontent.com";

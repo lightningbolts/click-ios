@@ -73,7 +73,8 @@ public actor ClickAPIClient {
     }
 
     private func buildURLRequest(from request: APIRequest) throws -> URLRequest {
-        guard var components = URLComponents(url: baseURL.appendingPathComponent(request.path), resolvingAgainstBaseURL: true) else {
+        let base = request.baseURL ?? baseURL
+        guard var components = URLComponents(url: base.appendingPathComponent(request.path), resolvingAgainstBaseURL: true) else {
             throw APIError.invalidURL
         }
 

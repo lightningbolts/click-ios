@@ -3,8 +3,8 @@ import SwiftUI
 /// The canonical avatar for people and generated group identities.
 ///
 /// Renders the remote image through `ImagePipeline` (cached, downsampled off-main) and falls
-/// back to initials on a quiet brand tint while loading or when no image exists. Decorative for
-/// accessibility: the surrounding control is responsible for naming the person.
+/// back to initials on a color derived from the person's or group's stable ID — the same color
+/// the Android client shows. Decorative for accessibility: the surrounding control names the person.
 public struct AvatarView: View {
     public enum Presence: Sendable {
         case online
@@ -12,16 +12,19 @@ public struct AvatarView: View {
     }
 
     private let url: URL?
+    private let seed: String
     private let initials: String
     private let size: CGFloat
     private let presence: Presence?
 
     @State private var image: UIImage?
 
-    public init(imageURL: String?, initials: String, size: CGFloat, presence: Presence? = nil) {
+    /// - Parameter seed: the stable user or group ID that selects the fallback color.
+    public init(imageURL: String?, seed: String, initials: String, size: CGFloat, presence: Presence? = nil) {
         let trimmed = imageURL?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
         let url = trimmed.isEmpty ? nil : URL(string: trimmed)
         self.url = url
+        self.seed = seed
         self.initials = initials
         self.size = size
         self.presence = presence
@@ -66,11 +69,11 @@ public struct AvatarView: View {
 
     private var fallback: some View {
         Circle()
-            .fill(ClickColors.selectionTint)
+            .fill(ClickColors.GeneratedContent.avatarColor(for: seed))
             .overlay {
                 Text(initials.isEmpty ? "?" : initials)
                     .font(.system(size: max(10, size * 0.36), weight: .semibold))
-                    .foregroundStyle(ClickColors.accentForeground)
+                    .foregroundStyle(.white)
                     .minimumScaleFactor(0.5)
                     .lineLimit(1)
                     .padding(size * 0.12)

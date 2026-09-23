@@ -178,6 +178,7 @@ public struct ChatView: View {
             HStack(spacing: 8) {
                 AvatarView(
                     imageURL: model.identity.peerAvatarURL,
+                    seed: model.identity.peerUserID,
                     initials: model.identity.initials,
                     size: ClickMetrics.Avatar.navigation
                 )

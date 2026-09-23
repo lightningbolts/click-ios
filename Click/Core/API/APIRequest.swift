@@ -10,6 +10,9 @@ public enum HTTPMethod: String, Sendable {
 
 /// Represents an outgoing HTTP request specification to Click backend endpoints.
 public struct APIRequest: Sendable {
+    /// Overrides the client's base URL. Used only for approved Supabase read RPCs, which share
+    /// the client's bearer injection and single refresh-and-retry path.
+    public let baseURL: URL?
     public let path: String
     public let method: HTTPMethod
     public let queryItems: [URLQueryItem]
@@ -18,6 +21,7 @@ public struct APIRequest: Sendable {
     public let requiresAuth: Bool
 
     public init(
+        baseURL: URL? = nil,
         path: String,
         method: HTTPMethod = .get,
         queryItems: [URLQueryItem] = [],
@@ -25,6 +29,7 @@ public struct APIRequest: Sendable {
         body: Data? = nil,
         requiresAuth: Bool = true
     ) {
+        self.baseURL = baseURL
         self.path = path
         self.method = method
         self.queryItems = queryItems

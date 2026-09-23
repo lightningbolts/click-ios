@@ -695,6 +695,54 @@ public actor ChatRepository: ChatRepositoryProtocol {
         )
     }
 
+    // MARK: - Inbox previews
+
+    /// Decrypts an inbox preview using only key material already on this device: derived v1
+    /// keys, or a v2 session cached since the conversation was last opened. Never fetches keys,
+    /// so rendering the inbox costs no network work. Returns `nil` when the text can't be read
+    /// yet; the inbox then shows a neutral label. The result must stay in memory only.
+    public func inboxPreviewText(
+        _ content: String,
+        chatID: String?,
+        connectionID: String,
+        peerUserID: String,
+        currentUserID: String
+    ) -> String? {
+        if ClickCryptoV2.isEncrypted(content) {
+            guard
+                let chatID,
+                let session = v2SessionCache[chatID],
+                let envelope = try? ClickCryptoV2.parseMessageEnvelope(wire: content),
+                let key = session.epochKeys[envelope.epoch]
+            else { return nil }
+            // Reusing the timeline's replay guard is safe: re-reserving the same envelope and
+            // nonce is idempotent, so opening the chat later decrypts this message normally.
+            return try? ClickCryptoV2.decryptMessage(
+                metadata: ClickCryptoV2.MessageMetadata(
+                    chatId: envelope.chatId,
+                    epoch: envelope.epoch,
+                    senderDeviceId: envelope.senderDeviceId,
+                    clientMessageId: envelope.clientMessageId
+                ),
+                epochKey: key,
+                envelope: content,
+                replayGuard: messageReplayGuard
+            )
+        }
+
+        if ClickCryptoV1.isEncrypted(content) {
+            guard let keys = legacyKeys(
+                connectionID: connectionID,
+                peerUserID: peerUserID,
+                currentUserID: currentUserID
+            ) else { return nil }
+            let decrypted = ClickCryptoV1.decryptContent(content, keys: keys)
+            return ClickCryptoV1.isEncrypted(decrypted) ? nil : decrypted
+        }
+
+        return content
+    }
+
     // MARK: - Mapping / decryption
 
     private func mapRawMessage(

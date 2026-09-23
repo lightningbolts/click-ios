@@ -580,6 +580,7 @@ private struct HomeSearchSheetView: View {
                             HStack(spacing: 12) {
                                 AvatarView(
                                     imageURL: connection.avatarUrl,
+                                    seed: connection.userID,
                                     initials: connection.initials,
                                     size: ClickMetrics.Avatar.row
                                 )

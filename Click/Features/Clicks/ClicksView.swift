@@ -1,364 +1,291 @@
 import SwiftUI
 
-/// Native Clicks inbox preserving the shipping Click hierarchy: Active / Groups / Archived,
-/// Remember Me, and conversation-first rows.
+/// The Clicks inbox root: native large title and inline search, compact Active / Groups /
+/// Archived filters, the Core "Remember" strip, then conversation rows immediately.
+/// Rows use native swipe actions and context menus; all state lives in `ConversationListModel`.
 public struct ClicksView: View {
     @Environment(AppEnvironment.self) private var env
-    @State private var snapshot: ClicksSnapshot?
-    @State private var selectedTab: InboxTab = .active
-    @State private var searchQuery = ""
-    @State private var isSearching = false
-    @State private var refreshError: String?
+    let model: ConversationListModel
 
-    public init(initialSnapshot: ClicksSnapshot? = nil) {
-        self._snapshot = State(initialValue: initialSnapshot)
+    @State private var selectedTab: InboxTab = .active
+    @State private var query = ""
+
+    init(model: ConversationListModel) {
+        self.model = model
     }
 
     public var body: some View {
-        Group {
-            if let snapshot {
-                ScrollView {
-                    LazyVStack(alignment: .leading, spacing: 20) {
-                        if refreshError != nil {
-                            offlineNotice
-                        }
-
-                        titleBlock(snapshot)
-                        tabSwitcher(snapshot)
-
-                        if selectedTab == .active, !filteredActive(snapshot).isEmpty {
-                            rememberMe(filteredActive(snapshot))
-                        }
-
-                        inboxSection(snapshot)
+        List {
+            Section {
+                if model.refreshError != nil, model.snapshot != nil {
+                    OfflineNotice("Offline — showing saved Clicks") {
+                        Task { await model.refresh() }
                     }
-                    .padding(.horizontal, 18)
-                    .padding(.top, 8)
-                    .padding(.bottom, 28)
                 }
-                .refreshable { await refresh() }
-            } else {
-                loadingState
+                filterChips
+                if showsRememberStrip {
+                    rememberStrip
+                }
+            }
+            .listRowSeparator(.hidden)
+            .listRowBackground(Color.clear)
+            .listRowInsets(EdgeInsets(top: 6, leading: ClickSpacing.screenGutter, bottom: 6, trailing: ClickSpacing.screenGutter))
+
+            Section {
+                rows
             }
         }
+        .listStyle(.plain)
+        .scrollContentBackground(.hidden)
         .background(ClickColors.background.ignoresSafeArea())
+        .overlay {
+            if model.snapshot == nil {
+                initialState
+            }
+        }
         .navigationTitle("Clicks")
         .navigationBarTitleDisplayMode(.large)
+        .searchable(text: $query, placement: .navigationBarDrawer(displayMode: .always), prompt: "Search")
         .toolbar {
             ToolbarItem(placement: .topBarLeading) {
                 Menu {
                     Button("Refresh", systemImage: "arrow.clockwise") {
-                        Task { await refresh() }
+                        Task { await model.refresh() }
                     }
                 } label: {
                     Label("Clicks menu", systemImage: "ellipsis")
                 }
             }
-
             ToolbarItem(placement: .topBarTrailing) {
                 Button {
-                    isSearching = true
+                    env.router.navigate(to: .scanQR)
                 } label: {
-                    Label("Search Clicks", systemImage: "magnifyingglass")
+                    Label("Scan QR", systemImage: "qrcode.viewfinder")
                 }
             }
         }
-        .task { await bootstrap() }
-        .sheet(isPresented: $isSearching) {
-            clicksSearchSheet
+        .refreshable { await model.refresh() }
+        .onAppear {
+            Task { await model.refreshIfStale() }
+        }
+        .alert(
+            "Something went wrong",
+            isPresented: Binding(
+                get: { model.actionError != nil },
+                set: { if !$0 { model.actionError = nil } }
+            )
+        ) {
+            Button("OK", role: .cancel) {}
+        } message: {
+            Text(model.actionError ?? "")
         }
     }
 
-    private func titleBlock(_ snapshot: ClicksSnapshot) -> some View {
-        Text("\(snapshot.connections.count) active connection\(snapshot.connections.count == 1 ? "" : "s")")
-            .font(ClickTypography.supporting)
-            .foregroundStyle(ClickColors.textSecondary)
-    }
+    // MARK: - Header
 
-    private func tabSwitcher(_ snapshot: ClicksSnapshot) -> some View {
-        HStack(spacing: 8) {
-            inboxTabButton(.active, count: snapshot.connections.count)
-            inboxTabButton(.groups, count: snapshot.cliques.count)
-            inboxTabButton(.archived, count: snapshot.archived.count)
+    private var filterChips: some View {
+        HStack(spacing: ClickSpacing.sm) {
+            ForEach(InboxTab.allCases, id: \.self) { tab in
+                InboxFilterChip(
+                    title: tab.title,
+                    count: tab == .active ? nil : count(for: tab),
+                    isSelected: selectedTab == tab
+                ) {
+                    selectedTab = tab
+                    ClickHaptics.selection()
+                }
+            }
+            Spacer(minLength: 0)
         }
     }
 
-    private func inboxTabButton(_ tab: InboxTab, count: Int) -> some View {
-        Button {
-            selectedTab = tab
-            ClickHaptics.selection()
-        } label: {
-            Text("\(tab.title) (\(count))")
-                .font(ClickTypography.supportingEmphasized)
-                .lineLimit(1)
-                .minimumScaleFactor(0.85)
-                .frame(maxWidth: .infinity, minHeight: ClickMetrics.chipHeight)
-                .foregroundStyle(selectedTab == tab ? ClickColors.accentForeground : ClickColors.textPrimary)
-                .background(selectedTab == tab ? ClickColors.selectionTint : ClickColors.fillSubtle, in: Capsule())
-                .frame(minHeight: ClickMetrics.minimumHitTarget)
-                .contentShape(Rectangle())
-        }
-        .buttonStyle(.plain)
-        .accessibilityAddTraits(selectedTab == tab ? .isSelected : [])
+    private var showsRememberStrip: Bool {
+        selectedTab == .active && query.isEmpty && !model.core.isEmpty
     }
 
-    private func rememberMe(_ connections: [ConnectionItem]) -> some View {
-        VStack(alignment: .leading, spacing: 10) {
-            Text("Remember Me")
-                .font(ClickTypography.supportingEmphasized)
-                .foregroundStyle(ClickColors.textPrimary)
-
-            ScrollView(.horizontal) {
-                HStack(spacing: 14) {
-                    ForEach(connections.prefix(8)) { connection in
-                        Button {
-                            openProfile(connection)
-                        } label: {
-                            VStack(spacing: 7) {
-                                ConnectionAvatar(connection: connection, size: ClickMetrics.Avatar.conversation)
-                                Text(firstName(connection.displayName))
-                                    .font(ClickTypography.metadata)
-                                    .foregroundStyle(ClickColors.textPrimary)
-                                    .lineLimit(1)
-                                    .frame(width: 66)
-
-                                if connection.encounterCount > 1 {
-                                    Text("\(connection.encounterCount)x")
-                                        .font(ClickTypography.caption)
-                                        .foregroundStyle(ClickColors.accentForeground)
-                                        .padding(.horizontal, 7)
-                                        .frame(height: 20)
-                                        .background(ClickColors.selectionTint)
-                                        .clipShape(Capsule())
-                                }
-                            }
+    private var rememberStrip: some View {
+        ScrollView(.horizontal) {
+            HStack(spacing: 14) {
+                ForEach(model.core) { item in
+                    Button {
+                        openProfile(item)
+                    } label: {
+                        VStack(spacing: 6) {
+                            ConnectionAvatar(item: item, size: ClickMetrics.Avatar.conversation)
+                            Text(firstName(item.displayName))
+                                .font(ClickTypography.caption)
+                                .foregroundStyle(ClickColors.textPrimary)
+                                .lineLimit(1)
+                                .frame(width: 64)
                         }
-                        .buttonStyle(.plain)
+                    }
+                    .buttonStyle(.plain)
+                    .accessibilityLabel("\(item.displayName), Core")
+                }
+            }
+            .padding(.vertical, 2)
+        }
+        .scrollIndicators(.hidden)
+    }
+
+    // MARK: - Rows
+
+    @ViewBuilder
+    private var rows: some View {
+        switch selectedTab {
+        case .active, .archived:
+            let isArchived = selectedTab == .archived
+            let items = filtered(isArchived ? model.archived : model.active)
+            if items.isEmpty, model.snapshot != nil {
+                emptyState(isArchived: isArchived)
+            }
+            ForEach(items) { item in
+                ConversationRow(
+                    item: item,
+                    preview: model.previewText(for: item),
+                    onOpen: { isArchived ? openProfile(item) : openChat(item) },
+                    onProfile: { openProfile(item) }
+                )
+                .listRowInsets(EdgeInsets(top: 0, leading: ClickSpacing.screenGutter, bottom: 0, trailing: ClickSpacing.screenGutter))
+                .listRowBackground(Color.clear)
+                .swipeActions(edge: .trailing, allowsFullSwipe: true) {
+                    Button {
+                        Task { await model.setArchived(item, archived: !isArchived) }
+                    } label: {
+                        Label(isArchived ? "Unarchive" : "Archive", systemImage: isArchived ? "tray.and.arrow.up" : "archivebox")
+                    }
+                    .tint(ClickColors.offline)
+                }
+                .swipeActions(edge: .leading) {
+                    if !isArchived {
+                        coreButton(item)
+                            .tint(ClickColors.primaryActionFill)
+                    }
+                }
+                .contextMenu {
+                    Button("View Profile", systemImage: "person.crop.circle") { openProfile(item) }
+                    if !isArchived { coreButton(item) }
+                    Button(isArchived ? "Unarchive" : "Archive", systemImage: isArchived ? "tray.and.arrow.up" : "archivebox") {
+                        Task { await model.setArchived(item, archived: !isArchived) }
                     }
                 }
             }
-            .scrollIndicators(.hidden)
+        case .groups:
+            let groups = model.groups.filter { query.isEmpty || $0.name.localizedCaseInsensitiveContains(query) }
+            if groups.isEmpty {
+                ContentUnavailableView(
+                    "No group Clicks yet",
+                    systemImage: "person.3",
+                    description: Text("Verified Click groups will appear here when native group chat is available.")
+                )
+                .listRowSeparator(.hidden)
+                .listRowBackground(Color.clear)
+            }
+            ForEach(groups) { group in
+                GroupInboxRow(group: group)
+                    .listRowBackground(Color.clear)
+            }
+        }
+    }
+
+    private func coreButton(_ item: ConnectionItem) -> some View {
+        Button {
+            Task { await model.setCore(item, isCore: !item.isCore) }
+        } label: {
+            Label(item.isCore ? "Remove from Core" : "Add to Core", systemImage: item.isCore ? "star.slash" : "star")
         }
     }
 
     @ViewBuilder
-    private func inboxSection(_ snapshot: ClicksSnapshot) -> some View {
-        VStack(alignment: .leading, spacing: 8) {
-            Text(selectedTab.sectionTitle)
-                .font(ClickTypography.supportingEmphasized)
-                .foregroundStyle(ClickColors.textPrimary)
-
-            switch selectedTab {
-            case .active:
-                let rows = filteredActive(snapshot)
-                if rows.isEmpty {
-                    emptyState(title: "No active Clicks", description: "New in-person connections will appear here.")
-                } else {
-                    VStack(spacing: 0) {
-                        ForEach(rows) { connection in
-                            ConversationInboxRow(connection: connection) {
-                                openChat(connection)
-                            } onProfile: {
-                                openProfile(connection)
-                            }
-
-                            if connection.id != rows.last?.id {
-                                Divider().padding(.leading, 68)
-                            }
-                        }
-                    }
-                }
-
-            case .groups:
-                let groups = snapshot.cliques.filter {
-                    searchQuery.isEmpty || $0.name.localizedCaseInsensitiveContains(searchQuery)
-                }
-                if groups.isEmpty {
-                    emptyState(
-                        title: "No group Clicks yet",
-                        description: "Verified Click groups will appear here when the native group-chat phase is connected."
-                    )
-                } else {
-                    VStack(spacing: 0) {
-                        ForEach(groups) { group in
-                            GroupInboxRow(group: group)
-                            if group.id != groups.last?.id {
-                                Divider().padding(.leading, 68)
-                            }
-                        }
-                    }
-                }
-
-            case .archived:
-                let rows = filteredArchived(snapshot)
-                if rows.isEmpty {
-                    emptyState(title: "No archived Clicks", description: "Older connections you archive will appear here.")
-                } else {
-                    VStack(spacing: 0) {
-                        ForEach(rows) { connection in
-                            ConversationInboxRow(connection: connection) {
-                                openProfile(connection)
-                            } onProfile: {
-                                openProfile(connection)
-                            }
-
-                            if connection.id != rows.last?.id {
-                                Divider().padding(.leading, 68)
-                            }
-                        }
-                    }
-                }
-            }
-        }
-    }
-
-    private func filteredActive(_ snapshot: ClicksSnapshot) -> [ConnectionItem] {
-        filter(snapshot.connections)
-    }
-
-    private func filteredArchived(_ snapshot: ClicksSnapshot) -> [ConnectionItem] {
-        filter(snapshot.archived)
-    }
-
-    private func filter(_ source: [ConnectionItem]) -> [ConnectionItem] {
-        let clean = searchQuery.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !clean.isEmpty else { return source }
-        return source.filter {
-            $0.displayName.localizedCaseInsensitiveContains(clean)
-                || $0.handle.localizedCaseInsensitiveContains(clean)
-                || $0.encounterLocation.localizedCaseInsensitiveContains(clean)
-                || $0.mutualTags.contains { $0.localizedCaseInsensitiveContains(clean) }
-        }
-    }
-
-    private func emptyState(title: String, description: String) -> some View {
-        VStack(spacing: 7) {
-            Image(systemName: "person.2")
-                .font(.system(size: 28))
-                .foregroundStyle(ClickColors.textTertiary)
-            Text(title)
-                .font(ClickTypography.bodyEmphasized)
-            Text(description)
-                .font(ClickTypography.supporting)
-                .foregroundStyle(ClickColors.textSecondary)
-                .multilineTextAlignment(.center)
-        }
-        .frame(maxWidth: .infinity)
-        .padding(.vertical, 34)
-    }
-
-    private var clicksSearchSheet: some View {
-        NavigationStack {
-            Group {
-                if let snapshot {
-                    let rows = filter(snapshot.connections + snapshot.archived)
-                    if rows.isEmpty, !searchQuery.isEmpty {
-                        ContentUnavailableView.search(text: searchQuery)
-                    } else {
-                        List(rows) { connection in
-                            Button {
-                                isSearching = false
-                                openChat(connection)
-                            } label: {
-                                HStack(spacing: 12) {
-                                    ConnectionAvatar(connection: connection, size: ClickMetrics.Avatar.row)
-                                    VStack(alignment: .leading, spacing: 2) {
-                                        Text(connection.displayName)
-                                            .font(ClickTypography.body)
-                                            .foregroundStyle(ClickColors.textPrimary)
-                                        Text(connection.handle)
-                                            .font(ClickTypography.supporting)
-                                            .foregroundStyle(ClickColors.textSecondary)
-                                    }
-                                }
-                            }
-                        }
-                        .listStyle(.plain)
-                    }
-                }
-            }
-            .navigationTitle("Search Clicks")
-            .navigationBarTitleDisplayMode(.inline)
-            .searchable(text: $searchQuery, prompt: "Names, places, interests")
-            .toolbar {
-                ToolbarItem(placement: .topBarTrailing) {
-                    Button("Done") { isSearching = false }
-                }
-            }
-        }
-        .tint(ClickColors.accentForeground)
-    }
-
-    private var loadingState: some View {
-        VStack(spacing: 10) {
-            ProgressView().tint(ClickColors.accentForeground)
-            Text("Loading Clicks…")
-                .font(ClickTypography.supporting)
-                .foregroundStyle(ClickColors.textSecondary)
-        }
-        .frame(maxWidth: .infinity, maxHeight: .infinity)
-    }
-
-    private var offlineNotice: some View {
-        OfflineNotice("Offline — showing saved Clicks") {
-            Task { await refresh() }
-        }
-    }
-
-    private func openChat(_ connection: ConnectionItem) {
-        guard !connection.userID.isEmpty else { return }
-        ClickHaptics.selection()
-        env.router.navigate(to:
-            .chat(
-                DirectChatRoute(
-                    chatID: nil,
-                    connectionID: connection.connectionID,
-                    peerUserID: connection.userID,
-                    peerDisplayName: connection.displayName,
-                    peerHandle: connection.handle,
-                    peerAvatarURL: connection.avatarUrl,
-                    isOnline: connection.isOnline,
-                    lastActiveText: connection.lastActiveRelative
+    private func emptyState(isArchived: Bool) -> some View {
+        Group {
+            if !query.isEmpty {
+                ContentUnavailableView.search(text: query)
+            } else if isArchived {
+                ContentUnavailableView(
+                    "No archived Clicks",
+                    systemImage: "archivebox",
+                    description: Text("Connections you archive appear here.")
                 )
-            )
-        )
+            } else {
+                ContentUnavailableView(
+                    "No connections yet",
+                    systemImage: "person.2",
+                    description: Text("Start clicking with people nearby!")
+                )
+            }
+        }
+        .listRowSeparator(.hidden)
+        .listRowBackground(Color.clear)
     }
 
-    private func openProfile(_ connection: ConnectionItem) {
-        guard !connection.userID.isEmpty else { return }
+    @ViewBuilder
+    private var initialState: some View {
+        if let error = model.refreshError {
+            ContentUnavailableView {
+                Label("Couldn't load Clicks", systemImage: "wifi.exclamationmark")
+            } description: {
+                Text(error)
+            } actions: {
+                Button("Try Again") { Task { await model.refresh() } }
+                    .buttonStyle(.borderedProminent)
+                    .tint(ClickColors.primaryActionFill)
+            }
+        } else {
+            ProgressView()
+                .tint(ClickColors.accentForeground)
+        }
+    }
+
+    // MARK: - Helpers
+
+    private func count(for tab: InboxTab) -> Int {
+        switch tab {
+        case .active: model.active.count
+        case .groups: model.groups.count
+        case .archived: model.archived.count
+        }
+    }
+
+    private func filtered(_ items: [ConnectionItem]) -> [ConnectionItem] {
+        let clean = query.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !clean.isEmpty else { return items }
+        return items.filter {
+            $0.displayName.localizedCaseInsensitiveContains(clean)
+                || $0.encounterLocation.localizedCaseInsensitiveContains(clean)
+                || model.previewText(for: $0).localizedCaseInsensitiveContains(clean)
+        }
+    }
+
+    private func openChat(_ item: ConnectionItem) {
+        guard !item.userID.isEmpty else { return }
         ClickHaptics.selection()
-        env.router.navigate(to:
-            .userProfile(
-                userID: connection.userID,
-                connectionID: connection.connectionID.isEmpty ? nil : connection.connectionID
+        model.markOpened(item)
+        env.router.navigate(to: .chat(
+            DirectChatRoute(
+                chatID: item.chatID,
+                connectionID: item.connectionID,
+                peerUserID: item.userID,
+                peerDisplayName: item.displayName,
+                peerHandle: item.handle,
+                peerAvatarURL: item.avatarUrl,
+                isOnline: item.isOnline,
+                lastActiveText: item.lastActiveRelative
             )
-        )
+        ))
+    }
+
+    private func openProfile(_ item: ConnectionItem) {
+        guard !item.userID.isEmpty else { return }
+        ClickHaptics.selection()
+        env.router.navigate(to: .userProfile(
+            userID: item.userID,
+            connectionID: item.connectionID.isEmpty ? nil : item.connectionID
+        ))
     }
 
     private func firstName(_ displayName: String) -> String {
         displayName.split(separator: " ").first.map(String.init) ?? displayName
-    }
-
-    @MainActor
-    private func bootstrap() async {
-        guard snapshot == nil,
-              let userID = env.session.currentSession?.userId else { return }
-
-        if let cached = await env.phase3.cachedClicks(for: userID) {
-            snapshot = cached
-        }
-        await refresh()
-    }
-
-    @MainActor
-    private func refresh() async {
-        guard let userID = env.session.currentSession?.userId else { return }
-        do {
-            snapshot = try await env.phase3.refreshClicks(for: userID)
-            refreshError = nil
-        } catch {
-            refreshError = error.localizedDescription
-        }
     }
 }
 
@@ -369,91 +296,154 @@ private enum InboxTab: CaseIterable {
 
     var title: String {
         switch self {
-        case .active: return "Active"
-        case .groups: return "Groups"
-        case .archived: return "Archived"
-        }
-    }
-
-    var sectionTitle: String {
-        switch self {
-        case .active: return "Clicks"
-        case .groups: return "Group Clicks"
-        case .archived: return "Archived"
+        case .active: "Active"
+        case .groups: "Groups"
+        case .archived: "Archived"
         }
     }
 }
 
-private struct ConversationInboxRow: View {
-    let connection: ConnectionItem
+private struct InboxFilterChip: View {
+    let title: String
+    let count: Int?
+    let isSelected: Bool
+    let action: () -> Void
+
+    var body: some View {
+        Button(action: action) {
+            HStack(spacing: 6) {
+                Text(title)
+                if let count, count > 0 {
+                    Text("\(count)")
+                        .font(ClickTypography.badge)
+                        .monospacedDigit()
+                        .foregroundStyle(ClickColors.primaryActionForeground)
+                        .padding(.horizontal, 6)
+                        .frame(minWidth: 18, minHeight: 18)
+                        .background(ClickColors.primaryActionFill, in: Capsule())
+                }
+            }
+            .font(ClickTypography.supportingEmphasized)
+            .foregroundStyle(isSelected ? ClickColors.accentForeground : ClickColors.textPrimary)
+            .padding(.horizontal, 14)
+            .frame(minHeight: ClickMetrics.chipHeight)
+            .background(isSelected ? ClickColors.selectionTint : ClickColors.fillSubtle, in: Capsule())
+            .frame(minHeight: ClickMetrics.minimumHitTarget)
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .accessibilityAddTraits(isSelected ? .isSelected : [])
+    }
+}
+
+private struct ConversationRow: View {
+    let item: ConnectionItem
+    let preview: String
     let onOpen: () -> Void
     let onProfile: () -> Void
 
     var body: some View {
         HStack(spacing: 12) {
             Button(action: onProfile) {
-                ConnectionAvatar(connection: connection, size: ClickMetrics.Avatar.conversation)
+                ConnectionAvatar(item: item, size: ClickMetrics.Avatar.conversation)
             }
             .buttonStyle(.plain)
-            .accessibilityLabel("Open \(connection.displayName) profile")
+            .accessibilityLabel("Open \(item.displayName) profile")
 
             Button(action: onOpen) {
-                HStack(alignment: .top, spacing: 10) {
-                    VStack(alignment: .leading, spacing: 4) {
-                        HStack(spacing: 7) {
-                            Text(connection.displayName)
-                                .font(ClickTypography.bodyEmphasized)
-                                .foregroundStyle(ClickColors.textPrimary)
-                                .lineLimit(1)
-
-                            if !connection.handle.isEmpty {
-                                Text(connection.handle)
-                                    .font(ClickTypography.supporting)
-                                    .foregroundStyle(ClickColors.textSecondary)
-                                    .lineLimit(1)
-                            }
-                        }
-
-                        Text(connection.lastMessagePreview ?? fallbackPreview)
-                            .font(ClickTypography.supporting)
-                            .foregroundStyle(ClickColors.textSecondary)
+                VStack(alignment: .leading, spacing: 3) {
+                    HStack(alignment: .firstTextBaseline, spacing: 5) {
+                        Text(item.displayName)
+                            .font(ClickTypography.bodyEmphasized)
+                            .foregroundStyle(ClickColors.textPrimary)
                             .lineLimit(1)
+                        if item.isCore {
+                            Image(systemName: "star.fill")
+                                .font(.caption2)
+                                .foregroundStyle(ClickColors.accentForeground)
+                                .accessibilityHidden(true)
+                        }
+                        Spacer(minLength: 8)
+                        if let date = item.lastActivityAt {
+                            Text(InboxFormatting.timestamp(for: date))
+                                .font(ClickTypography.metadata)
+                                .foregroundStyle(item.unreadCount > 0 ? ClickColors.accentForeground : ClickColors.textTertiary)
+                                .monospacedDigit()
+                        }
                     }
 
-                    Spacer(minLength: 8)
-
-                    if !connection.lastActiveRelative.isEmpty {
-                        Text(connection.lastActiveRelative)
-                            .font(ClickTypography.caption)
+                    HStack(alignment: .top, spacing: 4) {
+                        if let message = item.lastMessage, message.isOutgoing {
+                            Image(systemName: message.isRead ? "checkmark.circle.fill" : "checkmark")
+                                .font(.caption2.weight(.semibold))
+                                .foregroundStyle(message.isRead ? ClickColors.accentForeground : ClickColors.textTertiary)
+                                .padding(.top, 3)
+                                .accessibilityHidden(true)
+                        }
+                        Text(preview)
+                            .font(ClickTypography.supporting)
                             .foregroundStyle(ClickColors.textSecondary)
-                            .lineLimit(1)
+                            .lineLimit(2)
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                        trailingStatus
                     }
                 }
                 .contentShape(Rectangle())
             }
             .buttonStyle(.plain)
+            .accessibilityElement(children: .combine)
+            .accessibilityLabel(accessibilityText)
         }
-        .padding(.vertical, 11)
+        .padding(.vertical, 10)
+        .alignmentGuide(.listRowSeparatorLeading) { dimensions in
+            dimensions[.leading] + ClickMetrics.Avatar.conversation + 12
+        }
     }
 
-    private var fallbackPreview: String {
-        if !connection.encounterLocation.isEmpty {
-            return "Met at \(connection.encounterLocation)"
+    @ViewBuilder
+    private var trailingStatus: some View {
+        if item.unreadCount > 0 {
+            Text(item.unreadCount > 99 ? "99+" : "\(item.unreadCount)")
+                .font(ClickTypography.badge)
+                .monospacedDigit()
+                .foregroundStyle(ClickColors.primaryActionForeground)
+                .padding(.horizontal, 6)
+                .frame(minWidth: 20, minHeight: 20)
+                .background(ClickColors.primaryActionFill, in: Capsule())
+        } else if let deadline = item.sayHiDeadline, let remaining = InboxFormatting.sayHiRemaining(until: deadline) {
+            Text(remaining)
+                .font(ClickTypography.badge)
+                .foregroundStyle(ClickColors.accentForeground)
+                .padding(.horizontal, 7)
+                .padding(.vertical, 3)
+                .background(ClickColors.selectionTint, in: Capsule())
         }
-        return "Open conversation"
+    }
+
+    private var accessibilityText: String {
+        var parts = [item.displayName]
+        if item.isCore { parts.append("Core") }
+        if item.unreadCount > 0 { parts.append("\(item.unreadCount) unread") }
+        parts.append(preview)
+        if let date = item.lastActivityAt { parts.append(InboxFormatting.timestamp(for: date)) }
+        if let deadline = item.sayHiDeadline, let remaining = InboxFormatting.sayHiRemaining(until: deadline) {
+            parts.append(remaining)
+        }
+        return parts.joined(separator: ", ")
     }
 }
 
 private struct ConnectionAvatar: View {
-    let connection: ConnectionItem
+    let item: ConnectionItem
     let size: CGFloat
 
     var body: some View {
         AvatarView(
-            imageURL: connection.avatarUrl,
-            initials: connection.initials,
+            imageURL: item.avatarUrl,
+            seed: item.userID,
+            initials: item.initials,
             size: size,
-            presence: AvatarView.Presence(isOnline: connection.isOnline, known: connection.presenceKnown)
+            presence: AvatarView.Presence(isOnline: item.isOnline, known: item.presenceKnown)
         )
     }
 }
@@ -463,7 +453,7 @@ private struct GroupInboxRow: View {
 
     var body: some View {
         HStack(spacing: 12) {
-            AvatarView(imageURL: nil, initials: group.initials, size: ClickMetrics.Avatar.conversation)
+            AvatarView(imageURL: nil, seed: group.chatID, initials: group.initials, size: ClickMetrics.Avatar.conversation)
 
             VStack(alignment: .leading, spacing: 4) {
                 Text(group.name)
@@ -478,10 +468,10 @@ private struct GroupInboxRow: View {
 
             if !group.lastActiveRelative.isEmpty {
                 Text(group.lastActiveRelative)
-                    .font(ClickTypography.caption)
-                    .foregroundStyle(ClickColors.textSecondary)
+                    .font(ClickTypography.metadata)
+                    .foregroundStyle(ClickColors.textTertiary)
             }
         }
-        .padding(.vertical, 11)
+        .padding(.vertical, 10)
     }
 }

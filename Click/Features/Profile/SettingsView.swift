@@ -148,6 +148,7 @@ public struct SettingsView: View {
                 ZStack(alignment: .bottomTrailing) {
                     AvatarView(
                         imageURL: profile.avatarUrl,
+                        seed: profile.userId,
                         initials: profile.initials,
                         size: ClickMetrics.Avatar.identity
                     )

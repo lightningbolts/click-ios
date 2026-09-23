@@ -35,7 +35,8 @@ public enum ClickColors {
 
     public static let textPrimary = Color(uiColor: .label)
     public static let textSecondary = Color(uiColor: .secondaryLabel)
-    public static let textTertiary = dynamic(lightHex: "#8A8A8E", darkHex: "#98989F")
+    /// Tertiary text: #6C6C71 in light mode keeps 5.1:1 contrast on grouped backgrounds.
+    public static let textTertiary = dynamic(lightHex: "#6C6C71", darkHex: "#98989F")
 
     // MARK: - Brand & Accent
 
@@ -48,7 +49,7 @@ public enum ClickColors {
     public static let primaryActionFill = Color(hex: "#7C3AED")
     public static let primaryActionForeground = Color.white
     /// Quiet purple-tinted background for selected state and low-emphasis highlights.
-    public static let selectionTint = dynamic(lightHex: "#EFE7FD", darkHex: "#24133F")
+    public static let selectionTint = dynamic(lightHex: "#EEE5FF", darkHex: "#24133F")
 
     // MARK: - Chat
 
@@ -62,20 +63,34 @@ public enum ClickColors {
 
     public static let success = Color(uiColor: .systemGreen)
     public static let warning = Color(uiColor: .systemOrange)
-    public static let destructive = Color(uiColor: .systemRed)
-    public static let online = Color(uiColor: .systemGreen)
+    public static let destructive = dynamic(lightHex: "#D70015", darkHex: "#FF453A")
+    public static let online = dynamic(lightHex: "#1FA855", darkHex: "#30D158")
     public static let offline = Color(uiColor: .systemGray)
 
     // MARK: - Generated Content Palette (content visuals only, never app chrome)
 
     public enum GeneratedContent {
-        public static let purple = Color(hex: "#630ED4")
-        public static let blue = Color(hex: "#224CFF")
-        public static let teal = Color(hex: "#0D9488")
-        public static let coral = Color(hex: "#EA580C")
-        public static let gold = Color(hex: "#CA8A04")
-        public static let magenta = Color(hex: "#C026D3")
-        public static let green = Color(hex: "#16A34A")
+        /// Avatar fallback colors. Order and values match the shipping Android/KMP client's
+        /// `PlaceholderAvatarColors` so a person gets the same color on every platform.
+        static let avatarPalette: [Color] = [
+            "#4F46E5", "#7C3AED", "#0D9488", "#2563EB", "#BE185D",
+            "#B45309", "#0F766E", "#4338CA", "#15803D", "#92400E"
+        ].map(Color.init(hex:))
+
+        /// Stable fallback color for a user or group ID. Mirrors KMP's
+        /// `stableAvatarPlaceholderColor`: a 32-bit `31 * h + char` hash over UTF-16 units.
+        public static func avatarColor(for seed: String) -> Color {
+            avatarPalette[avatarPaletteIndex(for: seed)]
+        }
+
+        static func avatarPaletteIndex(for seed: String) -> Int {
+            guard !seed.trimmingCharacters(in: .whitespaces).isEmpty else { return 0 }
+            var hash: Int32 = 0
+            for unit in seed.utf16 {
+                hash = 31 &* hash &+ Int32(unit)
+            }
+            return Int(hash & Int32.max) % avatarPalette.count
+        }
     }
 
     // MARK: - Dynamic Color Helpers
