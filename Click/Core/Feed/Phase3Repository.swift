@@ -102,12 +102,12 @@ public actor Phase3Repository {
             requiresAuth: true
         )
         let (data, _) = try await api.executeRaw(request)
-        let root = try jsonObject(data)
+        let root = try Self.jsonObject(data)
         let rows = root["connections"] as? [[String: Any]] ?? []
 
         let identities: [(connectionID: String, peerID: String)] = rows.compactMap { row in
             guard
-                let connectionID = string(row["id"]),
+                let connectionID = Self.Self.string(row["id"]),
                 let userIDs = row["user_ids"] as? [String],
                 let peerID = userIDs.first(where: { $0 != userID })
             else { return nil }
@@ -137,7 +137,7 @@ public actor Phase3Repository {
 
         for row in rows {
             guard
-                let connectionID = string(row["id"]),
+                let connectionID = Self.Self.string(row["id"]),
                 let userIDs = row["user_ids"] as? [String],
                 let peerID = userIDs.first(where: { $0 != userID })
             else { continue }
@@ -145,12 +145,12 @@ public actor Phase3Repository {
             let profile = profiles[connectionID]
             let encounters = row["connection_encounters"] as? [[String: Any]] ?? []
             let latestEncounter = encounters.first
-            let location = string(latestEncounter?["location_name"])
-                ?? string(row["location_name"])
+            let location = Self.string(latestEncounter?["location_name"])
+                ?? Self.Self.string(row["location_name"])
                 ?? ""
-            let activityDate = timestamp(row["last_message_at"])
-                ?? timestamp(latestEncounter?["encountered_at"])
-                ?? timestamp(row["created"])
+            let activityDate = Self.timestamp(row["last_message_at"])
+                ?? Self.timestamp(latestEncounter?["encountered_at"])
+                ?? Self.timestamp(row["created"])
             let lastActive = activityDate.map(Self.relativeDescription) ?? ""
             let tags = profile?.tags ?? []
 
@@ -277,23 +277,23 @@ public actor Phase3Repository {
             requiresAuth: true
         )
         let (data, _) = try await api.executeRaw(request)
-        let root = try jsonObject(data)
+        let root = try Self.jsonObject(data)
         let user = root["user"] as? [String: Any] ?? [:]
 
-        let first = string(user["first_name"]) ?? ""
-        let last = string(user["last_name"]) ?? ""
-        let directName = string(user["full_name"]) ?? string(user["name"])
+        let first = Self.string(user["first_name"]) ?? ""
+        let last = Self.string(user["last_name"]) ?? ""
+        let directName = Self.string(user["full_name"]) ?? Self.string(user["name"])
         let displayName = directName?.trimmingCharacters(in: .whitespacesAndNewlines).nonEmpty
             ?? [first, last].filter { !$0.isEmpty }.joined(separator: " ").nonEmpty
             ?? "Click user"
-        let email = string(user["email"]) ?? ""
+        let email = Self.string(user["email"]) ?? ""
         let handle = email.split(separator: "@").first.map { "@\($0)" } ?? ""
-        let tags = stringArray(root["tags"])
-        let personality = stringArray(root["personality_tags"])
+        let tags = Self.stringArray(root["tags"])
+        let personality = Self.stringArray(root["personality_tags"])
         let rawIntents = root["availabilityIntents"] as? [[String: Any]] ?? []
         let intents = rawIntents.compactMap { row -> ProfilePayload.Intent? in
-            guard let id = string(row["id"]) else { return nil }
-            let label = string(row["intent_tag"]) ?? string(row["timeframe"]) ?? "Available"
+            guard let id = Self.Self.string(row["id"]) else { return nil }
+            let label = Self.Self.string(row["intent_tag"]) ?? Self.Self.string(row["timeframe"]) ?? "Available"
             return .init(id: id, label: label, emoji: Self.emoji(for: label))
         }
 
@@ -301,7 +301,7 @@ public actor Phase3Repository {
             firstName: first,
             displayName: displayName,
             handle: handle,
-            avatarURL: string(user["image"]),
+            avatarURL: Self.string(user["image"]),
             initials: Self.initials(from: displayName),
             tags: tags,
             personalityTags: personality,
@@ -322,16 +322,16 @@ public actor Phase3Repository {
             requiresAuth: true
         )
         let (data, _) = try await api.executeRaw(request)
-        let root = try jsonObject(data)
+        let root = try Self.jsonObject(data)
         let rows = root["journal_entries"] as? [[String: Any]] ?? []
         return rows.compactMap { row in
-            guard let id = string(row["id"]), let body = string(row["body"]) else { return nil }
+            guard let id = Self.Self.string(row["id"]), let body = Self.Self.string(row["body"]) else { return nil }
             return ProfileTimelineEntry(
                 id: id,
                 body: body,
-                authorName: string(row["author_name"]),
-                createdAt: timestamp(row["created_at"]),
-                visibility: string(row["visibility"]) ?? "private"
+                authorName: Self.Self.string(row["author_name"]),
+                createdAt: Self.timestamp(row["created_at"]),
+                visibility: Self.Self.string(row["visibility"]) ?? "private"
             )
         }
     }
@@ -344,10 +344,10 @@ public actor Phase3Repository {
             requiresAuth: true
         )
         let (data, _) = try await api.executeRaw(request)
-        let root = try jsonObject(data)
+        let root = try Self.jsonObject(data)
         let recap = root["recap"] as? [String: Any] ?? [:]
-        let connections = int(recap["connections_formed"]) ?? 0
-        let messages = (int(recap["messages_sent"]) ?? 0) + (int(recap["messages_received"]) ?? 0)
+        let connections = Self.int(recap["connections_formed"]) ?? 0
+        let messages = (Self.int(recap["messages_sent"]) ?? 0) + (Self.int(recap["messages_received"]) ?? 0)
         if connections == 0 && messages == 0 {
             return RecapPayload(subtitle: "Ready to connect today?")
         }
@@ -367,31 +367,31 @@ public actor Phase3Repository {
         defaults.set(data, forKey: key)
     }
 
-    private func jsonObject(_ data: Data) throws -> [String: Any] {
+    private nonisolated static func jsonObject(_ data: Data) throws -> [String: Any] {
         guard let object = try JSONSerialization.jsonObject(with: data) as? [String: Any] else {
             throw APIError.decoding
         }
         return object
     }
 
-    private func string(_ value: Any?) -> String? {
+    private nonisolated static func string(_ value: Any?) -> String? {
         guard let value = value as? String else { return nil }
         let trimmed = value.trimmingCharacters(in: .whitespacesAndNewlines)
         return trimmed.isEmpty ? nil : trimmed
     }
 
-    private func stringArray(_ value: Any?) -> [String] {
-        (value as? [Any] ?? []).compactMap { string($0) }
+    private nonisolated static func stringArray(_ value: Any?) -> [String] {
+        (value as? [Any] ?? []).compactMap { Self.string($0) }
     }
 
-    private func int(_ value: Any?) -> Int? {
+    private nonisolated static func int(_ value: Any?) -> Int? {
         if let value = value as? Int { return value }
         if let value = value as? NSNumber { return value.intValue }
         if let value = value as? String { return Int(value) }
         return nil
     }
 
-    private func timestamp(_ value: Any?) -> Date? {
+    private nonisolated static func timestamp(_ value: Any?) -> Date? {
         if let value = value as? NSNumber {
             let raw = value.doubleValue
             return Date(timeIntervalSince1970: raw > 10_000_000_000 ? raw / 1000 : raw)
