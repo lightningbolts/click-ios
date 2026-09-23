@@ -499,9 +499,13 @@ public struct ProfileView: View {
         defer { isSendingNudge = false }
 
         do {
-            let currentProfile =
-                await env.phase3.cachedProfile(for: currentUserID)
-                ?? (try? await env.phase3.refreshSelfProfile(userID: currentUserID))
+            let cachedProfile = await env.phase3.cachedProfile(for: currentUserID)
+            let currentProfile: Phase3ProfileData?
+            if let cachedProfile {
+                currentProfile = cachedProfile
+            } else {
+                currentProfile = try? await env.phase3.refreshSelfProfile(userID: currentUserID)
+            }
             let senderName = currentProfile?.profile.displayName.nonEmpty ?? "Someone"
             let canonicalChatID = try await env.chat.resolveCanonicalChatID(
                 chatID: connectionID,
