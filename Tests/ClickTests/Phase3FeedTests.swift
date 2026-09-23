@@ -2,6 +2,30 @@ import Testing
 import Foundation
 @testable import Click
 
+final class Phase3Phase3MockURLProtocol: URLProtocol, @unchecked Sendable {
+    nonisolated(unsafe) static var requestHandler: ((URLRequest) throws -> (HTTPURLResponse, Data))?
+
+    override class func canInit(with request: URLRequest) -> Bool { true }
+    override class func canonicalRequest(for request: URLRequest) -> URLRequest { request }
+
+    override func startLoading() {
+        guard let handler = Self.requestHandler else {
+            client?.urlProtocol(self, didFailWithError: URLError(.badServerResponse))
+            return
+        }
+        do {
+            let (response, data) = try handler(request)
+            client?.urlProtocol(self, didReceive: response, cacheStoragePolicy: .notAllowed)
+            client?.urlProtocol(self, didLoad: data)
+            client?.urlProtocolDidFinishLoading(self)
+        } catch {
+            client?.urlProtocol(self, didFailWithError: error)
+        }
+    }
+
+    override func stopLoading() {}
+}
+
 @Suite("Phase 3 Feeds, Clicks, and Profile Tests")
 struct Phase3FeedTests {
     @Test("Time-based salutation handles different hours correctly")
@@ -89,10 +113,10 @@ struct Phase3FeedTests {
     @Test("Phase 3 repository maps authenticated backend data and never fabricates presence")
     func testRepositoryUsesBackendData() async throws {
         let config = URLSessionConfiguration.ephemeral
-        config.protocolClasses = [MockURLProtocol.self]
+        config.protocolClasses = [Phase3MockURLProtocol.self]
         let session = URLSession(configuration: config)
 
-        MockURLProtocol.requestHandler = { request in
+        Phase3MockURLProtocol.requestHandler = { request in
             let path = request.url?.path ?? ""
             let body: String
             if path == "/api/connections" {
