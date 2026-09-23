@@ -89,7 +89,7 @@ final class ClickAppDelegate: NSObject, UIApplicationDelegate, UNUserNotificatio
         // Registration is recoverable. Do not surface a launch error for an optional channel.
     }
 
-    func userNotificationCenter(
+    nonisolated func userNotificationCenter(
         _ center: UNUserNotificationCenter,
         willPresent notification: UNNotification,
         withCompletionHandler completionHandler: @escaping (UNNotificationPresentationOptions) -> Void
@@ -100,7 +100,7 @@ final class ClickAppDelegate: NSObject, UIApplicationDelegate, UNUserNotificatio
         completionHandler([.banner, .sound, .badge])
     }
 
-    func userNotificationCenter(
+    nonisolated func userNotificationCenter(
         _ center: UNUserNotificationCenter,
         didReceive response: UNNotificationResponse,
         withCompletionHandler completionHandler: @escaping () -> Void
