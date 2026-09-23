@@ -1,6 +1,7 @@
 import SwiftUI
 
-/// Phase 3 native Home tab backed by authenticated server state with last-known-good cache fallback.
+/// Authenticated Home root. Layout follows Click's Functional Clarity hierarchy while relying on
+/// native scrolling, refresh, sheets, and navigation behavior.
 public struct HomeView: View {
     @Environment(AppEnvironment.self) private var env
     @State private var snapshot: HomeFeedSnapshot?
@@ -15,49 +16,20 @@ public struct HomeView: View {
         Group {
             if let snapshot {
                 ScrollView {
-                    VStack(alignment: .leading, spacing: ClickSpacing.lg) {
+                    VStack(alignment: .leading, spacing: 24) {
                         if refreshError != nil {
                             cachedDataBanner
                         }
 
-                        VStack(alignment: .leading, spacing: ClickSpacing.xxs) {
-                            Text(HomeFeedSnapshot.timeBasedSalutation(for: snapshot.greetingName))
-                                .font(ClickTypography.headlineLarge)
-                                .tracking(-0.5)
-                                .foregroundStyle(ClickColors.textPrimary)
-
-                            Text(snapshot.greetingSubtitle)
-                                .font(ClickTypography.bodyMedium)
-                                .foregroundStyle(ClickColors.textSecondary)
-                        }
-                        .padding(.top, ClickSpacing.sm)
-
+                        greeting(snapshot)
                         HomeSearchPill { isSearching = true }
 
                         if !snapshot.intents.isEmpty {
-                            VStack(alignment: .leading, spacing: ClickSpacing.xs) {
-                                Text("I'm down for…")
-                                    .font(ClickTypography.titleSmall)
-                                    .fontWeight(.semibold)
-                                    .foregroundStyle(ClickColors.textPrimary)
-
-                                ScrollView(.horizontal, showsIndicators: false) {
-                                    HStack(spacing: ClickSpacing.xs) {
-                                        ForEach(snapshot.intents) { intent in
-                                            AvailabilityIntentPill(intent: intent, onToggle: nil)
-                                        }
-                                    }
-                                }
-                            }
+                            availabilitySection(snapshot.intents)
                         }
 
                         if let event = snapshot.featuredEvent {
-                            VStack(alignment: .leading, spacing: ClickSpacing.xs) {
-                                Text("Happening Nearby")
-                                    .font(ClickTypography.titleSmall)
-                                    .fontWeight(.semibold)
-                                    .foregroundStyle(ClickColors.textPrimary)
-
+                            section(title: "Happening Nearby") {
                                 FeaturedEventCard(event: event) {
                                     env.router.selectedTab = .map
                                     env.router.mapPath.append(.event(beaconID: event.id))
@@ -66,116 +38,186 @@ public struct HomeView: View {
                         }
 
                         if !snapshot.nearbyBeacons.isEmpty {
-                            VStack(alignment: .leading, spacing: ClickSpacing.xs) {
-                                Text("Explore Nearby")
-                                    .font(ClickTypography.titleSmall)
-                                    .fontWeight(.semibold)
-                                    .foregroundStyle(ClickColors.textPrimary)
-
-                                VStack(spacing: ClickSpacing.xs) {
+                            section(title: "Explore Nearby") {
+                                VStack(spacing: 0) {
                                     ForEach(snapshot.nearbyBeacons) { beacon in
                                         ExploreBeaconTile(beacon: beacon) {
                                             env.router.selectedTab = .map
                                             env.router.mapPath.append(.beacon(beaconID: beacon.id))
                                         }
+
+                                        if beacon.id != snapshot.nearbyBeacons.last?.id {
+                                            Divider()
+                                                .overlay(ClickColors.quietBorder.opacity(0.62))
+                                                .padding(.leading, 58)
+                                        }
                                     }
                                 }
+                                .clickSurface()
                             }
                         }
 
                         if !snapshot.recentConnections.isEmpty {
-                            VStack(alignment: .leading, spacing: ClickSpacing.xs) {
-                                HStack {
-                                    Text("Recent Encounters")
-                                        .font(ClickTypography.titleSmall)
-                                        .fontWeight(.semibold)
-                                        .foregroundStyle(ClickColors.textPrimary)
-                                    Spacer()
-                                    Text("\(snapshot.recentConnections.count) shown")
-                                        .font(ClickTypography.labelSmall)
-                                        .foregroundStyle(ClickColors.textSecondary)
-                                }
-
-                                VStack(spacing: 0) {
-                                    ForEach(snapshot.recentConnections) { connection in
-                                        RecentConnectionRowItem(connection: connection) {
-                                            guard !connection.userID.isEmpty else { return }
-                                            env.router.selectedTab = .connections
-                                            env.router.connectionsPath.append(
-                                                .userProfile(
-                                                    userID: connection.userID,
-                                                    connectionID: connection.connectionID.nonEmpty
-                                                )
-                                            )
-                                        }
-
-                                        if connection.id != snapshot.recentConnections.last?.id {
-                                            Divider()
-                                                .background(ClickColors.quietBorder)
-                                                .padding(.leading, 64)
-                                        }
-                                    }
-                                }
-                                .padding(.horizontal, ClickSpacing.md)
-                                .padding(.vertical, ClickSpacing.xs)
-                                .background(ClickColors.surfaceContainerLow)
-                                .clipShape(RoundedRectangle(cornerRadius: ClickSpacing.radiusCard))
-                            }
+                            recentSection(snapshot.recentConnections)
                         }
 
-                        VStack(alignment: .leading, spacing: ClickSpacing.xs) {
-                            Text("Your Stats")
-                                .font(ClickTypography.titleSmall)
-                                .fontWeight(.semibold)
-                                .foregroundStyle(ClickColors.textPrimary)
-
-                            HStack(spacing: ClickSpacing.sm) {
-                                HomeStatCard(title: "Total Clicks", value: snapshot.stats.totalClicks, iconName: "person.2.circle.fill")
-                                HomeStatCard(title: "Encounters", value: snapshot.stats.totalEncounters, iconName: "mappin.circle.fill")
-                                HomeStatCard(title: "Circles", value: snapshot.stats.totalCircles, iconName: "circle.grid.3x3.fill")
-                            }
-                        }
+                        statsSection(snapshot.stats)
                     }
-                    .padding(.horizontal, ClickSpacing.lg)
-                    .padding(.bottom, ClickSpacing.xxl)
+                    .padding(.horizontal, 16)
+                    .padding(.top, 8)
+                    .padding(.bottom, 32)
                 }
                 .refreshable { await refresh() }
             } else {
-                VStack(spacing: ClickSpacing.md) {
-                    ProgressView()
-                    Text("Loading Home…")
-                        .font(ClickTypography.bodyMedium)
-                        .foregroundStyle(ClickColors.textSecondary)
-                }
+                loadingState
             }
         }
         .background(ClickColors.background.ignoresSafeArea())
+        .navigationBarTitleDisplayMode(.inline)
         .task { await bootstrap() }
         .sheet(isPresented: $isSearching) {
             HomeSearchSheetView()
         }
     }
 
+    private func greeting(_ snapshot: HomeFeedSnapshot) -> some View {
+        VStack(alignment: .leading, spacing: 5) {
+            Text(HomeFeedSnapshot.timeBasedSalutation(for: snapshot.greetingName))
+                .font(ClickTypography.headlineLarge)
+                .tracking(-0.6)
+                .foregroundStyle(ClickColors.textPrimary)
+                .fixedSize(horizontal: false, vertical: true)
+
+            Text(snapshot.greetingSubtitle)
+                .font(ClickTypography.bodyMedium)
+                .foregroundStyle(ClickColors.textSecondary)
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+    }
+
+    private func availabilitySection(_ intents: [AvailabilityIntent]) -> some View {
+        VStack(alignment: .leading, spacing: 10) {
+            Text("I'm down for…")
+                .font(ClickTypography.titleSmall)
+                .foregroundStyle(ClickColors.textPrimary)
+
+            ScrollView(.horizontal, showsIndicators: false) {
+                HStack(spacing: 8) {
+                    ForEach(intents) { intent in
+                        AvailabilityIntentPill(intent: intent, onToggle: nil)
+                    }
+                }
+            }
+            .contentMargins(.horizontal, 1, for: .scrollContent)
+        }
+    }
+
+    private func recentSection(_ connections: [RecentConnectionSummary]) -> some View {
+        section(title: "Recent Encounters", accessory: "\(connections.count) shown") {
+            VStack(spacing: 0) {
+                ForEach(connections) { connection in
+                    RecentConnectionRowItem(connection: connection) {
+                        guard !connection.userID.isEmpty else { return }
+                        env.router.selectedTab = .connections
+                        env.router.connectionsPath.append(
+                            .userProfile(
+                                userID: connection.userID,
+                                connectionID: connection.connectionID.nonEmpty
+                            )
+                        )
+                    }
+
+                    if connection.id != connections.last?.id {
+                        Divider()
+                            .overlay(ClickColors.quietBorder.opacity(0.62))
+                            .padding(.leading, 62)
+                    }
+                }
+            }
+            .clickSurface()
+        }
+    }
+
+    private func statsSection(_ stats: HomeStats) -> some View {
+        section(title: "Your Stats") {
+            HStack(spacing: 0) {
+                HomeStatCard(title: "Clicks", value: stats.totalClicks, iconName: "person.2.fill")
+                Divider().frame(height: 38)
+                HomeStatCard(title: "Encounters", value: stats.totalEncounters, iconName: "mappin")
+                Divider().frame(height: 38)
+                HomeStatCard(title: "Circles", value: stats.totalCircles, iconName: "circle.grid.3x3.fill")
+            }
+            .padding(.vertical, 14)
+            .clickSurface()
+        }
+    }
+
+    private func section<Content: View>(
+        title: String,
+        accessory: String? = nil,
+        @ViewBuilder content: () -> Content
+    ) -> some View {
+        VStack(alignment: .leading, spacing: 10) {
+            HStack(alignment: .firstTextBaseline) {
+                Text(title)
+                    .font(ClickTypography.titleSmall)
+                    .foregroundStyle(ClickColors.textPrimary)
+
+                Spacer()
+
+                if let accessory {
+                    Text(accessory)
+                        .font(ClickTypography.captionSmall)
+                        .foregroundStyle(ClickColors.textSecondary)
+                }
+            }
+
+            content()
+        }
+    }
+
+    private var loadingState: some View {
+        VStack(spacing: 10) {
+            ProgressView()
+                .tint(ClickColors.primary)
+            Text("Loading Home…")
+                .font(ClickTypography.bodySmall)
+                .foregroundStyle(ClickColors.textSecondary)
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+    }
+
     private var cachedDataBanner: some View {
-        HStack(spacing: ClickSpacing.xs) {
+        HStack(spacing: 8) {
             Image(systemName: "wifi.exclamationmark")
-            Text("Showing your last saved data")
-                .font(ClickTypography.labelMedium)
+                .font(.system(size: 12, weight: .semibold))
+
+            Text("Showing saved data")
+                .font(ClickTypography.captionSmall)
+
             Spacer()
+
             Button("Retry") {
                 Task { await refresh() }
             }
-            .font(ClickTypography.labelMedium)
+            .font(ClickTypography.captionSmall)
         }
         .foregroundStyle(ClickColors.textSecondary)
-        .padding(ClickSpacing.sm)
-        .background(ClickColors.surfaceContainerLow)
-        .clipShape(RoundedRectangle(cornerRadius: ClickSpacing.radiusInput))
+        .padding(.horizontal, 12)
+        .padding(.vertical, 9)
+        .background(ClickColors.surface)
+        .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
+        .overlay {
+            RoundedRectangle(cornerRadius: 10, style: .continuous)
+                .stroke(ClickColors.quietBorder, lineWidth: ClickSpacing.borderQuietWidth)
+        }
     }
 
     @MainActor
     private func bootstrap() async {
-        guard snapshot == nil, let userID = env.session.currentSession?.userId else { return }
+        guard snapshot == nil,
+              let userID = env.session.currentSession?.userId else { return }
+
         if let cached = await env.phase3.cachedHome(for: userID) {
             snapshot = cached
         }
@@ -185,6 +227,7 @@ public struct HomeView: View {
     @MainActor
     private func refresh() async {
         guard let userID = env.session.currentSession?.userId else { return }
+
         do {
             snapshot = try await env.phase3.refreshHome(for: userID)
             refreshError = nil
@@ -202,31 +245,15 @@ private struct HomeSearchSheetView: View {
 
     var body: some View {
         NavigationStack {
-            VStack(spacing: 0) {
-                HStack(spacing: ClickSpacing.sm) {
-                    Image(systemName: "magnifyingglass")
-                        .foregroundStyle(ClickColors.outline)
-                    TextField("Search your Clicks…", text: $query)
-                        .font(ClickTypography.bodyMedium)
-                }
-                .padding(.horizontal, ClickSpacing.md)
-                .padding(.vertical, 12)
-                .background(ClickColors.surfaceContainerLow)
-                .clipShape(RoundedRectangle(cornerRadius: ClickSpacing.radiusInput))
-                .padding(ClickSpacing.lg)
-
+            Group {
                 if query.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
-                    Spacer()
-                    Text("Search names, interests, and encounter places.")
-                        .font(ClickTypography.bodySmall)
-                        .foregroundStyle(ClickColors.textSecondary)
-                    Spacer()
+                    ContentUnavailableView {
+                        Label("Search your Clicks", systemImage: "magnifyingglass")
+                    } description: {
+                        Text("Find people by name, handle, place, or interest.")
+                    }
                 } else if results.isEmpty {
-                    Spacer()
-                    Text("No matching Clicks")
-                        .font(ClickTypography.bodyMedium)
-                        .foregroundStyle(ClickColors.textSecondary)
-                    Spacer()
+                    ContentUnavailableView.search(text: query)
                 } else {
                     List(results) { connection in
                         Button {
@@ -239,13 +266,26 @@ private struct HomeSearchSheetView: View {
                                 )
                             )
                         } label: {
-                            VStack(alignment: .leading, spacing: 2) {
-                                Text(connection.displayName)
-                                    .foregroundStyle(ClickColors.textPrimary)
-                                if !connection.handle.isEmpty {
-                                    Text(connection.handle)
-                                        .font(ClickTypography.bodySmall)
-                                        .foregroundStyle(ClickColors.textSecondary)
+                            HStack(spacing: 12) {
+                                Circle()
+                                    .fill(ClickColors.primaryFixed.opacity(0.48))
+                                    .frame(width: 40, height: 40)
+                                    .overlay {
+                                        Text(connection.initials)
+                                            .font(ClickTypography.labelMedium)
+                                            .foregroundStyle(ClickColors.primary)
+                                    }
+
+                                VStack(alignment: .leading, spacing: 2) {
+                                    Text(connection.displayName)
+                                        .font(ClickTypography.bodyMedium)
+                                        .foregroundStyle(ClickColors.textPrimary)
+
+                                    if !connection.handle.isEmpty {
+                                        Text(connection.handle)
+                                            .font(ClickTypography.bodySmall)
+                                            .foregroundStyle(ClickColors.textSecondary)
+                                    }
                                 }
                             }
                         }
@@ -256,6 +296,7 @@ private struct HomeSearchSheetView: View {
             .background(ClickColors.background.ignoresSafeArea())
             .navigationTitle("Search")
             .navigationBarTitleDisplayMode(.inline)
+            .searchable(text: $query, prompt: "Names, places, interests")
             .toolbar {
                 ToolbarItem(placement: .topBarTrailing) {
                     Button("Done") { dismiss() }
@@ -263,18 +304,33 @@ private struct HomeSearchSheetView: View {
             }
             .task(id: query) {
                 let clean = query.trimmingCharacters(in: .whitespacesAndNewlines)
-                guard !clean.isEmpty, let userID = env.session.currentSession?.userId else {
+                guard !clean.isEmpty,
+                      let userID = env.session.currentSession?.userId else {
                     results = []
                     return
                 }
+
                 try? await Task.sleep(for: .milliseconds(150))
                 guard !Task.isCancelled else { return }
                 results = (try? await env.phase3.searchConnections(userID: userID, query: clean)) ?? []
             }
         }
+        .tint(ClickColors.primary)
     }
 }
 
 private extension String {
     var nonEmpty: String? { isEmpty ? nil : self }
+}
+
+private extension View {
+    func clickSurface() -> some View {
+        self
+            .background(ClickColors.surface)
+            .clipShape(RoundedRectangle(cornerRadius: ClickSpacing.radiusCard, style: .continuous))
+            .overlay {
+                RoundedRectangle(cornerRadius: ClickSpacing.radiusCard, style: .continuous)
+                    .stroke(ClickColors.quietBorder.opacity(0.72), lineWidth: ClickSpacing.borderQuietWidth)
+            }
+    }
 }
