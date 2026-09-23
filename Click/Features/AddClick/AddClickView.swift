@@ -309,7 +309,7 @@ private struct MyClickCodeView: View {
 
     private func countdown(to expiry: Date, now: Date) -> String {
         let seconds = max(0, Int(expiry.timeIntervalSince(now)))
-        return "Scan to connect · \\(seconds / 60):\\(String(format: \"%02d\", seconds % 60))"
+        return "Scan to connect · \(seconds / 60):\(String(format: "%02d", seconds % 60))"
     }
 }
 
@@ -426,7 +426,7 @@ private struct ScanClickCodeView: View {
 
         do {
             let result = try await ClickConnectionRedeemer.redeem(invocation, environment: env)
-            statusText = "Connected with \\(result.name)"
+            statusText = "Connected with \(result.name)"
             ClickHaptics.notification(.success)
             try? await Task.sleep(for: .milliseconds(500))
             env.router.selectedTab = .connections
@@ -676,7 +676,7 @@ private struct ConnectionInvocationView: View {
 
             do {
                 let result = try await ClickConnectionRedeemer.redeem(invocation, environment: env)
-                status = "Connected with \\(result.name)"
+                status = "Connected with \(result.name)"
                 completed = true
                 ClickHaptics.success()
                 try? await Task.sleep(for: .milliseconds(650))
