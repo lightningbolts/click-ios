@@ -309,7 +309,7 @@ private struct MyClickCodeView: View {
 
     private func countdown(to expiry: Date, now: Date) -> String {
         let seconds = max(0, Int(expiry.timeIntervalSince(now)))
-        return "Scan to connect · (seconds / 60):(String(format: "%02d", seconds % 60))"
+        return "Scan to connect · \\(seconds / 60):\\(String(format: \"%02d\", seconds % 60))"
     }
 }
 
@@ -425,8 +425,8 @@ private struct ScanClickCodeView: View {
         }
 
         do {
-            let result = try await redeem(invocation)
-            statusText = "Connected with (result.name)"
+            let result = try await ClickConnectionRedeemer.redeem(invocation, environment: env)
+            statusText = "Connected with \\(result.name)"
             ClickHaptics.notification(.success)
             try? await Task.sleep(for: .milliseconds(500))
             env.router.selectedTab = .connections
@@ -463,7 +463,15 @@ private struct ScanClickCodeView: View {
         return ConnectionInvocation(userID: userID, token: token, expiresAt: expiry)
     }
 
-    private func redeem(_ invocation: ConnectionInvocation) async throws -> (name: String, connectionID: String?) {
+
+}
+
+private enum ClickConnectionRedeemer {
+    @MainActor
+    static func redeem(
+        _ invocation: ConnectionInvocation,
+        environment env: AppEnvironment
+    ) async throws -> (name: String, connectionID: String?) {
         guard let currentUserID = env.session.currentSession?.userId else {
             throw APIError.unauthorized
         }
@@ -509,10 +517,16 @@ private struct ScanClickCodeView: View {
             let (created, _) = try await env.api.executeRaw(createRequest)
             let createdRoot = try JSONSerialization.jsonObject(with: created) as? [String: Any]
             let connection = createdRoot?["connection"] as? [String: Any]
-            return (targetName?.isEmpty == false ? targetName! : "Click user", connection?["id"] as? String)
+            return (
+                targetName?.isEmpty == false ? targetName! : "Click user",
+                connection?["id"] as? String
+            )
         }
 
-        return (targetName?.isEmpty == false ? targetName! : "Click user", existingConnectionID)
+        return (
+            targetName?.isEmpty == false ? targetName! : "Click user",
+            existingConnectionID
+        )
     }
 }
 
@@ -630,19 +644,50 @@ private struct TapConnectCapabilityView: View {
 private struct ConnectionInvocationView: View {
     @Environment(AppEnvironment.self) private var env
     let invocation: ConnectionInvocation
+
     @State private var status = "Preparing connection…"
+    @State private var completed = false
+    @State private var didRun = false
 
     var body: some View {
         VStack(spacing: 16) {
-            ProgressView().tint(ClickColors.primary)
+            if completed {
+                Image(systemName: "checkmark.circle.fill")
+                    .font(.system(size: 44))
+                    .foregroundStyle(ClickColors.statusOnline)
+            } else {
+                ProgressView().tint(ClickColors.primary)
+            }
+
             Text(status)
                 .font(ClickTypography.bodyMedium)
-                .foregroundStyle(ClickColors.textSecondary)
+                .foregroundStyle(completed ? ClickColors.textPrimary : ClickColors.textSecondary)
+                .multilineTextAlignment(.center)
         }
+        .padding(24)
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .background(ClickColors.background.ignoresSafeArea())
         .navigationTitle("Add Click")
         .navigationBarTitleDisplayMode(.inline)
         .toolbar(.hidden, for: .tabBar)
+        .task {
+            guard !didRun else { return }
+            didRun = true
+
+            do {
+                let result = try await ClickConnectionRedeemer.redeem(invocation, environment: env)
+                status = "Connected with \\(result.name)"
+                completed = true
+                ClickHaptics.success()
+                try? await Task.sleep(for: .milliseconds(650))
+                env.router.selectedTab = .connections
+                env.router.addClickPath.removeAll()
+                env.router.connectionsPath.removeAll()
+            } catch {
+                status = error.localizedDescription
+                completed = false
+                ClickHaptics.error()
+            }
+        }
     }
 }
