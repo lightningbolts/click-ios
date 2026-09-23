@@ -20,7 +20,7 @@ public struct OnboardingHeaderView<TrailingContent: View>: View {
         VStack(alignment: .leading, spacing: ClickSpacing.xs) {
             HStack(alignment: .top, spacing: ClickSpacing.md) {
                 Text(title)
-                    .font(ClickTypography.headlineLarge)
+                    .font(ClickTypography.largeTitle)
                     .tracking(-0.5)
                     .foregroundStyle(ClickColors.textPrimary)
                     .fixedSize(horizontal: false, vertical: true)
@@ -32,7 +32,7 @@ public struct OnboardingHeaderView<TrailingContent: View>: View {
 
             if let subtitle = subtitle {
                 Text(subtitle)
-                    .font(ClickTypography.bodyMedium)
+                    .font(ClickTypography.body)
                     .foregroundStyle(ClickColors.textSecondary)
                     .fixedSize(horizontal: false, vertical: true)
             }

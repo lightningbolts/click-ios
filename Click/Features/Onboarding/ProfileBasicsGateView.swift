@@ -38,12 +38,12 @@ public struct ProfileBasicsGateView: View {
                     // Header
                     VStack(alignment: .leading, spacing: ClickSpacing.sm) {
                         Text("Complete your profile")
-                            .font(ClickTypography.headlineLarge)
+                            .font(ClickTypography.largeTitle)
                             .tracking(-0.5)
                             .foregroundStyle(ClickColors.textPrimary)
 
                         Text("We need your name and date of birth to continue. This keeps Click safe, authenticated, and age-appropriate.")
-                            .font(ClickTypography.bodyMedium)
+                            .font(ClickTypography.body)
                             .foregroundStyle(ClickColors.textSecondary)
                     }
                     .padding(.top, ClickSpacing.lg)
@@ -52,56 +52,56 @@ public struct ProfileBasicsGateView: View {
                     if let error = errorMessage {
                         HStack(spacing: ClickSpacing.sm) {
                             Image(systemName: "exclamationmark.triangle.fill")
-                                .foregroundStyle(ClickColors.error)
+                                .foregroundStyle(ClickColors.destructive)
                             Text(error)
-                                .font(ClickTypography.labelMedium)
-                                .foregroundStyle(ClickColors.error)
+                                .font(ClickTypography.supportingEmphasized)
+                                .foregroundStyle(ClickColors.destructive)
                             Spacer()
                         }
                         .padding(ClickSpacing.sm)
-                        .background(ClickColors.error.opacity(0.12))
-                        .clipShape(RoundedRectangle(cornerRadius: ClickSpacing.radiusInput))
+                        .background(ClickColors.destructive.opacity(0.12))
+                        .clipShape(RoundedRectangle(cornerRadius: ClickRadius.field))
                     }
 
                     // Fields
                     VStack(spacing: ClickSpacing.md) {
                         VStack(alignment: .leading, spacing: ClickSpacing.xs) {
                             Text("FIRST NAME")
-                                .font(ClickTypography.labelSmall)
+                                .font(ClickTypography.metadata)
                                 .foregroundStyle(ClickColors.textSecondary)
                             TextField("First name", text: $firstName)
-                                .font(ClickTypography.bodyMedium)
+                                .font(ClickTypography.body)
                                 .textContentType(.givenName)
                                 .padding(.horizontal, ClickSpacing.md)
                                 .padding(.vertical, 14)
-                                .background(ClickColors.surfaceContainerLow)
-                                .clipShape(RoundedRectangle(cornerRadius: ClickSpacing.radiusInput))
+                                .background(ClickColors.surface)
+                                .clipShape(RoundedRectangle(cornerRadius: ClickRadius.field))
                                 .overlay(
-                                    RoundedRectangle(cornerRadius: ClickSpacing.radiusInput)
-                                        .stroke(ClickColors.quietBorder, lineWidth: ClickSpacing.borderQuietWidth)
+                                    RoundedRectangle(cornerRadius: ClickRadius.field)
+                                        .stroke(ClickColors.separator, lineWidth: ClickMetrics.strokeWidth)
                                 )
                         }
 
                         VStack(alignment: .leading, spacing: ClickSpacing.xs) {
                             Text("LAST NAME")
-                                .font(ClickTypography.labelSmall)
+                                .font(ClickTypography.metadata)
                                 .foregroundStyle(ClickColors.textSecondary)
                             TextField("Last name", text: $lastName)
-                                .font(ClickTypography.bodyMedium)
+                                .font(ClickTypography.body)
                                 .textContentType(.familyName)
                                 .padding(.horizontal, ClickSpacing.md)
                                 .padding(.vertical, 14)
-                                .background(ClickColors.surfaceContainerLow)
-                                .clipShape(RoundedRectangle(cornerRadius: ClickSpacing.radiusInput))
+                                .background(ClickColors.surface)
+                                .clipShape(RoundedRectangle(cornerRadius: ClickRadius.field))
                                 .overlay(
-                                    RoundedRectangle(cornerRadius: ClickSpacing.radiusInput)
-                                        .stroke(ClickColors.quietBorder, lineWidth: ClickSpacing.borderQuietWidth)
+                                    RoundedRectangle(cornerRadius: ClickRadius.field)
+                                        .stroke(ClickColors.separator, lineWidth: ClickMetrics.strokeWidth)
                                 )
                         }
 
                         VStack(alignment: .leading, spacing: ClickSpacing.xs) {
                             Text("DATE OF BIRTH")
-                                .font(ClickTypography.labelSmall)
+                                .font(ClickTypography.metadata)
                                 .foregroundStyle(ClickColors.textSecondary)
 
                             HStack {
@@ -117,18 +117,18 @@ public struct ProfileBasicsGateView: View {
                             }
                             .padding(.horizontal, ClickSpacing.md)
                             .padding(.vertical, 8)
-                            .background(ClickColors.surfaceContainerLow)
-                            .clipShape(RoundedRectangle(cornerRadius: ClickSpacing.radiusInput))
+                            .background(ClickColors.surface)
+                            .clipShape(RoundedRectangle(cornerRadius: ClickRadius.field))
                             .overlay(
-                                RoundedRectangle(cornerRadius: ClickSpacing.radiusInput)
-                                    .stroke(ClickColors.quietBorder, lineWidth: ClickSpacing.borderQuietWidth)
+                                RoundedRectangle(cornerRadius: ClickRadius.field)
+                                    .stroke(ClickColors.separator, lineWidth: ClickMetrics.strokeWidth)
                             )
 
                             if !isAgeValid {
                                 Text("You must be at least 13 years old to use Click.")
-                                    .font(ClickTypography.labelSmall)
-                                    .foregroundStyle(ClickColors.error)
-                                    .padding(.top, ClickSpacing.xxxSmall)
+                                    .font(ClickTypography.metadata)
+                                    .foregroundStyle(ClickColors.destructive)
+                                    .padding(.top, ClickSpacing.xxs)
                             }
                         }
                     }
@@ -139,21 +139,13 @@ public struct ProfileBasicsGateView: View {
                     Button {
                         saveProfileBasics()
                     } label: {
-                        HStack {
-                            if isLoading {
-                                ProgressView()
-                                    .tint(ClickColors.onPrimary)
-                            } else {
-                                Text("Save and Continue")
-                                    .font(ClickTypography.labelBold)
-                            }
+                        if isLoading {
+                            ProgressView()
+                        } else {
+                            Text("Save and Continue")
                         }
-                        .frame(maxWidth: .infinity)
-                        .frame(height: 48)
-                        .background(canSave ? ClickColors.primary : ClickColors.primary.opacity(0.4))
-                        .foregroundStyle(ClickColors.onPrimary)
-                        .clipShape(RoundedRectangle(cornerRadius: ClickSpacing.radiusButton))
                     }
+                    .buttonStyle(.clickPrimary)
                     .disabled(!canSave)
                 }
                 .padding(.horizontal, ClickSpacing.lg)

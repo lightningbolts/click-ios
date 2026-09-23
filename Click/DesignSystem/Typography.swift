@@ -41,126 +41,60 @@ public enum ClickFonts: Sendable {
     }
 }
 
-/// Semantic typography tokens for Click iOS design system.
-/// Uses Manrope product font family with full Dynamic Type support.
+/// Semantic typography roles for Click iOS.
+///
+/// Manrope is Click's brand/display voice and is reserved for major hierarchy: root large
+/// titles, identity/event titles, and section headlines. Everything else — navigation titles,
+/// buttons, rows, body copy, and metadata — uses the system font so the interface keeps native
+/// texture. All roles scale with Dynamic Type; sizes are base optical targets, not fixed sizes.
 public enum ClickTypography {
-    // MARK: - Manrope PostScript Font Names
-    public enum FontName {
-        public static let regular = "Manrope-Regular"
-        public static let medium = "Manrope-Medium"
-        public static let semiBold = "Manrope-SemiBold"
-        public static let bold = "Manrope-Bold"
-        public static let extraBold = "Manrope-ExtraBold"
-        public static let light = "Manrope-Light"
-        public static let extraLight = "Manrope-ExtraLight"
-    }
+    // MARK: - Brand / display (Manrope)
 
-    private static func font(name: String, size: CGFloat, relativeTo textStyle: Font.TextStyle) -> Font {
+    /// Root screen large title: Manrope ExtraBold 34.
+    public static var largeTitle: Font { brand(size: 34, relativeTo: .largeTitle) }
+    /// Major identity or event title: Manrope ExtraBold 28.
+    public static var identityTitle: Font { brand(size: 28, relativeTo: .title) }
+    /// Section headline: Manrope ExtraBold 22.
+    public static var sectionTitle: Font { brand(size: 22, relativeTo: .title2) }
+
+    // MARK: - Interface (system / SF Pro)
+
+    /// Body copy and ordinary row titles (17).
+    public static let body = Font.body
+    /// Emphasized row titles and headings inside rows (17 semibold).
+    public static let bodyEmphasized = Font.body.weight(.semibold)
+    /// Button labels (17 semibold).
+    public static let button = Font.body.weight(.semibold)
+    /// Supporting copy under titles (15).
+    public static let supporting = Font.subheadline
+    /// Chips, compact controls, and small emphasized labels (15 semibold).
+    public static let supportingEmphasized = Font.subheadline.weight(.semibold)
+    /// Metadata such as timestamps and counts (13).
+    public static let metadata = Font.footnote
+    /// Emphasized metadata (13 semibold).
+    public static let metadataEmphasized = Font.footnote.weight(.semibold)
+    /// Captions and tertiary microcopy (12).
+    public static let caption = Font.caption
+    /// Badges and tiny status labels (11 semibold).
+    public static let badge = Font.caption2.weight(.semibold)
+
+    // MARK: - UIKit bridges
+
+    /// Manrope large title for the native navigation bar, scaled for the current content size.
+    static func largeTitleUIFont() -> UIFont {
         ClickFonts.registerFonts()
-        return Font.custom(name, size: size, relativeTo: textStyle)
+        let base = UIFont(name: FontName.extraBold, size: 34) ?? .systemFont(ofSize: 34, weight: .bold)
+        return UIFontMetrics(forTextStyle: .largeTitle).scaledFont(for: base)
     }
 
-    // MARK: - Core Role Scale (Click Functional Clarity)
-    /// Display Large: 48pt / ExtraBold (Relative to .largeTitle)
-    public static var displayLarge: Font {
-        font(name: FontName.extraBold, size: 48, relativeTo: .largeTitle)
+    // MARK: - Private
+
+    private enum FontName {
+        static let extraBold = "Manrope-ExtraBold"
     }
 
-    /// Display Medium: 40pt / Bold (Relative to .largeTitle)
-    public static var displayMedium: Font {
-        font(name: FontName.bold, size: 40, relativeTo: .largeTitle)
+    private static func brand(size: CGFloat, relativeTo textStyle: Font.TextStyle) -> Font {
+        ClickFonts.registerFonts()
+        return Font.custom(FontName.extraBold, size: size, relativeTo: textStyle)
     }
-
-    /// Display Small: 36pt / Bold (Relative to .largeTitle)
-    public static var displaySmall: Font {
-        font(name: FontName.bold, size: 36, relativeTo: .largeTitle)
-    }
-
-    /// Headline Large: 32pt / Bold (Relative to .title)
-    public static var headlineLarge: Font {
-        font(name: FontName.bold, size: 32, relativeTo: .title)
-    }
-
-    /// Headline Medium: 24pt / Bold (Relative to .title2)
-    public static var headlineMedium: Font {
-        font(name: FontName.bold, size: 24, relativeTo: .title2)
-    }
-
-    /// Headline Small: 20pt / Bold (Relative to .title3)
-    public static var headlineSmall: Font {
-        font(name: FontName.bold, size: 20, relativeTo: .title3)
-    }
-
-    /// Title Large: 20pt / Bold (Relative to .title3)
-    public static var titleLarge: Font {
-        font(name: FontName.bold, size: 20, relativeTo: .title3)
-    }
-
-    /// Title Medium: 16pt / SemiBold (Relative to .headline)
-    public static var titleMedium: Font {
-        font(name: FontName.semiBold, size: 16, relativeTo: .headline)
-    }
-
-    /// Title Small: 14pt / SemiBold (Relative to .subheadline)
-    public static var titleSmall: Font {
-        font(name: FontName.semiBold, size: 14, relativeTo: .subheadline)
-    }
-
-    /// Body Large: 18pt / Medium (Relative to .body)
-    public static var bodyLarge: Font {
-        font(name: FontName.medium, size: 18, relativeTo: .body)
-    }
-
-    /// Body Medium: 16pt / Medium (Relative to .callout)
-    public static var bodyMedium: Font {
-        font(name: FontName.medium, size: 16, relativeTo: .callout)
-    }
-
-    /// Body Small: 14pt / Medium (Relative to .subheadline)
-    public static var bodySmall: Font {
-        font(name: FontName.medium, size: 14, relativeTo: .subheadline)
-    }
-
-    /// Label Large: 16pt / SemiBold (Relative to .callout)
-    public static var labelLarge: Font {
-        font(name: FontName.semiBold, size: 16, relativeTo: .callout)
-    }
-
-    /// Label Bold: 14pt / Bold (Relative to .footnote)
-    public static var labelBold: Font {
-        font(name: FontName.bold, size: 14, relativeTo: .footnote)
-    }
-
-    /// Label Medium: 14pt / SemiBold (Relative to .footnote)
-    public static var labelMedium: Font {
-        font(name: FontName.semiBold, size: 14, relativeTo: .footnote)
-    }
-
-    /// Label Small: 14pt / SemiBold (Click 14pt minimum role, Relative to .footnote)
-    public static var labelSmall: Font {
-        font(name: FontName.semiBold, size: 14, relativeTo: .footnote)
-    }
-
-    /// Caption Small: 12pt / SemiBold (Platform microcopy, Relative to .caption)
-    public static var captionSmall: Font {
-        font(name: FontName.semiBold, size: 12, relativeTo: .caption)
-    }
-
-    /// Microcopy: 11pt / SemiBold (Badges and sub-caption metadata, Relative to .caption2)
-    public static var microcopy: Font {
-        font(name: FontName.semiBold, size: 11, relativeTo: .caption2)
-    }
-
-    // MARK: - Backward Compatibility Aliases (Preserves Existing Callers)
-    public static var largeTitle: Font { headlineLarge }
-    public static var title: Font { headlineMedium }
-    public static var title2: Font { headlineSmall }
-    public static var title3: Font { titleLarge }
-    public static var headline: Font { titleMedium }
-    public static var body: Font { bodyMedium }
-    public static var callout: Font { titleMedium }
-    public static var subheadline: Font { bodySmall }
-    public static var footnote: Font { labelMedium }
-    public static var caption: Font { captionSmall }
-    public static var caption2: Font { microcopy }
 }

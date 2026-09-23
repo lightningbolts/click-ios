@@ -51,21 +51,13 @@ public struct WelcomeView: View {
                     }) {
                         HStack(spacing: ClickSpacing.sm) {
                             Text("Let's get started")
-                                .font(ClickTypography.titleMedium)
-                                .fontWeight(.bold)
                             Image(systemName: "arrow.right")
-                                .font(ClickTypography.bodyMedium)
-                                .fontWeight(.bold)
                         }
-                        .frame(maxWidth: .infinity)
-                        .padding(.vertical, 16)
-                        .background(ClickColors.primary)
-                        .foregroundStyle(ClickColors.onPrimary)
-                        .clipShape(RoundedRectangle(cornerRadius: ClickSpacing.radiusButton))
                     }
+                    .buttonStyle(.clickPrimary)
 
                     Text("Next — pick a few interests and add a photo.")
-                        .font(ClickTypography.labelSmall)
+                        .font(ClickTypography.metadata)
                         .foregroundStyle(ClickColors.textSecondary)
                 }
             }
@@ -93,16 +85,16 @@ private struct WelcomePill: View {
         HStack(alignment: .top, spacing: ClickSpacing.md) {
             Image(systemName: systemImage)
                 .font(.system(size: 24))
-                .foregroundStyle(ClickColors.primary)
+                .foregroundStyle(ClickColors.accentForeground)
                 .frame(width: 36, height: 36)
 
             VStack(alignment: .leading, spacing: ClickSpacing.xxs) {
                 Text(title)
-                    .font(ClickTypography.titleSmall)
+                    .font(ClickTypography.supportingEmphasized)
                     .foregroundStyle(ClickColors.textPrimary)
 
                 Text(description)
-                    .font(ClickTypography.bodySmall)
+                    .font(ClickTypography.supporting)
                     .foregroundStyle(ClickColors.textSecondary)
                     .fixedSize(horizontal: false, vertical: true)
             }
@@ -110,11 +102,11 @@ private struct WelcomePill: View {
             Spacer()
         }
         .padding(ClickSpacing.md)
-        .background(ClickColors.surfaceContainerLow)
-        .clipShape(RoundedRectangle(cornerRadius: ClickSpacing.radiusCard))
+        .background(ClickColors.surface)
+        .clipShape(RoundedRectangle(cornerRadius: ClickRadius.surface))
         .overlay(
-            RoundedRectangle(cornerRadius: ClickSpacing.radiusCard)
-                .stroke(ClickColors.quietBorder, lineWidth: ClickSpacing.borderQuietWidth)
+            RoundedRectangle(cornerRadius: ClickRadius.surface)
+                .stroke(ClickColors.separator, lineWidth: ClickMetrics.strokeWidth)
         )
     }
 }

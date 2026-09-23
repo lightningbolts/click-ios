@@ -7,6 +7,7 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
+		00FA66D87FBBA8D335FDAD20 /* AddClickView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B7D3128AB165039747A9ED1C /* AddClickView.swift */; };
 		0303E291A9CBE5068AFE7A96 /* Manrope-ExtraBold.ttf in Resources */ = {isa = PBXBuildFile; fileRef = F8B2A1B9A3CEE977F49608DC /* Manrope-ExtraBold.ttf */; };
 		04FF41E8EFD8116421B309D1 /* AvatarUploadView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7932DD36D8B0EFAEF2B85379 /* AvatarUploadView.swift */; };
 		07E26E70DB1B5BEE2525D0AB /* ClicksView.swift in Sources */ = {isa = PBXBuildFile; fileRef = AAC9E2A2A2CF84BFD5B7C9B3 /* ClicksView.swift */; };
@@ -21,22 +22,28 @@
 		15E1002EACD031C0520ECBB1 /* Phase3FeedTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 01DF541D37D451BAB9008186 /* Phase3FeedTests.swift */; };
 		17232594580CD7706A6B9D96 /* Manrope-Bold.ttf in Resources */ = {isa = PBXBuildFile; fileRef = 1CD6B7EAD7CCC02356A0BB25 /* Manrope-Bold.ttf */; };
 		18049CEC4F7138E5BEAACA4C /* InterestsTaxonomy.swift in Sources */ = {isa = PBXBuildFile; fileRef = DDF0ECE7A321253E36201A8D /* InterestsTaxonomy.swift */; };
+		192EE920791AE2337FBE0F96 /* OfflineNotice.swift in Sources */ = {isa = PBXBuildFile; fileRef = 30988D99C421B40B486F5134 /* OfflineNotice.swift */; };
+		1A5711493067F5BC9BDF30F1 /* ShellNavigationTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 79D81340C370C0FD0A7086EB /* ShellNavigationTests.swift */; };
 		1B134B977C322761A9BE9F57 /* ClipApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = DA511983FBEDC6F47528DD28 /* ClipApp.swift */; };
 		1ED39C3ECEE0BD874E98A0BC /* ClickCryptoTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = AB9A71018D3F776F0EF48368 /* ClickCryptoTests.swift */; };
 		1F1C4D8400E005913567300C /* SettingsStoreTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 09BDA2C2A494538273494E1E /* SettingsStoreTests.swift */; };
 		275EFE64B076F48A594C5D37 /* Manrope-Regular.ttf in Resources */ = {isa = PBXBuildFile; fileRef = 755A67FED214E965F8934FAA /* Manrope-Regular.ttf */; };
+		2AE58F26B4198628E285BCD4 /* ImagePipeline.swift in Sources */ = {isa = PBXBuildFile; fileRef = F4A7259C78F05583D7D2BF35 /* ImagePipeline.swift */; };
 		3396C88A0F195A5E0253B73B /* UserProfileSnapshot.swift in Sources */ = {isa = PBXBuildFile; fileRef = C04BB0EDB80B1C58203CF1B1 /* UserProfileSnapshot.swift */; };
 		39FBC50AAC377A417C47ED3C /* NotificationService.appex in Embed Foundation Extensions */ = {isa = PBXBuildFile; fileRef = 3D70677902656DA92DEB50B3 /* NotificationService.appex */; settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
 		3C38884C9336F3A9474C3CCA /* InterestsPickerView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5FFF30E5C1CD35BF6388FFDA /* InterestsPickerView.swift */; };
+		400758128DC990342F01CCF2 /* ClickMapView.swift in Sources */ = {isa = PBXBuildFile; fileRef = E976EF8A656006D5B73FFD10 /* ClickMapView.swift */; };
 		4162BB108AA253929551DACC /* OnboardingTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB1A77E8E59821A8087FC2A2 /* OnboardingTests.swift */; };
 		442AEA315FD898EB8BFED96F /* ChatRealtimeManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0984317C23132C065F522391 /* ChatRealtimeManager.swift */; };
 		4A3E8D24E65F4FC92A145E37 /* PersonalityTaggingView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 873E049D1811D83AC1D46271 /* PersonalityTaggingView.swift */; };
 		5644CD79052856D5EBB5002A /* ClickCryptoV1.swift in Sources */ = {isa = PBXBuildFile; fileRef = DF1EEA7316772A0B9800A223 /* ClickCryptoV1.swift */; };
+		5B7B2613D4B9042F81200881 /* MeTabAvatarModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9E1DF371E97CE2C8CBF99560 /* MeTabAvatarModel.swift */; };
 		5EAF68E2372DE07743841C1E /* RootGateView.swift in Sources */ = {isa = PBXBuildFile; fileRef = DA0BA02DE0FE06FB525A130A /* RootGateView.swift */; };
 		625357C7B3AC7DD95115FC6B /* ChatMessage.swift in Sources */ = {isa = PBXBuildFile; fileRef = BEC22CD1ECDF9E342ACCC942 /* ChatMessage.swift */; };
 		632401178D9A54865EF78E3D /* Phase3Repository.swift in Sources */ = {isa = PBXBuildFile; fileRef = 78C43D61D08B8E0F50B37997 /* Phase3Repository.swift */; };
 		635A0005B6B6C6FDF9BF014B /* Colors.swift in Sources */ = {isa = PBXBuildFile; fileRef = 51597966A20F5807BFB28499 /* Colors.swift */; };
 		68F468332244E066F1EA92F1 /* OnboardingFlowView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5014EBC6865CB5371A01F981 /* OnboardingFlowView.swift */; };
+		6AAD9EE2C023A5FE7D36D5DA /* AvatarView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 175C5664D9E4177BB13BB80B /* AvatarView.swift */; };
 		6E5402BDE25E7CB5DAA5025E /* ClickCryptoV1.swift in Sources */ = {isa = PBXBuildFile; fileRef = DF1EEA7316772A0B9800A223 /* ClickCryptoV1.swift */; };
 		71FD881181695CDCB10FB84C /* ProfileView.swift in Sources */ = {isa = PBXBuildFile; fileRef = ED9FF6290770C75EBD921B16 /* ProfileView.swift */; };
 		72698DEA93E808276C44668E /* KeychainSessionVault.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9F622E14222722E2ACC13BEF /* KeychainSessionVault.swift */; };
@@ -44,10 +51,12 @@
 		772DB2063A845310BCE94CBA /* ClickCryptoV2.swift in Sources */ = {isa = PBXBuildFile; fileRef = 819744403B53A100BF880F1B /* ClickCryptoV2.swift */; };
 		77E16A225B4E34C27CD1EC85 /* ClickLogo.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1AFAFEA28942252B4C8C3065 /* ClickLogo.swift */; };
 		7B084D4485DF8DDD49429AF8 /* ClickClip.app in Embed App Clips */ = {isa = PBXBuildFile; fileRef = F8AF88527EA315B8FEEC3769 /* ClickClip.app */; settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
+		7C2D27682F203AA8E50135DD /* ButtonStyles.swift in Sources */ = {isa = PBXBuildFile; fileRef = B67AD6209B5DAB6EC962D28A /* ButtonStyles.swift */; };
 		7DA56504C85E6945007913AA /* AvatarService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 84C3EE0A0BDD6043F907666E /* AvatarService.swift */; };
 		80E0FD617F57A87BEB475744 /* Manrope-Medium.ttf in Resources */ = {isa = PBXBuildFile; fileRef = 2AEC3B2ABCA6FD192389609D /* Manrope-Medium.ttf */; };
 		81D284E168DA086F93011B91 /* SessionController.swift in Sources */ = {isa = PBXBuildFile; fileRef = BC196177165E6C102B1932B4 /* SessionController.swift */; };
 		82E25FFC46E25CC6F76C943F /* AppConfig.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2AD5FF3EB16F83E96A974A83 /* AppConfig.swift */; };
+		8D75F15C30FE0E789CC024BD /* GroupedSurface.swift in Sources */ = {isa = PBXBuildFile; fileRef = CEEFE47A4CBAB925D04FB0E9 /* GroupedSurface.swift */; };
 		8DD8D0AEB2396A470B9CBC66 /* HomeView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 005D701DA8A071928D68AB22 /* HomeView.swift */; };
 		92F27DA0C01DD9C90070F34F /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = 32BCA700988129E7FE7DC06B /* Assets.xcassets */; };
 		92F8F1122F82982A3FD0193D /* MessageBubbleView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 059E174F6A0ABD87301344BE /* MessageBubbleView.swift */; };
@@ -61,6 +70,7 @@
 		B741FE5C5E7099D25DF60D0F /* ClickAPIClient.swift in Sources */ = {isa = PBXBuildFile; fileRef = F7C2A0E83548CF65E326CC1E /* ClickAPIClient.swift */; };
 		BBA0C506BD5F9CA0033D890F /* HomeComponents.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1E86F5EC0AC5CAC94C17F8F /* HomeComponents.swift */; };
 		C13ECD3297594A3A79DED444 /* ChatConversationTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 06A226829E2A5C6E96399ECB /* ChatConversationTests.swift */; };
+		C47D3FFBBB3736906CCB13AC /* AppRouteDestination.swift in Sources */ = {isa = PBXBuildFile; fileRef = FF26912F27B4E25BACF33C07 /* AppRouteDestination.swift */; };
 		C68531D7713EDA163E2840E8 /* OnboardingShellChrome.swift in Sources */ = {isa = PBXBuildFile; fileRef = 578E139F248C9CF1F7B64C32 /* OnboardingShellChrome.swift */; };
 		CC56BFC382A9C86263741359 /* AppRouter.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7D2D91C12835F0AF71AF14F9 /* AppRouter.swift */; };
 		D3646E36CA545C20E2D35A93 /* DeviceIdentityVault.swift in Sources */ = {isa = PBXBuildFile; fileRef = 385A8122FAAD5A5FB19BCF56 /* DeviceIdentityVault.swift */; };
@@ -79,6 +89,7 @@
 		EE2DD300DD8D42003D87096D /* WelcomeView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B7E925958F753D5FBE49A830 /* WelcomeView.swift */; };
 		EEC3879386A9FBE5A5AB6609 /* HomeFeedSnapshot.swift in Sources */ = {isa = PBXBuildFile; fileRef = C831A48FD7A6C83981CA5A03 /* HomeFeedSnapshot.swift */; };
 		EF0F90DD03A0C46640DB05AF /* Manrope-ExtraLight.ttf in Resources */ = {isa = PBXBuildFile; fileRef = DBCE1A13DF90B8C97241FE7D /* Manrope-ExtraLight.ttf */; };
+		F0034F63AB6DA46A3F8D141E /* SettingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7B6AECC176E2C9D819743E8C /* SettingsView.swift */; };
 		F9549923EB17C4F1A31929C3 /* LegacyKMPStateMigratorTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2D76120005FD30AE72B1126F /* LegacyKMPStateMigratorTests.swift */; };
 		F9E65FFF00CC772831231F03 /* ChatComposerView.swift in Sources */ = {isa = PBXBuildFile; fileRef = D037086EDE795B72EE43A547 /* ChatComposerView.swift */; };
 		FAC64483BE0386233DBB0B4F /* LegacyKMPStateMigrator.swift in Sources */ = {isa = PBXBuildFile; fileRef = E6948B635825154782DB64D8 /* LegacyKMPStateMigrator.swift */; };
@@ -144,6 +155,7 @@
 		0984317C23132C065F522391 /* ChatRealtimeManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ChatRealtimeManager.swift; sourceTree = "<group>"; };
 		09BDA2C2A494538273494E1E /* SettingsStoreTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SettingsStoreTests.swift; sourceTree = "<group>"; };
 		115558E16D558D82B19CEDFD /* Typography.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Typography.swift; sourceTree = "<group>"; };
+		175C5664D9E4177BB13BB80B /* AvatarView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AvatarView.swift; sourceTree = "<group>"; };
 		1AFAFEA28942252B4C8C3065 /* ClickLogo.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ClickLogo.swift; sourceTree = "<group>"; };
 		1C9CE28A98189AEC8BC639BD /* ChatRepository.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ChatRepository.swift; sourceTree = "<group>"; };
 		1CD6B7EAD7CCC02356A0BB25 /* Manrope-Bold.ttf */ = {isa = PBXFileReference; lastKnownFileType = file; path = "Manrope-Bold.ttf"; sourceTree = "<group>"; };
@@ -155,6 +167,7 @@
 		2AEC3B2ABCA6FD192389609D /* Manrope-Medium.ttf */ = {isa = PBXFileReference; lastKnownFileType = file; path = "Manrope-Medium.ttf"; sourceTree = "<group>"; };
 		2C5A7CE7107D552FF7C4C6AC /* PermissionCoordinator.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PermissionCoordinator.swift; sourceTree = "<group>"; };
 		2D76120005FD30AE72B1126F /* LegacyKMPStateMigratorTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LegacyKMPStateMigratorTests.swift; sourceTree = "<group>"; };
+		30988D99C421B40B486F5134 /* OfflineNotice.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OfflineNotice.swift; sourceTree = "<group>"; };
 		32BCA700988129E7FE7DC06B /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
 		352CD16A8EB0AD27BC1F46F7 /* AuthView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AuthView.swift; sourceTree = "<group>"; };
 		385A8122FAAD5A5FB19BCF56 /* DeviceIdentityVault.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DeviceIdentityVault.swift; sourceTree = "<group>"; };
@@ -176,7 +189,9 @@
 		77CF1D6BB251C87ECF61B463 /* ClickTests.xctest */ = {isa = PBXFileReference; includeInIndex = 0; lastKnownFileType = wrapper.cfbundle; path = ClickTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 		78C43D61D08B8E0F50B37997 /* Phase3Repository.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Phase3Repository.swift; sourceTree = "<group>"; };
 		7932DD36D8B0EFAEF2B85379 /* AvatarUploadView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AvatarUploadView.swift; sourceTree = "<group>"; };
+		79D81340C370C0FD0A7086EB /* ShellNavigationTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ShellNavigationTests.swift; sourceTree = "<group>"; };
 		7A2429F10776DF1079D326B5 /* SettingsStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SettingsStore.swift; sourceTree = "<group>"; };
+		7B6AECC176E2C9D819743E8C /* SettingsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SettingsView.swift; sourceTree = "<group>"; };
 		7D2D91C12835F0AF71AF14F9 /* AppRouter.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppRouter.swift; sourceTree = "<group>"; };
 		819744403B53A100BF880F1B /* ClickCryptoV2.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ClickCryptoV2.swift; sourceTree = "<group>"; };
 		83C5FC83E94C4D0DD1DBBF1D /* PriorConnectionsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PriorConnectionsView.swift; sourceTree = "<group>"; };
@@ -185,6 +200,7 @@
 		8C61BB3F2BA82EA2E549C314 /* Haptics.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Haptics.swift; sourceTree = "<group>"; };
 		8DF21D6194CC4FB19507D99C /* ProfileBasicsGateView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ProfileBasicsGateView.swift; sourceTree = "<group>"; };
 		94D1D516E85E0C3A40A44899 /* Motion.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Motion.swift; sourceTree = "<group>"; };
+		9E1DF371E97CE2C8CBF99560 /* MeTabAvatarModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MeTabAvatarModel.swift; sourceTree = "<group>"; };
 		9F622E14222722E2ACC13BEF /* KeychainSessionVault.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = KeychainSessionVault.swift; sourceTree = "<group>"; };
 		A03E2C3998EE2E05F0385B8E /* OnboardingCoordinator.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OnboardingCoordinator.swift; sourceTree = "<group>"; };
 		A0D33AB3B5AE90EA7388EA96 /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist; path = Info.plist; sourceTree = "<group>"; };
@@ -193,7 +209,9 @@
 		AB9A71018D3F776F0EF48368 /* ClickCryptoTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ClickCryptoTests.swift; sourceTree = "<group>"; };
 		B016BAE6D25749FE30CC6AEB /* OnboardingRepository.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OnboardingRepository.swift; sourceTree = "<group>"; };
 		B5503A75FDC271224C037F0F /* ConversationModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ConversationModel.swift; sourceTree = "<group>"; };
+		B67AD6209B5DAB6EC962D28A /* ButtonStyles.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ButtonStyles.swift; sourceTree = "<group>"; };
 		B707F36DD15A7BDA013381B5 /* NotificationService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NotificationService.swift; sourceTree = "<group>"; };
+		B7D3128AB165039747A9ED1C /* AddClickView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AddClickView.swift; sourceTree = "<group>"; };
 		B7E925958F753D5FBE49A830 /* WelcomeView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WelcomeView.swift; sourceTree = "<group>"; };
 		BB1A77E8E59821A8087FC2A2 /* OnboardingTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OnboardingTests.swift; sourceTree = "<group>"; };
 		BC148FF19C5BC80D4271B273 /* OnboardingState.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OnboardingState.swift; sourceTree = "<group>"; };
@@ -202,6 +220,7 @@
 		C04BB0EDB80B1C58203CF1B1 /* UserProfileSnapshot.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = UserProfileSnapshot.swift; sourceTree = "<group>"; };
 		C4BA259925DD4913607E5A68 /* ClicksSnapshot.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ClicksSnapshot.swift; sourceTree = "<group>"; };
 		C831A48FD7A6C83981CA5A03 /* HomeFeedSnapshot.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HomeFeedSnapshot.swift; sourceTree = "<group>"; };
+		CEEFE47A4CBAB925D04FB0E9 /* GroupedSurface.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GroupedSurface.swift; sourceTree = "<group>"; };
 		D01BDDB7FD2547E8DFE08814 /* ContactDiscoveryService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ContactDiscoveryService.swift; sourceTree = "<group>"; };
 		D037086EDE795B72EE43A547 /* ChatComposerView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ChatComposerView.swift; sourceTree = "<group>"; };
 		DA0BA02DE0FE06FB525A130A /* RootGateView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RootGateView.swift; sourceTree = "<group>"; };
@@ -213,12 +232,15 @@
 		E2EC3690E271F4DA7D73D18B /* AuthValidationTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AuthValidationTests.swift; sourceTree = "<group>"; };
 		E3B19D4621050199A97E10A9 /* Click.app */ = {isa = PBXFileReference; includeInIndex = 0; lastKnownFileType = wrapper.application; path = Click.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		E6948B635825154782DB64D8 /* LegacyKMPStateMigrator.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LegacyKMPStateMigrator.swift; sourceTree = "<group>"; };
+		E976EF8A656006D5B73FFD10 /* ClickMapView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ClickMapView.swift; sourceTree = "<group>"; };
 		ED9FF6290770C75EBD921B16 /* ProfileView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ProfileView.swift; sourceTree = "<group>"; };
+		F4A7259C78F05583D7D2BF35 /* ImagePipeline.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ImagePipeline.swift; sourceTree = "<group>"; };
 		F7C2A0E83548CF65E326CC1E /* ClickAPIClient.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ClickAPIClient.swift; sourceTree = "<group>"; };
 		F8AF88527EA315B8FEEC3769 /* ClickClip.app */ = {isa = PBXFileReference; includeInIndex = 0; lastKnownFileType = wrapper.application; path = ClickClip.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		F8B2A1B9A3CEE977F49608DC /* Manrope-ExtraBold.ttf */ = {isa = PBXFileReference; lastKnownFileType = file; path = "Manrope-ExtraBold.ttf"; sourceTree = "<group>"; };
 		F96A5E440B359E2A2F052A29 /* ChatView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ChatView.swift; sourceTree = "<group>"; };
 		FC2D8FD2E9A926E650F8748C /* Release.xcconfig */ = {isa = PBXFileReference; lastKnownFileType = text.xcconfig; path = Release.xcconfig; sourceTree = "<group>"; };
+		FF26912F27B4E25BACF33C07 /* AppRouteDestination.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppRouteDestination.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXGroup section */
@@ -233,7 +255,11 @@
 		0B56FB38E9498FDA0AC87128 /* Components */ = {
 			isa = PBXGroup;
 			children = (
+				175C5664D9E4177BB13BB80B /* AvatarView.swift */,
+				B67AD6209B5DAB6EC962D28A /* ButtonStyles.swift */,
 				1AFAFEA28942252B4C8C3065 /* ClickLogo.swift */,
+				CEEFE47A4CBAB925D04FB0E9 /* GroupedSurface.swift */,
+				30988D99C421B40B486F5134 /* OfflineNotice.swift */,
 			);
 			path = Components;
 			sourceTree = "<group>";
@@ -271,8 +297,10 @@
 			isa = PBXGroup;
 			children = (
 				504D5490D94A3C3BD8F57912 /* AppEnvironment.swift */,
+				FF26912F27B4E25BACF33C07 /* AppRouteDestination.swift */,
 				7D2D91C12835F0AF71AF14F9 /* AppRouter.swift */,
 				464D8F9F85AB107124A0DFC4 /* ClickApp.swift */,
+				9E1DF371E97CE2C8CBF99560 /* MeTabAvatarModel.swift */,
 				DA0BA02DE0FE06FB525A130A /* RootGateView.swift */,
 			);
 			path = App;
@@ -301,6 +329,14 @@
 			);
 			sourceTree = "<group>";
 		};
+		3F5FC67FA1554E03EFD07683 /* Map */ = {
+			isa = PBXGroup;
+			children = (
+				E976EF8A656006D5B73FFD10 /* ClickMapView.swift */,
+			);
+			path = Map;
+			sourceTree = "<group>";
+		};
 		4025CF87ADBA73E739CABC81 /* Clicks */ = {
 			isa = PBXGroup;
 			children = (
@@ -317,6 +353,14 @@
 				F7C2A0E83548CF65E326CC1E /* ClickAPIClient.swift */,
 			);
 			path = API;
+			sourceTree = "<group>";
+		};
+		4287C0F895CEBA0F3EC808DF /* AddClick */ = {
+			isa = PBXGroup;
+			children = (
+				B7D3128AB165039747A9ED1C /* AddClickView.swift */,
+			);
+			path = AddClick;
 			sourceTree = "<group>";
 		};
 		4907E577393871CB14533954 /* Fonts */ = {
@@ -382,6 +426,7 @@
 				BB1A77E8E59821A8087FC2A2 /* OnboardingTests.swift */,
 				01DF541D37D451BAB9008186 /* Phase3FeedTests.swift */,
 				09BDA2C2A494538273494E1E /* SettingsStoreTests.swift */,
+				79D81340C370C0FD0A7086EB /* ShellNavigationTests.swift */,
 			);
 			name = ClickTests;
 			path = Tests/ClickTests;
@@ -409,6 +454,14 @@
 				7932DD36D8B0EFAEF2B85379 /* AvatarUploadView.swift */,
 			);
 			path = Avatar;
+			sourceTree = "<group>";
+		};
+		994727D0AF0A770B53C64833 /* Media */ = {
+			isa = PBXGroup;
+			children = (
+				F4A7259C78F05583D7D2BF35 /* ImagePipeline.swift */,
+			);
+			path = Media;
 			sourceTree = "<group>";
 		};
 		9A2D124674FA7491AADE3AE6 /* Click */ = {
@@ -516,10 +569,12 @@
 		E5F7B24B484573BD6B08D4EF /* Features */ = {
 			isa = PBXGroup;
 			children = (
+				4287C0F895CEBA0F3EC808DF /* AddClick */,
 				8FA85ACAEA5871BE3BB4C203 /* Auth */,
 				F774607B7A6B2B7B0669BBCC /* Chat */,
 				4025CF87ADBA73E739CABC81 /* Clicks */,
 				A64B1148129B3E1C382B261A /* Home */,
+				3F5FC67FA1554E03EFD07683 /* Map */,
 				1A045FCAE9A53803D381DD18 /* Onboarding */,
 				F08A34873394A6C2218CD475 /* Profile */,
 			);
@@ -530,6 +585,7 @@
 			isa = PBXGroup;
 			children = (
 				ED9FF6290770C75EBD921B16 /* ProfileView.swift */,
+				7B6AECC176E2C9D819743E8C /* SettingsView.swift */,
 			);
 			path = Profile;
 			sourceTree = "<group>";
@@ -584,6 +640,7 @@
 				63F315AE89F2071066F5190A /* Config */,
 				5960A8F47A9DF4AA096BFE8E /* Crypto */,
 				A62AD6EB819FB1DE2AD6C433 /* Feed */,
+				994727D0AF0A770B53C64833 /* Media */,
 				E46A2E015271C95260947EB4 /* Onboarding */,
 				AD12D1A484E1A46DF66DBDC9 /* Permissions */,
 				A28E4ECC812677897DBBFF7C /* Persistence */,
@@ -744,12 +801,16 @@
 			files = (
 				101AE31A39E97F7A4C83F339 /* APIError.swift in Sources */,
 				0807AC2E7C11A5B869C9A575 /* APIRequest.swift in Sources */,
+				00FA66D87FBBA8D335FDAD20 /* AddClickView.swift in Sources */,
 				82E25FFC46E25CC6F76C943F /* AppConfig.swift in Sources */,
 				09303B5DAA631E6B94E780FD /* AppEnvironment.swift in Sources */,
+				C47D3FFBBB3736906CCB13AC /* AppRouteDestination.swift in Sources */,
 				CC56BFC382A9C86263741359 /* AppRouter.swift in Sources */,
 				14A9ABE1E8C63C81429603EB /* AuthView.swift in Sources */,
 				7DA56504C85E6945007913AA /* AvatarService.swift in Sources */,
 				04FF41E8EFD8116421B309D1 /* AvatarUploadView.swift in Sources */,
+				6AAD9EE2C023A5FE7D36D5DA /* AvatarView.swift in Sources */,
+				7C2D27682F203AA8E50135DD /* ButtonStyles.swift in Sources */,
 				F9E65FFF00CC772831231F03 /* ChatComposerView.swift in Sources */,
 				625357C7B3AC7DD95115FC6B /* ChatMessage.swift in Sources */,
 				442AEA315FD898EB8BFED96F /* ChatRealtimeManager.swift in Sources */,
@@ -760,22 +821,27 @@
 				5644CD79052856D5EBB5002A /* ClickCryptoV1.swift in Sources */,
 				772DB2063A845310BCE94CBA /* ClickCryptoV2.swift in Sources */,
 				77E16A225B4E34C27CD1EC85 /* ClickLogo.swift in Sources */,
+				400758128DC990342F01CCF2 /* ClickMapView.swift in Sources */,
 				FEEF3EB93549BC0E8570F080 /* ClicksSnapshot.swift in Sources */,
 				07E26E70DB1B5BEE2525D0AB /* ClicksView.swift in Sources */,
 				635A0005B6B6C6FDF9BF014B /* Colors.swift in Sources */,
 				B62EE3AB195522D20D9214A0 /* ContactDiscoveryService.swift in Sources */,
 				E57BD1A4E46637EA2ED8E2C9 /* ConversationModel.swift in Sources */,
 				D3646E36CA545C20E2D35A93 /* DeviceIdentityVault.swift in Sources */,
+				8D75F15C30FE0E789CC024BD /* GroupedSurface.swift in Sources */,
 				081AA9386D6FCC4DC3B03DA0 /* Haptics.swift in Sources */,
 				BBA0C506BD5F9CA0033D890F /* HomeComponents.swift in Sources */,
 				EEC3879386A9FBE5A5AB6609 /* HomeFeedSnapshot.swift in Sources */,
 				8DD8D0AEB2396A470B9CBC66 /* HomeView.swift in Sources */,
+				2AE58F26B4198628E285BCD4 /* ImagePipeline.swift in Sources */,
 				3C38884C9336F3A9474C3CCA /* InterestsPickerView.swift in Sources */,
 				18049CEC4F7138E5BEAACA4C /* InterestsTaxonomy.swift in Sources */,
 				72698DEA93E808276C44668E /* KeychainSessionVault.swift in Sources */,
 				FAC64483BE0386233DBB0B4F /* LegacyKMPStateMigrator.swift in Sources */,
+				5B7B2613D4B9042F81200881 /* MeTabAvatarModel.swift in Sources */,
 				92F8F1122F82982A3FD0193D /* MessageBubbleView.swift in Sources */,
 				E1F59976B1B289C600055E22 /* Motion.swift in Sources */,
+				192EE920791AE2337FBE0F96 /* OfflineNotice.swift in Sources */,
 				B283DB1A8D0D2A02389A7695 /* OnboardingCoordinator.swift in Sources */,
 				68F468332244E066F1EA92F1 /* OnboardingFlowView.swift in Sources */,
 				9A7DDCDDC70230ABCE0DBEC9 /* OnboardingHeaderView.swift in Sources */,
@@ -792,6 +858,7 @@
 				5EAF68E2372DE07743841C1E /* RootGateView.swift in Sources */,
 				81D284E168DA086F93011B91 /* SessionController.swift in Sources */,
 				E1A32FEA2DD05DDE9CC3991B /* SettingsStore.swift in Sources */,
+				F0034F63AB6DA46A3F8D141E /* SettingsView.swift in Sources */,
 				B12D7E2CA0F7D433B947DA57 /* Spacing.swift in Sources */,
 				09B424FA14F8AFB0370CA393 /* SupabaseAuthService.swift in Sources */,
 				B157719AA85CC74638A6B2F4 /* Typography.swift in Sources */,
@@ -822,6 +889,7 @@
 				4162BB108AA253929551DACC /* OnboardingTests.swift in Sources */,
 				15E1002EACD031C0520ECBB1 /* Phase3FeedTests.swift in Sources */,
 				1F1C4D8400E005913567300C /* SettingsStoreTests.swift in Sources */,
+				1A5711493067F5BC9BDF30F1 /* ShellNavigationTests.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -973,7 +1041,7 @@
 				INFOPLIST_FILE = Click/Info.plist;
 				INFOPLIST_KEY_CADisableMinimumFrameDurationOnPhone = YES;
 				INFOPLIST_KEY_CFBundleDisplayName = Click;
-				INFOPLIST_KEY_CFBundleURLTypes = "[[\"CFBundleTypeRole\": \"Editor\", \"CFBundleURLSchemes\": [\"click\"], \"CFBundleURLName\": \"compose.project.click.click\"], [\"CFBundleURLName\": \"GoogleSignIn\", \"CFBundleURLSchemes\": [\"com.googleusercontent.apps.530817233802-crnehf5a9duauov4vos4lgsijkgingdj\"], \"CFBundleTypeRole\": \"Editor\"]]";
+				INFOPLIST_KEY_CFBundleURLTypes = "[[\"CFBundleURLSchemes\": [\"click\"], \"CFBundleURLName\": \"compose.project.click.click\", \"CFBundleTypeRole\": \"Editor\"], [\"CFBundleURLName\": \"GoogleSignIn\", \"CFBundleTypeRole\": \"Editor\", \"CFBundleURLSchemes\": [\"com.googleusercontent.apps.530817233802-crnehf5a9duauov4vos4lgsijkgingdj\"]]]";
 				INFOPLIST_KEY_CLICK_API_BASE_URL = "$(CLICK_API_BASE_URL)";
 				INFOPLIST_KEY_GIDClientID = "530817233802-crnehf5a9duauov4vos4lgsijkgingdj.apps.googleusercontent.com";
 				INFOPLIST_KEY_GIDServerClientID = "530817233802-3ki7usecs885vvag9uq92ubu5hgkv2sp.apps.googleusercontent.com";
@@ -1167,7 +1235,7 @@
 				INFOPLIST_FILE = Click/Info.plist;
 				INFOPLIST_KEY_CADisableMinimumFrameDurationOnPhone = YES;
 				INFOPLIST_KEY_CFBundleDisplayName = Click;
-				INFOPLIST_KEY_CFBundleURLTypes = "[[\"CFBundleTypeRole\": \"Editor\", \"CFBundleURLSchemes\": [\"click\"], \"CFBundleURLName\": \"compose.project.click.click\"], [\"CFBundleURLName\": \"GoogleSignIn\", \"CFBundleURLSchemes\": [\"com.googleusercontent.apps.530817233802-crnehf5a9duauov4vos4lgsijkgingdj\"], \"CFBundleTypeRole\": \"Editor\"]]";
+				INFOPLIST_KEY_CFBundleURLTypes = "[[\"CFBundleURLSchemes\": [\"click\"], \"CFBundleURLName\": \"compose.project.click.click\", \"CFBundleTypeRole\": \"Editor\"], [\"CFBundleURLName\": \"GoogleSignIn\", \"CFBundleTypeRole\": \"Editor\", \"CFBundleURLSchemes\": [\"com.googleusercontent.apps.530817233802-crnehf5a9duauov4vos4lgsijkgingdj\"]]]";
 				INFOPLIST_KEY_CLICK_API_BASE_URL = "$(CLICK_API_BASE_URL)";
 				INFOPLIST_KEY_GIDClientID = "530817233802-crnehf5a9duauov4vos4lgsijkgingdj.apps.googleusercontent.com";
 				INFOPLIST_KEY_GIDServerClientID = "530817233802-3ki7usecs885vvag9uq92ubu5hgkv2sp.apps.googleusercontent.com";

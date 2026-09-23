@@ -74,19 +74,19 @@ public struct ChatComposerView: View {
                 )
                 .focused($isFocused)
                 .lineLimit(1...5)
-                .font(ClickTypography.bodyMedium)
+                .font(ClickTypography.body)
                 .foregroundStyle(ClickColors.textPrimary)
                 .padding(.horizontal, 14)
                 .padding(.vertical, 10)
-                .background(ClickColors.surfaceContainerLow)
-                .clipShape(RoundedRectangle(cornerRadius: 20, style: .continuous))
+                .background(ClickColors.surfaceElevated)
+                .clipShape(RoundedRectangle(cornerRadius: ClickRadius.messageBubble, style: .continuous))
                 .overlay {
-                    RoundedRectangle(cornerRadius: 20, style: .continuous)
+                    RoundedRectangle(cornerRadius: ClickRadius.messageBubble, style: .continuous)
                         .stroke(
-                            isFocused ? ClickColors.primary.opacity(0.55) : ClickColors.quietBorder,
+                            isFocused ? ClickColors.accentForeground.opacity(0.55) : ClickColors.separator,
                             lineWidth: isFocused
-                                ? ClickSpacing.borderFocusWidth
-                                : ClickSpacing.borderQuietWidth
+                                ? ClickMetrics.focusStrokeWidth
+                                : ClickMetrics.strokeWidth
                         )
                 }
                 .submitLabel(.send)
@@ -104,10 +104,10 @@ public struct ChatComposerView: View {
 
                 if remainingCharacters < 80 {
                     Text("\(remainingCharacters)")
-                        .font(ClickTypography.microcopy)
+                        .font(ClickTypography.caption)
                         .foregroundStyle(
                             remainingCharacters < 20
-                                ? ClickColors.error
+                                ? ClickColors.destructive
                                 : ClickColors.textSecondary
                         )
                         .padding(.bottom, 12)
@@ -122,11 +122,11 @@ public struct ChatComposerView: View {
                     Image(systemName: editTarget == nil ? "arrow.up" : "checkmark")
                         .font(.system(size: 17, weight: .bold))
                         .foregroundStyle(
-                            canSend ? ClickColors.onPrimary : ClickColors.tertiaryLabel
+                            canSend ? ClickColors.primaryActionForeground : ClickColors.textTertiary
                         )
                         .frame(width: 40, height: 40)
                         .background(
-                            canSend ? ClickColors.primary : ClickColors.surfaceContainerHigh
+                            canSend ? ClickColors.primaryActionFill : ClickColors.fillStrong
                         )
                         .clipShape(Circle())
                 }
@@ -140,7 +140,7 @@ public struct ChatComposerView: View {
         .background(ClickColors.surface)
         .overlay(alignment: .top) {
             Rectangle()
-                .fill(ClickColors.quietBorder.opacity(0.65))
+                .fill(ClickColors.separator)
                 .frame(height: 0.5)
         }
         .animation(ClickMotion.selection, value: replyTarget?.id)
@@ -155,21 +155,21 @@ public struct ChatComposerView: View {
     ) -> some View {
         HStack(spacing: 10) {
             RoundedRectangle(cornerRadius: 2)
-                .fill(ClickColors.primary)
+                .fill(ClickColors.accentForeground)
                 .frame(width: 3)
 
             Image(systemName: icon)
                 .font(.system(size: 13, weight: .semibold))
-                .foregroundStyle(ClickColors.primary)
+                .foregroundStyle(ClickColors.accentForeground)
 
             VStack(alignment: .leading, spacing: 1) {
                 Text(title)
-                    .font(ClickTypography.captionSmall)
-                    .foregroundStyle(ClickColors.primary)
+                    .font(ClickTypography.metadata)
+                    .foregroundStyle(ClickColors.accentForeground)
                     .lineLimit(1)
 
                 Text(content)
-                    .font(ClickTypography.bodySmall)
+                    .font(ClickTypography.supporting)
                     .foregroundStyle(ClickColors.textSecondary)
                     .lineLimit(1)
             }
@@ -184,7 +184,7 @@ public struct ChatComposerView: View {
                     .font(.system(size: 12, weight: .bold))
                     .foregroundStyle(ClickColors.textSecondary)
                     .frame(width: 30, height: 30)
-                    .background(ClickColors.surfaceContainerLow)
+                    .background(ClickColors.fillSubtle)
                     .clipShape(Circle())
             }
             .buttonStyle(.plain)

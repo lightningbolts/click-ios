@@ -30,7 +30,7 @@ public struct ChatView: View {
                     timeline(proxy: proxy)
                 }
             }
-            .background(ClickColors.background.ignoresSafeArea())
+            .background(ClickColors.chatBackground.ignoresSafeArea())
             .safeAreaInset(edge: .bottom, spacing: 0) {
                 ChatComposerView(
                     text: $model.composerText,
@@ -74,7 +74,7 @@ public struct ChatView: View {
                     conversationTitle
                 }
             }
-            .toolbarBackground(ClickColors.background, for: .navigationBar)
+            .toolbarBackground(ClickColors.chatBackground, for: .navigationBar)
             .toolbarBackground(.visible, for: .navigationBar)
             .task {
                 await model.onAppear(
@@ -168,7 +168,7 @@ public struct ChatView: View {
         Button {
             guard !model.identity.peerUserID.isEmpty else { return }
             ClickHaptics.selection()
-            env.router.connectionsPath.append(
+            env.router.navigate(to:
                 .userProfile(
                     userID: model.identity.peerUserID,
                     connectionID: model.identity.connectionID
@@ -176,19 +176,23 @@ public struct ChatView: View {
             )
         } label: {
             HStack(spacing: 8) {
-                peerAvatar(size: 32)
+                AvatarView(
+                    imageURL: model.identity.peerAvatarURL,
+                    initials: model.identity.initials,
+                    size: ClickMetrics.Avatar.navigation
+                )
 
                 VStack(alignment: .leading, spacing: 0) {
                     Text(model.identity.peerDisplayName)
-                        .font(ClickTypography.titleSmall)
+                        .font(ClickTypography.supportingEmphasized)
                         .foregroundStyle(ClickColors.textPrimary)
                         .lineLimit(1)
 
                     Text(statusText)
-                        .font(ClickTypography.microcopy)
+                        .font(ClickTypography.caption)
                         .foregroundStyle(
                             model.isPeerTyping
-                                ? ClickColors.primary
+                                ? ClickColors.accentForeground
                                 : ClickColors.textSecondary
                         )
                         .lineLimit(1)
@@ -217,42 +221,13 @@ public struct ChatView: View {
         return "Click"
     }
 
-    @ViewBuilder
-    private func peerAvatar(size: CGFloat) -> some View {
-        if let raw = model.identity.peerAvatarURL,
-           let url = URL(string: raw) {
-            AsyncImage(url: url) { image in
-                image
-                    .resizable()
-                    .scaledToFill()
-            } placeholder: {
-                avatarFallback(size: size)
-            }
-            .frame(width: size, height: size)
-            .clipShape(Circle())
-        } else {
-            avatarFallback(size: size)
-        }
-    }
-
-    private func avatarFallback(size: CGFloat) -> some View {
-        Circle()
-            .fill(ClickColors.primaryFixed.opacity(0.55))
-            .frame(width: size, height: size)
-            .overlay {
-                Text(model.identity.initials)
-                    .font(ClickTypography.microcopy)
-                    .foregroundStyle(ClickColors.primary)
-            }
-    }
-
     private var loadingState: some View {
         VStack(spacing: 10) {
             ProgressView()
-                .tint(ClickColors.primary)
+                .tint(ClickColors.accentForeground)
 
             Text("Loading conversation…")
-                .font(ClickTypography.bodySmall)
+                .font(ClickTypography.supporting)
                 .foregroundStyle(ClickColors.textSecondary)
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -268,7 +243,7 @@ public struct ChatView: View {
                 Task { await model.loadMessages() }
             }
             .buttonStyle(.borderedProminent)
-            .tint(ClickColors.primary)
+            .tint(ClickColors.primaryActionFill)
         }
     }
 
@@ -278,7 +253,7 @@ public struct ChatView: View {
                 .font(.system(size: 12, weight: .semibold))
 
             Text(message)
-                .font(ClickTypography.captionSmall)
+                .font(ClickTypography.metadata)
                 .lineLimit(2)
 
             Spacer(minLength: 8)
@@ -296,12 +271,8 @@ public struct ChatView: View {
         .foregroundStyle(ClickColors.textPrimary)
         .padding(.horizontal, 12)
         .padding(.vertical, 9)
-        .background(ClickColors.surface)
-        .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
-        .overlay {
-            RoundedRectangle(cornerRadius: 10, style: .continuous)
-                .stroke(ClickColors.quietBorder, lineWidth: 1)
-        }
+        .background(ClickColors.surfaceElevated)
+        .clipShape(RoundedRectangle(cornerRadius: ClickRadius.compact, style: .continuous))
     }
 
     private var typingIndicator: some View {
@@ -315,12 +286,8 @@ public struct ChatView: View {
             }
             .padding(.horizontal, 12)
             .padding(.vertical, 10)
-            .background(ClickColors.surface)
-            .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
-            .overlay {
-                RoundedRectangle(cornerRadius: 16, style: .continuous)
-                    .stroke(ClickColors.quietBorder.opacity(0.78), lineWidth: 1)
-            }
+            .background(ClickColors.messageIncoming)
+            .clipShape(RoundedRectangle(cornerRadius: ClickRadius.messageBubble, style: .continuous))
 
             Spacer()
         }
@@ -339,11 +306,11 @@ public struct ChatView: View {
 
     private func dateHeader(_ date: Date) -> some View {
         Text(dateLabel(date))
-            .font(ClickTypography.microcopy)
+            .font(ClickTypography.caption)
             .foregroundStyle(ClickColors.textSecondary)
             .padding(.horizontal, 10)
             .padding(.vertical, 5)
-            .background(ClickColors.surfaceContainerLow)
+            .background(ClickColors.surface)
             .clipShape(Capsule())
             .padding(.vertical, 8)
     }

@@ -98,34 +98,33 @@ public struct ProfileView: View {
         .navigationTitle("Profile")
         .navigationBarTitleDisplayMode(.inline)
         .toolbar(.hidden, for: .tabBar)
-        .tint(ClickColors.primary)
+        .tint(ClickColors.accentForeground)
         .task { await bootstrap() }
     }
 
     private func profileHeader(_ profile: UserProfileSnapshot) -> some View {
         HStack(spacing: 15) {
-            avatar(profile)
-                .frame(width: 82, height: 82)
-                .clipShape(Circle())
-                .overlay {
-                    Circle().stroke(ClickColors.primary, lineWidth: 2)
-                }
+            AvatarView(
+                imageURL: profile.avatarUrl,
+                initials: profile.initials,
+                size: ClickMetrics.Avatar.identity
+            )
 
             VStack(alignment: .leading, spacing: 4) {
                 Text(profile.displayName)
-                    .font(ClickTypography.headlineSmall)
+                    .font(ClickTypography.sectionTitle)
                     .foregroundStyle(ClickColors.textPrimary)
                     .lineLimit(2)
 
                 if !profile.handle.isEmpty {
                     Text(profile.handle)
-                        .font(ClickTypography.bodyMedium)
+                        .font(ClickTypography.body)
                         .foregroundStyle(ClickColors.textSecondary)
                 }
 
                 if !profile.bio.isEmpty {
                     Text(profile.bio)
-                        .font(ClickTypography.bodySmall)
+                        .font(ClickTypography.supporting)
                         .foregroundStyle(ClickColors.textSecondary)
                         .lineLimit(2)
                         .padding(.top, 2)
@@ -142,12 +141,8 @@ public struct ProfileView: View {
                 openChat(profile)
             } label: {
                 Label("Message", systemImage: "message.fill")
-                    .font(ClickTypography.titleMedium)
-                    .frame(maxWidth: .infinity)
-                    .frame(height: 52)
             }
-            .buttonStyle(.borderedProminent)
-            .tint(ClickColors.primary)
+            .buttonStyle(.clickPrimary)
             .disabled(connectionID == nil)
 
             HStack(spacing: 10) {
@@ -155,11 +150,8 @@ public struct ProfileView: View {
                     Task { await sendNudge(profile) }
                 } label: {
                     Label("Nudge", systemImage: "bell.badge.fill")
-                        .font(ClickTypography.labelLarge)
-                        .frame(maxWidth: .infinity)
-                        .frame(height: 48)
                 }
-                .buttonStyle(.bordered)
+                .buttonStyle(.clickSecondary)
                 .disabled(connectionID == nil)
 
                 Button {
@@ -167,11 +159,8 @@ public struct ProfileView: View {
                     ClickHaptics.selection()
                 } label: {
                     Label("Drops", systemImage: "camera.fill")
-                        .font(ClickTypography.labelLarge)
-                        .frame(maxWidth: .infinity)
-                        .frame(height: 48)
                 }
-                .buttonStyle(.bordered)
+                .buttonStyle(.clickSecondary)
             }
         }
     }
@@ -179,22 +168,19 @@ public struct ProfileView: View {
     private func sharedInterests(_ tags: [String]) -> some View {
         VStack(alignment: .leading, spacing: 9) {
             Text("Shared interests")
-                .font(ClickTypography.captionSmall)
+                .font(ClickTypography.metadata)
                 .foregroundStyle(ClickColors.textSecondary)
 
             ScrollView(.horizontal) {
                 HStack(spacing: 7) {
                     ForEach(tags.prefix(8), id: \.self) { tag in
                         Text(tag)
-                            .font(ClickTypography.captionSmall)
-                            .foregroundStyle(ClickColors.primary)
+                            .font(ClickTypography.metadata)
+                            .foregroundStyle(ClickColors.accentForeground)
                             .padding(.horizontal, 10)
                             .frame(height: 30)
-                            .background(ClickColors.primary.opacity(0.1))
+                            .background(ClickColors.selectionTint)
                             .clipShape(Capsule())
-                            .overlay {
-                                Capsule().stroke(ClickColors.primary.opacity(0.35), lineWidth: 1)
-                            }
                     }
                 }
             }
@@ -213,12 +199,12 @@ public struct ProfileView: View {
                         Image(systemName: tab.systemImage)
                             .font(.system(size: 17, weight: .semibold))
                         Text(tab.title)
-                            .font(ClickTypography.captionSmall)
+                            .font(ClickTypography.metadata)
                             .foregroundStyle(selectedTab == tab ? ClickColors.textPrimary : ClickColors.textSecondary)
                             .frame(maxWidth: .infinity)
 
                         Rectangle()
-                            .fill(selectedTab == tab ? ClickColors.primary : .clear)
+                            .fill(selectedTab == tab ? ClickColors.accentForeground : .clear)
                             .frame(height: 2)
                     }
                 }
@@ -227,7 +213,7 @@ public struct ProfileView: View {
         }
         .overlay(alignment: .bottom) {
             Rectangle()
-                .fill(ClickColors.quietBorder.opacity(0.45))
+                .fill(ClickColors.separator)
                 .frame(height: 1)
         }
     }
@@ -236,16 +222,12 @@ public struct ProfileView: View {
         VStack(alignment: .leading, spacing: 14) {
             VStack(alignment: .leading, spacing: 10) {
                 TextField("Write a quick memory, note, or plan…", text: $timelineDraft, axis: .vertical)
-                    .font(ClickTypography.bodyLarge)
+                    .font(ClickTypography.body)
                     .lineLimit(4...7)
                     .padding(14)
                     .frame(minHeight: 118, alignment: .topLeading)
-                    .background(ClickColors.surfaceContainerLow)
-                    .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
-                    .overlay {
-                        RoundedRectangle(cornerRadius: 16, style: .continuous)
-                            .stroke(ClickColors.quietBorder.opacity(0.7), lineWidth: 1)
-                    }
+                    .background(ClickColors.surfaceElevated)
+                    .clipShape(RoundedRectangle(cornerRadius: ClickRadius.field, style: .continuous))
 
                 HStack(spacing: 10) {
                     visibilityButton(.privateOnly)
@@ -261,12 +243,12 @@ public struct ProfileView: View {
                                 .frame(minWidth: 54)
                         } else {
                             Text("Add")
-                                .font(ClickTypography.labelLarge)
+                                .font(ClickTypography.bodyEmphasized)
                                 .frame(minWidth: 54)
                         }
                     }
                     .buttonStyle(.borderedProminent)
-                    .tint(ClickColors.primary)
+                    .tint(ClickColors.primaryActionFill)
                     .disabled(
                         timelineDraft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
                             || isPostingTimeline
@@ -274,15 +256,10 @@ public struct ProfileView: View {
                 }
             }
             .padding(14)
-            .background(ClickColors.surface)
-            .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
-            .overlay {
-                RoundedRectangle(cornerRadius: 16, style: .continuous)
-                    .stroke(ClickColors.quietBorder.opacity(0.65), lineWidth: 1)
-            }
+            .groupedSurface()
 
             Text("Journal")
-                .font(ClickTypography.titleSmall)
+                .font(ClickTypography.supportingEmphasized)
                 .foregroundStyle(ClickColors.textSecondary)
                 .padding(.top, 8)
 
@@ -297,7 +274,7 @@ public struct ProfileView: View {
                     ForEach(entries) { entry in
                         VStack(alignment: .leading, spacing: 7) {
                             Text(entry.body)
-                                .font(ClickTypography.bodyMedium)
+                                .font(ClickTypography.body)
                                 .foregroundStyle(ClickColors.textPrimary)
                                 .fixedSize(horizontal: false, vertical: true)
 
@@ -311,7 +288,7 @@ public struct ProfileView: View {
                                     Text(created, style: .relative)
                                 }
                             }
-                            .font(ClickTypography.microcopy)
+                            .font(ClickTypography.caption)
                             .foregroundStyle(ClickColors.textSecondary)
                         }
                         .frame(maxWidth: .infinity, alignment: .leading)
@@ -341,19 +318,19 @@ public struct ProfileView: View {
                         HStack(spacing: 12) {
                             Image(systemName: item.systemImage)
                                 .font(.system(size: 17, weight: .semibold))
-                                .foregroundStyle(ClickColors.primary)
+                                .foregroundStyle(ClickColors.accentForeground)
                                 .frame(width: 38, height: 38)
-                                .background(ClickColors.primary.opacity(0.1))
-                                .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
+                                .background(ClickColors.selectionTint)
+                                .clipShape(RoundedRectangle(cornerRadius: ClickRadius.compact, style: .continuous))
 
                             VStack(alignment: .leading, spacing: 2) {
                                 Text(item.title)
-                                    .font(ClickTypography.bodyMedium)
+                                    .font(ClickTypography.body)
                                     .foregroundStyle(ClickColors.textPrimary)
                                     .lineLimit(1)
                                 if let subtitle = item.subtitle {
                                     Text(subtitle)
-                                        .font(ClickTypography.captionSmall)
+                                        .font(ClickTypography.metadata)
                                         .foregroundStyle(ClickColors.textSecondary)
                                         .lineLimit(1)
                                 }
@@ -383,12 +360,12 @@ public struct ProfileView: View {
         VStack(spacing: 8) {
             Image(systemName: icon)
                 .font(.system(size: 28))
-                .foregroundStyle(ClickColors.tertiaryLabel)
+                .foregroundStyle(ClickColors.textTertiary)
             Text(title)
-                .font(ClickTypography.titleMedium)
+                .font(ClickTypography.bodyEmphasized)
                 .foregroundStyle(ClickColors.textPrimary)
             Text(description)
-                .font(ClickTypography.bodySmall)
+                .font(ClickTypography.supporting)
                 .foregroundStyle(ClickColors.textSecondary)
                 .multilineTextAlignment(.center)
         }
@@ -396,58 +373,25 @@ public struct ProfileView: View {
         .padding(.vertical, 34)
     }
 
-    @ViewBuilder
-    private func avatar(_ profile: UserProfileSnapshot) -> some View {
-        if let raw = profile.avatarUrl, let url = URL(string: raw) {
-            AsyncImage(url: url) { image in
-                image.resizable().scaledToFill()
-            } placeholder: {
-                avatarFallback(profile)
-            }
-        } else {
-            avatarFallback(profile)
-        }
-    }
-
-    private func avatarFallback(_ profile: UserProfileSnapshot) -> some View {
-        Circle()
-            .fill(ClickColors.primary.opacity(0.12))
-            .overlay {
-                Text(profile.initials)
-                    .font(ClickTypography.headlineSmall)
-                    .foregroundStyle(ClickColors.primary)
-            }
-    }
-
     private var loadingState: some View {
         VStack(spacing: 10) {
-            ProgressView().tint(ClickColors.primary)
+            ProgressView().tint(ClickColors.accentForeground)
             Text("Loading profile…")
-                .font(ClickTypography.bodySmall)
+                .font(ClickTypography.supporting)
                 .foregroundStyle(ClickColors.textSecondary)
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
     }
 
     private var offlineNotice: some View {
-        HStack(spacing: 7) {
-            Image(systemName: "wifi.exclamationmark")
-            Text("Offline — showing saved profile")
-                .font(ClickTypography.captionSmall)
-            Spacer()
-            Button("Retry") { Task { await refresh() } }
-                .font(ClickTypography.captionSmall)
+        OfflineNotice("Offline — showing saved profile") {
+            Task { await refresh() }
         }
-        .foregroundStyle(ClickColors.textSecondary)
-        .padding(.horizontal, 12)
-        .padding(.vertical, 8)
-        .background(ClickColors.surfaceContainerLow)
-        .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
     }
 
     private func openChat(_ profile: UserProfileSnapshot) {
         guard let connectionID, let userID = resolvedUserID else { return }
-        env.router.connectionsPath.append(
+        env.router.navigate(to:
             .chat(
                 DirectChatRoute(
                     connectionID: connectionID,
@@ -466,26 +410,19 @@ public struct ProfileView: View {
             ClickHaptics.selection()
         } label: {
             Text(value.label)
-                .font(ClickTypography.labelMedium)
-                .foregroundStyle(timelineVisibility == value ? ClickColors.primary : ClickColors.textPrimary)
+                .font(ClickTypography.supportingEmphasized)
+                .foregroundStyle(timelineVisibility == value ? ClickColors.accentForeground : ClickColors.textPrimary)
                 .padding(.horizontal, 14)
-                .frame(height: 40)
+                .frame(minHeight: ClickMetrics.chipHeight)
                 .background(
-                    timelineVisibility == value
-                        ? ClickColors.primary.opacity(0.10)
-                        : ClickColors.surfaceContainerLow
+                    timelineVisibility == value ? ClickColors.selectionTint : ClickColors.fillSubtle,
+                    in: Capsule()
                 )
-                .clipShape(Capsule())
-                .overlay {
-                    Capsule().stroke(
-                        timelineVisibility == value
-                            ? ClickColors.primary.opacity(0.8)
-                            : ClickColors.quietBorder.opacity(0.7),
-                        lineWidth: 1
-                    )
-                }
+                .frame(minHeight: ClickMetrics.minimumHitTarget)
+                .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
+        .accessibilityAddTraits(timelineVisibility == value ? .isSelected : [])
     }
 
     @MainActor

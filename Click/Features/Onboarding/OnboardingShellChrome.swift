@@ -26,7 +26,7 @@ public struct OnboardingShellChrome: View {
             if canGoBack {
                 Button(action: onBack) {
                     Image(systemName: "chevron.left")
-                        .font(ClickTypography.bodyLarge)
+                        .font(ClickTypography.body)
                         .foregroundStyle(ClickColors.textPrimary)
                         .frame(width: 44, height: 44)
                         .contentShape(Rectangle())
@@ -42,7 +42,7 @@ public struct OnboardingShellChrome: View {
             HStack(spacing: ClickSpacing.xs) {
                 ForEach(0..<totalSteps, id: \.self) { index in
                     Capsule()
-                        .fill(index <= currentStepIndex ? ClickColors.primary : ClickColors.quietBorder.opacity(0.4))
+                        .fill(index <= currentStepIndex ? ClickColors.accentForeground : ClickColors.fillStrong)
                         .frame(
                             width: index == currentStepIndex ? 24 : 8,
                             height: 6

@@ -71,12 +71,12 @@ public struct AuthView: View {
                             .padding(.top, ClickSpacing.md)
 
                         Text("Click")
-                            .font(ClickTypography.headlineLarge)
+                            .font(ClickTypography.largeTitle)
                             .tracking(-0.5)
                             .foregroundStyle(ClickColors.textPrimary)
 
                         Text("In-person first connection & private messaging.")
-                            .font(ClickTypography.bodyMedium)
+                            .font(ClickTypography.body)
                             .foregroundStyle(ClickColors.textSecondary)
                             .multilineTextAlignment(.center)
                             .padding(.horizontal, ClickSpacing.lg)
@@ -95,15 +95,15 @@ public struct AuthView: View {
                     if let error = errorMessage {
                         HStack(spacing: ClickSpacing.sm) {
                             Image(systemName: "exclamationmark.triangle.fill")
-                                .foregroundStyle(ClickColors.error)
+                                .foregroundStyle(ClickColors.destructive)
                             Text(error)
-                                .font(ClickTypography.labelMedium)
-                                .foregroundStyle(ClickColors.error)
+                                .font(ClickTypography.supportingEmphasized)
+                                .foregroundStyle(ClickColors.destructive)
                             Spacer()
                         }
                         .padding(ClickSpacing.sm)
-                        .background(ClickColors.error.opacity(0.12))
-                        .clipShape(RoundedRectangle(cornerRadius: ClickSpacing.radiusInput))
+                        .background(ClickColors.destructive.opacity(0.12))
+                        .clipShape(RoundedRectangle(cornerRadius: ClickRadius.field))
                         .padding(.horizontal, ClickSpacing.lg)
                     }
 
@@ -111,15 +111,15 @@ public struct AuthView: View {
                     if let info = infoMessage {
                         HStack(spacing: ClickSpacing.sm) {
                             Image(systemName: "envelope.fill")
-                                .foregroundStyle(ClickColors.primary)
+                                .foregroundStyle(ClickColors.accentForeground)
                             Text(info)
-                                .font(ClickTypography.labelMedium)
-                                .foregroundStyle(ClickColors.primary)
+                                .font(ClickTypography.supportingEmphasized)
+                                .foregroundStyle(ClickColors.accentForeground)
                             Spacer()
                         }
                         .padding(ClickSpacing.sm)
-                        .background(ClickColors.primary.opacity(0.12))
-                        .clipShape(RoundedRectangle(cornerRadius: ClickSpacing.radiusInput))
+                        .background(ClickColors.selectionTint)
+                        .clipShape(RoundedRectangle(cornerRadius: ClickRadius.field))
                         .padding(.horizontal, ClickSpacing.lg)
                     }
 
@@ -128,27 +128,27 @@ public struct AuthView: View {
                         if mode == .signUp {
                             HStack(spacing: ClickSpacing.sm) {
                                 TextField("First name", text: $firstName)
-                                    .font(ClickTypography.bodyMedium)
+                                    .font(ClickTypography.body)
                                     .textContentType(.givenName)
                                     .padding(.horizontal, ClickSpacing.md)
                                     .padding(.vertical, 14)
-                                    .background(ClickColors.surfaceContainerLow)
-                                    .clipShape(RoundedRectangle(cornerRadius: ClickSpacing.radiusInput))
+                                    .background(ClickColors.surface)
+                                    .clipShape(RoundedRectangle(cornerRadius: ClickRadius.field))
                                     .overlay(
-                                        RoundedRectangle(cornerRadius: ClickSpacing.radiusInput)
-                                            .stroke(ClickColors.quietBorder, lineWidth: ClickSpacing.borderQuietWidth)
+                                        RoundedRectangle(cornerRadius: ClickRadius.field)
+                                            .stroke(ClickColors.separator, lineWidth: ClickMetrics.strokeWidth)
                                     )
 
                                 TextField("Last name", text: $lastName)
-                                    .font(ClickTypography.bodyMedium)
+                                    .font(ClickTypography.body)
                                     .textContentType(.familyName)
                                     .padding(.horizontal, ClickSpacing.md)
                                     .padding(.vertical, 14)
-                                    .background(ClickColors.surfaceContainerLow)
-                                    .clipShape(RoundedRectangle(cornerRadius: ClickSpacing.radiusInput))
+                                    .background(ClickColors.surface)
+                                    .clipShape(RoundedRectangle(cornerRadius: ClickRadius.field))
                                     .overlay(
-                                        RoundedRectangle(cornerRadius: ClickSpacing.radiusInput)
-                                            .stroke(ClickColors.quietBorder, lineWidth: ClickSpacing.borderQuietWidth)
+                                        RoundedRectangle(cornerRadius: ClickRadius.field)
+                                            .stroke(ClickColors.separator, lineWidth: ClickMetrics.strokeWidth)
                                     )
                             }
 
@@ -160,20 +160,20 @@ public struct AuthView: View {
                                     in: ...Date(),
                                     displayedComponents: .date
                                 )
-                                .font(ClickTypography.bodyMedium)
+                                .font(ClickTypography.body)
                                 .padding(.horizontal, ClickSpacing.md)
                                 .padding(.vertical, 10)
-                                .background(ClickColors.surfaceContainerLow)
-                                .clipShape(RoundedRectangle(cornerRadius: ClickSpacing.radiusInput))
+                                .background(ClickColors.surface)
+                                .clipShape(RoundedRectangle(cornerRadius: ClickRadius.field))
                                 .overlay(
-                                    RoundedRectangle(cornerRadius: ClickSpacing.radiusInput)
-                                        .stroke(ClickColors.quietBorder, lineWidth: ClickSpacing.borderQuietWidth)
+                                    RoundedRectangle(cornerRadius: ClickRadius.field)
+                                        .stroke(ClickColors.separator, lineWidth: ClickMetrics.strokeWidth)
                                     )
 
                                 if !isAgeValid {
                                     Text("You must be at least 13 years old to use Click.")
-                                        .font(ClickTypography.labelSmall)
-                                        .foregroundStyle(ClickColors.error)
+                                        .font(ClickTypography.metadata)
+                                        .foregroundStyle(ClickColors.destructive)
                                         .padding(.leading, ClickSpacing.xs)
                                 }
                             }
@@ -181,18 +181,18 @@ public struct AuthView: View {
 
                         // Email Field
                         TextField("Email address", text: $email)
-                            .font(ClickTypography.bodyMedium)
+                            .font(ClickTypography.body)
                             .keyboardType(.emailAddress)
                             .textContentType(.emailAddress)
                             .autocorrectionDisabled()
                             .textInputAutocapitalization(.never)
                             .padding(.horizontal, ClickSpacing.md)
                             .padding(.vertical, 14)
-                            .background(ClickColors.surfaceContainerLow)
-                            .clipShape(RoundedRectangle(cornerRadius: ClickSpacing.radiusInput))
+                            .background(ClickColors.surface)
+                            .clipShape(RoundedRectangle(cornerRadius: ClickRadius.field))
                             .overlay(
-                                RoundedRectangle(cornerRadius: ClickSpacing.radiusInput)
-                                    .stroke(ClickColors.quietBorder, lineWidth: ClickSpacing.borderQuietWidth)
+                                RoundedRectangle(cornerRadius: ClickRadius.field)
+                                    .stroke(ClickColors.separator, lineWidth: ClickMetrics.strokeWidth)
                             )
 
                         // Password Field
@@ -200,11 +200,11 @@ public struct AuthView: View {
                             HStack {
                                 if isPasswordVisible {
                                     TextField("Password", text: $password)
-                                        .font(ClickTypography.bodyMedium)
+                                        .font(ClickTypography.body)
                                         .textContentType(mode == .signIn ? .password : .newPassword)
                                 } else {
                                     SecureField("Password", text: $password)
-                                        .font(ClickTypography.bodyMedium)
+                                        .font(ClickTypography.body)
                                         .textContentType(mode == .signIn ? .password : .newPassword)
                                 }
 
@@ -217,17 +217,17 @@ public struct AuthView: View {
                             }
                             .padding(.horizontal, ClickSpacing.md)
                             .padding(.vertical, 14)
-                            .background(ClickColors.surfaceContainerLow)
-                            .clipShape(RoundedRectangle(cornerRadius: ClickSpacing.radiusInput))
+                            .background(ClickColors.surface)
+                            .clipShape(RoundedRectangle(cornerRadius: ClickRadius.field))
                             .overlay(
-                                RoundedRectangle(cornerRadius: ClickSpacing.radiusInput)
-                                    .stroke(ClickColors.quietBorder, lineWidth: ClickSpacing.borderQuietWidth)
+                                RoundedRectangle(cornerRadius: ClickRadius.field)
+                                    .stroke(ClickColors.separator, lineWidth: ClickMetrics.strokeWidth)
                             )
 
                             if mode == .signUp && !password.isEmpty && password.count < 8 {
                                 Text("Password must be at least 8 characters.")
-                                    .font(ClickTypography.labelSmall)
-                                    .foregroundStyle(ClickColors.error)
+                                    .font(ClickTypography.metadata)
+                                    .foregroundStyle(ClickColors.destructive)
                                     .padding(.leading, ClickSpacing.xs)
                             }
                         }
@@ -238,21 +238,13 @@ public struct AuthView: View {
                     Button {
                         handlePrimaryAction()
                     } label: {
-                        HStack {
-                            if isLoading {
-                                ProgressView()
-                                    .tint(ClickColors.onPrimary)
-                            } else {
-                                Text(mode == .signIn ? "Sign In" : "Create Account")
-                                    .font(ClickTypography.labelBold)
-                            }
+                        if isLoading {
+                            ProgressView()
+                        } else {
+                            Text(mode == .signIn ? "Sign In" : "Create Account")
                         }
-                        .frame(maxWidth: .infinity)
-                        .frame(height: 48)
-                        .background(canSubmit ? ClickColors.primary : ClickColors.primary.opacity(0.4))
-                        .foregroundStyle(ClickColors.onPrimary)
-                        .clipShape(RoundedRectangle(cornerRadius: ClickSpacing.radiusButton))
                     }
+                    .buttonStyle(.clickPrimary)
                     .disabled(!canSubmit)
                     .padding(.horizontal, ClickSpacing.lg)
 
@@ -264,23 +256,23 @@ public struct AuthView: View {
                             }
                         } label: {
                             Text("Forgot password?")
-                                .font(ClickTypography.labelMedium)
-                                .foregroundStyle(ClickColors.primary)
+                                .font(ClickTypography.supportingEmphasized)
+                                .foregroundStyle(ClickColors.accentForeground)
                         }
                     }
 
                     // Divider
                     HStack {
                         Rectangle()
-                            .frame(height: ClickSpacing.borderQuietWidth)
-                            .foregroundStyle(ClickColors.quietBorder)
+                            .frame(height: ClickMetrics.strokeWidth)
+                            .foregroundStyle(ClickColors.separator)
                         Text("or")
-                            .font(ClickTypography.labelMedium)
+                            .font(ClickTypography.supportingEmphasized)
                             .foregroundStyle(ClickColors.textSecondary)
                             .padding(.horizontal, ClickSpacing.sm)
                         Rectangle()
-                            .frame(height: ClickSpacing.borderQuietWidth)
-                            .foregroundStyle(ClickColors.quietBorder)
+                            .frame(height: ClickMetrics.strokeWidth)
+                            .foregroundStyle(ClickColors.separator)
                     }
                     .padding(.horizontal, ClickSpacing.lg)
                     .padding(.vertical, ClickSpacing.xs)
@@ -300,29 +292,17 @@ public struct AuthView: View {
                             }
                         )
                         .signInWithAppleButtonStyle(colorScheme == .dark ? .white : .black)
-                        .frame(height: 48)
-                        .clipShape(RoundedRectangle(cornerRadius: ClickSpacing.radiusButton))
+                        .frame(height: ClickMetrics.primaryActionHeight)
+                        .clipShape(Capsule())
 
                         // Google Sign-In
                         Button {
                             handleGoogleOAuthSignIn()
                         } label: {
-                            HStack(spacing: ClickSpacing.sm) {
-                                Image(systemName: "globe")
-                                    .foregroundStyle(ClickColors.textPrimary)
-                                Text("Continue with Google")
-                                    .font(ClickTypography.labelBold)
-                                    .foregroundStyle(ClickColors.textPrimary)
-                            }
-                            .frame(maxWidth: .infinity)
-                            .frame(height: 48)
-                            .background(ClickColors.surfaceContainerLow)
-                            .clipShape(RoundedRectangle(cornerRadius: ClickSpacing.radiusButton))
-                            .overlay(
-                                RoundedRectangle(cornerRadius: ClickSpacing.radiusButton)
-                                    .stroke(ClickColors.quietBorder, lineWidth: ClickSpacing.borderQuietWidth)
-                            )
+                            Label("Continue with Google", systemImage: "globe")
+                                .frame(minHeight: ClickMetrics.primaryActionHeight)
                         }
+                        .buttonStyle(.clickSecondary)
 
                         #if DEBUG
                         // Demo Mode Bypass (strictly debug-only per Section 9)
@@ -336,7 +316,7 @@ public struct AuthView: View {
                             )
                         } label: {
                             Text("Fast Demo Sign-In")
-                                .font(ClickTypography.labelMedium)
+                                .font(ClickTypography.supportingEmphasized)
                                 .foregroundStyle(ClickColors.textSecondary)
                                 .padding(.top, ClickSpacing.sm)
                         }

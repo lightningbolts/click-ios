@@ -4,6 +4,7 @@ import SwiftUI
 /// each destination uses native controls and persists through SettingsStore / existing APIs.
 public struct SettingsView: View {
     @Environment(AppEnvironment.self) private var env
+    @Environment(MeTabAvatarModel.self) private var meTabAvatar: MeTabAvatarModel?
 
     @State private var data: Phase3ProfileData?
     @State private var refreshError: String?
@@ -79,13 +80,12 @@ public struct SettingsView: View {
 
                     Divider().padding(.leading, 60)
 
-                    SettingsNavigationRow(
+                    SettingsRouteRow(
                         title: "Saved events",
                         subtitle: "Bookmarks from Home and the map",
-                        systemImage: "bookmark.fill"
-                    ) {
-                        SavedEventsSettingsView()
-                    }
+                        systemImage: "bookmark.fill",
+                        route: .savedEvents
+                    )
 
                     Divider().padding(.leading, 60)
 
@@ -103,24 +103,19 @@ public struct SettingsView: View {
                         if isSigningOut {
                             ProgressView()
                                 .controlSize(.small)
-                                .tint(ClickColors.error)
+                                .tint(ClickColors.destructive)
                         } else {
                             Image(systemName: "rectangle.portrait.and.arrow.right")
                                 .font(.system(size: 18, weight: .semibold))
                         }
                         Text("Sign out")
-                            .font(ClickTypography.labelLarge)
+                            .font(ClickTypography.bodyEmphasized)
                         Spacer()
                     }
-                    .padding(.horizontal, 16)
-                    .frame(height: 54)
-                    .foregroundStyle(ClickColors.error)
-                    .background(ClickColors.surface)
-                    .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
-                    .overlay {
-                        RoundedRectangle(cornerRadius: 14, style: .continuous)
-                            .stroke(ClickColors.error.opacity(0.45), lineWidth: 1)
-                    }
+                    .padding(.horizontal, ClickSpacing.surfacePadding)
+                    .frame(minHeight: ClickMetrics.rowMinHeight)
+                    .foregroundStyle(ClickColors.destructive)
+                    .groupedSurface()
                 }
                 .buttonStyle(.plain)
                 .disabled(isSigningOut)
@@ -130,7 +125,7 @@ public struct SettingsView: View {
             .padding(.top, 10)
         }
         .background(ClickColors.background.ignoresSafeArea())
-        .navigationTitle("Settings")
+        .navigationTitle("Me")
         .navigationBarTitleDisplayMode(.large)
         .toolbar {
             ToolbarItem(placement: .topBarLeading) {
@@ -139,13 +134,8 @@ public struct SettingsView: View {
                         Task { await refresh() }
                     }
                 } label: {
-                    Image(systemName: "ellipsis")
-                        .font(.system(size: 16, weight: .bold))
-                        .frame(width: 36, height: 36)
-                        .background(.regularMaterial)
-                        .clipShape(Circle())
+                    Label("Me menu", systemImage: "ellipsis")
                 }
-                .accessibilityLabel("Settings menu")
             }
         }
         .task { await bootstrap() }
@@ -156,27 +146,30 @@ public struct SettingsView: View {
         VStack(spacing: 14) {
             if let profile = data?.profile {
                 ZStack(alignment: .bottomTrailing) {
-                    avatar(profile)
-                        .frame(width: 94, height: 94)
-                        .clipShape(Circle())
+                    AvatarView(
+                        imageURL: profile.avatarUrl,
+                        initials: profile.initials,
+                        size: ClickMetrics.Avatar.identity
+                    )
 
                     ZStack {
                         Circle()
-                            .fill(ClickColors.primary)
+                            .fill(ClickColors.primaryActionFill)
                             .frame(width: 36, height: 36)
                         Image(systemName: "camera.fill")
                             .font(.system(size: 14, weight: .bold))
-                            .foregroundStyle(ClickColors.onPrimary)
+                            .foregroundStyle(ClickColors.primaryActionForeground)
                     }
+                    .accessibilityHidden(true)
                 }
 
                 VStack(spacing: 3) {
                     Text(profile.displayName)
-                        .font(ClickTypography.headlineMedium)
+                        .font(ClickTypography.identityTitle)
                         .foregroundStyle(ClickColors.textPrimary)
                     if !profile.handle.isEmpty {
                         Text(profile.handle)
-                            .font(ClickTypography.bodyLarge)
+                            .font(ClickTypography.body)
                             .foregroundStyle(ClickColors.textSecondary)
                     }
                 }
@@ -185,65 +178,23 @@ public struct SettingsView: View {
                     EditProfileSettingsView(profile: profile)
                 } label: {
                     Text("Edit Profile")
-                        .font(ClickTypography.labelLarge)
-                        .frame(maxWidth: .infinity)
-                        .frame(height: 48)
                 }
-                .buttonStyle(.plain)
-                .foregroundStyle(ClickColors.textPrimary)
-                .overlay {
-                    RoundedRectangle(cornerRadius: 14, style: .continuous)
-                        .stroke(ClickColors.quietBorder.opacity(0.8), lineWidth: 1)
-                }
+                .buttonStyle(.clickSecondary)
             } else {
                 ProgressView()
-                    .tint(ClickColors.primary)
+                    .tint(ClickColors.accentForeground)
                     .frame(height: 180)
             }
         }
         .padding(20)
         .frame(maxWidth: .infinity)
-        .background(ClickColors.surfaceContainerLow)
-        .clipShape(RoundedRectangle(cornerRadius: 20, style: .continuous))
-    }
-
-    @ViewBuilder
-    private func avatar(_ profile: UserProfileSnapshot) -> some View {
-        if let raw = profile.avatarUrl, let url = URL(string: raw) {
-            AsyncImage(url: url) { image in
-                image.resizable().scaledToFill()
-            } placeholder: {
-                fallbackAvatar(profile)
-            }
-        } else {
-            fallbackAvatar(profile)
-        }
-    }
-
-    private func fallbackAvatar(_ profile: UserProfileSnapshot) -> some View {
-        Circle()
-            .fill(ClickColors.primary.opacity(0.16))
-            .overlay {
-                Text(profile.initials)
-                    .font(ClickTypography.headlineSmall)
-                    .foregroundStyle(ClickColors.primary)
-            }
+        .groupedSurface()
     }
 
     private var offlineNotice: some View {
-        HStack(spacing: 7) {
-            Image(systemName: "wifi.exclamationmark")
-            Text("Offline — showing saved profile")
-                .font(ClickTypography.captionSmall)
-            Spacer()
-            Button("Retry") { Task { await refresh() } }
-                .font(ClickTypography.captionSmall)
+        OfflineNotice("Offline — showing saved profile") {
+            Task { await refresh() }
         }
-        .foregroundStyle(ClickColors.textSecondary)
-        .padding(.horizontal, 12)
-        .padding(.vertical, 8)
-        .background(ClickColors.surfaceContainerLow)
-        .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
     }
 
     @MainActor
@@ -251,6 +202,7 @@ public struct SettingsView: View {
         guard let userID = env.session.currentSession?.userId else { return }
         if let cached = await env.phase3.cachedProfile(for: userID) {
             data = cached
+            meTabAvatar?.update(avatarURL: cached.profile.avatarUrl)
         }
         await refresh()
     }
@@ -259,7 +211,9 @@ public struct SettingsView: View {
     private func refresh() async {
         guard let userID = env.session.currentSession?.userId else { return }
         do {
-            data = try await env.phase3.refreshSelfProfile(userID: userID)
+            let fresh = try await env.phase3.refreshSelfProfile(userID: userID)
+            data = fresh
+            meTabAvatar?.update(avatarURL: fresh.profile.avatarUrl)
             refreshError = nil
         } catch {
             refreshError = error.localizedDescription
@@ -284,32 +238,59 @@ private struct SettingsNavigationRow<Destination: View>: View {
 
     var body: some View {
         NavigationLink(destination: destination()) {
-            HStack(spacing: 14) {
-                Image(systemName: systemImage)
-                    .font(.system(size: 20, weight: .medium))
-                    .foregroundStyle(ClickColors.textSecondary)
-                    .frame(width: 28)
-
-                VStack(alignment: .leading, spacing: 2) {
-                    Text(title)
-                        .font(ClickTypography.titleMedium)
-                        .foregroundStyle(ClickColors.textPrimary)
-                    Text(subtitle)
-                        .font(ClickTypography.bodySmall)
-                        .foregroundStyle(ClickColors.textSecondary)
-                        .lineLimit(1)
-                }
-
-                Spacer()
-
-                Image(systemName: "chevron.right")
-                    .font(.system(size: 13, weight: .semibold))
-                    .foregroundStyle(ClickColors.textSecondary)
-            }
-            .padding(.vertical, 14)
-            .contentShape(Rectangle())
+            SettingsRowLabel(title: title, subtitle: subtitle, systemImage: systemImage)
         }
         .buttonStyle(.plain)
+    }
+}
+
+/// A settings row that pushes a typed `AppRoute`, so its destination can push further routes
+/// on the same path-driven stack.
+private struct SettingsRouteRow: View {
+    let title: String
+    let subtitle: String
+    let systemImage: String
+    let route: AppRoute
+
+    var body: some View {
+        NavigationLink(value: route) {
+            SettingsRowLabel(title: title, subtitle: subtitle, systemImage: systemImage)
+        }
+        .buttonStyle(.plain)
+    }
+}
+
+private struct SettingsRowLabel: View {
+    let title: String
+    let subtitle: String
+    let systemImage: String
+
+    var body: some View {
+        HStack(spacing: 14) {
+            Image(systemName: systemImage)
+                .font(.system(size: 20, weight: .medium))
+                .foregroundStyle(ClickColors.textSecondary)
+                .frame(width: 28)
+
+            VStack(alignment: .leading, spacing: 2) {
+                Text(title)
+                    .font(ClickTypography.bodyEmphasized)
+                    .foregroundStyle(ClickColors.textPrimary)
+                Text(subtitle)
+                    .font(ClickTypography.supporting)
+                    .foregroundStyle(ClickColors.textSecondary)
+                    .lineLimit(1)
+            }
+
+            Spacer()
+
+            Image(systemName: "chevron.right")
+                .font(.system(size: 13, weight: .semibold))
+                .foregroundStyle(ClickColors.textTertiary)
+        }
+        .frame(minHeight: ClickMetrics.rowMinHeight)
+        .padding(.vertical, 6)
+        .contentShape(Rectangle())
     }
 }
 
@@ -326,7 +307,7 @@ private struct AvailabilitySettingsView: View {
                         set: { env.settings.freeThisWeek = $0 }
                     )
                 )
-                .tint(ClickColors.primary)
+                .tint(ClickColors.accentForeground)
             } footer: {
                 Text("Your active intent posts are managed from Home under “I’m down for…”.")
             }
@@ -359,7 +340,7 @@ private struct AlertSettingsView: View {
                         }
                     )
                 )
-                .tint(ClickColors.primary)
+                .tint(ClickColors.accentForeground)
 
                 if isRequesting {
                     HStack {
@@ -378,7 +359,7 @@ private struct AlertSettingsView: View {
                         set: { env.settings.ambientNoiseOptIn = $0 }
                     )
                 )
-                .tint(ClickColors.primary)
+                .tint(ClickColors.accentForeground)
             } header: {
                 Text("Context")
             } footer: {
@@ -403,7 +384,7 @@ private struct PrivacySettingsView: View {
                         set: { env.settings.barometricContextOptIn = $0 }
                     )
                 )
-                .tint(ClickColors.primary)
+                .tint(ClickColors.accentForeground)
             }
 
             Section {
@@ -432,30 +413,20 @@ private struct TagSettingsView: View {
         ScrollView {
             VStack(alignment: .leading, spacing: 14) {
                 Text(title == "Interests" ? "Common Ground tags" : "The traits that describe you")
-                    .font(ClickTypography.bodyMedium)
+                    .font(ClickTypography.body)
                     .foregroundStyle(ClickColors.textSecondary)
 
                 SettingsFlowLayout(spacing: 8) {
                     ForEach(tags, id: \.self) { tag in
                         Text(tag)
-                            .font(ClickTypography.labelMedium)
-                            .foregroundStyle(emphasized ? ClickColors.primary : ClickColors.textPrimary)
+                            .font(ClickTypography.supportingEmphasized)
+                            .foregroundStyle(emphasized ? ClickColors.accentForeground : ClickColors.textPrimary)
                             .padding(.horizontal, 12)
-                            .frame(height: 34)
+                            .frame(minHeight: ClickMetrics.chipHeight)
                             .background(
-                                emphasized
-                                    ? ClickColors.primary.opacity(0.1)
-                                    : ClickColors.surfaceContainerLow
+                                emphasized ? ClickColors.selectionTint : ClickColors.fillSubtle,
+                                in: Capsule()
                             )
-                            .clipShape(Capsule())
-                            .overlay {
-                                Capsule().stroke(
-                                    emphasized
-                                        ? ClickColors.primary.opacity(0.42)
-                                        : ClickColors.quietBorder.opacity(0.6),
-                                    lineWidth: 1
-                                )
-                            }
                     }
                 }
 
@@ -488,7 +459,7 @@ private struct AppearanceSettingsView: View {
                         set: { env.settings.darkModeEnabled = $0 }
                     )
                 )
-                .tint(ClickColors.primary)
+                .tint(ClickColors.accentForeground)
             } footer: {
                 Text("This preference is shared with the previous Click iOS build during the native migration.")
             }
@@ -498,7 +469,7 @@ private struct AppearanceSettingsView: View {
     }
 }
 
-private struct SavedEventsSettingsView: View {
+struct SavedEventsSettingsView: View {
     @Environment(AppEnvironment.self) private var env
     @State private var items: [SavedEventRow] = []
     @State private var isLoading = true
@@ -508,7 +479,7 @@ private struct SavedEventsSettingsView: View {
         Group {
             if isLoading && items.isEmpty {
                 ProgressView()
-                    .tint(ClickColors.primary)
+                    .tint(ClickColors.accentForeground)
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
             } else if items.isEmpty {
                 ContentUnavailableView(
@@ -518,21 +489,23 @@ private struct SavedEventsSettingsView: View {
                 )
             } else {
                 List(items) { item in
-                    VStack(alignment: .leading, spacing: 4) {
-                        Text(item.title)
-                            .font(ClickTypography.bodyMedium)
-                        if let location = item.location, !location.isEmpty {
-                            Text(location)
-                                .font(ClickTypography.captionSmall)
-                                .foregroundStyle(ClickColors.textSecondary)
+                    NavigationLink(value: AppRoute.event(beaconID: item.id)) {
+                        VStack(alignment: .leading, spacing: 4) {
+                            Text(item.title)
+                                .font(ClickTypography.body)
+                            if let location = item.location, !location.isEmpty {
+                                Text(location)
+                                    .font(ClickTypography.metadata)
+                                    .foregroundStyle(ClickColors.textSecondary)
+                            }
+                            if let start = item.start {
+                                Text(start, style: .date)
+                                    .font(ClickTypography.caption)
+                                    .foregroundStyle(ClickColors.textSecondary)
+                            }
                         }
-                        if let start = item.start {
-                            Text(start, style: .date)
-                                .font(ClickTypography.microcopy)
-                                .foregroundStyle(ClickColors.textSecondary)
-                        }
+                        .padding(.vertical, 4)
                     }
-                    .padding(.vertical, 4)
                 }
                 .listStyle(.plain)
             }
@@ -628,7 +601,7 @@ private struct EditProfileSettingsView: View {
             if let message {
                 Section {
                     Text(message)
-                        .foregroundStyle(message == "Saved" ? ClickColors.statusOnline : ClickColors.error)
+                        .foregroundStyle(message == "Saved" ? ClickColors.online : ClickColors.destructive)
                 }
             }
         }

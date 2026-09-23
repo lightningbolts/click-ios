@@ -11,35 +11,30 @@ public struct AddClickView: View {
     public var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 24) {
-                VStack(alignment: .leading, spacing: 4) {
-                    Text("Add Click")
-                        .font(ClickTypography.headlineLarge)
-                        .foregroundStyle(ClickColors.textPrimary)
-                    Text("Connect in person or join a nearby community")
-                        .font(ClickTypography.bodyMedium)
-                        .foregroundStyle(ClickColors.textSecondary)
-                }
+                Text("Connect in person or join a nearby community")
+                    .font(ClickTypography.supporting)
+                    .foregroundStyle(ClickColors.textSecondary)
 
                 Button {
                     ClickHaptics.impact(.medium)
-                    env.router.addClickPath.append(.tapConnect)
+                    env.router.navigate(to: .tapConnect)
                 } label: {
                     HStack(spacing: 18) {
                         ZStack {
                             Circle()
-                                .fill(ClickColors.primary.opacity(0.18))
+                                .fill(ClickColors.selectionTint)
                                 .frame(width: 58, height: 58)
                             Image(systemName: "wave.3.right.circle.fill")
                                 .font(.system(size: 30, weight: .semibold))
-                                .foregroundStyle(ClickColors.primary)
+                                .foregroundStyle(ClickColors.accentForeground)
                         }
 
                         VStack(alignment: .leading, spacing: 4) {
                             Text("Tap to Connect")
-                                .font(ClickTypography.headlineSmall)
+                                .font(ClickTypography.sectionTitle)
                                 .foregroundStyle(ClickColors.textPrimary)
                             Text("Nearby handshake with Bluetooth and audio")
-                                .font(ClickTypography.bodyMedium)
+                                .font(ClickTypography.body)
                                 .foregroundStyle(ClickColors.textSecondary)
                                 .fixedSize(horizontal: false, vertical: true)
                         }
@@ -51,18 +46,17 @@ public struct AddClickView: View {
                     }
                     .padding(18)
                     .frame(maxWidth: .infinity)
-                    .background(ClickColors.surfaceContainerLow)
-                    .clipShape(RoundedRectangle(cornerRadius: 20, style: .continuous))
+                    .groupedSurface()
                 }
                 .buttonStyle(.plain)
 
                 VStack(spacing: 0) {
                     addClickRow(title: "My QR", subtitle: "Share your code", systemImage: "qrcode") {
-                        env.router.addClickPath.append(.myQR)
+                        env.router.navigate(to: .myQR)
                     }
                     Divider().padding(.leading, 62)
                     addClickRow(title: "Scan QR", subtitle: "Friend or hub code", systemImage: "viewfinder") {
-                        env.router.addClickPath.append(.scanQR)
+                        env.router.navigate(to: .scanQR)
                     }
                     Divider().padding(.leading, 62)
                     addClickUnavailableRow(
@@ -89,37 +83,20 @@ public struct AddClickView: View {
             .padding(.bottom, 28)
         }
         .background(ClickColors.background.ignoresSafeArea())
-        .navigationBarTitleDisplayMode(.inline)
+        .navigationTitle("Add Click")
+        .navigationBarTitleDisplayMode(.large)
         .toolbar {
             ToolbarItem(placement: .topBarLeading) {
                 Menu {
                     Button("My QR", systemImage: "qrcode") {
-                        env.router.addClickPath.append(.myQR)
+                        env.router.navigate(to: .myQR)
                     }
                     Button("Scan QR", systemImage: "viewfinder") {
-                        env.router.addClickPath.append(.scanQR)
+                        env.router.navigate(to: .scanQR)
                     }
                 } label: {
-                    Image(systemName: "ellipsis")
-                        .font(.system(size: 16, weight: .bold))
-                        .frame(width: 36, height: 36)
-                        .background(.regularMaterial)
-                        .clipShape(Circle())
+                    Label("Add Click menu", systemImage: "ellipsis")
                 }
-            }
-        }
-        .navigationDestination(for: AppRoute.self) { route in
-            switch route {
-            case .myQR:
-                MyClickCodeView()
-            case .scanQR:
-                ScanClickCodeView()
-            case .tapConnect:
-                TapConnectCapabilityView()
-            case .connectionInvocation(let invocation):
-                ConnectionInvocationView(invocation: invocation)
-            default:
-                EmptyView()
             }
         }
     }
@@ -163,10 +140,10 @@ public struct AddClickView: View {
 
             VStack(alignment: .leading, spacing: 2) {
                 Text(title)
-                    .font(ClickTypography.titleMedium)
+                    .font(ClickTypography.bodyEmphasized)
                     .foregroundStyle(ClickColors.textPrimary)
                 Text(subtitle)
-                    .font(ClickTypography.bodySmall)
+                    .font(ClickTypography.supporting)
                     .foregroundStyle(ClickColors.textSecondary)
                     .lineLimit(1)
             }
@@ -185,7 +162,7 @@ public struct AddClickView: View {
 
 }
 
-private struct MyClickCodeView: View {
+struct MyClickCodeView: View {
     @Environment(AppEnvironment.self) private var env
     @State private var qrPayload: String?
     @State private var expiresAt: Date?
@@ -198,15 +175,15 @@ private struct MyClickCodeView: View {
 
             VStack(spacing: 7) {
                 Text("My Code")
-                    .font(ClickTypography.headlineMedium)
+                    .font(ClickTypography.identityTitle)
                 Text("Keep this screen open while the other person scans.")
-                    .font(ClickTypography.bodySmall)
+                    .font(ClickTypography.supporting)
                     .foregroundStyle(ClickColors.textSecondary)
                     .multilineTextAlignment(.center)
             }
 
             ZStack {
-                RoundedRectangle(cornerRadius: 22, style: .continuous)
+                RoundedRectangle(cornerRadius: ClickRadius.surface, style: .continuous)
                     .fill(.white)
                     .frame(width: 278, height: 278)
 
@@ -218,7 +195,7 @@ private struct MyClickCodeView: View {
                         .frame(width: 238, height: 238)
                 } else {
                     ProgressView()
-                        .tint(ClickColors.primary)
+                        .tint(ClickColors.accentForeground)
                 }
             }
             .shadow(color: .black.opacity(0.08), radius: 18, y: 8)
@@ -226,7 +203,7 @@ private struct MyClickCodeView: View {
             if let expiresAt {
                 TimelineView(.periodic(from: .now, by: 1)) { context in
                     Text(countdown(to: expiresAt, now: context.date))
-                        .font(ClickTypography.captionSmall)
+                        .font(ClickTypography.metadata)
                         .foregroundStyle(ClickColors.textSecondary)
                         .monospacedDigit()
                 }
@@ -234,20 +211,16 @@ private struct MyClickCodeView: View {
 
             if let errorMessage {
                 Text(errorMessage)
-                    .font(ClickTypography.captionSmall)
-                    .foregroundStyle(ClickColors.error)
+                    .font(ClickTypography.metadata)
+                    .foregroundStyle(ClickColors.destructive)
                     .multilineTextAlignment(.center)
             }
 
             if let qrPayload {
                 ShareLink(item: qrPayload) {
                     Label("Share QR Code", systemImage: "square.and.arrow.up")
-                        .font(ClickTypography.labelLarge)
-                        .frame(maxWidth: .infinity)
-                        .frame(height: 50)
                 }
-                .buttonStyle(.borderedProminent)
-                .tint(ClickColors.primary)
+                .buttonStyle(.clickPrimary)
             }
 
             Spacer()
@@ -322,7 +295,7 @@ private enum QRImageRenderer {
     }
 }
 
-private struct ScanClickCodeView: View {
+struct ScanClickCodeView: View {
     @Environment(AppEnvironment.self) private var env
     @State private var permission: PermissionStatus = .notDetermined
     @State private var scannedValue: String?
@@ -355,23 +328,23 @@ private struct ScanClickCodeView: View {
                 Spacer()
                 VStack(spacing: 8) {
                     Text(isProcessing ? "Connecting…" : "Scan a Click code")
-                        .font(ClickTypography.titleMedium)
+                        .font(ClickTypography.bodyEmphasized)
                         .foregroundStyle(.white)
                     if let statusText {
                         Text(statusText)
-                            .font(ClickTypography.captionSmall)
+                            .font(ClickTypography.metadata)
                             .foregroundStyle(.white.opacity(0.82))
                             .multilineTextAlignment(.center)
                     } else {
                         Text("Keep the code inside the frame.")
-                            .font(ClickTypography.captionSmall)
+                            .font(ClickTypography.metadata)
                             .foregroundStyle(.white.opacity(0.72))
                     }
                 }
                 .padding(.horizontal, 18)
                 .padding(.vertical, 14)
                 .background(.black.opacity(0.58))
-                .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
+                .clipShape(RoundedRectangle(cornerRadius: ClickRadius.surface, style: .continuous))
                 .padding(.bottom, 30)
             }
         }
@@ -404,8 +377,7 @@ private struct ScanClickCodeView: View {
             Button("Open Settings") {
                 env.permissions.openSystemSettings()
             }
-            .buttonStyle(.borderedProminent)
-            .tint(ClickColors.primary)
+            .buttonStyle(.clickPrimary)
         }
         .foregroundStyle(.white)
         .padding(30)
@@ -576,7 +548,7 @@ private struct ClickDataScannerView: UIViewControllerRepresentable {
     }
 }
 
-private struct TapConnectCapabilityView: View {
+struct TapConnectCapabilityView: View {
     @Environment(AppEnvironment.self) private var env
     @State private var microphone: PermissionStatus = .notDetermined
     @State private var location: PermissionStatus = .notDetermined
@@ -587,21 +559,21 @@ private struct TapConnectCapabilityView: View {
 
             ZStack {
                 Circle()
-                    .fill(ClickColors.primary.opacity(0.14))
+                    .fill(ClickColors.selectionTint.opacity(0.55))
                     .frame(width: 144, height: 144)
                 Circle()
-                    .fill(ClickColors.primary.opacity(0.22))
+                    .fill(ClickColors.selectionTint)
                     .frame(width: 104, height: 104)
                 Image(systemName: "bolt.horizontal.fill")
                     .font(.system(size: 38, weight: .bold))
-                    .foregroundStyle(ClickColors.primary)
+                    .foregroundStyle(ClickColors.accentForeground)
             }
 
             VStack(spacing: 7) {
                 Text("Ready to Connect")
-                    .font(ClickTypography.headlineMedium)
+                    .font(ClickTypography.identityTitle)
                 Text("Tap to Connect verifies that both people are physically together before creating the Click.")
-                    .font(ClickTypography.bodySmall)
+                    .font(ClickTypography.supporting)
                     .foregroundStyle(ClickColors.textSecondary)
                     .multilineTextAlignment(.center)
             }
@@ -613,12 +585,11 @@ private struct TapConnectCapabilityView: View {
                         location = await env.permissions.requestPermission(for: .locationWhenInUse)
                     }
                 }
-                .buttonStyle(.borderedProminent)
-                .tint(ClickColors.primary)
+                .buttonStyle(.clickPrimary)
             }
 
             Text("The existing tri-factor BLE/ultrasonic handshake engine is not yet ported to the native target. QR connection is fully functional in this build.")
-                .font(ClickTypography.captionSmall)
+                .font(ClickTypography.metadata)
                 .foregroundStyle(ClickColors.textSecondary)
                 .multilineTextAlignment(.center)
                 .padding(.horizontal, 16)
@@ -637,7 +608,7 @@ private struct TapConnectCapabilityView: View {
     }
 }
 
-private struct ConnectionInvocationView: View {
+struct ConnectionInvocationView: View {
     @Environment(AppEnvironment.self) private var env
     let invocation: ConnectionInvocation
 
@@ -650,13 +621,13 @@ private struct ConnectionInvocationView: View {
             if completed {
                 Image(systemName: "checkmark.circle.fill")
                     .font(.system(size: 44))
-                    .foregroundStyle(ClickColors.statusOnline)
+                    .foregroundStyle(ClickColors.online)
             } else {
-                ProgressView().tint(ClickColors.primary)
+                ProgressView().tint(ClickColors.accentForeground)
             }
 
             Text(status)
-                .font(ClickTypography.bodyMedium)
+                .font(ClickTypography.body)
                 .foregroundStyle(completed ? ClickColors.textPrimary : ClickColors.textSecondary)
                 .multilineTextAlignment(.center)
         }

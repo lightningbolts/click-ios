@@ -41,6 +41,7 @@ public struct RootGateView: View {
                 }
             }
         }
+        .tint(ClickColors.accentForeground)
         .animation(ClickMotion.subtleFade, value: env.session.state)
     }
 }
@@ -119,78 +120,92 @@ private struct LaunchLoadingView: View {
             VStack(spacing: ClickSpacing.md) {
                 ClickLogo(style: .mark, size: 52)
                 ProgressView()
-                    .tint(ClickColors.primary)
+                    .tint(ClickColors.accentForeground)
             }
         }
     }
 }
 
-/// The 5-tab main shell view (Home, Add Click, Clicks, Map, Me).
+/// The 5-tab main shell (Home, Add Click, Clicks, Map, Me) using the native `TabView`.
+/// Each tab owns an independent `NavigationStack` whose path lives in `AppRouter`, and every
+/// stack registers the same canonical route destinations.
 public struct MainTabShellView: View {
     @Environment(AppEnvironment.self) private var env
+    @State private var meTabAvatar = MeTabAvatarModel()
 
     public init() {}
 
     public var body: some View {
         @Bindable var r = env.router
-        TabView(selection: $r.selectedTab) {
+        // Routing selection through `selectTab` makes re-tapping the active tab pop to its root.
+        let selection = Binding(get: { r.selectedTab }, set: { r.selectTab($0) })
+
+        TabView(selection: selection) {
             Tab("Home", systemImage: "house.fill", value: MainTab.home) {
                 NavigationStack(path: $r.homePath) {
                     HomeView()
+                        .appRouteDestinations()
                 }
             }
 
             Tab("Add Click", systemImage: "plus.circle.fill", value: MainTab.addClick) {
                 NavigationStack(path: $r.addClickPath) {
                     AddClickView()
+                        .appRouteDestinations()
                 }
             }
 
             Tab("Clicks", systemImage: "person.2.fill", value: MainTab.connections) {
                 NavigationStack(path: $r.connectionsPath) {
                     ClicksView()
-                        .navigationDestination(for: AppRoute.self) { route in
-                            switch route {
-                            case .userProfile(let userID, let connectionID):
-                                ProfileView(userID: userID, connectionID: connectionID)
-                            case .chat(let route):
-                                ChatView(
-                                    model: ConversationModel(
-                                        identity: route.conversationIdentity,
-                                        chatRepository: env.chat,
-                                        currentUserID: env.session.currentSession?.userId ?? "",
-                                        currentUserName: "You"
-                                    )
-                                )
-                            default:
-                                EmptyView()
-                            }
-                        }
+                        .appRouteDestinations()
                 }
             }
 
             Tab("Map", systemImage: "location.fill", value: MainTab.map) {
                 NavigationStack(path: $r.mapPath) {
                     ClickMapView()
-                        .navigationDestination(for: AppRoute.self) { route in
-                            switch route {
-                            case .event(let beaconID), .beacon(let beaconID):
-                                MapRouteDetailView(kind: .beacon, id: beaconID)
-                            case .hub(let hubID):
-                                MapRouteDetailView(kind: .hub, id: hubID)
-                            default:
-                                EmptyView()
-                            }
-                        }
+                        .appRouteDestinations()
                 }
             }
 
-            Tab("Me", systemImage: "person.crop.circle.fill", value: MainTab.settings) {
+            Tab(value: MainTab.settings) {
                 NavigationStack(path: $r.settingsPath) {
                     SettingsView()
+                        .appRouteDestinations()
+                }
+            } label: {
+                Label {
+                    Text("Me")
+                } icon: {
+                    if let avatar = meTabAvatar.image {
+                        Image(uiImage: avatar).renderingMode(.original)
+                    } else {
+                        Image(systemName: "person.crop.circle.fill")
+                    }
                 }
             }
         }
-        .tint(ClickColors.primary)
+        .tint(ClickColors.accentForeground)
+        .environment(meTabAvatar)
+        .task(id: env.session.currentSession?.userId) {
+            await seedMeTabAvatar()
+        }
+    }
+
+    /// Seeds the Me tab from the cached self profile, fetching it only when nothing is cached.
+    /// Later profile refreshes on the Me root forward their avatar to `meTabAvatar`.
+    private func seedMeTabAvatar() async {
+        guard let userID = env.session.currentSession?.userId else {
+            meTabAvatar.update(avatarURL: nil)
+            return
+        }
+        if let cached = await env.phase3.cachedProfile(for: userID) {
+            meTabAvatar.update(avatarURL: cached.profile.avatarUrl)
+        } else if let fresh = try? await env.phase3.refreshSelfProfile(userID: userID) {
+            // A failed fetch intentionally leaves the fallback symbol; the Me root refreshes
+            // the profile itself and forwards the avatar when it succeeds.
+            meTabAvatar.update(avatarURL: fresh.profile.avatarUrl)
+        }
     }
 }

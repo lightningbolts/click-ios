@@ -58,43 +58,43 @@ public struct InterestsPickerView: View {
                 // Selection Counter Badge
                 HStack(spacing: ClickSpacing.xs) {
                     Text("\(selectedTags.count) selected")
-                        .font(ClickTypography.titleSmall)
+                        .font(ClickTypography.supportingEmphasized)
                         .fontWeight(.semibold)
 
                     if selectedTags.count < minTags {
                         Text("· need \(minTags - selectedTags.count) more")
-                            .font(ClickTypography.bodySmall)
+                            .font(ClickTypography.supporting)
                             .foregroundStyle(ClickColors.textSecondary)
                     } else {
                         Text("✓")
-                            .font(ClickTypography.titleSmall)
+                            .font(ClickTypography.supportingEmphasized)
                             .fontWeight(.bold)
-                            .foregroundStyle(ClickColors.primary)
+                            .foregroundStyle(ClickColors.accentForeground)
                     }
                     Spacer()
                 }
-                .foregroundStyle(selectedTags.count >= minTags ? ClickColors.primary : ClickColors.textPrimary)
+                .foregroundStyle(selectedTags.count >= minTags ? ClickColors.accentForeground : ClickColors.textPrimary)
 
                 // Search Bar
                 HStack(spacing: ClickSpacing.sm) {
                     Image(systemName: "magnifyingglass")
-                        .foregroundStyle(ClickColors.outline)
+                        .foregroundStyle(ClickColors.textTertiary)
                     TextField("Search music, sports, tech, food...", text: $searchQuery)
-                        .font(ClickTypography.bodyMedium)
+                        .font(ClickTypography.body)
                     if !searchQuery.isEmpty {
                         Button(action: { searchQuery = "" }) {
                             Image(systemName: "xmark.circle.fill")
-                                .foregroundStyle(ClickColors.outline)
+                                .foregroundStyle(ClickColors.textTertiary)
                         }
                     }
                 }
                 .padding(.horizontal, ClickSpacing.md)
                 .padding(.vertical, 10)
-                .background(ClickColors.surfaceContainerLow)
-                .clipShape(RoundedRectangle(cornerRadius: ClickSpacing.radiusInput))
+                .background(ClickColors.surface)
+                .clipShape(RoundedRectangle(cornerRadius: ClickRadius.field))
                 .overlay(
-                    RoundedRectangle(cornerRadius: ClickSpacing.radiusInput)
-                        .stroke(ClickColors.quietBorder, lineWidth: ClickSpacing.borderQuietWidth)
+                    RoundedRectangle(cornerRadius: ClickRadius.field)
+                        .stroke(ClickColors.separator, lineWidth: ClickMetrics.strokeWidth)
                 )
                 .padding(.top, ClickSpacing.xs)
             }
@@ -103,8 +103,8 @@ public struct InterestsPickerView: View {
 
             if let error = errorMessage {
                 Text(error)
-                    .font(ClickTypography.labelSmall)
-                    .foregroundStyle(ClickColors.error)
+                    .font(ClickTypography.metadata)
+                    .foregroundStyle(ClickColors.destructive)
                     .padding(.horizontal, ClickSpacing.lg)
                     .padding(.bottom, ClickSpacing.xs)
             }
@@ -141,27 +141,18 @@ public struct InterestsPickerView: View {
             // Bottom Sticky Bar
             VStack(spacing: 0) {
                 Divider()
-                    .overlay(ClickColors.quietBorder)
+                    .overlay(ClickColors.separator)
 
                 Button(action: {
                     saveAndContinue()
                 }) {
-                    HStack(spacing: ClickSpacing.sm) {
-                        if isSaving {
-                            ProgressView()
-                                .tint(ClickColors.onPrimary)
-                        } else {
-                            Text("Continue")
-                                .font(ClickTypography.titleMedium)
-                                .fontWeight(.bold)
-                        }
+                    if isSaving {
+                        ProgressView()
+                    } else {
+                        Text("Continue")
                     }
-                    .frame(maxWidth: .infinity)
-                    .padding(.vertical, 16)
-                    .background(canContinue ? ClickColors.primary : ClickColors.primary.opacity(0.35))
-                    .foregroundStyle(ClickColors.onPrimary)
-                    .clipShape(RoundedRectangle(cornerRadius: ClickSpacing.radiusButton))
                 }
+                .buttonStyle(.clickPrimary)
                 .disabled(!canContinue)
                 .padding(.horizontal, ClickSpacing.lg)
                 .padding(.vertical, ClickSpacing.md)
@@ -225,16 +216,16 @@ private struct CategoryAccordionRow: View {
                         Text(category.emoji)
                             .font(.system(size: 26))
 
-                        VStack(alignment: .leading, spacing: ClickSpacing.xxxSmall) {
+                        VStack(alignment: .leading, spacing: ClickSpacing.xxs) {
                             Text(category.label)
-                                .font(ClickTypography.titleSmall)
+                                .font(ClickTypography.supportingEmphasized)
                                 .fontWeight(.semibold)
                                 .foregroundStyle(ClickColors.textPrimary)
 
                             if selectedSubCount > 0 {
                                 Text("\(selectedSubCount) sub-interests picked")
-                                    .font(ClickTypography.labelSmall)
-                                    .foregroundStyle(ClickColors.primary)
+                                    .font(ClickTypography.metadata)
+                                    .foregroundStyle(ClickColors.accentForeground)
                             }
                         }
 
@@ -247,7 +238,7 @@ private struct CategoryAccordionRow: View {
                 Button(action: onToggleCategory) {
                     Image(systemName: isCategorySelected ? "checkmark.circle.fill" : "circle")
                         .font(.system(size: 22))
-                        .foregroundStyle(isCategorySelected ? ClickColors.primary : ClickColors.outline)
+                        .foregroundStyle(isCategorySelected ? ClickColors.accentForeground : ClickColors.textTertiary)
                 }
                 .buttonStyle(.plain)
 
@@ -262,11 +253,11 @@ private struct CategoryAccordionRow: View {
             }
             .padding(.horizontal, ClickSpacing.md)
             .padding(.vertical, ClickSpacing.sm)
-            .background(isCategorySelected ? ClickColors.primaryFixed.opacity(0.3) : ClickColors.surfaceContainerLow)
-            .clipShape(RoundedRectangle(cornerRadius: ClickSpacing.radiusCard))
+            .background(isCategorySelected ? ClickColors.selectionTint : ClickColors.surface)
+            .clipShape(RoundedRectangle(cornerRadius: ClickRadius.field, style: .continuous))
             .overlay(
-                RoundedRectangle(cornerRadius: ClickSpacing.radiusCard)
-                    .stroke(isCategorySelected ? ClickColors.primary : ClickColors.quietBorder, lineWidth: ClickSpacing.borderQuietWidth)
+                RoundedRectangle(cornerRadius: ClickRadius.field, style: .continuous)
+                    .stroke(isCategorySelected ? ClickColors.accentForeground : ClickColors.separator, lineWidth: ClickMetrics.strokeWidth)
             )
 
             // Subcategory Chips Flow
@@ -301,16 +292,16 @@ private struct SubcategoryChipsFlow: View {
                                 .font(.system(size: 11, weight: .bold))
                         }
                         Text(sub)
-                            .font(ClickTypography.labelMedium)
+                            .font(ClickTypography.supportingEmphasized)
                     }
                     .padding(.horizontal, 12)
                     .padding(.vertical, 7)
-                    .background(isSelected ? ClickColors.primary : ClickColors.surface)
-                    .foregroundStyle(isSelected ? ClickColors.onPrimary : ClickColors.textPrimary)
+                    .background(isSelected ? ClickColors.selectionTint : ClickColors.surface)
+                    .foregroundStyle(isSelected ? ClickColors.accentForeground : ClickColors.textPrimary)
                     .clipShape(Capsule())
                     .overlay(
                         Capsule()
-                            .stroke(isSelected ? ClickColors.primary : ClickColors.quietBorder, lineWidth: ClickSpacing.borderQuietWidth)
+                            .stroke(isSelected ? ClickColors.accentForeground : ClickColors.separator, lineWidth: ClickMetrics.strokeWidth)
                     )
                 }
                 .buttonStyle(.plain)

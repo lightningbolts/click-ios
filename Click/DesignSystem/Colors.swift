@@ -1,57 +1,73 @@
 import SwiftUI
 import UIKit
 
-/// Semantic color palette for Click iOS design system.
-/// Implements Click's purple-first Functional Clarity visual identity.
+/// Semantic color roles for Click iOS.
+///
+/// The palette is a neutral, system-like foundation where purple is an accent rather than a
+/// surface. Ordinary labels, fills, surfaces, and separators are backed by iOS semantic colors so
+/// they follow light/dark mode, Increase Contrast, and elevated presentation contexts natively.
+/// Exact hex values are used only where the value is intentionally Click-specific.
+///
+/// Purple has four distinct jobs; do not substitute one for another:
+/// - `accentForeground`: icons, links, selected text, control tint.
+/// - `primaryActionFill`: the single strongly filled action in a region.
+/// - `selectionTint`: quiet purple background for selected/highlighted state.
+/// - `messageOutgoing`: outgoing chat bubbles (deliberately darker than the action fill).
 public enum ClickColors {
-    // MARK: - Primary Brand Tokens
-    /// Canonical Click purple (#630ED4)
-    public static let primary = Color("AccentColor")
-    public static let onPrimary = Color(hex: "#FFFFFF")
-    public static let primaryContainer = Color(hex: "#7C3AED")
-    public static let surfaceTint = Color(hex: "#732EE4")
-    public static let secondaryAccent = Color(hex: "#224CFF")
+    // MARK: - Backgrounds & Surfaces
 
-    // MARK: - Primary Fixed (Badges & Highlights)
-    public static let primaryFixed = Color(hex: "#EADDFF")
-    public static let primaryFixedDim = Color(hex: "#D2BBFF")
-    public static let onPrimaryFixed = Color(hex: "#25005A")
-    public static let onPrimaryFixedVariant = Color(hex: "#5A00C6")
+    /// Root screen background. Pure black in dark mode; grouped gray in light mode.
+    public static let background = Color(uiColor: .systemGroupedBackground)
+    /// Plain (non-grouped) background for full-bleed content such as sheets and media.
+    public static let plainBackground = Color(uiColor: .systemBackground)
+    /// Primary grouped surface (#1C1C1E dark) for semantic regions.
+    public static let surface = Color(uiColor: .secondarySystemGroupedBackground)
+    /// A surface raised above `surface`, e.g. a control inside a grouped region.
+    public static let surfaceElevated = Color(uiColor: .tertiarySystemGroupedBackground)
+    /// Low-emphasis translucent fill for chips, search fields, and secondary controls.
+    public static let fillSubtle = Color(uiColor: .tertiarySystemFill)
+    /// Stronger translucent fill for pressed/disabled controls.
+    public static let fillStrong = Color(uiColor: .secondarySystemFill)
+    /// Neutral hairline separator (rgba(84,84,88,.6) in dark mode).
+    public static let separator = Color(uiColor: .separator)
 
-    // MARK: - Dynamic Semantic Surfaces
-    public static let background = dynamic(lightHex: "#F9F9F9", darkHex: "#101212")
-    public static let surface = dynamic(lightHex: "#FFFFFF", darkHex: "#1A1C1C")
-    public static let surfaceContainerLow = dynamic(lightHex: "#F3F3F4", darkHex: "#1E2020")
-    public static let surfaceContainer = dynamic(lightHex: "#EEEEEE", darkHex: "#242626")
-    public static let surfaceContainerHigh = dynamic(lightHex: "#E8E8E8", darkHex: "#2A2C2C")
-    public static let surfaceVariant = dynamic(lightHex: "#E2E2E2", darkHex: "#2A2C2C")
+    // MARK: - Text
 
-    // Backward-compatible surface aliases
-    public static let secondaryBackground = surfaceContainerLow
-    public static let tertiaryBackground = surfaceContainer
-    public static let groupedBackground = background
+    public static let textPrimary = Color(uiColor: .label)
+    public static let textSecondary = Color(uiColor: .secondaryLabel)
+    public static let textTertiary = dynamic(lightHex: "#8A8A8E", darkHex: "#98989F")
 
-    // MARK: - Content & Typography
-    public static let textPrimary = dynamic(lightHex: "#1A1C1C", darkHex: "#F0F1F1")
-    public static let textSecondary = dynamic(lightHex: "#4A4455", darkHex: "#D6D9D9")
-    public static let outline = Color(hex: "#7B7487")
-    public static let quietBorder = dynamic(lightHex: "#CCC3D8", darkHex: "#4A3D5C")
+    // MARK: - Brand & Accent
 
-    // Aliases for system compatibility
-    public static let label = textPrimary
-    public static let secondaryLabel = textSecondary
-    public static let tertiaryLabel = dynamic(lightHex: "#7B7487", darkHex: "#8E8B99")
-    public static let separator = quietBorder
-    public static let opaqueSeparator = quietBorder
+    /// Canonical Click brand purple (#630ED4). Use for brand marks, not generic UI.
+    public static let brand = Color(hex: "#630ED4")
+    /// Accent foreground for icons, links, selected labels, and control tint.
+    /// Backed by the `AccentColor` asset so system controls resolve to the same value.
+    public static let accentForeground = Color("AccentColor")
+    /// Fill for the one prominent primary action in a region.
+    public static let primaryActionFill = Color(hex: "#7C3AED")
+    public static let primaryActionForeground = Color.white
+    /// Quiet purple-tinted background for selected state and low-emphasis highlights.
+    public static let selectionTint = dynamic(lightHex: "#EFE7FD", darkHex: "#24133F")
 
-    // MARK: - Status & Destructive
-    public static let error = Color(hex: "#BA1A1A")
-    public static let statusDanger = error
-    public static let statusOnline = Color(hex: "#18CC70")
-    public static let statusAway = Color(hex: "#F5A623")
-    public static let statusOffline = dynamic(lightHex: "#8E8B99", darkHex: "#635F6E")
+    // MARK: - Chat
 
-    // MARK: - Generated Content Palette (Isolated from App Chrome)
+    public static let messageIncoming = dynamic(lightHex: "#E9E9EB", darkHex: "#232326")
+    public static let messageIncomingForeground = textPrimary
+    public static let messageOutgoing = dynamic(lightHex: "#5B21B6", darkHex: "#4A1FA6")
+    public static let messageOutgoingForeground = Color.white
+    public static let chatBackground = dynamic(lightHex: "#F7F7FA", darkHex: "#0B0B0D")
+
+    // MARK: - Status
+
+    public static let success = Color(uiColor: .systemGreen)
+    public static let warning = Color(uiColor: .systemOrange)
+    public static let destructive = Color(uiColor: .systemRed)
+    public static let online = Color(uiColor: .systemGreen)
+    public static let offline = Color(uiColor: .systemGray)
+
+    // MARK: - Generated Content Palette (content visuals only, never app chrome)
+
     public enum GeneratedContent {
         public static let purple = Color(hex: "#630ED4")
         public static let blue = Color(hex: "#224CFF")
@@ -63,6 +79,7 @@ public enum ClickColors {
     }
 
     // MARK: - Dynamic Color Helpers
+
     private static func dynamic(lightHex: String, darkHex: String) -> Color {
         Color(uiColor: UIColor { traits in
             traits.userInterfaceStyle == .dark ? UIColor(hex: darkHex) : UIColor(hex: lightHex)

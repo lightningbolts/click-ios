@@ -72,6 +72,21 @@ public enum AppRoute: Hashable, Sendable {
     case tapConnect
     case savedEvents
     case connectionInvocation(ConnectionInvocation)
+
+    /// The tab whose stack hosts this route when it arrives from outside the app
+    /// (deep links, notifications) rather than from in-app navigation.
+    public var canonicalTab: MainTab {
+        switch self {
+        case .chat, .userProfile, .groupProfile:
+            .connections
+        case .event, .beacon, .hub:
+            .map
+        case .myQR, .scanQR, .tapConnect, .connectionInvocation:
+            .addClick
+        case .savedEvents:
+            .settings
+        }
+    }
 }
 
 /// Invocation payload for canonical connection flow initiated via deep link / QR scan.
@@ -115,23 +130,13 @@ public final class AppRouter {
 
     public init() {}
 
-    /// Navigates to a typed route within the active tab's stack.
+    /// Navigates to a typed route within the active tab's stack. Every stack registers the
+    /// canonical `AppRouteDestination`, so any route may be pushed onto any tab.
     public func navigate(to route: AppRoute) {
-        switch selectedTab {
-        case .home:
-            homePath.append(route)
-        case .addClick:
-            addClickPath.append(route)
-        case .connections:
-            connectionsPath.append(route)
-        case .map:
-            mapPath.append(route)
-        case .settings:
-            settingsPath.append(route)
-        }
+        self[path: selectedTab].append(route)
     }
 
-    /// Selects a main tab and resets its path to root if re-selected.
+    /// Handles a tab-bar selection. Re-selecting the active tab pops it to its root.
     public func selectTab(_ tab: MainTab) {
         if selectedTab == tab {
             resetCurrentTabPath()
@@ -142,17 +147,28 @@ public final class AppRouter {
 
     /// Resets the current tab stack to its root view.
     public func resetCurrentTabPath() {
-        switch selectedTab {
-        case .home:
-            homePath.removeAll()
-        case .addClick:
-            addClickPath.removeAll()
-        case .connections:
-            connectionsPath.removeAll()
-        case .map:
-            mapPath.removeAll()
-        case .settings:
-            settingsPath.removeAll()
+        self[path: selectedTab].removeAll()
+    }
+
+    /// The navigation path owned by a tab.
+    public subscript(path tab: MainTab) -> [AppRoute] {
+        get {
+            switch tab {
+            case .home: homePath
+            case .addClick: addClickPath
+            case .connections: connectionsPath
+            case .map: mapPath
+            case .settings: settingsPath
+            }
+        }
+        set {
+            switch tab {
+            case .home: homePath = newValue
+            case .addClick: addClickPath = newValue
+            case .connections: connectionsPath = newValue
+            case .map: mapPath = newValue
+            case .settings: settingsPath = newValue
+            }
         }
     }
 
@@ -256,31 +272,10 @@ public final class AppRouter {
         }
     }
 
-    /// Resolves and executes a queued or active route.
+    /// Resolves and executes a queued or active route on its canonical tab.
     public func resolveRoute(_ route: AppRoute) {
-        switch route {
-        case .chat:
-            selectedTab = .connections
-            connectionsPath.append(route)
-        case .userProfile:
-            selectedTab = .connections
-            connectionsPath.append(route)
-        case .groupProfile:
-            selectedTab = .connections
-            connectionsPath.append(route)
-        case .event, .beacon:
-            selectedTab = .map
-            mapPath.append(route)
-        case .hub:
-            selectedTab = .map
-            mapPath.append(route)
-        case .myQR, .scanQR, .tapConnect, .connectionInvocation:
-            selectedTab = .addClick
-            addClickPath.append(route)
-        case .savedEvents:
-            selectedTab = .settings
-            settingsPath.append(route)
-        }
+        selectedTab = route.canonicalTab
+        navigate(to: route)
     }
 
     /// Flushes any pending deep-link route after authentication succeeds.

@@ -40,11 +40,11 @@ public struct AvatarUploadView: View {
                     // Circular Preview (168pt)
                     ZStack {
                         Circle()
-                            .fill(ClickColors.surfaceContainerLow)
+                            .fill(ClickColors.surface)
                             .frame(width: 168, height: 168)
                             .overlay(
                                 Circle()
-                                    .stroke(ClickColors.quietBorder, lineWidth: 2)
+                                    .stroke(ClickColors.separator, lineWidth: 2)
                             )
 
                         if let data = selectedImageData, let uiImage = UIImage(data: data) {
@@ -57,7 +57,7 @@ public struct AvatarUploadView: View {
                             VStack(spacing: ClickSpacing.xs) {
                                 Image(systemName: "person.fill")
                                     .font(.system(size: 64))
-                                    .foregroundStyle(ClickColors.outline.opacity(0.6))
+                                    .foregroundStyle(ClickColors.textTertiary.opacity(0.6))
                             }
                         }
 
@@ -79,53 +79,29 @@ public struct AvatarUploadView: View {
                             matching: .images,
                             photoLibrary: .shared()
                         ) {
-                            HStack(spacing: ClickSpacing.xs) {
-                                Image(systemName: "photo.on.rectangle.angled")
-                                Text("From library")
-                                    .font(ClickTypography.labelMedium)
-                            }
-                            .frame(maxWidth: .infinity)
-                            .padding(.vertical, 12)
-                            .background(ClickColors.surfaceContainerLow)
-                            .foregroundStyle(ClickColors.textPrimary)
-                            .clipShape(RoundedRectangle(cornerRadius: ClickSpacing.radiusButton))
-                            .overlay(
-                                RoundedRectangle(cornerRadius: ClickSpacing.radiusButton)
-                                    .stroke(ClickColors.quietBorder, lineWidth: ClickSpacing.borderQuietWidth)
-                            )
+                            Label("From library", systemImage: "photo.on.rectangle.angled")
                         }
+                        .buttonStyle(.clickSecondary)
 
                         Button(action: requestCamera) {
-                            HStack(spacing: ClickSpacing.xs) {
-                                Image(systemName: "camera.fill")
-                                Text("Take photo")
-                                    .font(ClickTypography.labelMedium)
-                            }
-                            .frame(maxWidth: .infinity)
-                            .padding(.vertical, 12)
-                            .background(ClickColors.surfaceContainerLow)
-                            .foregroundStyle(ClickColors.textPrimary)
-                            .clipShape(RoundedRectangle(cornerRadius: ClickSpacing.radiusButton))
-                            .overlay(
-                                RoundedRectangle(cornerRadius: ClickSpacing.radiusButton)
-                                    .stroke(ClickColors.quietBorder, lineWidth: ClickSpacing.borderQuietWidth)
-                            )
+                            Label("Take photo", systemImage: "camera.fill")
                         }
+                        .buttonStyle(.clickSecondary)
                     }
                     .padding(.horizontal, ClickSpacing.lg)
 
                     if let error = errorMessage {
                         VStack(spacing: ClickSpacing.xs) {
                             Text(error)
-                                .font(ClickTypography.captionSmall)
-                                .foregroundStyle(ClickColors.error)
+                                .font(ClickTypography.metadata)
+                                .foregroundStyle(ClickColors.destructive)
 
                             if cameraPermissionDenied {
                                 Button("Open Settings") {
                                     env.permissions.openSystemSettings()
                                 }
-                                .font(ClickTypography.labelMedium)
-                                .foregroundStyle(ClickColors.primary)
+                                .font(ClickTypography.supportingEmphasized)
+                                .foregroundStyle(ClickColors.accentForeground)
                             }
                         }
                         .padding(.horizontal, ClickSpacing.lg)
@@ -139,22 +115,13 @@ public struct AvatarUploadView: View {
                             HStack(spacing: ClickSpacing.sm) {
                                 if isUploading {
                                     ProgressView()
-                                        .tint(ClickColors.onPrimary)
                                     Text("Uploading…")
-                                        .font(ClickTypography.titleMedium)
-                                        .fontWeight(.bold)
                                 } else {
                                     Text(hasSelectedImage ? "Use this photo" : "Choose a photo")
-                                        .font(ClickTypography.titleMedium)
-                                        .fontWeight(.bold)
                                 }
                             }
-                            .frame(maxWidth: .infinity)
-                            .padding(.vertical, 16)
-                            .background(hasSelectedImage && !isUploading ? ClickColors.primary : ClickColors.primary.opacity(0.35))
-                            .foregroundStyle(ClickColors.onPrimary)
-                            .clipShape(RoundedRectangle(cornerRadius: ClickSpacing.radiusButton))
                         }
+                        .buttonStyle(.clickPrimary)
                         .disabled(!hasSelectedImage || isUploading)
 
                         Button(action: {
@@ -162,7 +129,7 @@ public struct AvatarUploadView: View {
                             onSkip()
                         }) {
                             Text("Skip for now")
-                                .font(ClickTypography.labelLarge)
+                                .font(ClickTypography.bodyEmphasized)
                                 .foregroundStyle(ClickColors.textSecondary)
                                 .padding(.vertical, ClickSpacing.sm)
                         }

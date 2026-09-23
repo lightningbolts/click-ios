@@ -12,6 +12,9 @@ struct ClickApp: App {
         let environment = AppEnvironment()
         _environment = State(initialValue: environment)
         ClickFonts.registerFonts()
+        // Root large titles use Click's Manrope display voice; inline titles stay system 17pt.
+        // Only the font is customized so the platform keeps owning bar layout and material.
+        UINavigationBar.appearance().largeTitleTextAttributes = [.font: ClickTypography.largeTitleUIFont()]
         ClickNotificationCoordinator.shared.attach(environment: environment)
     }
 

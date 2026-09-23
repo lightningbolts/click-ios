@@ -32,31 +32,31 @@ public struct PriorConnectionsView: View {
                     VStack(alignment: .leading, spacing: ClickSpacing.sm) {
                         HStack(spacing: ClickSpacing.sm) {
                             Image(systemName: "lock.shield.fill")
-                                .foregroundStyle(ClickColors.primary)
+                                .foregroundStyle(ClickColors.accentForeground)
                             Text("Privacy-Preserving Contact Matching")
-                                .font(ClickTypography.titleSmall)
+                                .font(ClickTypography.supportingEmphasized)
                                 .fontWeight(.semibold)
                                 .foregroundStyle(ClickColors.textPrimary)
                         }
 
                         Text("Click reads phone numbers and email addresses from your address book on this device, normalizes and hashes them locally with SHA-256, and uploads only those hashes for matching. Plaintext contact details are never uploaded or stored by Click.")
-                            .font(ClickTypography.bodySmall)
+                            .font(ClickTypography.supporting)
                             .foregroundStyle(ClickColors.textSecondary)
                             .lineSpacing(2)
                     }
                     .padding(ClickSpacing.md)
-                    .background(ClickColors.surfaceContainerLow)
-                    .clipShape(RoundedRectangle(cornerRadius: ClickSpacing.radiusCard))
+                    .background(ClickColors.surface)
+                    .clipShape(RoundedRectangle(cornerRadius: ClickRadius.surface))
                     .overlay(
-                        RoundedRectangle(cornerRadius: ClickSpacing.radiusCard)
-                            .stroke(ClickColors.quietBorder, lineWidth: ClickSpacing.borderQuietWidth)
+                        RoundedRectangle(cornerRadius: ClickRadius.surface)
+                            .stroke(ClickColors.separator, lineWidth: ClickMetrics.strokeWidth)
                     )
                     .padding(.horizontal, ClickSpacing.lg)
 
                     if let error = errorMessage {
                         Text(error)
-                            .font(ClickTypography.captionSmall)
-                            .foregroundStyle(ClickColors.error)
+                            .font(ClickTypography.metadata)
+                            .foregroundStyle(ClickColors.destructive)
                             .padding(.horizontal, ClickSpacing.lg)
                     }
 
@@ -66,15 +66,15 @@ public struct PriorConnectionsView: View {
                             VStack(spacing: ClickSpacing.xs) {
                                 Image(systemName: "person.2.slash")
                                     .font(.system(size: 36))
-                                    .foregroundStyle(ClickColors.outline)
+                                    .foregroundStyle(ClickColors.textTertiary)
                                     .padding(.top, ClickSpacing.md)
 
                                 Text("No friends found yet")
-                                    .font(ClickTypography.titleSmall)
+                                    .font(ClickTypography.supportingEmphasized)
                                     .foregroundStyle(ClickColors.textPrimary)
 
                                 Text("None of your contacts are on Click yet. You can always connect in person via QR or Tap.")
-                                    .font(ClickTypography.bodySmall)
+                                    .font(ClickTypography.supporting)
                                     .foregroundStyle(ClickColors.textSecondary)
                                     .multilineTextAlignment(.center)
                                     .padding(.horizontal, ClickSpacing.lg)
@@ -83,29 +83,29 @@ public struct PriorConnectionsView: View {
                         } else {
                             VStack(alignment: .leading, spacing: ClickSpacing.sm) {
                                 Text("Suggested Friends (\(matches.count))")
-                                    .font(ClickTypography.labelBold)
+                                    .font(ClickTypography.supportingEmphasized)
                                     .foregroundStyle(ClickColors.textSecondary)
                                     .padding(.horizontal, ClickSpacing.lg)
 
                                 ForEach(matches) { match in
                                     HStack(spacing: ClickSpacing.md) {
                                         Circle()
-                                            .fill(ClickColors.surfaceContainerLow)
+                                            .fill(ClickColors.surface)
                                             .frame(width: 44, height: 44)
                                             .overlay(
                                                 Text(match.name.prefix(1))
-                                                    .font(ClickTypography.titleSmall)
-                                                    .foregroundStyle(ClickColors.primary)
+                                                    .font(ClickTypography.supportingEmphasized)
+                                                    .foregroundStyle(ClickColors.accentForeground)
                                             )
 
-                                        VStack(alignment: .leading, spacing: ClickSpacing.xxxSmall) {
+                                        VStack(alignment: .leading, spacing: ClickSpacing.xxs) {
                                             Text(match.name)
-                                                .font(ClickTypography.titleSmall)
+                                                .font(ClickTypography.supportingEmphasized)
                                                 .foregroundStyle(ClickColors.textPrimary)
 
                                             if !match.tags.isEmpty {
                                                 Text(match.tags.prefix(2).joined(separator: ", "))
-                                                    .font(ClickTypography.captionSmall)
+                                                    .font(ClickTypography.metadata)
                                                     .foregroundStyle(ClickColors.textSecondary)
                                             }
 
@@ -116,9 +116,9 @@ public struct PriorConnectionsView: View {
                                                     }
                                                 }
                                             } label: {
-                                                HStack(spacing: ClickSpacing.xxxSmall) {
+                                                HStack(spacing: ClickSpacing.xxs) {
                                                     Text("Known since: \((knownSinceByUser[match.id] ?? .unspecified).label)")
-                                                        .font(ClickTypography.captionSmall)
+                                                        .font(ClickTypography.metadata)
                                                     Image(systemName: "chevron.down")
                                                         .font(.caption2)
                                                 }
@@ -134,11 +134,11 @@ public struct PriorConnectionsView: View {
                                             sendPriorRequest(to: match.id)
                                         } label: {
                                             Text(isRequested ? "Requested" : "Connect")
-                                                .font(ClickTypography.labelMedium)
+                                                .font(ClickTypography.supportingEmphasized)
                                                 .padding(.horizontal, 14)
                                                 .padding(.vertical, 7)
-                                                .background(isRequested ? ClickColors.surfaceContainerLow : ClickColors.primary)
-                                                .foregroundStyle(isRequested ? ClickColors.textSecondary : ClickColors.onPrimary)
+                                                .background(isRequested ? ClickColors.fillSubtle : ClickColors.primaryActionFill)
+                                                .foregroundStyle(isRequested ? ClickColors.textSecondary : ClickColors.primaryActionForeground)
                                                 .clipShape(Capsule())
                                         }
                                         .disabled(isRequested)
@@ -159,35 +159,18 @@ public struct PriorConnectionsView: View {
                                 HStack(spacing: ClickSpacing.sm) {
                                     if isSearching {
                                         ProgressView()
-                                            .tint(ClickColors.onPrimary)
                                         Text("Discovering friends…")
-                                            .font(ClickTypography.titleMedium)
-                                            .fontWeight(.bold)
                                     } else {
                                         Image(systemName: "person.crop.circle.badge.plus")
                                         Text("Find Friends from Contacts")
-                                            .font(ClickTypography.titleMedium)
-                                            .fontWeight(.bold)
                                     }
                                 }
-                                .frame(maxWidth: .infinity)
-                                .padding(.vertical, 16)
-                                .background(ClickColors.primary)
-                                .foregroundStyle(ClickColors.onPrimary)
-                                .clipShape(RoundedRectangle(cornerRadius: ClickSpacing.radiusButton))
                             }
+                            .buttonStyle(.clickPrimary)
                             .disabled(isSearching)
                         } else {
-                            Button(action: onComplete) {
-                                Text("Continue")
-                                    .font(ClickTypography.titleMedium)
-                                    .fontWeight(.bold)
-                                    .frame(maxWidth: .infinity)
-                                    .padding(.vertical, 16)
-                                    .background(ClickColors.primary)
-                                    .foregroundStyle(ClickColors.onPrimary)
-                                    .clipShape(RoundedRectangle(cornerRadius: ClickSpacing.radiusButton))
-                            }
+                            Button("Continue", action: onComplete)
+                                .buttonStyle(.clickPrimary)
                         }
 
                         Button(action: {
@@ -195,7 +178,7 @@ public struct PriorConnectionsView: View {
                             onSkip()
                         }) {
                             Text(searched ? "Done" : "Skip for now")
-                                .font(ClickTypography.labelLarge)
+                                .font(ClickTypography.bodyEmphasized)
                                 .foregroundStyle(ClickColors.textSecondary)
                                 .padding(.vertical, ClickSpacing.sm)
                         }

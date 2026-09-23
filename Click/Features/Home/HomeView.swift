@@ -10,6 +10,7 @@ public struct HomeView: View {
     @State private var isEditingAvailability = false
     @State private var recapWindow: RecapWindow = .week
     @State private var displayedRecap: HomeActivityRecap?
+    @State private var showsCompactTitle = false
 
     public init(initialSnapshot: HomeFeedSnapshot? = nil) {
         self._snapshot = State(initialValue: initialSnapshot)
@@ -56,13 +57,28 @@ public struct HomeView: View {
                     .padding(.bottom, 34)
                 }
                 .refreshable { await refresh() }
+                // The greeting is Home's expanded title; the compact native title appears only
+                // once it scrolls under the navigation bar.
+                .onScrollGeometryChange(for: Bool.self) { geometry in
+                    geometry.contentOffset.y + geometry.contentInsets.top > 56
+                } action: { _, isScrolledPastGreeting in
+                    showsCompactTitle = isScrolledPastGreeting
+                }
             } else {
                 loadingState
             }
         }
         .background(ClickColors.background.ignoresSafeArea())
+        .navigationTitle("Home")
         .navigationBarTitleDisplayMode(.inline)
         .toolbar {
+            ToolbarItem(placement: .principal) {
+                Text("Home")
+                    .font(.headline)
+                    .opacity(showsCompactTitle || snapshot == nil ? 1 : 0)
+                    .animation(ClickMotion.subtleFade, value: showsCompactTitle)
+                    .accessibilityAddTraits(.isHeader)
+            }
             ToolbarItem(placement: .topBarLeading) {
                 Menu {
                     Button("Refresh", systemImage: "arrow.clockwise") {
@@ -72,13 +88,8 @@ public struct HomeView: View {
                         env.router.selectedTab = .settings
                     }
                 } label: {
-                    Image(systemName: "ellipsis")
-                        .font(.system(size: 16, weight: .bold))
-                        .frame(width: 36, height: 36)
-                        .background(.regularMaterial)
-                        .clipShape(Circle())
+                    Label("Home menu", systemImage: "ellipsis")
                 }
-                .accessibilityLabel("Home menu")
             }
         }
         .task { await bootstrap() }
@@ -98,13 +109,13 @@ public struct HomeView: View {
     private func greeting(_ snapshot: HomeFeedSnapshot) -> some View {
         VStack(alignment: .leading, spacing: 5) {
             Text(HomeFeedSnapshot.timeBasedSalutation(for: snapshot.greetingName))
-                .font(ClickTypography.headlineLarge)
+                .font(ClickTypography.largeTitle)
                 .tracking(-0.55)
                 .foregroundStyle(ClickColors.textPrimary)
                 .fixedSize(horizontal: false, vertical: true)
 
             Text(snapshot.greetingSubtitle)
-                .font(ClickTypography.bodyMedium)
+                .font(ClickTypography.body)
                 .foregroundStyle(ClickColors.textSecondary)
         }
         .frame(maxWidth: .infinity, alignment: .leading)
@@ -133,12 +144,8 @@ public struct HomeView: View {
                     intents.isEmpty ? "Set what you're down for" : "Manage what you're down for",
                     systemImage: "plus"
                 )
-                .font(ClickTypography.labelLarge)
-                .frame(maxWidth: .infinity)
-                .frame(height: 48)
             }
-            .buttonStyle(.borderedProminent)
-            .tint(ClickColors.primary)
+            .buttonStyle(.clickPrimary)
         }
     }
 
@@ -162,12 +169,7 @@ public struct HomeView: View {
                 recapRow("Events saved", value: recap.eventsSaved)
             }
             .padding(.vertical, 8)
-            .background(ClickColors.surfaceContainerLow)
-            .clipShape(RoundedRectangle(cornerRadius: 18, style: .continuous))
-            .overlay {
-                RoundedRectangle(cornerRadius: 18, style: .continuous)
-                    .stroke(ClickColors.quietBorder.opacity(0.72), lineWidth: 1)
-            }
+            .groupedSurface()
         }
     }
 
@@ -177,19 +179,13 @@ public struct HomeView: View {
             ClickHaptics.selection()
         } label: {
             Text(value == .day ? "Day" : "Week")
-                .font(ClickTypography.labelLarge)
-                .foregroundStyle(recapWindow == value ? ClickColors.onPrimary : ClickColors.textPrimary)
+                .font(ClickTypography.supportingEmphasized)
+                .foregroundStyle(recapWindow == value ? ClickColors.accentForeground : ClickColors.textPrimary)
                 .padding(.horizontal, 18)
-                .frame(minWidth: 92, minHeight: 44)
-                .background(recapWindow == value ? ClickColors.primary : ClickColors.surfaceContainerLow)
-                .clipShape(RoundedRectangle(cornerRadius: 15, style: .continuous))
-                .overlay {
-                    RoundedRectangle(cornerRadius: 15, style: .continuous)
-                        .stroke(
-                            recapWindow == value ? ClickColors.primary : ClickColors.quietBorder.opacity(0.72),
-                            lineWidth: 1
-                        )
-                }
+                .frame(minWidth: 92, minHeight: ClickMetrics.chipHeight)
+                .background(recapWindow == value ? ClickColors.selectionTint : ClickColors.fillSubtle, in: Capsule())
+                .frame(minHeight: ClickMetrics.minimumHitTarget)
+                .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
     }
@@ -197,11 +193,11 @@ public struct HomeView: View {
     private func recapRow(_ title: String, value: Int, emphasized: Bool = false) -> some View {
         HStack {
             Text(title)
-                .font(emphasized ? ClickTypography.titleMedium : ClickTypography.bodyLarge)
+                .font(emphasized ? ClickTypography.bodyEmphasized : ClickTypography.body)
                 .foregroundStyle(emphasized ? ClickColors.textPrimary : ClickColors.textSecondary)
             Spacer()
             Text("\(value)")
-                .font(emphasized ? ClickTypography.titleMedium : ClickTypography.bodyLarge)
+                .font(emphasized ? ClickTypography.bodyEmphasized : ClickTypography.body)
                 .foregroundStyle(emphasized ? ClickColors.textPrimary : ClickColors.textSecondary)
                 .monospacedDigit()
         }
@@ -215,7 +211,7 @@ public struct HomeView: View {
                 sectionHeader("Explore Nearby")
                 Spacer()
                 Button("Map") { env.router.selectedTab = .map }
-                    .font(ClickTypography.captionSmall)
+                    .font(ClickTypography.metadata)
             }
 
             VStack(spacing: 0) {
@@ -229,7 +225,7 @@ public struct HomeView: View {
                     }
                 }
             }
-            .homeSurface()
+            .groupedSurface()
         }
     }
 
@@ -241,7 +237,7 @@ public struct HomeView: View {
                 Button("See all") {
                     env.router.selectedTab = .connections
                 }
-                .font(ClickTypography.captionSmall)
+                .font(ClickTypography.metadata)
             }
 
             VStack(spacing: 0) {
@@ -261,7 +257,7 @@ public struct HomeView: View {
                     }
                 }
             }
-            .homeSurface()
+            .groupedSurface()
         }
     }
 
@@ -276,40 +272,30 @@ public struct HomeView: View {
                 HomeStatCard(title: "Circles", value: stats.totalCircles, iconName: "circle.grid.3x3.fill")
             }
             .padding(.vertical, 14)
-            .homeSurface()
+            .groupedSurface()
         }
     }
 
     private func sectionHeader(_ title: String) -> some View {
         Text(title)
-            .font(ClickTypography.titleSmall)
+            .font(ClickTypography.supportingEmphasized)
             .foregroundStyle(ClickColors.textPrimary)
     }
 
     private var loadingState: some View {
         VStack(spacing: 10) {
-            ProgressView().tint(ClickColors.primary)
+            ProgressView().tint(ClickColors.accentForeground)
             Text("Loading Home…")
-                .font(ClickTypography.bodySmall)
+                .font(ClickTypography.supporting)
                 .foregroundStyle(ClickColors.textSecondary)
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
     }
 
     private var offlineNotice: some View {
-        HStack(spacing: 7) {
-            Image(systemName: "wifi.exclamationmark")
-            Text("Offline — showing saved data")
-                .font(ClickTypography.captionSmall)
-            Spacer()
-            Button("Retry") { Task { await refresh() } }
-                .font(ClickTypography.captionSmall)
+        OfflineNotice("Offline — showing saved data") {
+            Task { await refresh() }
         }
-        .foregroundStyle(ClickColors.textSecondary)
-        .padding(.horizontal, 12)
-        .padding(.vertical, 8)
-        .background(ClickColors.surfaceContainerLow)
-        .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
     }
 
     @MainActor
@@ -404,7 +390,7 @@ private struct AvailabilityIntentsSheet: View {
                                 Text(intent.tag)
                                 Spacer()
                                 Text(intent.timeframe)
-                                    .font(ClickTypography.captionSmall)
+                                    .font(ClickTypography.metadata)
                                     .foregroundStyle(ClickColors.textSecondary)
                             }
                             .swipeActions {
@@ -446,7 +432,7 @@ private struct AvailabilityIntentsSheet: View {
                 if let errorMessage {
                     Section {
                         Text(errorMessage)
-                            .foregroundStyle(ClickColors.error)
+                            .foregroundStyle(ClickColors.destructive)
                     }
                 }
             }
@@ -459,7 +445,7 @@ private struct AvailabilityIntentsSheet: View {
             }
             .task { await load() }
         }
-        .tint(ClickColors.primary)
+        .tint(ClickColors.accentForeground)
         .presentationDetents([.medium, .large])
     }
 
@@ -592,22 +578,19 @@ private struct HomeSearchSheetView: View {
                             )
                         } label: {
                             HStack(spacing: 12) {
-                                Circle()
-                                    .fill(ClickColors.primaryFixed.opacity(0.32))
-                                    .frame(width: 40, height: 40)
-                                    .overlay {
-                                        Text(connection.initials)
-                                            .font(ClickTypography.labelMedium)
-                                            .foregroundStyle(ClickColors.primary)
-                                    }
+                                AvatarView(
+                                    imageURL: connection.avatarUrl,
+                                    initials: connection.initials,
+                                    size: ClickMetrics.Avatar.row
+                                )
 
                                 VStack(alignment: .leading, spacing: 2) {
                                     Text(connection.displayName)
-                                        .font(ClickTypography.bodyMedium)
+                                        .font(ClickTypography.body)
                                         .foregroundStyle(ClickColors.textPrimary)
                                     if !connection.handle.isEmpty {
                                         Text(connection.handle)
-                                            .font(ClickTypography.bodySmall)
+                                            .font(ClickTypography.supporting)
                                             .foregroundStyle(ClickColors.textSecondary)
                                     }
                                 }
@@ -638,7 +621,7 @@ private struct HomeSearchSheetView: View {
                 results = (try? await env.phase3.searchConnections(userID: userID, query: clean)) ?? []
             }
         }
-        .tint(ClickColors.primary)
+        .tint(ClickColors.accentForeground)
     }
 }
 
@@ -646,14 +629,4 @@ private extension String {
     var nonEmpty: String? { isEmpty ? nil : self }
 }
 
-private extension View {
-    func homeSurface() -> some View {
-        self
-            .background(ClickColors.surface)
-            .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
-            .overlay {
-                RoundedRectangle(cornerRadius: 16, style: .continuous)
-                    .stroke(ClickColors.quietBorder.opacity(0.65), lineWidth: 1)
-            }
-    }
-}
+

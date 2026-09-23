@@ -84,10 +84,10 @@ public struct ClickMapView: View {
             HStack {
                 VStack(alignment: .leading, spacing: 1) {
                     Text("Nearby")
-                        .font(ClickTypography.titleMedium)
+                        .font(ClickTypography.bodyEmphasized)
                         .foregroundStyle(ClickColors.textPrimary)
                     Text(nearbySubtitle)
-                        .font(ClickTypography.microcopy)
+                        .font(ClickTypography.caption)
                         .foregroundStyle(ClickColors.textSecondary)
                 }
 
@@ -108,7 +108,7 @@ public struct ClickMapView: View {
 
             if let loadError {
                 Text(loadError)
-                    .font(ClickTypography.captionSmall)
+                    .font(ClickTypography.metadata)
                     .foregroundStyle(ClickColors.textSecondary)
             }
 
@@ -128,21 +128,21 @@ public struct ClickMapView: View {
                             } label: {
                                 HStack(spacing: 8) {
                                     Image(systemName: beacon.systemImage)
-                                        .foregroundStyle(ClickColors.primary)
+                                        .foregroundStyle(ClickColors.accentForeground)
                                     VStack(alignment: .leading, spacing: 1) {
                                         Text(beacon.title)
-                                            .font(ClickTypography.captionSmall)
+                                            .font(ClickTypography.metadata)
                                             .foregroundStyle(ClickColors.textPrimary)
                                             .lineLimit(1)
                                         Text(beacon.kindLabel)
-                                            .font(ClickTypography.microcopy)
+                                            .font(ClickTypography.caption)
                                             .foregroundStyle(ClickColors.textSecondary)
                                     }
                                 }
                                 .padding(.horizontal, 11)
                                 .frame(height: 48)
-                                .background(ClickColors.surfaceContainerLow)
-                                .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
+                                .background(ClickColors.surface)
+                                .clipShape(RoundedRectangle(cornerRadius: ClickRadius.compact, style: .continuous))
                             }
                             .buttonStyle(.plain)
                         }
@@ -153,11 +153,7 @@ public struct ClickMapView: View {
         }
         .padding(14)
         .background(.regularMaterial)
-        .clipShape(RoundedRectangle(cornerRadius: 20, style: .continuous))
-        .overlay {
-            RoundedRectangle(cornerRadius: 20, style: .continuous)
-                .stroke(ClickColors.quietBorder.opacity(0.45), lineWidth: 1)
-        }
+        .clipShape(RoundedRectangle(cornerRadius: ClickRadius.surface, style: .continuous))
     }
 
     private var nearbySubtitle: String {
@@ -244,7 +240,7 @@ private struct BeaconMarker: View {
     var body: some View {
         ZStack {
             Circle()
-                .fill(ClickColors.primary)
+                .fill(ClickColors.brand)
                 .frame(width: 38, height: 38)
                 .shadow(color: .black.opacity(0.2), radius: 5, y: 2)
             Image(systemName: beacon.systemImage)
@@ -263,31 +259,31 @@ private struct BeaconDetailSheet: View {
                 HStack(spacing: 13) {
                     ZStack {
                         Circle()
-                            .fill(ClickColors.primary.opacity(0.16))
+                            .fill(ClickColors.selectionTint)
                             .frame(width: 52, height: 52)
                         Image(systemName: beacon.systemImage)
                             .font(.system(size: 21, weight: .semibold))
-                            .foregroundStyle(ClickColors.primary)
+                            .foregroundStyle(ClickColors.accentForeground)
                     }
 
                     VStack(alignment: .leading, spacing: 2) {
                         Text(beacon.title)
-                            .font(ClickTypography.titleLarge)
+                            .font(ClickTypography.sectionTitle)
                         Text(beacon.kindLabel)
-                            .font(ClickTypography.bodySmall)
+                            .font(ClickTypography.supporting)
                             .foregroundStyle(ClickColors.textSecondary)
                     }
                 }
 
                 if let creator = beacon.creatorName, !creator.isEmpty {
                     Label("Shared by \(creator)", systemImage: "person.fill")
-                        .font(ClickTypography.bodySmall)
+                        .font(ClickTypography.supporting)
                         .foregroundStyle(ClickColors.textSecondary)
                 }
 
                 if let description = beacon.descriptionText, !description.isEmpty {
                     Text(description)
-                        .font(ClickTypography.bodyMedium)
+                        .font(ClickTypography.body)
                         .foregroundStyle(ClickColors.textPrimary)
                 }
 
@@ -426,7 +422,7 @@ public struct MapRouteDetailView: View {
         Group {
             if isLoading {
                 ProgressView()
-                    .tint(ClickColors.primary)
+                    .tint(ClickColors.accentForeground)
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
             } else if let errorMessage {
                 ContentUnavailableView {
@@ -438,7 +434,7 @@ public struct MapRouteDetailView: View {
                         Task { await load() }
                     }
                     .buttonStyle(.borderedProminent)
-                    .tint(ClickColors.primary)
+                    .tint(ClickColors.primaryActionFill)
                 }
             } else {
                 ScrollView {
@@ -446,20 +442,20 @@ public struct MapRouteDetailView: View {
                         HStack(spacing: 14) {
                             ZStack {
                                 Circle()
-                                    .fill(ClickColors.primary.opacity(0.14))
+                                    .fill(ClickColors.selectionTint)
                                     .frame(width: 56, height: 56)
                                 Image(systemName: systemImage)
                                     .font(.system(size: 22, weight: .semibold))
-                                    .foregroundStyle(ClickColors.primary)
+                                    .foregroundStyle(ClickColors.accentForeground)
                             }
 
                             VStack(alignment: .leading, spacing: 3) {
                                 Text(title)
-                                    .font(ClickTypography.headlineSmall)
+                                    .font(ClickTypography.sectionTitle)
                                     .foregroundStyle(ClickColors.textPrimary)
                                 if let subtitle {
                                     Text(subtitle)
-                                        .font(ClickTypography.bodySmall)
+                                        .font(ClickTypography.supporting)
                                         .foregroundStyle(ClickColors.textSecondary)
                                 }
                             }
@@ -467,7 +463,7 @@ public struct MapRouteDetailView: View {
 
                         if let detail, !detail.isEmpty {
                             Text(detail)
-                                .font(ClickTypography.bodyMedium)
+                                .font(ClickTypography.body)
                                 .foregroundStyle(ClickColors.textPrimary)
                                 .fixedSize(horizontal: false, vertical: true)
                         }

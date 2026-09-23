@@ -115,11 +115,11 @@ public struct MessageBubbleView: View {
             }
 
             Text(message.content)
-                .font(ClickTypography.bodyMedium)
+                .font(ClickTypography.body)
                 .foregroundStyle(
                     message.isOutgoing
-                        ? ClickColors.onPrimary
-                        : ClickColors.textPrimary
+                        ? ClickColors.messageOutgoingForeground
+                        : ClickColors.messageIncomingForeground
                 )
                 .fixedSize(horizontal: false, vertical: true)
                 .textSelection(.disabled)
@@ -137,10 +137,10 @@ public struct MessageBubbleView: View {
                     statusIcon
                 }
             }
-            .font(ClickTypography.microcopy)
+            .font(ClickTypography.caption)
             .foregroundStyle(
                 message.isOutgoing
-                    ? ClickColors.onPrimary.opacity(0.72)
+                    ? ClickColors.messageOutgoingForeground.opacity(0.72)
                     : ClickColors.textSecondary
             )
             .frame(maxWidth: .infinity, alignment: .trailing)
@@ -149,23 +149,14 @@ public struct MessageBubbleView: View {
         .padding(.top, message.replyToSnippet == nil ? 8 : 7)
         .padding(.bottom, 7)
         .background {
-            RoundedRectangle(cornerRadius: 16, style: .continuous)
+            RoundedRectangle(cornerRadius: ClickRadius.messageBubble, style: .continuous)
                 .fill(
                     message.isOutgoing
-                        ? ClickColors.primary
-                        : ClickColors.surface
+                        ? ClickColors.messageOutgoing
+                        : ClickColors.messageIncoming
                 )
         }
-        .overlay {
-            if !message.isOutgoing {
-                RoundedRectangle(cornerRadius: 16, style: .continuous)
-                    .stroke(
-                        ClickColors.quietBorder.opacity(0.78),
-                        lineWidth: ClickSpacing.borderQuietWidth
-                    )
-            }
-        }
-        .contentShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
+        .contentShape(RoundedRectangle(cornerRadius: ClickRadius.messageBubble, style: .continuous))
     }
 
     private func replyQuote(snippet: String) -> some View {
@@ -173,25 +164,25 @@ public struct MessageBubbleView: View {
             RoundedRectangle(cornerRadius: 2)
                 .fill(
                     message.isOutgoing
-                        ? ClickColors.onPrimary.opacity(0.75)
-                        : ClickColors.primary
+                        ? ClickColors.messageOutgoingForeground.opacity(0.75)
+                        : ClickColors.accentForeground
                 )
                 .frame(width: 3)
 
             VStack(alignment: .leading, spacing: 1) {
                 Text(message.replyToSenderName ?? "Reply")
-                    .font(ClickTypography.captionSmall)
+                    .font(ClickTypography.metadata)
                     .foregroundStyle(
                         message.isOutgoing
-                            ? ClickColors.onPrimary.opacity(0.9)
-                            : ClickColors.primary
+                            ? ClickColors.messageOutgoingForeground.opacity(0.9)
+                            : ClickColors.accentForeground
                     )
 
                 Text(snippet)
-                    .font(ClickTypography.bodySmall)
+                    .font(ClickTypography.supporting)
                     .foregroundStyle(
                         message.isOutgoing
-                            ? ClickColors.onPrimary.opacity(0.74)
+                            ? ClickColors.messageOutgoingForeground.opacity(0.74)
                             : ClickColors.textSecondary
                     )
                     .lineLimit(2)
@@ -214,7 +205,7 @@ public struct MessageBubbleView: View {
 
                         if reaction.count > 1 {
                             Text("\(reaction.count)")
-                                .font(ClickTypography.microcopy)
+                                .font(ClickTypography.caption)
                                 .foregroundStyle(ClickColors.textSecondary)
                                 .monospacedDigit()
                         }
@@ -223,17 +214,17 @@ public struct MessageBubbleView: View {
                     .padding(.vertical, 3)
                     .background(
                         reaction.userReacted
-                            ? ClickColors.primaryFixed.opacity(0.34)
-                            : ClickColors.surface
+                            ? ClickColors.selectionTint
+                            : ClickColors.messageIncoming
                     )
                     .clipShape(Capsule())
                     .overlay {
                         Capsule()
                             .stroke(
                                 reaction.userReacted
-                                    ? ClickColors.primary.opacity(0.45)
-                                    : ClickColors.quietBorder.opacity(0.8),
-                                lineWidth: ClickSpacing.borderQuietWidth
+                                    ? ClickColors.accentForeground.opacity(0.45)
+                                    : ClickColors.separator,
+                                lineWidth: ClickMetrics.strokeWidth
                             )
                     }
                 }
@@ -288,7 +279,7 @@ public struct MessageBubbleView: View {
         case .pending, .sending:
             ProgressView()
                 .controlSize(.mini)
-                .tint(ClickColors.onPrimary.opacity(0.8))
+                .tint(ClickColors.messageOutgoingForeground.opacity(0.8))
 
         case .sent:
             Image(systemName: "checkmark")
@@ -310,7 +301,7 @@ public struct MessageBubbleView: View {
             } label: {
                 Image(systemName: "exclamationmark.circle.fill")
                     .font(.system(size: 12, weight: .bold))
-                    .foregroundStyle(ClickColors.onPrimary)
+                    .foregroundStyle(ClickColors.messageOutgoingForeground)
             }
             .buttonStyle(.plain)
             .accessibilityLabel("Message failed. Tap to retry.")

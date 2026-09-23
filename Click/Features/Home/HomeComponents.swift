@@ -18,23 +18,16 @@ public struct HomeSearchPill: View {
                     .foregroundStyle(ClickColors.textSecondary)
 
                 Text("Search people, places, events…")
-                    .font(ClickTypography.bodyMedium)
+                    .font(ClickTypography.body)
                     .foregroundStyle(ClickColors.textSecondary)
                     .lineLimit(1)
 
                 Spacer(minLength: 8)
             }
             .padding(.horizontal, 14)
-            .frame(height: 46)
-            .background(ClickColors.surface)
-            .clipShape(RoundedRectangle(cornerRadius: ClickSpacing.radiusInput, style: .continuous))
-            .overlay {
-                RoundedRectangle(cornerRadius: ClickSpacing.radiusInput, style: .continuous)
-                    .stroke(
-                        ClickColors.quietBorder.opacity(0.78),
-                        lineWidth: ClickSpacing.borderQuietWidth
-                    )
-            }
+            .frame(minHeight: ClickMetrics.searchMinHeight)
+            .background(ClickColors.fillSubtle, in: Capsule())
+            .contentShape(Capsule())
         }
         .buttonStyle(.plain)
     }
@@ -60,18 +53,18 @@ public struct AvailabilityIntentPill: View {
                     .font(.system(size: 14))
 
                 Text(intent.label)
-                    .font(ClickTypography.labelMedium)
+                    .font(ClickTypography.supportingEmphasized)
             }
             .padding(.horizontal, 13)
-            .frame(height: 34)
+            .frame(minHeight: ClickMetrics.chipHeight)
             .background(
                 intent.isSelected
-                    ? ClickColors.primaryFixed.opacity(0.72)
+                    ? ClickColors.selectionTint
                     : ClickColors.surface
             )
             .foregroundStyle(
                 intent.isSelected
-                    ? ClickColors.primary
+                    ? ClickColors.accentForeground
                     : ClickColors.textPrimary
             )
             .clipShape(Capsule())
@@ -79,9 +72,9 @@ public struct AvailabilityIntentPill: View {
                 Capsule()
                     .stroke(
                         intent.isSelected
-                            ? ClickColors.primary.opacity(0.38)
-                            : ClickColors.quietBorder.opacity(0.78),
-                        lineWidth: ClickSpacing.borderQuietWidth
+                            ? ClickColors.accentForeground.opacity(0.38)
+                            : ClickColors.separator,
+                        lineWidth: ClickMetrics.strokeWidth
                     )
             }
         }
@@ -107,22 +100,22 @@ public struct FeaturedEventCard: View {
             VStack(alignment: .leading, spacing: 12) {
                 HStack {
                     Text(event.category.uppercased())
-                        .font(ClickTypography.microcopy)
-                        .foregroundStyle(ClickColors.primary)
+                        .font(ClickTypography.caption)
+                        .foregroundStyle(ClickColors.accentForeground)
                         .padding(.horizontal, 9)
                         .padding(.vertical, 5)
-                        .background(ClickColors.primaryFixed.opacity(0.64))
+                        .background(ClickColors.selectionTint)
                         .clipShape(Capsule())
 
                     Spacer()
 
                     Label("\(event.attendeeCount) going", systemImage: "person.2.fill")
-                        .font(ClickTypography.captionSmall)
+                        .font(ClickTypography.metadata)
                         .foregroundStyle(ClickColors.textSecondary)
                 }
 
                 Text(event.title)
-                    .font(ClickTypography.titleMedium)
+                    .font(ClickTypography.bodyEmphasized)
                     .foregroundStyle(ClickColors.textPrimary)
                     .multilineTextAlignment(.leading)
                     .fixedSize(horizontal: false, vertical: true)
@@ -132,18 +125,18 @@ public struct FeaturedEventCard: View {
                     Label(event.locationName, systemImage: "mappin.and.ellipse")
                         .lineLimit(1)
                 }
-                .font(ClickTypography.bodySmall)
+                .font(ClickTypography.supporting)
                 .foregroundStyle(ClickColors.textSecondary)
             }
             .padding(15)
             .frame(maxWidth: .infinity, alignment: .leading)
             .background(ClickColors.surface)
-            .clipShape(RoundedRectangle(cornerRadius: ClickSpacing.radiusCard, style: .continuous))
+            .clipShape(RoundedRectangle(cornerRadius: ClickRadius.surface, style: .continuous))
             .overlay {
-                RoundedRectangle(cornerRadius: ClickSpacing.radiusCard, style: .continuous)
+                RoundedRectangle(cornerRadius: ClickRadius.surface, style: .continuous)
                     .stroke(
-                        ClickColors.quietBorder.opacity(0.72),
-                        lineWidth: ClickSpacing.borderQuietWidth
+                        ClickColors.separator.opacity(0.72),
+                        lineWidth: ClickMetrics.strokeWidth
                     )
             }
         }
@@ -167,22 +160,22 @@ public struct ExploreBeaconTile: View {
         } label: {
             HStack(spacing: 12) {
                 Circle()
-                    .fill(ClickColors.primaryFixed.opacity(0.56))
+                    .fill(ClickColors.selectionTint)
                     .frame(width: 42, height: 42)
                     .overlay {
                         Image(systemName: beacon.iconName)
                             .font(.system(size: 17, weight: .medium))
-                            .foregroundStyle(ClickColors.primary)
+                            .foregroundStyle(ClickColors.accentForeground)
                     }
 
                 VStack(alignment: .leading, spacing: 2) {
                     Text(beacon.title)
-                        .font(ClickTypography.bodyMedium)
+                        .font(ClickTypography.body)
                         .foregroundStyle(ClickColors.textPrimary)
                         .lineLimit(1)
 
                     Text(beacon.subtitle)
-                        .font(ClickTypography.bodySmall)
+                        .font(ClickTypography.supporting)
                         .foregroundStyle(ClickColors.textSecondary)
                         .lineLimit(1)
                 }
@@ -191,17 +184,17 @@ public struct ExploreBeaconTile: View {
 
                 VStack(alignment: .trailing, spacing: 2) {
                     Text(beacon.distanceFormatted)
-                        .font(ClickTypography.captionSmall)
-                        .foregroundStyle(ClickColors.primary)
+                        .font(ClickTypography.metadata)
+                        .foregroundStyle(ClickColors.accentForeground)
 
                     Text("\(beacon.memberCount) here")
-                        .font(ClickTypography.microcopy)
+                        .font(ClickTypography.caption)
                         .foregroundStyle(ClickColors.textSecondary)
                 }
 
                 Image(systemName: "chevron.right")
                     .font(.system(size: 11, weight: .semibold))
-                    .foregroundStyle(ClickColors.tertiaryLabel)
+                    .foregroundStyle(ClickColors.textTertiary)
             }
             .padding(.horizontal, 13)
             .padding(.vertical, 10)
@@ -231,13 +224,13 @@ public struct RecentConnectionRowItem: View {
                 VStack(alignment: .leading, spacing: 3) {
                     HStack(spacing: 6) {
                         Text(connection.displayName)
-                            .font(ClickTypography.bodyMedium)
+                            .font(ClickTypography.body)
                             .foregroundStyle(ClickColors.textPrimary)
                             .lineLimit(1)
 
                         if !connection.handle.isEmpty {
                             Text(connection.handle)
-                                .font(ClickTypography.bodySmall)
+                                .font(ClickTypography.supporting)
                                 .foregroundStyle(ClickColors.textSecondary)
                                 .lineLimit(1)
                         }
@@ -245,7 +238,7 @@ public struct RecentConnectionRowItem: View {
 
                     if !connection.encounterLocation.isEmpty {
                         Label(connection.encounterLocation, systemImage: "mappin")
-                            .font(ClickTypography.bodySmall)
+                            .font(ClickTypography.supporting)
                             .foregroundStyle(ClickColors.textSecondary)
                             .lineLimit(1)
                     }
@@ -254,10 +247,10 @@ public struct RecentConnectionRowItem: View {
                 Spacer(minLength: 8)
 
                 Text(connection.lastActiveRelative)
-                    .font(ClickTypography.microcopy)
+                    .font(ClickTypography.caption)
                     .foregroundStyle(
                         connection.isOnline
-                            ? ClickColors.primary
+                            ? ClickColors.accentForeground
                             : ClickColors.textSecondary
                     )
                     .lineLimit(1)
@@ -270,46 +263,12 @@ public struct RecentConnectionRowItem: View {
     }
 
     private var avatar: some View {
-        ZStack(alignment: .bottomTrailing) {
-            Group {
-                if let raw = connection.avatarUrl,
-                   let url = URL(string: raw) {
-                    AsyncImage(url: url) { image in
-                        image.resizable().scaledToFill()
-                    } placeholder: {
-                        fallbackAvatar
-                    }
-                } else {
-                    fallbackAvatar
-                }
-            }
-            .frame(width: 44, height: 44)
-            .clipShape(Circle())
-
-            if connection.presenceKnown {
-                Circle()
-                    .fill(
-                        connection.isOnline
-                            ? ClickColors.statusOnline
-                            : ClickColors.statusOffline
-                    )
-                    .frame(width: 11, height: 11)
-                    .overlay {
-                        Circle()
-                            .stroke(ClickColors.surface, lineWidth: 2)
-                    }
-            }
-        }
-    }
-
-    private var fallbackAvatar: some View {
-        Circle()
-            .fill(ClickColors.primaryFixed.opacity(0.5))
-            .overlay {
-                Text(connection.initials)
-                    .font(ClickTypography.labelMedium)
-                    .foregroundStyle(ClickColors.primary)
-            }
+        AvatarView(
+            imageURL: connection.avatarUrl,
+            initials: connection.initials,
+            size: ClickMetrics.Avatar.row,
+            presence: AvatarView.Presence(isOnline: connection.isOnline, known: connection.presenceKnown)
+        )
     }
 }
 
@@ -328,17 +287,17 @@ public struct HomeStatCard: View {
         VStack(spacing: 5) {
             HStack(spacing: 5) {
                 Text("\(value)")
-                    .font(ClickTypography.titleLarge)
+                    .font(ClickTypography.bodyEmphasized)
                     .foregroundStyle(ClickColors.textPrimary)
                     .monospacedDigit()
 
                 Image(systemName: iconName)
                     .font(.system(size: 13, weight: .semibold))
-                    .foregroundStyle(ClickColors.primary)
+                    .foregroundStyle(ClickColors.accentForeground)
             }
 
             Text(title)
-                .font(ClickTypography.microcopy)
+                .font(ClickTypography.caption)
                 .foregroundStyle(ClickColors.textSecondary)
         }
         .frame(maxWidth: .infinity)

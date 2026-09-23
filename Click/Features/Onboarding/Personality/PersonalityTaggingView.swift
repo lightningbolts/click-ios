@@ -30,25 +30,25 @@ public struct PersonalityTaggingView: View {
             // Counter indicator
             HStack(spacing: ClickSpacing.xs) {
                 Text("\(selectedTraits.count) of \(kPersonalityRequiredTagCount) selected")
-                    .font(ClickTypography.titleSmall)
+                    .font(ClickTypography.supportingEmphasized)
                     .fontWeight(.semibold)
 
                 if selectedTraits.count == kPersonalityRequiredTagCount {
                     Text("✓")
-                        .font(ClickTypography.titleSmall)
+                        .font(ClickTypography.supportingEmphasized)
                         .fontWeight(.bold)
-                        .foregroundStyle(ClickColors.primary)
+                        .foregroundStyle(ClickColors.accentForeground)
                 }
                 Spacer()
             }
             .padding(.horizontal, ClickSpacing.lg)
             .padding(.bottom, ClickSpacing.sm)
-            .foregroundStyle(selectedTraits.count == kPersonalityRequiredTagCount ? ClickColors.primary : ClickColors.textPrimary)
+            .foregroundStyle(selectedTraits.count == kPersonalityRequiredTagCount ? ClickColors.accentForeground : ClickColors.textPrimary)
 
             if let error = errorMessage {
                 Text(error)
-                    .font(ClickTypography.labelSmall)
-                    .foregroundStyle(ClickColors.error)
+                    .font(ClickTypography.metadata)
+                    .foregroundStyle(ClickColors.destructive)
                     .padding(.horizontal, ClickSpacing.lg)
                     .padding(.bottom, ClickSpacing.xs)
             }
@@ -59,7 +59,7 @@ public struct PersonalityTaggingView: View {
                     ForEach(kPersonalityTraitGroups) { group in
                         VStack(alignment: .leading, spacing: ClickSpacing.sm) {
                             Text(group.title.uppercased())
-                                .font(ClickTypography.labelSmall)
+                                .font(ClickTypography.metadata)
                                 .fontWeight(.bold)
                                 .foregroundStyle(ClickColors.textSecondary)
 
@@ -75,16 +75,16 @@ public struct PersonalityTaggingView: View {
                                                     .font(.system(size: 12, weight: .bold))
                                             }
                                             Text(trait)
-                                                .font(ClickTypography.bodyMedium)
+                                                .font(ClickTypography.body)
                                         }
                                         .padding(.horizontal, 16)
                                         .padding(.vertical, 10)
-                                        .background(isSelected ? ClickColors.primary : ClickColors.surfaceContainerLow)
-                                        .foregroundStyle(isSelected ? ClickColors.onPrimary : ClickColors.textPrimary)
+                                        .background(isSelected ? ClickColors.selectionTint : ClickColors.surface)
+                                        .foregroundStyle(isSelected ? ClickColors.accentForeground : ClickColors.textPrimary)
                                         .clipShape(Capsule())
                                         .overlay(
                                             Capsule()
-                                                .stroke(isSelected ? ClickColors.primary : ClickColors.quietBorder, lineWidth: ClickSpacing.borderQuietWidth)
+                                                .stroke(isSelected ? ClickColors.accentForeground : ClickColors.separator, lineWidth: ClickMetrics.strokeWidth)
                                         )
                                     }
                                     .buttonStyle(.plain)
@@ -101,27 +101,18 @@ public struct PersonalityTaggingView: View {
             // Bottom Sticky Bar
             VStack(spacing: 0) {
                 Divider()
-                    .overlay(ClickColors.quietBorder)
+                    .overlay(ClickColors.separator)
 
                 Button(action: {
                     saveAndContinue()
                 }) {
-                    HStack(spacing: ClickSpacing.sm) {
-                        if isSaving {
-                            ProgressView()
-                                .tint(ClickColors.onPrimary)
-                        } else {
-                            Text("Continue")
-                                .font(ClickTypography.titleMedium)
-                                .fontWeight(.bold)
-                        }
+                    if isSaving {
+                        ProgressView()
+                    } else {
+                        Text("Continue")
                     }
-                    .frame(maxWidth: .infinity)
-                    .padding(.vertical, 16)
-                    .background(canContinue ? ClickColors.primary : ClickColors.primary.opacity(0.35))
-                    .foregroundStyle(ClickColors.onPrimary)
-                    .clipShape(RoundedRectangle(cornerRadius: ClickSpacing.radiusButton))
                 }
+                .buttonStyle(.clickPrimary)
                 .disabled(!canContinue)
                 .padding(.horizontal, ClickSpacing.lg)
                 .padding(.vertical, ClickSpacing.md)

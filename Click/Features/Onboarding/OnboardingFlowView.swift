@@ -104,7 +104,7 @@ private struct LaunchLoadingShimmerView: View {
             VStack(spacing: ClickSpacing.md) {
                 ClickLogo(style: .mark, size: 52)
                 ProgressView()
-                    .tint(ClickColors.primary)
+                    .tint(ClickColors.accentForeground)
             }
         }
     }
@@ -120,19 +120,19 @@ private struct OnboardingLoadErrorView: View {
             Spacer()
             Image(systemName: "wifi.exclamationmark")
                 .font(.system(size: 34, weight: .semibold))
-                .foregroundStyle(ClickColors.primary)
+                .foregroundStyle(ClickColors.accentForeground)
             Text("Couldn't finish loading")
-                .font(ClickTypography.headlineSmall)
+                .font(ClickTypography.sectionTitle)
                 .foregroundStyle(ClickColors.textPrimary)
             Text(message)
-                .font(ClickTypography.bodyMedium)
+                .font(ClickTypography.body)
                 .foregroundStyle(ClickColors.textSecondary)
                 .multilineTextAlignment(.center)
                 .padding(.horizontal, ClickSpacing.xl)
             Button("Try Again", action: onRetry)
-                .font(ClickTypography.labelLarge)
+                .font(ClickTypography.bodyEmphasized)
                 .buttonStyle(.borderedProminent)
-                .tint(ClickColors.primary)
+                .tint(ClickColors.primaryActionFill)
             Spacer()
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)

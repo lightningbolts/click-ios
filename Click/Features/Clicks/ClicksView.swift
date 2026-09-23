@@ -42,7 +42,8 @@ public struct ClicksView: View {
             }
         }
         .background(ClickColors.background.ignoresSafeArea())
-        .navigationBarTitleDisplayMode(.inline)
+        .navigationTitle("Clicks")
+        .navigationBarTitleDisplayMode(.large)
         .toolbar {
             ToolbarItem(placement: .topBarLeading) {
                 Menu {
@@ -50,26 +51,16 @@ public struct ClicksView: View {
                         Task { await refresh() }
                     }
                 } label: {
-                    Image(systemName: "ellipsis")
-                        .font(.system(size: 16, weight: .bold))
-                        .frame(width: 36, height: 36)
-                        .background(.regularMaterial)
-                        .clipShape(Circle())
+                    Label("Clicks menu", systemImage: "ellipsis")
                 }
-                .accessibilityLabel("Clicks menu")
             }
 
             ToolbarItem(placement: .topBarTrailing) {
                 Button {
                     isSearching = true
                 } label: {
-                    Image(systemName: "magnifyingglass")
-                        .font(.system(size: 16, weight: .semibold))
-                        .frame(width: 36, height: 36)
-                        .background(.regularMaterial)
-                        .clipShape(Circle())
+                    Label("Search Clicks", systemImage: "magnifyingglass")
                 }
-                .accessibilityLabel("Search Clicks")
             }
         }
         .task { await bootstrap() }
@@ -79,16 +70,9 @@ public struct ClicksView: View {
     }
 
     private func titleBlock(_ snapshot: ClicksSnapshot) -> some View {
-        VStack(alignment: .leading, spacing: 3) {
-            Text("Clicks")
-                .font(ClickTypography.headlineLarge)
-                .tracking(-0.55)
-                .foregroundStyle(ClickColors.textPrimary)
-
-            Text("\(snapshot.connections.count) active connection\(snapshot.connections.count == 1 ? "" : "s")")
-                .font(ClickTypography.bodyMedium)
-                .foregroundStyle(ClickColors.textSecondary)
-        }
+        Text("\(snapshot.connections.count) active connection\(snapshot.connections.count == 1 ? "" : "s")")
+            .font(ClickTypography.supporting)
+            .foregroundStyle(ClickColors.textSecondary)
     }
 
     private func tabSwitcher(_ snapshot: ClicksSnapshot) -> some View {
@@ -105,29 +89,23 @@ public struct ClicksView: View {
             ClickHaptics.selection()
         } label: {
             Text("\(tab.title) (\(count))")
-                .font(ClickTypography.labelMedium)
+                .font(ClickTypography.supportingEmphasized)
                 .lineLimit(1)
                 .minimumScaleFactor(0.85)
-                .frame(maxWidth: .infinity)
-                .frame(height: 38)
-                .foregroundStyle(selectedTab == tab ? ClickColors.onPrimary : ClickColors.textPrimary)
-                .background(selectedTab == tab ? ClickColors.primary : ClickColors.surface)
-                .clipShape(Capsule())
-                .overlay {
-                    Capsule()
-                        .stroke(
-                            selectedTab == tab ? ClickColors.primary : ClickColors.quietBorder.opacity(0.7),
-                            lineWidth: 1
-                        )
-                }
+                .frame(maxWidth: .infinity, minHeight: ClickMetrics.chipHeight)
+                .foregroundStyle(selectedTab == tab ? ClickColors.accentForeground : ClickColors.textPrimary)
+                .background(selectedTab == tab ? ClickColors.selectionTint : ClickColors.fillSubtle, in: Capsule())
+                .frame(minHeight: ClickMetrics.minimumHitTarget)
+                .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
+        .accessibilityAddTraits(selectedTab == tab ? .isSelected : [])
     }
 
     private func rememberMe(_ connections: [ConnectionItem]) -> some View {
         VStack(alignment: .leading, spacing: 10) {
             Text("Remember Me")
-                .font(ClickTypography.titleSmall)
+                .font(ClickTypography.supportingEmphasized)
                 .foregroundStyle(ClickColors.textPrimary)
 
             ScrollView(.horizontal) {
@@ -137,20 +115,20 @@ public struct ClicksView: View {
                             openProfile(connection)
                         } label: {
                             VStack(spacing: 7) {
-                                ConnectionAvatar(connection: connection, size: 58)
+                                ConnectionAvatar(connection: connection, size: ClickMetrics.Avatar.conversation)
                                 Text(firstName(connection.displayName))
-                                    .font(ClickTypography.captionSmall)
+                                    .font(ClickTypography.metadata)
                                     .foregroundStyle(ClickColors.textPrimary)
                                     .lineLimit(1)
                                     .frame(width: 66)
 
                                 if connection.encounterCount > 1 {
                                     Text("\(connection.encounterCount)x")
-                                        .font(ClickTypography.microcopy)
-                                        .foregroundStyle(ClickColors.primary)
+                                        .font(ClickTypography.caption)
+                                        .foregroundStyle(ClickColors.accentForeground)
                                         .padding(.horizontal, 7)
                                         .frame(height: 20)
-                                        .background(ClickColors.primary.opacity(0.12))
+                                        .background(ClickColors.selectionTint)
                                         .clipShape(Capsule())
                                 }
                             }
@@ -167,7 +145,7 @@ public struct ClicksView: View {
     private func inboxSection(_ snapshot: ClicksSnapshot) -> some View {
         VStack(alignment: .leading, spacing: 8) {
             Text(selectedTab.sectionTitle)
-                .font(ClickTypography.titleSmall)
+                .font(ClickTypography.supportingEmphasized)
                 .foregroundStyle(ClickColors.textPrimary)
 
             switch selectedTab {
@@ -257,11 +235,11 @@ public struct ClicksView: View {
         VStack(spacing: 7) {
             Image(systemName: "person.2")
                 .font(.system(size: 28))
-                .foregroundStyle(ClickColors.tertiaryLabel)
+                .foregroundStyle(ClickColors.textTertiary)
             Text(title)
-                .font(ClickTypography.titleMedium)
+                .font(ClickTypography.bodyEmphasized)
             Text(description)
-                .font(ClickTypography.bodySmall)
+                .font(ClickTypography.supporting)
                 .foregroundStyle(ClickColors.textSecondary)
                 .multilineTextAlignment(.center)
         }
@@ -283,13 +261,13 @@ public struct ClicksView: View {
                                 openChat(connection)
                             } label: {
                                 HStack(spacing: 12) {
-                                    ConnectionAvatar(connection: connection, size: 42)
+                                    ConnectionAvatar(connection: connection, size: ClickMetrics.Avatar.row)
                                     VStack(alignment: .leading, spacing: 2) {
                                         Text(connection.displayName)
-                                            .font(ClickTypography.bodyMedium)
+                                            .font(ClickTypography.body)
                                             .foregroundStyle(ClickColors.textPrimary)
                                         Text(connection.handle)
-                                            .font(ClickTypography.bodySmall)
+                                            .font(ClickTypography.supporting)
                                             .foregroundStyle(ClickColors.textSecondary)
                                     }
                                 }
@@ -308,39 +286,29 @@ public struct ClicksView: View {
                 }
             }
         }
-        .tint(ClickColors.primary)
+        .tint(ClickColors.accentForeground)
     }
 
     private var loadingState: some View {
         VStack(spacing: 10) {
-            ProgressView().tint(ClickColors.primary)
+            ProgressView().tint(ClickColors.accentForeground)
             Text("Loading Clicks…")
-                .font(ClickTypography.bodySmall)
+                .font(ClickTypography.supporting)
                 .foregroundStyle(ClickColors.textSecondary)
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
     }
 
     private var offlineNotice: some View {
-        HStack(spacing: 7) {
-            Image(systemName: "wifi.exclamationmark")
-            Text("Offline — showing saved Clicks")
-                .font(ClickTypography.captionSmall)
-            Spacer()
-            Button("Retry") { Task { await refresh() } }
-                .font(ClickTypography.captionSmall)
+        OfflineNotice("Offline — showing saved Clicks") {
+            Task { await refresh() }
         }
-        .foregroundStyle(ClickColors.textSecondary)
-        .padding(.horizontal, 12)
-        .padding(.vertical, 8)
-        .background(ClickColors.surfaceContainerLow)
-        .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
     }
 
     private func openChat(_ connection: ConnectionItem) {
         guard !connection.userID.isEmpty else { return }
         ClickHaptics.selection()
-        env.router.connectionsPath.append(
+        env.router.navigate(to:
             .chat(
                 DirectChatRoute(
                     chatID: nil,
@@ -359,7 +327,7 @@ public struct ClicksView: View {
     private func openProfile(_ connection: ConnectionItem) {
         guard !connection.userID.isEmpty else { return }
         ClickHaptics.selection()
-        env.router.connectionsPath.append(
+        env.router.navigate(to:
             .userProfile(
                 userID: connection.userID,
                 connectionID: connection.connectionID.isEmpty ? nil : connection.connectionID
@@ -424,7 +392,7 @@ private struct ConversationInboxRow: View {
     var body: some View {
         HStack(spacing: 12) {
             Button(action: onProfile) {
-                ConnectionAvatar(connection: connection, size: 52)
+                ConnectionAvatar(connection: connection, size: ClickMetrics.Avatar.conversation)
             }
             .buttonStyle(.plain)
             .accessibilityLabel("Open \(connection.displayName) profile")
@@ -434,20 +402,20 @@ private struct ConversationInboxRow: View {
                     VStack(alignment: .leading, spacing: 4) {
                         HStack(spacing: 7) {
                             Text(connection.displayName)
-                                .font(ClickTypography.titleMedium)
+                                .font(ClickTypography.bodyEmphasized)
                                 .foregroundStyle(ClickColors.textPrimary)
                                 .lineLimit(1)
 
                             if !connection.handle.isEmpty {
                                 Text(connection.handle)
-                                    .font(ClickTypography.bodySmall)
+                                    .font(ClickTypography.supporting)
                                     .foregroundStyle(ClickColors.textSecondary)
                                     .lineLimit(1)
                             }
                         }
 
                         Text(connection.lastMessagePreview ?? fallbackPreview)
-                            .font(ClickTypography.bodySmall)
+                            .font(ClickTypography.supporting)
                             .foregroundStyle(ClickColors.textSecondary)
                             .lineLimit(1)
                     }
@@ -456,7 +424,7 @@ private struct ConversationInboxRow: View {
 
                     if !connection.lastActiveRelative.isEmpty {
                         Text(connection.lastActiveRelative)
-                            .font(ClickTypography.microcopy)
+                            .font(ClickTypography.caption)
                             .foregroundStyle(ClickColors.textSecondary)
                             .lineLimit(1)
                     }
@@ -481,40 +449,12 @@ private struct ConnectionAvatar: View {
     let size: CGFloat
 
     var body: some View {
-        ZStack(alignment: .bottomTrailing) {
-            Group {
-                if let raw = connection.avatarUrl, let url = URL(string: raw) {
-                    AsyncImage(url: url) { image in
-                        image.resizable().scaledToFill()
-                    } placeholder: {
-                        fallback
-                    }
-                } else {
-                    fallback
-                }
-            }
-            .frame(width: size, height: size)
-            .clipShape(Circle())
-
-            if connection.presenceKnown {
-                Circle()
-                    .fill(connection.isOnline ? ClickColors.statusOnline : ClickColors.statusOffline)
-                    .frame(width: max(10, size * 0.22), height: max(10, size * 0.22))
-                    .overlay {
-                        Circle().stroke(ClickColors.background, lineWidth: 2)
-                    }
-            }
-        }
-    }
-
-    private var fallback: some View {
-        Circle()
-            .fill(ClickColors.primary.opacity(0.12))
-            .overlay {
-                Text(connection.initials)
-                    .font(ClickTypography.labelMedium)
-                    .foregroundStyle(ClickColors.primary)
-            }
+        AvatarView(
+            imageURL: connection.avatarUrl,
+            initials: connection.initials,
+            size: size,
+            presence: AvatarView.Presence(isOnline: connection.isOnline, known: connection.presenceKnown)
+        )
     }
 }
 
@@ -523,21 +463,14 @@ private struct GroupInboxRow: View {
 
     var body: some View {
         HStack(spacing: 12) {
-            Circle()
-                .fill(ClickColors.primary.opacity(0.14))
-                .frame(width: 52, height: 52)
-                .overlay {
-                    Text(group.initials)
-                        .font(ClickTypography.labelMedium)
-                        .foregroundStyle(ClickColors.primary)
-                }
+            AvatarView(imageURL: nil, initials: group.initials, size: ClickMetrics.Avatar.conversation)
 
             VStack(alignment: .leading, spacing: 4) {
                 Text(group.name)
-                    .font(ClickTypography.titleMedium)
+                    .font(ClickTypography.bodyEmphasized)
                     .foregroundStyle(ClickColors.textPrimary)
                 Text("\(group.memberCount) members")
-                    .font(ClickTypography.bodySmall)
+                    .font(ClickTypography.supporting)
                     .foregroundStyle(ClickColors.textSecondary)
             }
 
@@ -545,7 +478,7 @@ private struct GroupInboxRow: View {
 
             if !group.lastActiveRelative.isEmpty {
                 Text(group.lastActiveRelative)
-                    .font(ClickTypography.microcopy)
+                    .font(ClickTypography.caption)
                     .foregroundStyle(ClickColors.textSecondary)
             }
         }
