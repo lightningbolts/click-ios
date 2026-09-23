@@ -17,7 +17,10 @@ public struct ChatView: View {
         ScrollViewReader { proxy in
             Group {
                 switch model.phase {
-                case .initial, .loading where model.items.isEmpty:
+                case .initial where model.items.isEmpty:
+                    loadingState
+
+                case .loading where model.items.isEmpty:
                     loadingState
 
                 case .failed(let message) where model.items.isEmpty:
