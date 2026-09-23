@@ -370,7 +370,7 @@ private struct AlertSettingsView: View {
                 }
             }
 
-            Section("Context") {
+            Section {
                 Toggle(
                     "Ambient sound enrichment",
                     isOn: Binding(
@@ -379,6 +379,8 @@ private struct AlertSettingsView: View {
                     )
                 )
                 .tint(ClickColors.primary)
+            } header: {
+                Text("Context")
             } footer: {
                 Text("Ambient samples enrich encounter context. Click does not store recordings.")
             }
@@ -404,12 +406,14 @@ private struct PrivacySettingsView: View {
                 .tint(ClickColors.primary)
             }
 
-            Section("System access") {
+            Section {
                 Button {
                     env.permissions.openSystemSettings()
                 } label: {
                     Label("Permissions Hub", systemImage: "hand.raised.fill")
                 }
+            } header: {
+                Text("System access")
             } footer: {
                 Text("Review camera, microphone, location, contacts, notifications, and Bluetooth permissions in iOS Settings.")
             }
