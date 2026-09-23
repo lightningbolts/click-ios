@@ -113,6 +113,8 @@ public struct ExploreBeaconItem: Codable, Equatable, Identifiable, Sendable {
 
 public struct RecentConnectionSummary: Codable, Equatable, Identifiable, Sendable {
     public let id: String
+    public let userID: String
+    public let connectionID: String
     public let displayName: String
     public let handle: String
     public let avatarUrl: String?
@@ -120,18 +122,24 @@ public struct RecentConnectionSummary: Codable, Equatable, Identifiable, Sendabl
     public let encounterLocation: String
     public let lastActiveRelative: String
     public let isOnline: Bool
+    public let presenceKnown: Bool
 
     public init(
         id: String,
+        userID: String = "",
+        connectionID: String = "",
         displayName: String,
         handle: String,
         avatarUrl: String? = nil,
         initials: String,
         encounterLocation: String,
         lastActiveRelative: String,
-        isOnline: Bool
+        isOnline: Bool,
+        presenceKnown: Bool = true
     ) {
         self.id = id
+        self.userID = userID
+        self.connectionID = connectionID
         self.displayName = displayName
         self.handle = handle
         self.avatarUrl = avatarUrl
@@ -139,6 +147,7 @@ public struct RecentConnectionSummary: Codable, Equatable, Identifiable, Sendabl
         self.encounterLocation = encounterLocation
         self.lastActiveRelative = lastActiveRelative
         self.isOnline = isOnline
+        self.presenceKnown = presenceKnown
     }
 }
 

@@ -13,37 +13,49 @@ public enum ConnectionSegment: String, CaseIterable, Identifiable, Codable, Send
 /// A connection record rendered within the Clicks directory.
 public struct ConnectionItem: Codable, Equatable, Identifiable, Sendable {
     public let id: String
+    public let userID: String
+    public let connectionID: String
     public let displayName: String
     public let handle: String
     public let avatarUrl: String?
     public let initials: String
     public let isOnline: Bool
+    public let presenceKnown: Bool
     public let lastActiveRelative: String
     public let encounterLocation: String
     public let mutualTags: [String]
+    public let encounterCount: Int
     public let segment: ConnectionSegment
 
     public init(
         id: String,
+        userID: String = "",
+        connectionID: String = "",
         displayName: String,
         handle: String,
         avatarUrl: String? = nil,
         initials: String,
         isOnline: Bool,
+        presenceKnown: Bool = true,
         lastActiveRelative: String,
         encounterLocation: String,
         mutualTags: [String] = [],
+        encounterCount: Int = 0,
         segment: ConnectionSegment = .all
     ) {
         self.id = id
+        self.userID = userID
+        self.connectionID = connectionID
         self.displayName = displayName
         self.handle = handle
         self.avatarUrl = avatarUrl
         self.initials = initials
         self.isOnline = isOnline
+        self.presenceKnown = presenceKnown
         self.lastActiveRelative = lastActiveRelative
         self.encounterLocation = encounterLocation
         self.mutualTags = mutualTags
+        self.encounterCount = encounterCount
         self.segment = segment
     }
 }
@@ -64,9 +76,12 @@ public struct ClicksSnapshot: Codable, Equatable, Sendable {
                 case .all:
                     return true
                 case .active:
-                    return item.isOnline || item.lastActiveRelative.contains("m ago") || item.lastActiveRelative.contains("1h ago")
+                    return item.isOnline
+                        || item.lastActiveRelative.contains("Just now")
+                        || item.lastActiveRelative.contains("m ago")
+                        || item.lastActiveRelative.contains("1h ago")
                 case .encounters:
-                    return !item.encounterLocation.isEmpty
+                    return item.encounterCount > 0 || !item.encounterLocation.isEmpty
                 case .circles:
                     return item.segment == .circles
                 }
@@ -87,7 +102,9 @@ extension ClicksSnapshot {
         ClicksSnapshot(
             connections: [
                 ConnectionItem(
-                    id: "usr_marcus",
+                    id: "conn_marcus",
+                    userID: "usr_marcus",
+                    connectionID: "conn_marcus",
                     displayName: "Marcus Vance",
                     handle: "@marcusv",
                     initials: "MV",
@@ -95,10 +112,12 @@ extension ClicksSnapshot {
                     lastActiveRelative: "Active now",
                     encounterLocation: "Sightglass Coffee",
                     mutualTags: ["Coffee", "Producing", "Synthesizers"],
-                    segment: .all
+                    encounterCount: 3
                 ),
                 ConnectionItem(
-                    id: "usr_elena",
+                    id: "conn_elena",
+                    userID: "usr_elena",
+                    connectionID: "conn_elena",
                     displayName: "Elena Rostova",
                     handle: "@erostova",
                     initials: "ER",
@@ -106,10 +125,12 @@ extension ClicksSnapshot {
                     lastActiveRelative: "5m ago",
                     encounterLocation: "Mission Climbing Gym",
                     mutualTags: ["Bouldering", "Hiking", "Techno"],
-                    segment: .active
+                    encounterCount: 2
                 ),
                 ConnectionItem(
-                    id: "usr_sam",
+                    id: "conn_sam",
+                    userID: "usr_sam",
+                    connectionID: "conn_sam",
                     displayName: "Samira Khan",
                     handle: "@samirak",
                     initials: "SK",
@@ -117,10 +138,12 @@ extension ClicksSnapshot {
                     lastActiveRelative: "2h ago",
                     encounterLocation: "Dolores Park Sunset",
                     mutualTags: ["Film Photography", "Reading", "Philosophy"],
-                    segment: .encounters
+                    encounterCount: 1
                 ),
                 ConnectionItem(
-                    id: "usr_jordan",
+                    id: "conn_jordan",
+                    userID: "usr_jordan",
+                    connectionID: "conn_jordan",
                     displayName: "Jordan Reed",
                     handle: "@jreed",
                     initials: "JR",
@@ -128,10 +151,12 @@ extension ClicksSnapshot {
                     lastActiveRelative: "Yesterday",
                     encounterLocation: "Crypto Corner Meetup",
                     mutualTags: ["Hardware", "Rust", "Startups"],
-                    segment: .all
+                    encounterCount: 1
                 ),
                 ConnectionItem(
-                    id: "usr_chloe",
+                    id: "conn_chloe",
+                    userID: "usr_chloe",
+                    connectionID: "conn_chloe",
                     displayName: "Chloe Lin",
                     handle: "@chloelin",
                     initials: "CL",
@@ -139,10 +164,12 @@ extension ClicksSnapshot {
                     lastActiveRelative: "Active now",
                     encounterLocation: "SF Jazz Center",
                     mutualTags: ["Live Shows", "Jazz", "Piano"],
-                    segment: .active
+                    encounterCount: 4
                 ),
                 ConnectionItem(
                     id: "cir_dogpatch",
+                    userID: "",
+                    connectionID: "cir_dogpatch",
                     displayName: "Dogpatch Boulders Circle",
                     handle: "@dogpatch-climb",
                     initials: "DB",

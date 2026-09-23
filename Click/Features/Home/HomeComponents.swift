@@ -40,15 +40,16 @@ public struct HomeSearchPill: View {
 /// Pill chip representing an availability intent ("I'm down for…").
 public struct AvailabilityIntentPill: View {
     let intent: AvailabilityIntent
-    let onToggle: () -> Void
+    let onToggle: (() -> Void)?
 
-    public init(intent: AvailabilityIntent, onToggle: @escaping () -> Void) {
+    public init(intent: AvailabilityIntent, onToggle: (() -> Void)? = nil) {
         self.intent = intent
         self.onToggle = onToggle
     }
 
     public var body: some View {
         Button(action: {
+            guard let onToggle else { return }
             ClickHaptics.selection()
             onToggle()
         }) {
@@ -69,6 +70,7 @@ public struct AvailabilityIntentPill: View {
             )
         }
         .buttonStyle(.plain)
+        .disabled(onToggle == nil)
     }
 }
 
@@ -215,31 +217,44 @@ public struct RecentConnectionRowItem: View {
         self.onTap = onTap
     }
 
+    private var avatarFallback: some View {
+        Circle()
+            .fill(ClickColors.primaryFixed.opacity(0.4))
+            .overlay(
+                Text(connection.initials)
+                    .font(ClickTypography.titleSmall)
+                    .fontWeight(.bold)
+                    .foregroundStyle(ClickColors.primary)
+            )
+    }
+
     public var body: some View {
         Button(action: {
             ClickHaptics.selection()
             onTap()
         }) {
             HStack(spacing: ClickSpacing.md) {
-                // Avatar with Presence Dot
                 ZStack(alignment: .bottomTrailing) {
-                    Circle()
-                        .fill(ClickColors.primaryFixed.opacity(0.4))
-                        .frame(width: 48, height: 48)
-                        .overlay(
-                            Text(connection.initials)
-                                .font(ClickTypography.titleSmall)
-                                .fontWeight(.bold)
-                                .foregroundStyle(ClickColors.primary)
-                        )
+                    Group {
+                        if let raw = connection.avatarUrl, let url = URL(string: raw) {
+                            AsyncImage(url: url) { image in
+                                image.resizable().scaledToFill()
+                            } placeholder: {
+                                avatarFallback
+                            }
+                        } else {
+                            avatarFallback
+                        }
+                    }
+                    .frame(width: 48, height: 48)
+                    .clipShape(Circle())
 
-                    Circle()
-                        .fill(connection.isOnline ? Color(hex: "#10B981") : ClickColors.outline.opacity(0.4))
-                        .frame(width: 12, height: 12)
-                        .overlay(
-                            Circle()
-                                .stroke(ClickColors.background, lineWidth: 2)
-                        )
+                    if connection.presenceKnown {
+                        Circle()
+                            .fill(connection.isOnline ? Color(hex: "#10B981") : ClickColors.outline.opacity(0.4))
+                            .frame(width: 12, height: 12)
+                            .overlay(Circle().stroke(ClickColors.background, lineWidth: 2))
+                    }
                 }
 
                 VStack(alignment: .leading, spacing: ClickSpacing.xxxSmall) {
