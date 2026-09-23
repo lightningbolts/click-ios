@@ -17,7 +17,7 @@ public struct HomeSearchPill: View {
                     .font(.system(size: 16, weight: .medium))
                     .foregroundStyle(ClickColors.textSecondary)
 
-                Text("Search connections, places, circles…")
+                Text("Search people, places, events…")
                     .font(ClickTypography.bodyMedium)
                     .foregroundStyle(ClickColors.textSecondary)
                     .lineLimit(1)
