@@ -1,31 +1,34 @@
 import Foundation
 import Observation
 
-public enum LoadPhase: Sendable {
+public enum LoadPhase: Sendable, Equatable {
     case initial
     case loading
     case loaded
     case failed(String)
 }
 
-/// `@Observable` conversation view model implementing §31.2 specifications.
+/// Single authoritative presentation model for a direct conversation.
 @Observable
 @MainActor
 public final class ConversationModel {
-
-    public let identity: ConversationIdentity
+    public private(set) var identity: ConversationIdentity
     public private(set) var phase: LoadPhase = .initial
     public private(set) var items: [ChatMessageItem] = []
-    public private(set) var isSending: Bool = false
-    public var composerText: String = ""
+    public private(set) var isSending = false
+    public var composerText = ""
     public var replyTarget: ChatMessageItem?
     public var editTarget: ChatMessageItem?
-    public var isPeerTyping: Bool = false
+    public var isPeerTyping = false
+    public var operationError: String?
 
     private let chatRepository: ChatRepositoryProtocol
     private let realtimeManager: ChatRealtimeManager
     private let currentUserID: String
     private let currentUserName: String
+    private var pendingSendCount = 0
+    private var typingActive = false
+    private var typingStopTask: Task<Void, Never>?
 
     public init(
         identity: ConversationIdentity,
@@ -41,8 +44,8 @@ public final class ConversationModel {
         self.currentUserID = currentUserID
         self.currentUserName = currentUserName
 
-        if let initial = initialItems {
-            self.items = initial
+        if let initialItems {
+            self.items = initialItems
             self.phase = .loaded
         }
     }
@@ -54,9 +57,27 @@ public final class ConversationModel {
     // MARK: - Lifecycle
 
     public func onAppear(supabaseURL: URL?, anonKey: String?, authToken: String?) async {
-        if let url = supabaseURL, let key = anonKey {
-            realtimeManager.subscribe(to: identity.chatID, supabaseURL: url, anonKey: key, authToken: authToken)
-            setupRealtimeCallbacks()
+        setupRealtimeCallbacks()
+
+        do {
+            identity.chatID = try await chatRepository.resolveCanonicalChatID(
+                chatID: identity.chatID,
+                connectionID: identity.connectionID
+            )
+        } catch {
+            if items.isEmpty {
+                phase = .failed(error.localizedDescription)
+            }
+            return
+        }
+
+        if let supabaseURL, let anonKey {
+            realtimeManager.subscribe(
+                to: identity.chatID,
+                supabaseURL: supabaseURL,
+                anonKey: anonKey,
+                authToken: authToken
+            )
         }
 
         if items.isEmpty {
@@ -65,13 +86,23 @@ public final class ConversationModel {
     }
 
     public func onDisappear() {
+        typingStopTask?.cancel()
+        typingStopTask = nil
+        if typingActive {
+            realtimeManager.sendTyping(isTyping: false, userID: currentUserID)
+        }
+        typingActive = false
         realtimeManager.teardown()
     }
 
-    // MARK: - Data Loading
+    // MARK: - Data loading
 
     public func loadMessages() async {
-        phase = .loading
+        let hadItems = !items.isEmpty
+        if !hadItems {
+            phase = .loading
+        }
+
         do {
             let fetched = try await chatRepository.fetchMessages(
                 chatID: identity.chatID,
@@ -81,55 +112,58 @@ public final class ConversationModel {
                 cursor: nil,
                 limit: 50
             )
-
-            // Sort chronologically (oldest at top, newest at bottom)
             items = fetched.sorted { $0.createdAt < $1.createdAt }
             phase = .loaded
+            operationError = nil
 
-            // Mark unread messages as read
-            let unreadIDs = items.filter { !$0.isOutgoing && $0.deliveryStatus != .read }.map(\.id)
+            let unreadIDs = items
+                .filter { !$0.isOutgoing && $0.deliveryStatus != .read }
+                .map(\.id)
             if !unreadIDs.isEmpty {
                 try? await chatRepository.markRead(chatID: identity.chatID, messageIDs: unreadIDs)
             }
         } catch {
-            phase = .failed(error.localizedDescription)
+            if items.isEmpty {
+                phase = .failed(error.localizedDescription)
+            } else {
+                operationError = error.localizedDescription
+            }
         }
     }
 
-    // MARK: - Sending & Editing
+    // MARK: - Sending / editing
 
     public func sendOrUpdateMessage() async {
-        let textToSend = composerText.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !textToSend.isEmpty else { return }
+        let text = composerText.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !text.isEmpty else { return }
 
-        // If editing an existing message
-        if let editTarget = editTarget {
-            await applyEdit(target: editTarget, newContent: textToSend)
+        if let editTarget {
+            await applyEdit(target: editTarget, newContent: text)
             return
         }
 
-        // New message send
         let clientID = UUID().uuidString.lowercased()
-        let optimisticItem = ChatMessageItem(
+        let capturedReply = replyTarget
+        let optimistic = ChatMessageItem(
             id: clientID,
             chatID: identity.chatID,
             senderID: currentUserID,
             senderName: currentUserName,
-            content: textToSend,
+            content: text,
             messageType: .text,
             createdAt: Date(),
             deliveryStatus: .sending,
             isOutgoing: true,
-            replyToID: replyTarget?.id,
-            replyToSnippet: replyTarget?.content,
-            replyToSenderName: replyTarget?.senderName
+            replyToID: capturedReply?.id,
+            replyToSnippet: capturedReply?.content,
+            replyToSenderName: capturedReply?.senderName
         )
 
-        items.append(optimisticItem)
+        items.append(optimistic)
         composerText = ""
-        let capturedReply = replyTarget
         replyTarget = nil
-        isSending = true
+        stopTyping()
+        beginSend()
 
         do {
             let serverItem = try await chatRepository.sendMessage(
@@ -138,29 +172,31 @@ public final class ConversationModel {
                 peerUserID: identity.peerUserID,
                 currentUserID: currentUserID,
                 currentUserName: currentUserName,
-                content: textToSend,
+                content: text,
                 replyToID: capturedReply?.id,
                 replyToSnippet: capturedReply?.content,
                 replyToSenderName: capturedReply?.senderName,
                 clientMessageID: clientID
             )
 
-            // Update item in place
             if let index = items.firstIndex(where: { $0.id == clientID }) {
                 items[index] = serverItem
             }
-            isSending = false
+            operationError = nil
         } catch {
             if let index = items.firstIndex(where: { $0.id == clientID }) {
                 items[index].deliveryStatus = .failed
             }
-            isSending = false
+            operationError = error.localizedDescription
         }
+
+        endSend()
     }
 
     public func retrySend(item: ChatMessageItem) async {
         guard let index = items.firstIndex(where: { $0.id == item.id }) else { return }
         items[index].deliveryStatus = .sending
+        beginSend()
 
         do {
             let serverItem = try await chatRepository.sendMessage(
@@ -175,89 +211,234 @@ public final class ConversationModel {
                 replyToSenderName: item.replyToSenderName,
                 clientMessageID: item.id
             )
-            if let idx = items.firstIndex(where: { $0.id == item.id }) {
-                items[idx] = serverItem
+            if let index = items.firstIndex(where: { $0.id == item.id }) {
+                items[index] = serverItem
             }
+            operationError = nil
         } catch {
-            if let idx = items.firstIndex(where: { $0.id == item.id }) {
-                items[idx].deliveryStatus = .failed
+            if let index = items.firstIndex(where: { $0.id == item.id }) {
+                items[index].deliveryStatus = .failed
             }
+            operationError = error.localizedDescription
         }
+
+        endSend()
     }
 
     private func applyEdit(target: ChatMessageItem, newContent: String) async {
         guard let index = items.firstIndex(where: { $0.id == target.id }) else { return }
-        let originalContent = items[index].content
+        let original = items[index]
+
         items[index].content = newContent
         items[index].isEdited = true
         editTarget = nil
         composerText = ""
+        stopTyping()
 
         do {
-            try await chatRepository.editMessage(messageID: target.id, newContent: newContent)
+            try await chatRepository.editMessage(
+                message: original,
+                connectionID: identity.connectionID,
+                peerUserID: identity.peerUserID,
+                currentUserID: currentUserID,
+                newContent: newContent
+            )
+            operationError = nil
         } catch {
-            // Revert on failure
-            items[index].content = originalContent
+            if let currentIndex = items.firstIndex(where: { $0.id == target.id }) {
+                items[currentIndex] = original
+            }
+            operationError = error.localizedDescription
         }
     }
 
     public func deleteMessage(item: ChatMessageItem) async {
-        items.removeAll { $0.id == item.id }
-        try? await chatRepository.deleteMessage(messageID: item.id)
+        guard let index = items.firstIndex(where: { $0.id == item.id }) else { return }
+        let removed = items.remove(at: index)
+
+        do {
+            try await chatRepository.deleteMessage(messageID: item.id)
+            operationError = nil
+        } catch {
+            let safeIndex = min(index, items.count)
+            items.insert(removed, at: safeIndex)
+            operationError = error.localizedDescription
+        }
     }
 
-    public func toggleReaction(item: ChatMessageItem, reactionType: String) {
+    public func toggleReaction(item: ChatMessageItem, reactionType: String) async {
         guard let index = items.firstIndex(where: { $0.id == item.id }) else { return }
-
-        var reactions = items[index].reactions
-        if let rIdx = reactions.firstIndex(where: { $0.reactionType == reactionType }) {
-            if reactions[rIdx].userReacted {
-                reactions[rIdx].count -= 1
-                reactions[rIdx].userReacted = false
-                if reactions[rIdx].count <= 0 {
-                    reactions.remove(at: rIdx)
-                }
-            } else {
-                reactions[rIdx].count += 1
-                reactions[rIdx].userReacted = true
-            }
-        } else {
-            reactions.append(ReactionSummary(reactionType: reactionType, count: 1, userReacted: true))
+        let original = items[index].reactions
+        let adding = !original.contains {
+            $0.reactionType == reactionType && $0.userReacted
         }
 
-        items[index].reactions = reactions
+        items[index].reactions = Self.mutatedReactions(
+            original,
+            reactionType: reactionType,
+            adding: adding
+        )
+
+        do {
+            try await chatRepository.setReaction(
+                messageID: item.id,
+                reactionType: reactionType,
+                adding: adding
+            )
+            operationError = nil
+        } catch {
+            if let currentIndex = items.firstIndex(where: { $0.id == item.id }) {
+                items[currentIndex].reactions = original
+            }
+            operationError = error.localizedDescription
+        }
     }
 
-    public func setTyping(isTyping: Bool) {
-        realtimeManager.sendTyping(isTyping: isTyping, userID: currentUserID)
+    private static func mutatedReactions(
+        _ source: [ReactionSummary],
+        reactionType: String,
+        adding: Bool
+    ) -> [ReactionSummary] {
+        var reactions = source
+        if let index = reactions.firstIndex(where: { $0.reactionType == reactionType }) {
+            if adding {
+                guard !reactions[index].userReacted else { return reactions }
+                reactions[index].count += 1
+                reactions[index].userReacted = true
+            } else {
+                guard reactions[index].userReacted else { return reactions }
+                reactions[index].count -= 1
+                reactions[index].userReacted = false
+                if reactions[index].count <= 0 {
+                    reactions.remove(at: index)
+                }
+            }
+        } else if adding {
+            reactions.append(
+                ReactionSummary(
+                    reactionType: reactionType,
+                    count: 1,
+                    userReacted: true
+                )
+            )
+        }
+        return reactions
     }
 
-    // MARK: - Realtime Callbacks
+    // MARK: - Typing
+
+    public func noteTypingActivity(hasText: Bool) {
+        typingStopTask?.cancel()
+
+        guard hasText else {
+            stopTyping()
+            return
+        }
+
+        if !typingActive {
+            typingActive = true
+            realtimeManager.sendTyping(isTyping: true, userID: currentUserID)
+        }
+
+        typingStopTask = Task { [weak self] in
+            try? await Task.sleep(for: .seconds(2.5))
+            guard !Task.isCancelled else { return }
+            await MainActor.run {
+                self?.stopTyping()
+            }
+        }
+    }
+
+    private func stopTyping() {
+        typingStopTask?.cancel()
+        typingStopTask = nil
+        guard typingActive else { return }
+        typingActive = false
+        realtimeManager.sendTyping(isTyping: false, userID: currentUserID)
+    }
+
+    private func beginSend() {
+        pendingSendCount += 1
+        isSending = pendingSendCount > 0
+    }
+
+    private func endSend() {
+        pendingSendCount = max(0, pendingSendCount - 1)
+        isSending = pendingSendCount > 0
+    }
+
+    // MARK: - Realtime
 
     private func setupRealtimeCallbacks() {
         realtimeManager.onMessageInserted = { [weak self] payload in
             Task { @MainActor in
-                guard let self = self, payload.chatID == self.identity.chatID else { return }
-                guard !self.items.contains(where: { $0.id == payload.id }) else { return }
-
-                let item = ChatMessageItem(
-                    id: payload.id,
-                    chatID: payload.chatID,
-                    senderID: payload.senderID,
-                    senderName: self.identity.peerDisplayName,
-                    content: payload.content,
-                    messageType: MessageType(rawValue: payload.messageType) ?? .text,
-                    createdAt: Date(timeIntervalSince1970: Double(payload.timeCreated) / 1000.0),
-                    deliveryStatus: .delivered,
-                    isOutgoing: false
-                )
-                self.items.append(item)
+                await self?.ingestRealtime(payload, replacingExisting: false)
             }
+        }
+
+        realtimeManager.onMessageUpdated = { [weak self] payload in
+            Task { @MainActor in
+                await self?.ingestRealtime(payload, replacingExisting: true)
+            }
+        }
+
+        realtimeManager.onMessageDeleted = { [weak self] messageID in
+            Task { @MainActor in
+                self?.items.removeAll { $0.id == messageID }
+            }
+        }
+
+        realtimeManager.onTypingChanged = { [weak self] userIDs in
+            Task { @MainActor in
+                guard let self else { return }
+                self.isPeerTyping = userIDs.contains(self.identity.peerUserID)
+            }
+        }
+    }
+
+    private func ingestRealtime(
+        _ payload: RealtimeMessagePayload,
+        replacingExisting: Bool
+    ) async {
+        guard payload.chatID == identity.chatID else { return }
+
+        do {
+            let decoded = try await chatRepository.decodeRealtimeMessage(
+                payload,
+                connectionID: identity.connectionID,
+                peerUserID: identity.peerUserID,
+                peerDisplayName: identity.peerDisplayName,
+                currentUserID: currentUserID
+            )
+
+            if let index = items.firstIndex(where: { $0.id == decoded.id }) {
+                var replacement = decoded
+                if replacement.reactions.isEmpty {
+                    replacement.reactions = items[index].reactions
+                }
+                items[index] = replacement
+            } else if !replacingExisting {
+                items.append(decoded)
+                items.sort { $0.createdAt < $1.createdAt }
+            }
+
+            if !decoded.isOutgoing {
+                try? await chatRepository.markDelivered(
+                    chatID: identity.chatID,
+                    messageIDs: [decoded.id]
+                )
+                try? await chatRepository.markRead(
+                    chatID: identity.chatID,
+                    messageIDs: [decoded.id]
+                )
+            }
+        } catch {
+            operationError = error.localizedDescription
         }
     }
 }
 
-// MARK: - Preview Fixture Extension
+// MARK: - Preview fixtures
 
 extension ConversationModel {
     public static var preview: ConversationModel {
@@ -309,7 +490,7 @@ extension ConversationModel {
                 chatID: "preview-chat-1",
                 senderID: "user-self",
                 senderName: "You",
-                content: "Sounds perfect! Let's meet at Ritual Coffee at 3:30 PM.",
+                content: "Sounds perfect! Let’s meet at Ritual Coffee at 3:30 PM.",
                 createdAt: Calendar.current.date(byAdding: .minute, value: -2, to: Date())!,
                 deliveryStatus: .delivered,
                 isOutgoing: true,
@@ -320,11 +501,9 @@ extension ConversationModel {
             )
         ]
 
-        let repo = PreviewChatRepo(initial: initial)
-
         return ConversationModel(
             identity: identity,
-            chatRepository: repo,
+            chatRepository: PreviewChatRepo(initial: initial),
             currentUserID: "user-self",
             currentUserName: "Alex",
             initialItems: initial
@@ -335,13 +514,77 @@ extension ConversationModel {
 private struct PreviewChatRepo: ChatRepositoryProtocol {
     let initial: [ChatMessageItem]
 
-    func fetchMessages(chatID: String, connectionID: String?, peerUserID: String, currentUserID: String, cursor: Int64?, limit: Int) async throws -> [ChatMessageItem] { initial }
-    func sendMessage(chatID: String, connectionID: String?, peerUserID: String, currentUserID: String, currentUserName: String, content: String, replyToID: String?, replyToSnippet: String?, replyToSenderName: String?, clientMessageID: String) async throws -> ChatMessageItem {
-        ChatMessageItem(id: clientMessageID, chatID: chatID, senderID: currentUserID, senderName: currentUserName, content: content, deliveryStatus: .delivered, isOutgoing: true)
+    func resolveCanonicalChatID(chatID: String, connectionID: String?) async throws -> String {
+        chatID
     }
-    func editMessage(messageID: String, newContent: String) async throws {}
+
+    func fetchMessages(
+        chatID: String,
+        connectionID: String?,
+        peerUserID: String,
+        currentUserID: String,
+        cursor: Int64?,
+        limit: Int
+    ) async throws -> [ChatMessageItem] {
+        initial
+    }
+
+    func sendMessage(
+        chatID: String,
+        connectionID: String?,
+        peerUserID: String,
+        currentUserID: String,
+        currentUserName: String,
+        content: String,
+        replyToID: String?,
+        replyToSnippet: String?,
+        replyToSenderName: String?,
+        clientMessageID: String
+    ) async throws -> ChatMessageItem {
+        ChatMessageItem(
+            id: clientMessageID,
+            chatID: chatID,
+            senderID: currentUserID,
+            senderName: currentUserName,
+            content: content,
+            deliveryStatus: .delivered,
+            isOutgoing: true,
+            replyToID: replyToID,
+            replyToSnippet: replyToSnippet,
+            replyToSenderName: replyToSenderName
+        )
+    }
+
+    func editMessage(
+        message: ChatMessageItem,
+        connectionID: String?,
+        peerUserID: String,
+        currentUserID: String,
+        newContent: String
+    ) async throws {}
+
     func deleteMessage(messageID: String) async throws {}
+    func setReaction(messageID: String, reactionType: String, adding: Bool) async throws {}
     func markRead(chatID: String, messageIDs: [String]) async throws {}
     func markDelivered(chatID: String, messageIDs: [String]) async throws {}
     func registerDevice() async throws {}
+
+    func decodeRealtimeMessage(
+        _ payload: RealtimeMessagePayload,
+        connectionID: String?,
+        peerUserID: String,
+        peerDisplayName: String,
+        currentUserID: String
+    ) async throws -> ChatMessageItem {
+        ChatMessageItem(
+            id: payload.id,
+            chatID: payload.chatID,
+            senderID: payload.senderID,
+            senderName: peerDisplayName,
+            content: payload.content,
+            createdAt: Date(timeIntervalSince1970: Double(payload.timeCreated) / 1000.0),
+            deliveryStatus: .delivered,
+            isOutgoing: payload.senderID == currentUserID
+        )
+    }
 }
