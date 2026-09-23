@@ -8,19 +8,37 @@ public struct RootGateView: View {
 
     public var body: some View {
         Group {
-            switch env.session.state {
-            case .restoring:
-                LaunchLoadingView()
-            case .unauthenticated, .terminalError:
-                if CommandLine.arguments.contains("-preview-signup") {
-                    AuthView(initialMode: .signUp)
-                } else {
-                    AuthView(initialMode: .signIn)
+            if CommandLine.arguments.contains("-preview-chat") {
+                NavigationStack {
+                    ChatView(model: .preview)
                 }
-            case .profileBasicsRequired(let userId):
-                ProfileBasicsGateView(userId: userId)
-            case .authenticated(let snapshot), .refreshing(let snapshot), .offlineAuthenticated(let snapshot):
-                AuthenticatedGateView(snapshot: snapshot)
+            } else if CommandLine.arguments.contains("-preview-clicks") {
+                NavigationStack {
+                    ClicksView(initialSnapshot: .preview)
+                }
+            } else if CommandLine.arguments.contains("-preview-home") {
+                NavigationStack {
+                    HomeView(initialSnapshot: .preview)
+                }
+            } else if CommandLine.arguments.contains("-preview-profile") {
+                NavigationStack {
+                    ProfileView(initialProfile: .preview)
+                }
+            } else {
+                switch env.session.state {
+                case .restoring:
+                    LaunchLoadingView()
+                case .unauthenticated, .terminalError:
+                    if CommandLine.arguments.contains("-preview-signup") {
+                        AuthView(initialMode: .signUp)
+                    } else {
+                        AuthView(initialMode: .signIn)
+                    }
+                case .profileBasicsRequired(let userId):
+                    ProfileBasicsGateView(userId: userId)
+                case .authenticated(let snapshot), .refreshing(let snapshot), .offlineAuthenticated(let snapshot):
+                    AuthenticatedGateView(snapshot: snapshot)
+                }
             }
         }
         .animation(ClickMotion.subtleFade, value: env.session.state)
@@ -36,7 +54,11 @@ private struct AuthenticatedGateView: View {
         let coordinator = env.onboardingCoordinator(for: snapshot.userId)
 
         Group {
-            if CommandLine.arguments.contains("-preview-home") {
+            if CommandLine.arguments.contains("-preview-chat") {
+                NavigationStack {
+                    ChatView(model: .preview)
+                }
+            } else if CommandLine.arguments.contains("-preview-home") {
                 NavigationStack {
                     HomeView(initialSnapshot: .preview)
                 }
@@ -131,6 +153,15 @@ public struct MainTabShellView: View {
                             switch route {
                             case .userProfile(let userID, let connectionID):
                                 ProfileView(userID: userID, connectionID: connectionID)
+                            case .chat(let route):
+                                ChatView(
+                                    model: ConversationModel(
+                                        identity: route.conversationIdentity,
+                                        chatRepository: env.chat,
+                                        currentUserID: env.session.currentSession?.userId ?? "",
+                                        currentUserName: "You"
+                                    )
+                                )
                             default:
                                 FeedPlaceholderView(title: "Coming Soon")
                             }
@@ -150,6 +181,7 @@ public struct MainTabShellView: View {
                 }
             }
         }
+        .tint(ClickColors.primary)
     }
 }
 

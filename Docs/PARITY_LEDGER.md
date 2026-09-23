@@ -12,7 +12,7 @@ Tracks implementation, testing, and parity status of every reachable Click flow.
 | F04 | Typed Routing & Deep Links | N/A | `AppRouter` | Per-tab paths, pending intent, connection invocation, event/hub routes | Yes (unit) | Pending | P0 PARITY | `/c/*` routes to Add Click and preserves `token/qr_token/qt`, expiry/issued-at seconds or ms, and `venue_id`. |
 | F05 | API Client Foundation | `/api/*` | `ClickAPIClient` | Bearer injection, 401 refresh, exactly-one retry, HTTP error taxonomy | Yes (unit) | Pending | P0 PARITY | Single-flight behavior is provided by `SessionController.refreshSession`; multi-request concurrency still merits an integration test. |
 | F06 | App Clip Shell | `/c/{uuid}` | `ClickClip` | Target/shell only | Pending | Pending | P0 COMPATIBILITY | Full invocation/redeem path is later work. |
-| F07 | Notification Service Shell | APNs payload | `NotificationService` | Target/fallback shell only | Pending | Pending | P0 COMPATIBILITY | Encrypted preview compatibility remains later work. |
+| F07 | Notification Service Extension | APNs payload | `NotificationService` | Category inspection, legacy v1 preview decrypt, privacy-safe fallback for v2/unknown payloads | Pending | Pending | P0 COMPATIBILITY | V2 preview decryption is intentionally not claimed until extension-safe epoch-key access is implemented and device-tested. |
 | F08 | Supabase Auth Service | Supabase Auth `/auth/v1/*` | `SupabaseAuthService`, `AuthView` | Email/password, verification-required signup, Apple ID-token exchange, Google OAuth callback session, refresh | Partial | Pending | P0 PARITY | Password rules are tested; provider exchanges require staging/device verification. |
 | F09 | Session Controller & Restore Policy | Supabase Auth + self profile | `SessionController` | Restore, freshness check, refresh, offline identity, hard-auth eviction, profile gate, sign out | Partial | Pending | P0 PARITY | Critical state transitions are implemented but still need dedicated mocked integration tests and physical update-install validation. |
 | F10 | Profile Basics Gate & Sync | `GET/PATCH /api/users/{userId}/profile` | `ProfileBasicsGateView`, `SessionController` | Server-derived gate, 13+ validation, durable PATCH | Partial | Pending | P0 PARITY | Endpoint contract verified against click-web; device/staging round-trip not yet verified. |
@@ -21,8 +21,27 @@ Tracks implementation, testing, and parity status of every reachable Click flow.
 | F13 | Native Camera & Avatar Upload | `POST /api/user/avatar` | `AvatarService`, `NativeCameraPicker` | Capture/library, normalize/downsample, JPEG <=2MB, upload | Partial (image processing) | Pending | P0 PARITY | Real camera + authenticated upload must be tested on device. |
 | F14 | Privacy Contact Discovery | `POST /api/contacts/discover`, `POST /api/connections/prior/request` | `ContactDiscoveryService`, `PriorConnectionsView` | Phone/email normalization, SHA-256, match display, known-since, request | Partial (normalization/hash) | Pending | P0 PARITY | Privacy disclosure now matches behavior; real Contacts permission and backend matching require device/staging validation. |
 | F15 | Onboarding Flow & Server Reconciliation | `GET/PATCH /api/users/{userId}/profile` | `OnboardingRepository`, `OnboardingCoordinator` | Welcome, Interests, Personality, Avatar, Prior Connections, loading/error/retry, returning-user reconciliation | Partial (state-machine/unit) | Pending | P0 PARITY | Server saves are implemented; full returning-user/new-user flows still need staging/device verification. |
+| F16 | End-to-End Encryption (V1 & V2) | `/api/chat/devices`, `/api/chat/epochs` | `ClickCryptoV1`, `ClickCryptoV2`, `DeviceIdentityVault`, `ChatRepository` | V1 legacy decrypt/write; V2 device discovery/registration, epoch discovery/create/rotate, recipient unwrap, envelope encrypt/decrypt, fail-closed writes | Yes (primitive unit coverage) | Pending | P0 PARITY | Crypto primitives are covered; Android/web cross-client fixtures, existing-device historical-key transfer, and physical update-install compatibility are still merge/release gates. |
+| F17 | Direct Chat Messaging API | `/api/chat/messages`, `/api/chat/reactions` | `ChatRepository`, `ConversationModel` | Canonical chat resolution, fetch/send, encrypted edits, soft delete, persisted reactions, read/delivery, rollback-safe optimistic mutations | Yes (model unit coverage) | Pending | P0 PARITY | Plaintext fallback was removed. Live backend roundtrip and cross-client crypto compatibility remain unverified. |
+| F18 | Realtime Message Streaming & Presence | Supabase Realtime WebSocket | `ChatRealtimeManager` | Phoenix join/heartbeat/reconnect, postgres insert/update/delete, typing broadcast/decay, decrypted realtime ingestion | Partial | Pending | P0 PARITY | Requires staging socket verification with token refresh/rebind and two real clients; no simulator-only claim is treated as transport verification. |
+| F19 | Direct Chat UI & Interactions | N/A (SwiftUI Interface) | `ChatView`, `ConversationModel`, `MessageBubbleView`, `ChatComposerView` | Native push/pop and interactive back, hidden tab chrome in chat, date separators, receipts, direction-locked swipe reply, context menu/reactions, reply/edit composer, interactive keyboard dismissal, near-bottom scroll ownership | Partial | Pending | P1 QUALITY / P0 PARITY | Preview screenshots are not treated as quality verification. Physical-device gesture, keyboard, frame-pacing, VoiceOver, and rapid-scroll validation remain required. |
+| F20 | Standard APNs Registration & Routing | `POST /api/user/push-tokens` + APNs payload | `ClickAppDelegate`, `ClickNotificationCoordinator` | Existing-permission re-registration, secure pre-auth token queue, standard-token upload, user-scope protection, typed chat/event/hub/connection routing | Partial | Pending | P0 PARITY | Permission is not prompted on launch. APNs token rotation, notification tap routing, and foreground behavior require device verification. |
 
-## Phase 0-2 merge gate
+## Phase 4 Direct Chat merge gate
+
+Before the corrective Phase 4 PR is merged:
+- [ ] GitHub CI build succeeds on the corrective branch.
+- [ ] GitHub CI unit tests pass on the corrective branch.
+- [ ] Legacy v1 direct history decrypts against a current production/staging fixture.
+- [ ] Existing v2 direct history decrypts after an in-place KMP -> native update.
+- [ ] Native v2 current write decrypts in the Android/current-client fixture harness.
+- [ ] Staging realtime send/receive/read/delivery/typing roundtrip works between two accounts.
+- [ ] Reaction/edit/delete persist after reload and propagate to the peer.
+- [ ] Native edge-back, keyboard dismissal, swipe-reply, long-press menu, and timeline scroll ownership are device-tested.
+- [ ] Standard APNs token registration and chat notification routing are device-tested.
+- [ ] Chat frame pacing is measured on first open, warm open, keyboard presentation, rapid scroll, and pop-back.
+
+A screenshot is evidence of appearance only; it is not a parity, transport, gesture, or performance verification.
 
 Before PR #1 is considered verified rather than merely implemented:
 

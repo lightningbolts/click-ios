@@ -1,6 +1,9 @@
 import SwiftUI
 
-/// Phase 3 native Clicks directory backed by authenticated connection data.
+/// Native Clicks inbox backed by authenticated connection data.
+///
+/// The root deliberately uses native large-title/search behavior and a flat inbox hierarchy rather
+/// than stacking card-on-card surfaces.
 public struct ClicksView: View {
     @Environment(AppEnvironment.self) private var env
     @State private var snapshot: ClicksSnapshot?
@@ -18,98 +21,152 @@ public struct ClicksView: View {
 
     public var body: some View {
         VStack(spacing: 0) {
-            VStack(spacing: ClickSpacing.sm) {
-                if refreshError != nil {
-                    HStack(spacing: ClickSpacing.xs) {
-                        Image(systemName: "wifi.exclamationmark")
-                        Text("Showing your last saved Clicks")
-                        Spacer()
-                        Button("Retry") { Task { await refresh() } }
-                    }
-                    .font(ClickTypography.labelMedium)
-                    .foregroundStyle(ClickColors.textSecondary)
-                }
+            if refreshError != nil {
+                cachedBanner
+                    .padding(.horizontal, 16)
+                    .padding(.top, 4)
+            }
 
-                HStack(spacing: ClickSpacing.sm) {
-                    Image(systemName: "magnifyingglass")
-                        .foregroundStyle(ClickColors.outline)
-                    TextField("Filter by name, handle, place, or interest…", text: $searchQuery)
-                        .font(ClickTypography.bodyMedium)
-                    if !searchQuery.isEmpty {
-                        Button {
-                            searchQuery = ""
-                        } label: {
-                            Image(systemName: "xmark.circle.fill")
-                                .foregroundStyle(ClickColors.outline)
-                        }
-                    }
-                }
-                .padding(.horizontal, ClickSpacing.md)
+            segmentControl
+                .padding(.horizontal, 16)
                 .padding(.vertical, 10)
-                .background(ClickColors.surfaceContainerLow)
-                .clipShape(RoundedRectangle(cornerRadius: ClickSpacing.radiusInput))
 
-                HStack(spacing: ClickSpacing.xs) {
-                    ForEach(ConnectionSegment.allCases) { segment in
-                        let selected = segment == selectedSegment
-                        Button {
-                            ClickHaptics.selection()
-                            selectedSegment = segment
-                        } label: {
-                            Text(segment.rawValue)
-                                .font(ClickTypography.labelMedium)
-                                .fontWeight(selected ? .bold : .medium)
-                                .frame(maxWidth: .infinity)
-                                .padding(.vertical, 8)
-                                .background(selected ? ClickColors.primary : ClickColors.surfaceContainerLow)
-                                .foregroundStyle(selected ? ClickColors.onPrimary : ClickColors.textPrimary)
-                                .clipShape(Capsule())
-                        }
-                        .buttonStyle(.plain)
-                    }
-                }
-            }
-            .padding(.horizontal, ClickSpacing.lg)
-            .padding(.top, ClickSpacing.sm)
-            .padding(.bottom, ClickSpacing.sm)
+            Divider()
+                .overlay(ClickColors.quietBorder.opacity(0.7))
 
-            if snapshot == nil {
-                Spacer()
-                ProgressView()
-                Spacer()
-            } else if filteredConnections.isEmpty {
-                EmptyConnectionsStateView(segment: selectedSegment, query: searchQuery)
-            } else {
-                ScrollView {
-                    LazyVStack(spacing: ClickSpacing.sm) {
-                        ForEach(filteredConnections) { connection in
-                            ConnectionCard(connection: connection) {
-                                guard !connection.userID.isEmpty else { return }
-                                env.router.connectionsPath.append(
-                                    .userProfile(
-                                        userID: connection.userID,
-                                        connectionID: connection.connectionID.isEmpty ? nil : connection.connectionID
-                                    )
-                                )
-                            }
-                        }
-                    }
-                    .padding(.horizontal, ClickSpacing.lg)
-                    .padding(.top, ClickSpacing.xs)
-                    .padding(.bottom, ClickSpacing.xxl)
-                }
-                .refreshable { await refresh() }
-            }
+            content
         }
         .background(ClickColors.background.ignoresSafeArea())
         .navigationTitle("Clicks")
-        .navigationBarTitleDisplayMode(.inline)
+        .navigationBarTitleDisplayMode(.large)
+        .searchable(
+            text: $searchQuery,
+            placement: .navigationBarDrawer(displayMode: .always),
+            prompt: "Search names, places, interests"
+        )
+        .tint(ClickColors.primary)
         .task { await bootstrap() }
+    }
+
+    @ViewBuilder
+    private var content: some View {
+        if snapshot == nil {
+            VStack(spacing: 10) {
+                Spacer()
+                ProgressView()
+                    .tint(ClickColors.primary)
+                Text("Loading Clicks…")
+                    .font(ClickTypography.bodySmall)
+                    .foregroundStyle(ClickColors.textSecondary)
+                Spacer()
+            }
+        } else if filteredConnections.isEmpty {
+            ContentUnavailableView {
+                Label(
+                    searchQuery.isEmpty
+                        ? "No \(selectedSegment.rawValue) Clicks"
+                        : "No matching Clicks",
+                    systemImage: searchQuery.isEmpty ? "person.2" : "magnifyingglass"
+                )
+            } description: {
+                Text(
+                    searchQuery.isEmpty
+                        ? "Connections in this view will appear here."
+                        : "Try another name, place, handle, or interest."
+                )
+            }
+        } else {
+            ScrollView {
+                LazyVStack(spacing: 0) {
+                    ForEach(filteredConnections) { connection in
+                        ConnectionRow(
+                            connection: connection,
+                            onOpenChat: {
+                                guard !connection.userID.isEmpty else { return }
+                                ClickHaptics.selection()
+                                env.router.connectionsPath.append(
+                                    .chat(
+                                        DirectChatRoute(
+                                            chatID: nil,
+                                            connectionID: connection.connectionID,
+                                            peerUserID: connection.userID,
+                                            peerDisplayName: connection.displayName,
+                                            peerHandle: connection.handle,
+                                            peerAvatarURL: connection.avatarUrl,
+                                            isOnline: connection.isOnline,
+                                            lastActiveText: connection.lastActiveRelative
+                                        )
+                                    )
+                                )
+                            },
+                            onOpenProfile: {
+                                guard !connection.userID.isEmpty else { return }
+                                ClickHaptics.selection()
+                                env.router.connectionsPath.append(
+                                    .userProfile(
+                                        userID: connection.userID,
+                                        connectionID: connection.connectionID.isEmpty
+                                            ? nil
+                                            : connection.connectionID
+                                    )
+                                )
+                            }
+                        )
+
+                        if connection.id != filteredConnections.last?.id {
+                            Divider()
+                                .overlay(ClickColors.quietBorder.opacity(0.62))
+                                .padding(.leading, 76)
+                        }
+                    }
+                }
+                .padding(.bottom, 24)
+            }
+            .refreshable { await refresh() }
+        }
+    }
+
+    private var segmentControl: some View {
+        Picker("Connection filter", selection: $selectedSegment) {
+            ForEach(ConnectionSegment.allCases) { segment in
+                Text(segment.rawValue)
+                    .tag(segment)
+            }
+        }
+        .pickerStyle(.segmented)
+        .tint(ClickColors.primary)
+        .onChange(of: selectedSegment) { _, _ in
+            ClickHaptics.selection()
+        }
+    }
+
+    private var cachedBanner: some View {
+        HStack(spacing: 8) {
+            Image(systemName: "wifi.exclamationmark")
+                .font(.system(size: 12, weight: .semibold))
+
+            Text("Showing saved Clicks")
+                .font(ClickTypography.captionSmall)
+
+            Spacer()
+
+            Button("Retry") {
+                Task { await refresh() }
+            }
+            .font(ClickTypography.captionSmall)
+        }
+        .foregroundStyle(ClickColors.textSecondary)
+        .padding(.horizontal, 12)
+        .padding(.vertical, 8)
+        .background(ClickColors.surfaceContainerLow)
+        .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
     }
 
     @MainActor
     private func bootstrap() async {
-        guard snapshot == nil, let userID = env.session.currentSession?.userId else { return }
+        guard snapshot == nil,
+              let userID = env.session.currentSession?.userId else { return }
+
         if let cached = await env.phase3.cachedClicks(for: userID) {
             snapshot = cached
         }
@@ -119,6 +176,7 @@ public struct ClicksView: View {
     @MainActor
     private func refresh() async {
         guard let userID = env.session.currentSession?.userId else { return }
+
         do {
             snapshot = try await env.phase3.refreshClicks(for: userID)
             refreshError = nil
@@ -128,125 +186,139 @@ public struct ClicksView: View {
     }
 }
 
-private struct ConnectionCard: View {
+private struct ConnectionRow: View {
     let connection: ConnectionItem
-    let onTap: () -> Void
-
-    private var avatarFallback: some View {
-        Circle()
-            .fill(ClickColors.primaryFixed.opacity(0.4))
-            .overlay(
-                Text(connection.initials)
-                    .font(ClickTypography.titleSmall)
-                    .fontWeight(.bold)
-                    .foregroundStyle(ClickColors.primary)
-            )
-    }
+    let onOpenChat: () -> Void
+    let onOpenProfile: () -> Void
 
     var body: some View {
-        Button {
-            ClickHaptics.selection()
-            onTap()
-        } label: {
-            VStack(alignment: .leading, spacing: ClickSpacing.sm) {
-                HStack(spacing: ClickSpacing.md) {
-                    ZStack(alignment: .bottomTrailing) {
-                        Group {
-                            if let raw = connection.avatarUrl, let url = URL(string: raw) {
-                                AsyncImage(url: url) { image in
-                                    image.resizable().scaledToFill()
-                                } placeholder: {
-                                    avatarFallback
-                                }
-                            } else {
-                                avatarFallback
+        HStack(spacing: 12) {
+            Button(action: onOpenProfile) {
+                avatar
+            }
+            .buttonStyle(.plain)
+            .accessibilityLabel("Open \(connection.displayName) profile")
+
+            Button(action: onOpenChat) {
+                HStack(alignment: .top, spacing: 10) {
+                    VStack(alignment: .leading, spacing: 4) {
+                        HStack(spacing: 7) {
+                            Text(connection.displayName)
+                                .font(ClickTypography.titleMedium)
+                                .foregroundStyle(ClickColors.textPrimary)
+                                .lineLimit(1)
+
+                            if !connection.handle.isEmpty {
+                                Text(connection.handle)
+                                    .font(ClickTypography.bodySmall)
+                                    .foregroundStyle(ClickColors.textSecondary)
+                                    .lineLimit(1)
                             }
                         }
-                        .frame(width: 48, height: 48)
-                        .clipShape(Circle())
 
-                        if connection.presenceKnown {
-                            Circle()
-                                .fill(connection.isOnline ? Color(hex: "#10B981") : ClickColors.outline.opacity(0.4))
-                                .frame(width: 12, height: 12)
-                                .overlay(Circle().stroke(ClickColors.background, lineWidth: 2))
-                        }
+                        metadataLine
                     }
 
-                    VStack(alignment: .leading, spacing: ClickSpacing.xxxSmall) {
-                        Text(connection.displayName)
-                            .font(ClickTypography.titleSmall)
-                            .fontWeight(.semibold)
-                            .foregroundStyle(ClickColors.textPrimary)
+                    Spacer(minLength: 8)
 
-                        if !connection.handle.isEmpty {
-                            Text(connection.handle)
-                                .font(ClickTypography.bodySmall)
-                                .foregroundStyle(ClickColors.textSecondary)
-                        }
-                    }
-
-                    Spacer()
-
-                    VStack(alignment: .trailing, spacing: ClickSpacing.xxxSmall) {
+                    VStack(alignment: .trailing, spacing: 7) {
                         if !connection.lastActiveRelative.isEmpty {
                             Text(connection.lastActiveRelative)
-                                .font(ClickTypography.labelSmall)
-                                .foregroundStyle(ClickColors.textSecondary)
+                                .font(ClickTypography.microcopy)
+                                .foregroundStyle(
+                                    connection.isOnline
+                                        ? ClickColors.primary
+                                        : ClickColors.textSecondary
+                                )
+                                .lineLimit(1)
                         }
 
                         Image(systemName: "chevron.right")
                             .font(.system(size: 12, weight: .semibold))
-                            .foregroundStyle(ClickColors.outline)
+                            .foregroundStyle(ClickColors.tertiaryLabel)
                     }
                 }
+                .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+        }
+        .padding(.horizontal, 16)
+        .padding(.vertical, 11)
+        .background(ClickColors.background)
+    }
 
-                HStack(spacing: ClickSpacing.xs) {
-                    if !connection.encounterLocation.isEmpty {
-                        HStack(spacing: ClickSpacing.xxs) {
-                            Image(systemName: "mappin")
-                                .font(.system(size: 10))
-                            Text(connection.encounterLocation)
-                                .font(ClickTypography.labelSmall)
-                        }
-                        .foregroundStyle(ClickColors.textSecondary)
-                    }
+    @ViewBuilder
+    private var metadataLine: some View {
+        HStack(spacing: 5) {
+            if !connection.encounterLocation.isEmpty {
+                Image(systemName: "mappin")
+                    .font(.system(size: 10, weight: .semibold))
 
-                    ForEach(connection.mutualTags.prefix(2), id: \.self) { tag in
-                        Text(tag)
-                            .font(ClickTypography.labelSmall)
-                            .foregroundStyle(ClickColors.primary)
+                Text(connection.encounterLocation)
+                    .lineLimit(1)
+            }
+
+            if !connection.encounterLocation.isEmpty,
+               !connection.mutualTags.isEmpty {
+                Text("·")
+            }
+
+            if let firstTag = connection.mutualTags.first {
+                Text(firstTag)
+                    .lineLimit(1)
+            }
+
+            if connection.mutualTags.count > 1 {
+                Text("+\(connection.mutualTags.count - 1)")
+                    .foregroundStyle(ClickColors.primary)
+            }
+        }
+        .font(ClickTypography.bodySmall)
+        .foregroundStyle(ClickColors.textSecondary)
+    }
+
+    private var avatar: some View {
+        ZStack(alignment: .bottomTrailing) {
+            Group {
+                if let raw = connection.avatarUrl,
+                   let url = URL(string: raw) {
+                    AsyncImage(url: url) { image in
+                        image
+                            .resizable()
+                            .scaledToFill()
+                    } placeholder: {
+                        fallbackAvatar
                     }
+                } else {
+                    fallbackAvatar
                 }
             }
-            .padding(ClickSpacing.md)
-            .background(ClickColors.surfaceContainerLow)
-            .clipShape(RoundedRectangle(cornerRadius: ClickSpacing.radiusCard))
+            .frame(width: 50, height: 50)
+            .clipShape(Circle())
+
+            if connection.presenceKnown {
+                Circle()
+                    .fill(
+                        connection.isOnline
+                            ? ClickColors.statusOnline
+                            : ClickColors.statusOffline
+                    )
+                    .frame(width: 12, height: 12)
+                    .overlay {
+                        Circle()
+                            .stroke(ClickColors.background, lineWidth: 2)
+                    }
+            }
         }
-        .buttonStyle(.plain)
     }
-}
 
-private struct EmptyConnectionsStateView: View {
-    let segment: ConnectionSegment
-    let query: String
-
-    var body: some View {
-        VStack(spacing: ClickSpacing.md) {
-            Spacer()
-            Image(systemName: "person.2.slash")
-                .font(.system(size: 48))
-                .foregroundStyle(ClickColors.outline)
-            Text(query.isEmpty ? "No \(segment.rawValue) Clicks" : "No results for “\(query)”")
-                .font(ClickTypography.titleMedium)
-                .fontWeight(.bold)
-                .foregroundStyle(ClickColors.textPrimary)
-            Text(query.isEmpty ? "New connections will appear here." : "Try a different name, place, or interest.")
-                .font(ClickTypography.bodySmall)
-                .foregroundStyle(ClickColors.textSecondary)
-                .multilineTextAlignment(.center)
-            Spacer()
-        }
-        .padding(.horizontal, ClickSpacing.lg)
+    private var fallbackAvatar: some View {
+        Circle()
+            .fill(ClickColors.primaryFixed.opacity(0.48))
+            .overlay {
+                Text(connection.initials)
+                    .font(ClickTypography.titleSmall)
+                    .foregroundStyle(ClickColors.primary)
+            }
     }
 }

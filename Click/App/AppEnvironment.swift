@@ -13,6 +13,7 @@ public final class AppEnvironment {
     public let avatarService: AvatarService
     public let onboardingRepository: OnboardingRepository
     public let phase3: Phase3Repository
+    public let chat: ChatRepository
 
     public init(
         session: SessionController = SessionController(),
@@ -42,6 +43,7 @@ public final class AppEnvironment {
         self.api = resolvedAPI
         self.onboardingRepository = OnboardingRepository(client: resolvedAPI, settings: settings)
         self.phase3 = Phase3Repository(api: resolvedAPI)
+        self.chat = ChatRepository(apiClient: resolvedAPI)
 
         // Connect dependencies to session controller
         session.apiClient = resolvedAPI
@@ -104,6 +106,11 @@ public final class AppEnvironment {
     /// gates must finish before the route is executed.
     public func handleIncomingURL(_ url: URL) {
         guard let route = router.parseIncomingURL(url) else { return }
+        handleIncomingRoute(route)
+    }
+
+    /// Gate-aware entry for typed intents originating from push notifications and native services.
+    public func handleIncomingRoute(_ route: AppRoute) {
         guard let snapshot = session.currentSession else {
             router.pendingRoute = route
             return

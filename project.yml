@@ -105,6 +105,7 @@ targets:
     deploymentTarget: "18.2"
     sources:
       - path: NotificationService
+      - path: Click/Core/Crypto/ClickCryptoV1.swift
     configFiles:
       Debug: Config/Debug.xcconfig
       Release: Config/Release.xcconfig
