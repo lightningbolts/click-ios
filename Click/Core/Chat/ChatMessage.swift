@@ -89,14 +89,13 @@ public struct ChatMessageItem: Identifiable, Hashable, Sendable {
     }
 
     public var formattedTime: String {
-        let formatter = DateFormatter()
-        formatter.timeStyle = .short
-        return formatter.string(from: createdAt)
+        createdAt.formatted(date: .omitted, time: .shortened)
     }
 }
 
 public struct ConversationIdentity: Hashable, Sendable {
-    public let chatID: String
+    /// Canonical chat UUID after the repository resolves the route. May begin as a connection ID.
+    public var chatID: String
     public let connectionID: String?
     public let peerUserID: String
     public let peerDisplayName: String
