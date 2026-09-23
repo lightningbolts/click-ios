@@ -321,18 +321,20 @@ public final class ChatRealtimeManager {
     private func startHeartbeat() {
         heartbeatTimer?.invalidate()
         heartbeatTimer = Timer.scheduledTimer(withTimeInterval: 25.0, repeats: true) { [weak self] _ in
-            guard let self,
-                  let task = self.webSocketTask,
-                  self.health == .connected else { return }
-            self.sendJSON(
-                [
-                    "topic": "phoenix",
-                    "event": "heartbeat",
-                    "payload": [:],
-                    "ref": UUID().uuidString
-                ],
-                task: task
-            )
+            Task { @MainActor [weak self] in
+                guard let self,
+                      let task = self.webSocketTask,
+                      self.health == .connected else { return }
+                self.sendJSON(
+                    [
+                        "topic": "phoenix",
+                        "event": "heartbeat",
+                        "payload": [:],
+                        "ref": UUID().uuidString
+                    ],
+                    task: task
+                )
+            }
         }
     }
 
