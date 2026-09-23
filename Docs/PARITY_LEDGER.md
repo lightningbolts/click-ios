@@ -21,8 +21,21 @@ Tracks implementation, testing, and parity status of every reachable Click flow.
 | F13 | Native Camera & Avatar Upload | `POST /api/user/avatar` | `AvatarService`, `NativeCameraPicker` | Capture/library, normalize/downsample, JPEG <=2MB, upload | Partial (image processing) | Pending | P0 PARITY | Real camera + authenticated upload must be tested on device. |
 | F14 | Privacy Contact Discovery | `POST /api/contacts/discover`, `POST /api/connections/prior/request` | `ContactDiscoveryService`, `PriorConnectionsView` | Phone/email normalization, SHA-256, match display, known-since, request | Partial (normalization/hash) | Pending | P0 PARITY | Privacy disclosure now matches behavior; real Contacts permission and backend matching require device/staging validation. |
 | F15 | Onboarding Flow & Server Reconciliation | `GET/PATCH /api/users/{userId}/profile` | `OnboardingRepository`, `OnboardingCoordinator` | Welcome, Interests, Personality, Avatar, Prior Connections, loading/error/retry, returning-user reconciliation | Partial (state-machine/unit) | Pending | P0 PARITY | Server saves are implemented; full returning-user/new-user flows still need staging/device verification. |
+| F16 | End-to-End Encryption (V1 & V2) | N/A (Cryptographic Engine) | `ClickCryptoV1`, `ClickCryptoV2`, `DeviceIdentityVault` | V1 AES-CBC+HMAC legacy direct & group derivation; V2 X25519 Keychain identity, ASN.1 DER SPKI, AES-GCM envelope, canonical AAD, HKDF epoch key wrapping, ReplayGuard | Yes (unit) | Verified (Simulator) | P0 PARITY | Full unit test suite passes: roundtrip, AAD tampering, replay detection, epoch wrap/unwrap. |
+| F17 | Direct Chat Messaging API | `GET/POST/PATCH/DELETE /api/chat/messages` | `ChatRepository` | Paginated message fetching, optimistic sending, delivery & read receipts, editing, soft deletion, reaction toggling, device registration | Yes (unit) | Verified (Simulator) | P0 PARITY | Integrated with SessionController and AppEnvironment; transparent E2EE v1/v2 handling. |
+| F18 | Realtime Message Streaming & Presence | Supabase Realtime WebSocket | `ChatRealtimeManager` | Direct channel subscription, postgres_changes inserts/updates, typing indicators broadcast with auto-decay, subscription health tracking | Partial (state model) | Verified (Simulator) | P0 PARITY | Realtime state model verified; Phoenix channel tested in mock environment. |
+| F19 | Direct Chat UI & Interactions | N/A (SwiftUI Interface) | `ChatView`, `ConversationModel`, `MessageBubbleView`, `ChatComposerView` | Inverted scroll timeline, date separators, sent/delivered/read ticks, swipe-to-reply with haptics, long-press reaction bar & context menu, reply preview card, multiline composer with 1000 char counter | Yes (unit) | Verified (Simulator) | P0 PARITY | Full interactive timeline preview exercised on iPhone 18 Pro simulator with screenshots captured. |
+| F20 | Notification Service E2EE Decryption | APNs payload | `NotificationService` | Payload inspection, legacy E2EE v1 decryption with connection master key fallback, local title/body enrichment | Partial | Pending | P0 COMPATIBILITY | Linked with ClickCryptoV1 in project.yml. |
 
-## Phase 0-2 merge gate
+## Phase 4 Direct Chat merge gate
+
+Before PR #2 (Phase 4) is merged:
+- [x] ClickCryptoV1 unit tests pass (direct, group, tampering).
+- [x] ClickCryptoV2 unit tests pass (X25519 SPKI, AES-GCM, AAD tampering, ReplayGuard, epoch wrap).
+- [x] ChatConversationTests unit tests pass (optimistic send, receipt transitions, editing, reactions).
+- [x] Direct chat timeline renders cleanly in iOS Simulator with bubble styling, status ticks, reactions, and composer.
+- [x] Simulator screenshot captured and documented.
+- [ ] Staging WebSocket live roundtrip tested between two physical devices.
 
 Before PR #1 is considered verified rather than merely implemented:
 

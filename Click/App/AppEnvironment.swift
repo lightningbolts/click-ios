@@ -13,6 +13,7 @@ public final class AppEnvironment {
     public let avatarService: AvatarService
     public let onboardingRepository: OnboardingRepository
     public let phase3: Phase3Repository
+    public let chat: ChatRepository
 
     public init(
         session: SessionController = SessionController(),
@@ -42,6 +43,7 @@ public final class AppEnvironment {
         self.api = resolvedAPI
         self.onboardingRepository = OnboardingRepository(client: resolvedAPI, settings: settings)
         self.phase3 = Phase3Repository(api: resolvedAPI)
+        self.chat = ChatRepository(apiClient: resolvedAPI)
 
         // Connect dependencies to session controller
         session.apiClient = resolvedAPI

@@ -83,15 +83,23 @@ public struct ClicksView: View {
                 ScrollView {
                     LazyVStack(spacing: ClickSpacing.sm) {
                         ForEach(filteredConnections) { connection in
-                            ConnectionCard(connection: connection) {
-                                guard !connection.userID.isEmpty else { return }
-                                env.router.connectionsPath.append(
-                                    .userProfile(
-                                        userID: connection.userID,
-                                        connectionID: connection.connectionID.isEmpty ? nil : connection.connectionID
+                            ConnectionCard(
+                                connection: connection,
+                                onTap: {
+                                    let chatID = connection.connectionID.isEmpty ? connection.userID : connection.connectionID
+                                    guard !chatID.isEmpty else { return }
+                                    env.router.connectionsPath.append(.chat(chatID: chatID))
+                                },
+                                onTapProfile: {
+                                    guard !connection.userID.isEmpty else { return }
+                                    env.router.connectionsPath.append(
+                                        .userProfile(
+                                            userID: connection.userID,
+                                            connectionID: connection.connectionID.isEmpty ? nil : connection.connectionID
+                                        )
                                     )
-                                )
-                            }
+                                }
+                            )
                         }
                     }
                     .padding(.horizontal, ClickSpacing.lg)
@@ -131,6 +139,7 @@ public struct ClicksView: View {
 private struct ConnectionCard: View {
     let connection: ConnectionItem
     let onTap: () -> Void
+    var onTapProfile: (() -> Void)? = nil
 
     private var avatarFallback: some View {
         Circle()
@@ -164,6 +173,10 @@ private struct ConnectionCard: View {
                         }
                         .frame(width: 48, height: 48)
                         .clipShape(Circle())
+                        .onTapGesture {
+                            ClickHaptics.selection()
+                            onTapProfile?()
+                        }
 
                         if connection.presenceKnown {
                             Circle()
