@@ -1,6 +1,6 @@
 import SwiftUI
 import UIKit
-import UserNotifications
+@preconcurrency import UserNotifications
 import Security
 
 @main
@@ -113,7 +113,7 @@ final class ClickAppDelegate: NSObject, UIApplicationDelegate, UNUserNotificatio
         }
     }
 
-    private static func stringPayload(_ source: [AnyHashable: Any]) -> [String: String] {
+    nonisolated private static func stringPayload(_ source: [AnyHashable: Any]) -> [String: String] {
         var payload: [String: String] = [:]
         for (key, value) in source {
             guard let key = key as? String else { continue }
@@ -288,9 +288,13 @@ final class ClickNotificationCoordinator {
 
         if let connectionID,
            let currentUserID = environment.session.currentSession?.userId {
-            let snapshot =
-                await environment.phase3.cachedClicks(for: currentUserID)
-                ?? (try? await environment.phase3.refreshClicks(for: currentUserID))
+            let cachedSnapshot = await environment.phase3.cachedClicks(for: currentUserID)
+            let snapshot: ClicksSnapshot?
+            if let cachedSnapshot {
+                snapshot = cachedSnapshot
+            } else {
+                snapshot = try? await environment.phase3.refreshClicks(for: currentUserID)
+            }
 
             if let connection = snapshot?.connections.first(where: { $0.connectionID == connectionID }) {
                 environment.handleIncomingRoute(
