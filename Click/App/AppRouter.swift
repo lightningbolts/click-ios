@@ -10,10 +10,58 @@ public enum MainTab: String, CaseIterable, Hashable, Sendable {
     case settings // User-facing label: Me
 }
 
-/// Typed destination routes for the application.
+/// Stable, identity-rich route for a direct conversation.
+///
+/// The route deliberately carries immutable identity needed to render the first frame.
+/// Mutable conversation state is resolved by ConversationModel/ChatRepository at the destination.
+public struct DirectChatRoute: Hashable, Sendable {
+    public let chatID: String?
+    public let connectionID: String?
+    public let peerUserID: String
+    public let peerDisplayName: String
+    public let peerHandle: String
+    public let peerAvatarURL: String?
+    public let isOnline: Bool
+    public let lastActiveText: String
+
+    public init(
+        chatID: String? = nil,
+        connectionID: String? = nil,
+        peerUserID: String,
+        peerDisplayName: String,
+        peerHandle: String = "",
+        peerAvatarURL: String? = nil,
+        isOnline: Bool = false,
+        lastActiveText: String = ""
+    ) {
+        self.chatID = chatID?.trimmingCharacters(in: .whitespacesAndNewlines).nilIfEmpty
+        self.connectionID = connectionID?.trimmingCharacters(in: .whitespacesAndNewlines).nilIfEmpty
+        self.peerUserID = peerUserID
+        self.peerDisplayName = peerDisplayName
+        self.peerHandle = peerHandle
+        self.peerAvatarURL = peerAvatarURL
+        self.isOnline = isOnline
+        self.lastActiveText = lastActiveText
+    }
+
+    /// A temporary identity used only until ChatRepository resolves the canonical chat UUID.
+    public var conversationIdentity: ConversationIdentity {
+        ConversationIdentity(
+            chatID: chatID ?? connectionID ?? "",
+            connectionID: connectionID,
+            peerUserID: peerUserID,
+            peerDisplayName: peerDisplayName,
+            peerHandle: peerHandle,
+            peerAvatarURL: peerAvatarURL,
+            isOnline: isOnline,
+            lastActiveText: lastActiveText
+        )
+    }
+}
+
 /// Typed destination routes for the application.
 public enum AppRoute: Hashable, Sendable {
-    case chat(chatID: String)
+    case chat(DirectChatRoute)
     case userProfile(userID: String, connectionID: String?)
     case groupProfile(chatID: String)
     case event(beaconID: String)
@@ -241,4 +289,9 @@ public final class AppRouter {
         pendingRoute = nil
         resolveRoute(route)
     }
+}
+
+
+private extension String {
+    var nilIfEmpty: String? { isEmpty ? nil : self }
 }
