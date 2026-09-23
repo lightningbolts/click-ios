@@ -107,7 +107,7 @@ public actor Phase3Repository {
 
         let identities: [(connectionID: String, peerID: String)] = rows.compactMap { row in
             guard
-                let connectionID = Self.Self.string(row["id"]),
+                let connectionID = Self.string(row["id"]),
                 let userIDs = row["user_ids"] as? [String],
                 let peerID = userIDs.first(where: { $0 != userID })
             else { return nil }
@@ -137,7 +137,7 @@ public actor Phase3Repository {
 
         for row in rows {
             guard
-                let connectionID = Self.Self.string(row["id"]),
+                let connectionID = Self.string(row["id"]),
                 let userIDs = row["user_ids"] as? [String],
                 let peerID = userIDs.first(where: { $0 != userID })
             else { continue }
@@ -146,7 +146,7 @@ public actor Phase3Repository {
             let encounters = row["connection_encounters"] as? [[String: Any]] ?? []
             let latestEncounter = encounters.first
             let location = Self.string(latestEncounter?["location_name"])
-                ?? Self.Self.string(row["location_name"])
+                ?? Self.string(row["location_name"])
                 ?? ""
             let activityDate = Self.timestamp(row["last_message_at"])
                 ?? Self.timestamp(latestEncounter?["encountered_at"])
@@ -292,8 +292,8 @@ public actor Phase3Repository {
         let personality = Self.stringArray(root["personality_tags"])
         let rawIntents = root["availabilityIntents"] as? [[String: Any]] ?? []
         let intents = rawIntents.compactMap { row -> ProfilePayload.Intent? in
-            guard let id = Self.Self.string(row["id"]) else { return nil }
-            let label = Self.Self.string(row["intent_tag"]) ?? Self.Self.string(row["timeframe"]) ?? "Available"
+            guard let id = Self.string(row["id"]) else { return nil }
+            let label = Self.string(row["intent_tag"]) ?? Self.string(row["timeframe"]) ?? "Available"
             return .init(id: id, label: label, emoji: Self.emoji(for: label))
         }
 
@@ -325,13 +325,13 @@ public actor Phase3Repository {
         let root = try Self.jsonObject(data)
         let rows = root["journal_entries"] as? [[String: Any]] ?? []
         return rows.compactMap { row in
-            guard let id = Self.Self.string(row["id"]), let body = Self.Self.string(row["body"]) else { return nil }
+            guard let id = Self.string(row["id"]), let body = Self.string(row["body"]) else { return nil }
             return ProfileTimelineEntry(
                 id: id,
                 body: body,
-                authorName: Self.Self.string(row["author_name"]),
+                authorName: Self.string(row["author_name"]),
                 createdAt: Self.timestamp(row["created_at"]),
-                visibility: Self.Self.string(row["visibility"]) ?? "private"
+                visibility: Self.string(row["visibility"]) ?? "private"
             )
         }
     }
