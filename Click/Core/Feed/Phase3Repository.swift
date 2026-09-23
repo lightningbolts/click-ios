@@ -31,6 +31,7 @@ public actor Phase3Repository {
     private let defaults: UserDefaults
     private let decoder = JSONDecoder()
     private let encoder = JSONEncoder()
+    private var profileMemoryCache: [String: ProfilePayload] = [:]
 
     public init(api: ClickAPIClient, defaults: UserDefaults = .standard) {
         self.api = api
@@ -104,6 +105,33 @@ public actor Phase3Repository {
         let root = try jsonObject(data)
         let rows = root["connections"] as? [[String: Any]] ?? []
 
+        let identities: [(connectionID: String, peerID: String)] = rows.compactMap { row in
+            guard
+                let connectionID = string(row["id"]),
+                let userIDs = row["user_ids"] as? [String],
+                let peerID = userIDs.first(where: { $0 != userID })
+            else { return nil }
+            return (connectionID, peerID)
+        }
+
+        var profiles: [String: ProfilePayload] = [:]
+        await withTaskGroup(of: (String, ProfilePayload?).self) { group in
+            for identity in identities {
+                group.addTask { [self] in
+                    let profile = try? await fetchProfile(
+                        userID: identity.peerID,
+                        connectionID: identity.connectionID
+                    )
+                    return (identity.connectionID, profile)
+                }
+            }
+            for await (connectionID, profile) in group {
+                if let profile {
+                    profiles[connectionID] = profile
+                }
+            }
+        }
+
         var items: [ConnectionItem] = []
         items.reserveCapacity(rows.count)
 
@@ -114,7 +142,7 @@ public actor Phase3Repository {
                 let peerID = userIDs.first(where: { $0 != userID })
             else { continue }
 
-            let profile = try? await fetchProfile(userID: peerID, connectionID: connectionID)
+            let profile = profiles[connectionID]
             let encounters = row["connection_encounters"] as? [[String: Any]] ?? []
             let latestEncounter = encounters.first
             let location = string(latestEncounter?["location_name"])
@@ -233,6 +261,11 @@ public actor Phase3Repository {
     }
 
     private func fetchProfile(userID: String, connectionID: String?) async throws -> ProfilePayload {
+        let cacheKey = "\(userID)|\(connectionID ?? "")"
+        if let cached = profileMemoryCache[cacheKey] {
+            return cached
+        }
+
         var query: [URLQueryItem] = []
         if let connectionID, !connectionID.isEmpty {
             query.append(URLQueryItem(name: "connectionId", value: connectionID))
@@ -264,7 +297,7 @@ public actor Phase3Repository {
             return .init(id: id, label: label, emoji: Self.emoji(for: label))
         }
 
-        return ProfilePayload(
+        let payload = ProfilePayload(
             firstName: first,
             displayName: displayName,
             handle: handle,
@@ -274,6 +307,8 @@ public actor Phase3Repository {
             personalityTags: personality,
             availabilityIntents: intents
         )
+        profileMemoryCache[cacheKey] = payload
+        return payload
     }
 
     private func fetchTimeline(userID: String) async throws -> [ProfileTimelineEntry] {
