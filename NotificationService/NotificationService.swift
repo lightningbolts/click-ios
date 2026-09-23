@@ -47,8 +47,7 @@ public final class NotificationService: UNNotificationServiceExtension {
     // MARK: - Decryption Resolver
 
     private func resolveChatMessageBody(userInfo: [AnyHashable: Any], originalBody: String) -> String {
-        let fallback = originalBody.isEmpty ? "Open Click to view message" : originalBody
-        let previewFromServer = (userInfo["preview_text"] as? String)?.trimmingCharacters(in: .whitespacesAndNewlines)
+        let fallback = "Open Click to view message"
 
         let encrypted = (userInfo["encrypted_content"] as? String) ?? ""
         let connectionId = (userInfo["connection_id"] as? String) ?? ""
@@ -56,15 +55,16 @@ public final class NotificationService: UNNotificationServiceExtension {
         let recipientUserId = (userInfo["recipient_user_id"] as? String) ?? ""
 
         guard !encrypted.isEmpty else {
-            return previewFromServer ?? fallback
+            return fallback
         }
 
-        // 1. Plaintext fallback
-        if !ClickCryptoV1.isEncrypted(encrypted) && !encrypted.hasPrefix("e2e2:") {
-            return String(encrypted.prefix(120))
+        // V2 epoch keys are app-owned and may not be available to this extension process. Never
+        // trust a server-provided plaintext preview for E2EE v2; use deterministic private copy.
+        if encrypted.hasPrefix("e2e2:") {
+            return fallback
         }
 
-        // 2. Legacy v1 direct decryption
+        // Legacy v1 direct decryption
         if ClickCryptoV1.isEncrypted(encrypted) &&
             !connectionId.isEmpty && !senderUserId.isEmpty && !recipientUserId.isEmpty {
             let keys = ClickCryptoV1.deriveKeysForConnection(
@@ -77,7 +77,7 @@ public final class NotificationService: UNNotificationServiceExtension {
             }
         }
 
-        // 3. Fallback to server preview or default
-        return previewFromServer ?? fallback
+        // Unknown/invalid wire content is privacy-safe by default.
+        return fallback
     }
 }
