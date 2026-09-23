@@ -1,6 +1,5 @@
 import SwiftUI
 
-/// Pinned search pill on Home triggering quick search sheet.
 public struct HomeSearchPill: View {
     let onTap: () -> Void
 
@@ -9,35 +8,38 @@ public struct HomeSearchPill: View {
     }
 
     public var body: some View {
-        Button(action: {
+        Button {
             ClickHaptics.selection()
             onTap()
-        }) {
-            HStack(spacing: ClickSpacing.sm) {
+        } label: {
+            HStack(spacing: 10) {
                 Image(systemName: "magnifyingglass")
-                    .font(ClickTypography.bodyMedium)
-                    .foregroundStyle(ClickColors.outline)
+                    .font(.system(size: 16, weight: .medium))
+                    .foregroundStyle(ClickColors.textSecondary)
 
                 Text("Search connections, places, circles…")
                     .font(ClickTypography.bodyMedium)
                     .foregroundStyle(ClickColors.textSecondary)
+                    .lineLimit(1)
 
-                Spacer()
+                Spacer(minLength: 8)
             }
-            .padding(.horizontal, ClickSpacing.md)
-            .padding(.vertical, 12)
-            .background(ClickColors.surfaceContainerLow)
-            .clipShape(RoundedRectangle(cornerRadius: ClickSpacing.radiusInput))
-            .overlay(
-                RoundedRectangle(cornerRadius: ClickSpacing.radiusInput)
-                    .stroke(ClickColors.quietBorder, lineWidth: ClickSpacing.borderQuietWidth)
-            )
+            .padding(.horizontal, 14)
+            .frame(height: 46)
+            .background(ClickColors.surface)
+            .clipShape(RoundedRectangle(cornerRadius: ClickSpacing.radiusInput, style: .continuous))
+            .overlay {
+                RoundedRectangle(cornerRadius: ClickSpacing.radiusInput, style: .continuous)
+                    .stroke(
+                        ClickColors.quietBorder.opacity(0.78),
+                        lineWidth: ClickSpacing.borderQuietWidth
+                    )
+            }
         }
         .buttonStyle(.plain)
     }
 }
 
-/// Pill chip representing an availability intent ("I'm down for…").
 public struct AvailabilityIntentPill: View {
     let intent: AvailabilityIntent
     let onToggle: (() -> Void)?
@@ -48,33 +50,46 @@ public struct AvailabilityIntentPill: View {
     }
 
     public var body: some View {
-        Button(action: {
+        Button {
             guard let onToggle else { return }
             ClickHaptics.selection()
             onToggle()
-        }) {
-            HStack(spacing: ClickSpacing.xxs) {
+        } label: {
+            HStack(spacing: 6) {
                 Text(intent.emoji)
                     .font(.system(size: 14))
+
                 Text(intent.label)
                     .font(ClickTypography.labelMedium)
             }
-            .padding(.horizontal, 14)
-            .padding(.vertical, 8)
-            .background(intent.isSelected ? ClickColors.primary : ClickColors.surfaceContainerLow)
-            .foregroundStyle(intent.isSelected ? ClickColors.onPrimary : ClickColors.textPrimary)
-            .clipShape(Capsule())
-            .overlay(
-                Capsule()
-                    .stroke(intent.isSelected ? ClickColors.primary : ClickColors.quietBorder, lineWidth: ClickSpacing.borderQuietWidth)
+            .padding(.horizontal, 13)
+            .frame(height: 34)
+            .background(
+                intent.isSelected
+                    ? ClickColors.primaryFixed.opacity(0.72)
+                    : ClickColors.surface
             )
+            .foregroundStyle(
+                intent.isSelected
+                    ? ClickColors.primary
+                    : ClickColors.textPrimary
+            )
+            .clipShape(Capsule())
+            .overlay {
+                Capsule()
+                    .stroke(
+                        intent.isSelected
+                            ? ClickColors.primary.opacity(0.38)
+                            : ClickColors.quietBorder.opacity(0.78),
+                        lineWidth: ClickSpacing.borderQuietWidth
+                    )
+            }
         }
         .buttonStyle(.plain)
         .disabled(onToggle == nil)
     }
 }
 
-/// Hero card for an upcoming featured event or beacon.
 public struct FeaturedEventCard: View {
     let event: HomeFeaturedEvent
     let onTap: () -> Void
@@ -85,68 +100,57 @@ public struct FeaturedEventCard: View {
     }
 
     public var body: some View {
-        Button(action: {
+        Button {
             ClickHaptics.impact(.light)
             onTap()
-        }) {
-            VStack(alignment: .leading, spacing: ClickSpacing.sm) {
+        } label: {
+            VStack(alignment: .leading, spacing: 12) {
                 HStack {
                     Text(event.category.uppercased())
-                        .font(ClickTypography.labelSmall)
-                        .fontWeight(.bold)
+                        .font(ClickTypography.microcopy)
                         .foregroundStyle(ClickColors.primary)
-                        .padding(.horizontal, 8)
-                        .padding(.vertical, 3)
-                        .background(ClickColors.primaryFixed.opacity(0.35))
+                        .padding(.horizontal, 9)
+                        .padding(.vertical, 5)
+                        .background(ClickColors.primaryFixed.opacity(0.64))
                         .clipShape(Capsule())
 
                     Spacer()
 
-                    HStack(spacing: ClickSpacing.xxs) {
-                        Image(systemName: "person.2.fill")
-                            .font(.system(size: 11))
-                        Text("\(event.attendeeCount) going")
-                            .font(ClickTypography.labelSmall)
-                    }
-                    .foregroundStyle(ClickColors.textSecondary)
+                    Label("\(event.attendeeCount) going", systemImage: "person.2.fill")
+                        .font(ClickTypography.captionSmall)
+                        .foregroundStyle(ClickColors.textSecondary)
                 }
 
                 Text(event.title)
                     .font(ClickTypography.titleMedium)
-                    .fontWeight(.bold)
                     .foregroundStyle(ClickColors.textPrimary)
                     .multilineTextAlignment(.leading)
+                    .fixedSize(horizontal: false, vertical: true)
 
-                HStack(spacing: ClickSpacing.md) {
-                    HStack(spacing: ClickSpacing.xxs) {
-                        Image(systemName: "clock.fill")
-                            .font(.system(size: 12))
-                        Text(event.timeDescription)
-                            .font(ClickTypography.bodySmall)
-                    }
-
-                    HStack(spacing: ClickSpacing.xxs) {
-                        Image(systemName: "mappin.and.ellipse")
-                            .font(.system(size: 12))
-                        Text(event.locationName)
-                            .font(ClickTypography.bodySmall)
-                    }
+                HStack(spacing: 16) {
+                    Label(event.timeDescription, systemImage: "clock")
+                    Label(event.locationName, systemImage: "mappin.and.ellipse")
+                        .lineLimit(1)
                 }
+                .font(ClickTypography.bodySmall)
                 .foregroundStyle(ClickColors.textSecondary)
             }
-            .padding(ClickSpacing.md)
-            .background(ClickColors.surfaceContainerLow)
-            .clipShape(RoundedRectangle(cornerRadius: ClickSpacing.radiusCard))
-            .overlay(
-                RoundedRectangle(cornerRadius: ClickSpacing.radiusCard)
-                    .stroke(ClickColors.quietBorder, lineWidth: ClickSpacing.borderQuietWidth)
-            )
+            .padding(15)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .background(ClickColors.surface)
+            .clipShape(RoundedRectangle(cornerRadius: ClickSpacing.radiusCard, style: .continuous))
+            .overlay {
+                RoundedRectangle(cornerRadius: ClickSpacing.radiusCard, style: .continuous)
+                    .stroke(
+                        ClickColors.quietBorder.opacity(0.72),
+                        lineWidth: ClickSpacing.borderQuietWidth
+                    )
+            }
         }
         .buttonStyle(.plain)
     }
 }
 
-/// Compact beacon discovery tile.
 public struct ExploreBeaconTile: View {
     let beacon: ExploreBeaconItem
     let onTap: () -> Void
@@ -157,57 +161,56 @@ public struct ExploreBeaconTile: View {
     }
 
     public var body: some View {
-        Button(action: {
+        Button {
             ClickHaptics.selection()
             onTap()
-        }) {
-            HStack(spacing: ClickSpacing.md) {
-                ZStack {
-                    Circle()
-                        .fill(ClickColors.primaryFixed.opacity(0.35))
-                        .frame(width: 42, height: 42)
-                    Image(systemName: beacon.iconName)
-                        .font(.system(size: 18))
-                        .foregroundStyle(ClickColors.primary)
-                }
+        } label: {
+            HStack(spacing: 12) {
+                Circle()
+                    .fill(ClickColors.primaryFixed.opacity(0.56))
+                    .frame(width: 42, height: 42)
+                    .overlay {
+                        Image(systemName: beacon.iconName)
+                            .font(.system(size: 17, weight: .medium))
+                            .foregroundStyle(ClickColors.primary)
+                    }
 
-                VStack(alignment: .leading, spacing: ClickSpacing.xxxSmall) {
+                VStack(alignment: .leading, spacing: 2) {
                     Text(beacon.title)
-                        .font(ClickTypography.titleSmall)
-                        .fontWeight(.semibold)
+                        .font(ClickTypography.bodyMedium)
                         .foregroundStyle(ClickColors.textPrimary)
+                        .lineLimit(1)
 
                     Text(beacon.subtitle)
                         .font(ClickTypography.bodySmall)
                         .foregroundStyle(ClickColors.textSecondary)
+                        .lineLimit(1)
                 }
 
-                Spacer()
+                Spacer(minLength: 8)
 
-                VStack(alignment: .trailing, spacing: ClickSpacing.xxxSmall) {
+                VStack(alignment: .trailing, spacing: 2) {
                     Text(beacon.distanceFormatted)
-                        .font(ClickTypography.labelMedium)
-                        .fontWeight(.bold)
+                        .font(ClickTypography.captionSmall)
                         .foregroundStyle(ClickColors.primary)
 
                     Text("\(beacon.memberCount) here")
-                        .font(ClickTypography.labelSmall)
+                        .font(ClickTypography.microcopy)
                         .foregroundStyle(ClickColors.textSecondary)
                 }
+
+                Image(systemName: "chevron.right")
+                    .font(.system(size: 11, weight: .semibold))
+                    .foregroundStyle(ClickColors.tertiaryLabel)
             }
-            .padding(ClickSpacing.md)
-            .background(ClickColors.surfaceContainerLow)
-            .clipShape(RoundedRectangle(cornerRadius: ClickSpacing.radiusCard))
-            .overlay(
-                RoundedRectangle(cornerRadius: ClickSpacing.radiusCard)
-                    .stroke(ClickColors.quietBorder, lineWidth: ClickSpacing.borderQuietWidth)
-            )
+            .padding(.horizontal, 13)
+            .padding(.vertical, 10)
+            .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
     }
 }
 
-/// Row item representing a recent connection with presence dot.
 public struct RecentConnectionRowItem: View {
     let connection: RecentConnectionSummary
     let onTap: () -> Void
@@ -217,80 +220,99 @@ public struct RecentConnectionRowItem: View {
         self.onTap = onTap
     }
 
-    private var avatarFallback: some View {
-        Circle()
-            .fill(ClickColors.primaryFixed.opacity(0.4))
-            .overlay(
-                Text(connection.initials)
-                    .font(ClickTypography.titleSmall)
-                    .fontWeight(.bold)
-                    .foregroundStyle(ClickColors.primary)
-            )
-    }
-
     public var body: some View {
-        Button(action: {
+        Button {
             ClickHaptics.selection()
             onTap()
-        }) {
-            HStack(spacing: ClickSpacing.md) {
-                ZStack(alignment: .bottomTrailing) {
-                    Group {
-                        if let raw = connection.avatarUrl, let url = URL(string: raw) {
-                            AsyncImage(url: url) { image in
-                                image.resizable().scaledToFill()
-                            } placeholder: {
-                                avatarFallback
-                            }
-                        } else {
-                            avatarFallback
+        } label: {
+            HStack(spacing: 12) {
+                avatar
+
+                VStack(alignment: .leading, spacing: 3) {
+                    HStack(spacing: 6) {
+                        Text(connection.displayName)
+                            .font(ClickTypography.bodyMedium)
+                            .foregroundStyle(ClickColors.textPrimary)
+                            .lineLimit(1)
+
+                        if !connection.handle.isEmpty {
+                            Text(connection.handle)
+                                .font(ClickTypography.bodySmall)
+                                .foregroundStyle(ClickColors.textSecondary)
+                                .lineLimit(1)
                         }
                     }
-                    .frame(width: 48, height: 48)
-                    .clipShape(Circle())
 
-                    if connection.presenceKnown {
-                        Circle()
-                            .fill(connection.isOnline ? Color(hex: "#10B981") : ClickColors.outline.opacity(0.4))
-                            .frame(width: 12, height: 12)
-                            .overlay(Circle().stroke(ClickColors.background, lineWidth: 2))
-                    }
-                }
-
-                VStack(alignment: .leading, spacing: ClickSpacing.xxxSmall) {
-                    HStack(spacing: ClickSpacing.xs) {
-                        Text(connection.displayName)
-                            .font(ClickTypography.titleSmall)
-                            .fontWeight(.semibold)
-                            .foregroundStyle(ClickColors.textPrimary)
-
-                        Text(connection.handle)
+                    if !connection.encounterLocation.isEmpty {
+                        Label(connection.encounterLocation, systemImage: "mappin")
                             .font(ClickTypography.bodySmall)
                             .foregroundStyle(ClickColors.textSecondary)
+                            .lineLimit(1)
                     }
-
-                    HStack(spacing: ClickSpacing.xxs) {
-                        Image(systemName: "mappin")
-                            .font(.system(size: 11))
-                        Text(connection.encounterLocation)
-                            .font(ClickTypography.bodySmall)
-                    }
-                    .foregroundStyle(ClickColors.textSecondary)
                 }
 
-                Spacer()
+                Spacer(minLength: 8)
 
                 Text(connection.lastActiveRelative)
-                    .font(ClickTypography.labelSmall)
-                    .foregroundStyle(connection.isOnline ? ClickColors.primary : ClickColors.textSecondary)
+                    .font(ClickTypography.microcopy)
+                    .foregroundStyle(
+                        connection.isOnline
+                            ? ClickColors.primary
+                            : ClickColors.textSecondary
+                    )
+                    .lineLimit(1)
             }
-            .padding(.vertical, ClickSpacing.xs)
+            .padding(.horizontal, 12)
+            .padding(.vertical, 10)
+            .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
     }
+
+    private var avatar: some View {
+        ZStack(alignment: .bottomTrailing) {
+            Group {
+                if let raw = connection.avatarUrl,
+                   let url = URL(string: raw) {
+                    AsyncImage(url: url) { image in
+                        image.resizable().scaledToFill()
+                    } placeholder: {
+                        fallbackAvatar
+                    }
+                } else {
+                    fallbackAvatar
+                }
+            }
+            .frame(width: 44, height: 44)
+            .clipShape(Circle())
+
+            if connection.presenceKnown {
+                Circle()
+                    .fill(
+                        connection.isOnline
+                            ? ClickColors.statusOnline
+                            : ClickColors.statusOffline
+                    )
+                    .frame(width: 11, height: 11)
+                    .overlay {
+                        Circle()
+                            .stroke(ClickColors.surface, lineWidth: 2)
+                    }
+            }
+        }
+    }
+
+    private var fallbackAvatar: some View {
+        Circle()
+            .fill(ClickColors.primaryFixed.opacity(0.5))
+            .overlay {
+                Text(connection.initials)
+                    .font(ClickTypography.labelMedium)
+                    .foregroundStyle(ClickColors.primary)
+            }
+    }
 }
 
-/// Metric counter card for Home tab stats.
 public struct HomeStatCard: View {
     let title: String
     let value: Int
@@ -303,28 +325,22 @@ public struct HomeStatCard: View {
     }
 
     public var body: some View {
-        VStack(alignment: .leading, spacing: ClickSpacing.xs) {
-            HStack {
+        VStack(spacing: 5) {
+            HStack(spacing: 5) {
                 Text("\(value)")
-                    .font(.custom("Manrope-ExtraBold", size: 28))
+                    .font(ClickTypography.titleLarge)
                     .foregroundStyle(ClickColors.textPrimary)
-                Spacer()
+                    .monospacedDigit()
+
                 Image(systemName: iconName)
-                    .font(.system(size: 20))
+                    .font(.system(size: 13, weight: .semibold))
                     .foregroundStyle(ClickColors.primary)
             }
 
             Text(title)
-                .font(ClickTypography.labelMedium)
+                .font(ClickTypography.microcopy)
                 .foregroundStyle(ClickColors.textSecondary)
         }
-        .padding(ClickSpacing.md)
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .background(ClickColors.surfaceContainerLow)
-        .clipShape(RoundedRectangle(cornerRadius: ClickSpacing.radiusCard))
-        .overlay(
-            RoundedRectangle(cornerRadius: ClickSpacing.radiusCard)
-                .stroke(ClickColors.quietBorder, lineWidth: ClickSpacing.borderQuietWidth)
-        )
+        .frame(maxWidth: .infinity)
     }
 }
