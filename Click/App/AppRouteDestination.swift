@@ -19,9 +19,12 @@ struct AppRouteDestination: View {
                     chatRepository: env.chat,
                     currentUserID: env.session.currentSession?.userId ?? "",
                     currentUserName: "You",
-                    timelineCache: env.timelineCache
+                    timelineCache: env.timelineCache,
+                    pendingSends: env.pendingSends
                 )
             )
+        case .publicProfile(let userID):
+            PublicProfileView(userID: userID)
         case .userProfile(let userID, let connectionID):
             ProfileView(userID: userID, connectionID: connectionID)
         case .groupChat(let group):
@@ -31,7 +34,8 @@ struct AppRouteDestination: View {
                     chatRepository: env.chat,
                     currentUserID: env.session.currentSession?.userId ?? "",
                     currentUserName: "You",
-                    timelineCache: env.timelineCache
+                    timelineCache: env.timelineCache,
+                    pendingSends: env.pendingSends
                 )
             )
         case .groupProfile(let chatID):

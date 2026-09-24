@@ -24,6 +24,10 @@ public struct NearbyDiscovery: Codable, Equatable, Sendable {
 public actor BeaconRepository {
     private let api: ClickAPIClient
     private let cache: CacheStore
+    /// Recently seen beacons (discovery, detail, chat-card prefetch) so detail opens instantly
+    /// and refreshes in the background (`CachePolicy.beaconDetail`). Session memory only.
+    private var known: [String: (beacon: MapBeacon, isExpired: Bool, storedAt: Date)] = [:]
+    private var prefetching: [String: Task<Void, Never>] = [:]
 
     /// Default discovery radius, matching the KMP Nearby feed.
     public static let discoveryRadiusMeters = 5_000
@@ -58,6 +62,7 @@ public actor BeaconRepository {
             fetchedAt: .now
         )
         await cache.save(result, key: "nearby", userID: userID)
+        remember(beacons)
         return result
     }
 
@@ -125,15 +130,83 @@ public actor BeaconRepository {
         guard let row = JSONFields.dictionary(root["beacon"]), let beacon = MapBeacon.decode(row) else {
             throw APIError.decoding
         }
-        return (beacon, JSONFields.bool(root["expired"]) ?? false)
+        let expired = JSONFields.bool(root["expired"]) ?? false
+        known[id] = (beacon, expired, .now)
+        return (beacon, expired)
+    }
+
+    // MARK: - Beacon cache (instant detail)
+
+    /// A cached beacon and whether it is still inside its freshness window.
+    public func cachedBeacon(id: String, now: Date = .now) -> (beacon: MapBeacon, isExpired: Bool, isFresh: Bool)? {
+        guard let entry = known[id] else { return nil }
+        return (entry.beacon, entry.isExpired, now.timeIntervalSince(entry.storedAt) < CachePolicy.beaconDetail)
+    }
+
+    /// Seeds the cache from list results without overwriting fresher detail reads.
+    public func remember(_ beacons: [MapBeacon]) {
+        let now = Date()
+        for beacon in beacons where known[beacon.id] == nil {
+            known[beacon.id] = (beacon, false, now)
+        }
+        if known.count > 300 {
+            for key in known.sorted(by: { $0.value.storedAt < $1.value.storedAt }).prefix(known.count - 300).map(\.key) {
+                known[key] = nil
+            }
+        }
+    }
+
+    /// Warms the detail cache when a card scrolls on screen; one request per ID at a time.
+    public func prefetch(id: String) {
+        guard cachedBeacon(id: id)?.isFresh != true, prefetching[id] == nil else { return }
+        prefetching[id] = Task {
+            _ = try? await self.beacon(id: id)
+            self.finishPrefetch(id)
+        }
+    }
+
+    private func finishPrefetch(_ id: String) {
+        prefetching[id] = nil
+    }
+
+    /// Removes a deleted beacon everywhere this repository caches it.
+    public func evict(id: String) {
+        known[id] = nil
+    }
+
+    public func clearCache() {
+        known.removeAll()
+        prefetching.values.forEach { $0.cancel() }
+        prefetching.removeAll()
+    }
+
+    /// `POST /api/beacons/image` (JSON base64, ≤2 MB, jpeg/png/webp/gif) → public URL for
+    /// `metadata.image_url`.
+    public func uploadImage(jpeg: Data) async throws -> String {
+        let body = try JSONSerialization.data(withJSONObject: ["file_b64": jpeg.base64EncodedString(), "mime_type": "image/jpeg"])
+        let (data, _) = try await api.executeRaw(APIRequest(path: "/api/beacons/image", method: .post, body: body))
+        guard let url = JSONFields.string(try JSONFields.object(data)["image"]) else { throw APIError.decoding }
+        return url
+    }
+
+    /// `PATCH /api/beacons/{id}` (creator only): metadata is merged server-side; schedule,
+    /// listing options and `show_creator_name` are top-level fields.
+    public func update(id: String, json: Data) async throws -> MapBeacon {
+        let (data, _) = try await api.executeRaw(APIRequest(path: "/api/beacons/\(id)", method: .patch, body: json))
+        let root = try JSONFields.object(data)
+        if let row = JSONFields.dictionary(root["beacon"]), let beacon = MapBeacon.decode(row) {
+            known[id] = (beacon, false, .now)
+            return beacon
+        }
+        // Some deployments answer `{ok:true}`; read back the canonical row.
+        known[id] = nil
+        return try await beacon(id: id).beacon
     }
 
     /// `POST /api/beacons`. The server validates kind, schedule, music links, and listing policy.
-    public func create(body: [String: Any]) async throws -> MapBeacon {
+    public func create(json: Data) async throws -> MapBeacon {
         do {
-            let (data, _) = try await api.executeRaw(APIRequest(
-                path: "/api/beacons", method: .post, body: try JSONSerialization.data(withJSONObject: body)
-            ))
+            let (data, _) = try await api.executeRaw(APIRequest(path: "/api/beacons", method: .post, body: json))
             guard let row = JSONFields.dictionary(try JSONFields.object(data)["beacon"]), let beacon = MapBeacon.decode(row) else {
                 throw APIError.decoding
             }

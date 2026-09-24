@@ -126,7 +126,7 @@ struct AvailabilitySheet: View {
         do {
             intents.succeed(try await env.me.availabilityIntents(userID: userID))
         } catch {
-            intents.fail(error.userFacingMessage)
+            intents.fail(error)
         }
     }
 

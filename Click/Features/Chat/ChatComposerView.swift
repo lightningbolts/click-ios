@@ -15,6 +15,9 @@ public struct ChatComposerView: View {
     let onDraft: ((MediaDraft) -> Void)?
     let onAttachmentError: (String) -> Void
     let onShareBeacon: (() -> Void)?
+    /// Attachments waiting to be sent; the send button sends them, then the text as a caption.
+    let staged: [StagedAttachment]
+    let onUnstage: (UUID) -> Void
 
     @FocusState private var isFocused: Bool
     @State private var recorder = VoiceNoteRecorder()
@@ -32,8 +35,12 @@ public struct ChatComposerView: View {
         onTypingChanged: @escaping (Bool) -> Void = { _ in },
         onDraft: ((MediaDraft) -> Void)? = nil,
         onAttachmentError: @escaping (String) -> Void = { _ in },
-        onShareBeacon: (() -> Void)? = nil
+        onShareBeacon: (() -> Void)? = nil,
+        staged: [StagedAttachment] = [],
+        onUnstage: @escaping (UUID) -> Void = { _ in }
     ) {
+        self.staged = staged
+        self.onUnstage = onUnstage
         self.onShareBeacon = onShareBeacon
         self.onDraft = onDraft
         self.onAttachmentError = onAttachmentError
@@ -52,9 +59,114 @@ public struct ChatComposerView: View {
         characterLimit - text.count
     }
 
+    private enum TrailingMode: Equatable { case mic, send, save, disabled }
+
+    private var trailingMode: TrailingMode {
+        if editTarget != nil { return canSend ? .save : .disabled }
+        if canSend { return .send }
+        return onDraft != nil ? .mic : .disabled
+    }
+
+    /// One control that morphs between mic, send and save, so it keeps its identity (and
+    /// position) instead of one button being swapped for another. In mic mode it is a
+    /// hold-to-record control: hold to talk, slide left to cancel, slide up (or tap) to lock.
+    @ViewBuilder
+    private var trailingButton: some View {
+        let mode = trailingMode
+        let label = ComposerCircleLabel(
+            systemImage: mode == .mic ? "mic.fill" : (mode == .save ? "checkmark" : "arrow.up"),
+            isProminent: mode == .send || mode == .save,
+            foreground: mode == .disabled ? ClickColors.textTertiary : ClickColors.textSecondary
+        )
+        if mode == .mic {
+            label
+                .scaleEffect(isRecording ? 1.25 : 0.96)
+                .gesture(holdToRecordGesture)
+                .accessibilityLabel("Record voice note")
+                .accessibilityHint("Hold to record, or double-tap to record hands-free.")
+                .accessibilityAddTraits(.isButton)
+                .accessibilityAction { beginRecording(locked: true) }
+        } else {
+            Button {
+                guard mode == .send || mode == .save else { return }
+                ClickHaptics.impact(.light)
+                onSend()
+            } label: {
+                label
+            }
+            .buttonStyle(.plain)
+            .disabled(mode == .disabled)
+            .accessibilityLabel(mode == .save ? "Save edit" : "Send message")
+        }
+    }
+
     private var canSend: Bool {
-        !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
-            && remainingCharacters >= 0
+        let hasText = !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+        return (hasText || (!staged.isEmpty && editTarget == nil)) && remainingCharacters >= 0
+    }
+
+    private var isRecording: Bool {
+        if case .recording = recorder.state { return true }
+        return false
+    }
+
+    // MARK: Hold to record
+
+    @State private var holdStartedAt: Date?
+    @State private var holdTranslation: CGSize = .zero
+    @State private var holdResolved = false
+
+    private var holdToRecordGesture: some Gesture {
+        DragGesture(minimumDistance: 0)
+            .onChanged { value in
+                if holdStartedAt == nil {
+                    holdStartedAt = .now
+                    holdResolved = false
+                    beginRecording(locked: false)
+                }
+                guard !holdResolved else { return }
+                holdTranslation = value.translation
+                if value.translation.width < -90 {
+                    holdResolved = true
+                    ClickHaptics.impact(.medium)
+                    recorder.cancel()
+                } else if value.translation.height < -70 {
+                    holdResolved = true
+                    ClickHaptics.impact(.light)
+                    recorder.isLocked = true
+                }
+            }
+            .onEnded { _ in
+                defer {
+                    holdStartedAt = nil
+                    holdTranslation = .zero
+                    holdResolved = false
+                }
+                guard !holdResolved else { return }
+                // A quick tap starts hands-free recording instead of a too-short clip.
+                if let started = holdStartedAt, Date.now.timeIntervalSince(started) < 0.35 {
+                    recorder.isLocked = true
+                } else {
+                    finishRecording()
+                }
+            }
+    }
+
+    private func beginRecording(locked: Bool) {
+        Task {
+            await startRecording()
+            if locked { recorder.isLocked = true }
+        }
+    }
+
+    /// Stops and stages the clip for review (play or discard) before it is sent.
+    private func finishRecording() {
+        guard isRecording else { return }
+        if let draft = recorder.finish() {
+            onDraft?(draft)
+        } else {
+            onAttachmentError("That voice note was too short.")
+        }
     }
 
     public var body: some View {
@@ -77,62 +189,53 @@ public struct ChatComposerView: View {
                 .transition(.move(edge: .bottom).combined(with: .opacity))
             }
 
-            if case .recording(let startedAt) = recorder.state {
+            if !staged.isEmpty, editTarget == nil {
+                StagedAttachmentTray(items: staged, onRemove: onUnstage)
+                    .transition(.move(edge: .bottom).combined(with: .opacity))
+            }
+
+            if case .recording(let startedAt) = recorder.state, recorder.isLocked {
                 VoiceRecordingBar(
                     startedAt: startedAt,
+                    levels: recorder.levels,
                     onCancel: { recorder.cancel() },
-                    onSend: {
-                        if let draft = recorder.finish() { onDraft?(draft) }
-                        else { onAttachmentError("That voice note was too short.") }
-                    }
+                    onSend: { finishRecording() }
                 )
                 .padding(.horizontal, 12)
                 .padding(.vertical, 8)
             } else {
-            HStack(alignment: .bottom, spacing: 8) {
+                inputRow
+            }
+        }
+        .onDisappear { recorder.cancel() }
+        .animation(ClickMotion.press, value: trailingMode)
+        .animation(ClickMotion.selection, value: replyTarget?.id)
+        .animation(ClickMotion.selection, value: editTarget?.id)
+        .animation(ClickMotion.content, value: staged.map(\.id))
+        .animation(ClickMotion.selection, value: recorder.isLocked)
+    }
+
+    private var inputRow: some View {
+        HStack(alignment: .bottom, spacing: 8) {
+            if isRecording {
+                // Holding: the field becomes the live recording strip; the mic stays in place
+                // so the gesture keeps tracking the finger.
+                VoiceHoldStrip(
+                    startedAt: { if case .recording(let at) = recorder.state { return at } else { return .now } }(),
+                    levels: recorder.levels,
+                    slideProgress: min(1, max(0, -holdTranslation.width / 90)),
+                    lockProgress: min(1, max(0, -holdTranslation.height / 70))
+                )
+            } else {
                 if let onDraft, editTarget == nil {
                     ComposerAttachmentButton(
                         onDraft: onDraft,
                         onError: onAttachmentError,
-                        onVoice: { Task { await startRecording() } },
+                        onVoice: { beginRecording(locked: true) },
                         onShareBeacon: onShareBeacon
                     )
                 }
-                TextField(
-                    editTarget == nil ? placeholder : "Edit message…",
-                    text: $text,
-                    axis: .vertical
-                )
-                .focused($isFocused)
-                .lineLimit(1...5)
-                .font(ClickTypography.body)
-                .foregroundStyle(ClickColors.textPrimary)
-                .padding(.horizontal, 14)
-                .padding(.vertical, 10)
-                .background(.regularMaterial)
-                .clipShape(RoundedRectangle(cornerRadius: ClickRadius.messageBubble, style: .continuous))
-                .overlay {
-                    RoundedRectangle(cornerRadius: ClickRadius.messageBubble, style: .continuous)
-                        .stroke(
-                            isFocused ? ClickColors.accentForeground.opacity(0.55) : ClickColors.separator,
-                            lineWidth: isFocused
-                                ? ClickMetrics.focusStrokeWidth
-                                : ClickMetrics.strokeWidth
-                        )
-                }
-                .submitLabel(.send)
-                .onSubmit {
-                    guard canSend else { return }
-                    ClickHaptics.impact(.light)
-                    onSend()
-                }
-                .onChange(of: text) { _, newValue in
-                    if newValue.count > characterLimit {
-                        text = String(newValue.prefix(characterLimit))
-                    }
-                    onTypingChanged(!newValue.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
-                }
-
+                textField
                 if remainingCharacters < 80 {
                     Text("\(remainingCharacters)")
                         .font(ClickTypography.caption)
@@ -144,49 +247,48 @@ public struct ChatComposerView: View {
                         .padding(.bottom, 12)
                         .monospacedDigit()
                 }
-
-                if onDraft != nil, editTarget == nil, !canSend {
-                    Button {
-                        Task { await startRecording() }
-                    } label: {
-                        Image(systemName: "mic.fill")
-                            .font(.system(size: 17, weight: .semibold))
-                            .foregroundStyle(ClickColors.textSecondary)
-                            .frame(width: 40, height: 40)
-                            .background(ClickColors.fillStrong)
-                            .clipShape(Circle())
-                    }
-                    .buttonStyle(.plain)
-                    .accessibilityLabel("Record voice note")
-                } else {
-                Button {
-                    guard canSend else { return }
-                    ClickHaptics.impact(.light)
-                    onSend()
-                } label: {
-                    Image(systemName: editTarget == nil ? "arrow.up" : "checkmark")
-                        .font(.system(size: 17, weight: .bold))
-                        .foregroundStyle(
-                            canSend ? ClickColors.primaryActionForeground : ClickColors.textTertiary
-                        )
-                        .frame(width: 40, height: 40)
-                        .background(
-                            canSend ? ClickColors.primaryActionFill : ClickColors.fillStrong
-                        )
-                        .clipShape(Circle())
-                }
-                .buttonStyle(.plain)
-                .disabled(!canSend)
-                .accessibilityLabel(editTarget == nil ? "Send message" : "Save edit")
-                }
             }
-            .padding(.horizontal, 12)
-            .padding(.vertical, 8)
-            }
+            trailingButton
         }
-        .onDisappear { recorder.cancel() }
-        .animation(ClickMotion.selection, value: replyTarget?.id)
-        .animation(ClickMotion.selection, value: editTarget?.id)
+        .padding(.horizontal, 12)
+        .padding(.vertical, 8)
+    }
+
+    private var textField: some View {
+        TextField(
+            editTarget == nil ? (staged.isEmpty ? placeholder : "Add a caption…") : "Edit message…",
+            text: $text,
+            axis: .vertical
+        )
+        .focused($isFocused)
+        .lineLimit(1...5)
+        .font(ClickTypography.body)
+        .foregroundStyle(ClickColors.textPrimary)
+        .padding(.horizontal, 14)
+        .padding(.vertical, 10)
+        .background(.regularMaterial)
+        .clipShape(RoundedRectangle(cornerRadius: ClickRadius.messageBubble, style: .continuous))
+        .overlay {
+            RoundedRectangle(cornerRadius: ClickRadius.messageBubble, style: .continuous)
+                .stroke(
+                    isFocused ? ClickColors.accentForeground.opacity(0.55) : ClickColors.separator,
+                    lineWidth: isFocused
+                        ? ClickMetrics.focusStrokeWidth
+                        : ClickMetrics.strokeWidth
+                )
+        }
+        .submitLabel(.send)
+        .onSubmit {
+            guard canSend else { return }
+            ClickHaptics.impact(.light)
+            onSend()
+        }
+        .onChange(of: text) { _, newValue in
+            if newValue.count > characterLimit {
+                text = String(newValue.prefix(characterLimit))
+            }
+            onTypingChanged(!newValue.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+        }
     }
 
     private func contextStrip(

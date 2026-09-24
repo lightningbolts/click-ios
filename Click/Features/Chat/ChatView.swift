@@ -8,15 +8,19 @@ public struct ChatView: View {
     @Environment(AppEnvironment.self) private var env
     @State private var model: ConversationModel
     @State private var isNearBottom = true
+    /// Topmost visible message, used to hold the reader's place while older history loads.
+    @State private var topVisibleID: String?
+    @State private var isTopSentinelVisible = false
+    /// Messages that arrived while the reader was scrolled up.
+    @State private var unseenCount = 0
+    /// Insert animations run only after the first paint, never for the initial page.
+    @State private var animatesInserts = false
     @State private var screenWidth: CGFloat = 390
     @State private var viewerURL: ViewerURL?
-    @State private var safetyAction: SafetyAction?
+    @Environment(ConversationListModel.self) private var conversations: ConversationListModel?
+    @State private var pendingAction: PendingConversationAction?
     @State private var notice: String?
 
-    private enum SafetyAction: Identifiable {
-        case report, block
-        var id: Self { self }
-    }
     @State private var quickLookURL: URL?
     @State private var sharingBeacon = false
 
@@ -98,18 +102,37 @@ public struct ChatView: View {
                 env.activeChatID = chatID
             }
             .onChange(of: model.phase) { _, newPhase in
-                guard newPhase == .loaded else { return }
+                guard newPhase == .loaded, !animatesInserts else { return }
                 DispatchQueue.main.async {
                     proxy.scrollTo("bottom-anchor", anchor: .bottom)
+                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) { animatesInserts = true }
                 }
             }
-            .onChange(of: model.items.count) { oldCount, newCount in
-                guard newCount > oldCount else { return }
-                guard isNearBottom || model.items.last?.isOutgoing == true else { return }
-                withAnimation(ClickMotion.selection) {
-                    proxy.scrollTo("bottom-anchor", anchor: .bottom)
+            // Only a new *latest* message moves the timeline. Loading older history prepends
+            // and never changes the last ID, so the reader keeps their place.
+            .onChange(of: model.items.last?.stableID) { oldID, newID in
+                guard let newID, let oldID, newID != oldID else { return }
+                if isNearBottom || model.items.last?.isOutgoing == true {
+                    withAnimation(ClickMotion.content) {
+                        proxy.scrollTo("bottom-anchor", anchor: .bottom)
+                    }
+                    unseenCount = 0
+                } else {
+                    unseenCount += 1
                 }
             }
+            .onChange(of: isNearBottom) { _, nearBottom in
+                if nearBottom { unseenCount = 0 }
+            }
+            .overlay(alignment: .bottomTrailing) {
+                if !isNearBottom, !model.items.isEmpty {
+                    jumpToLatestButton(proxy: proxy)
+                        .padding(.trailing, 16)
+                        .padding(.bottom, 12)
+                        .transition(.scale(scale: 0.8).combined(with: .opacity))
+                }
+            }
+            .animation(ClickMotion.selection, value: isNearBottom)
             .onChange(of: model.isPeerTyping) { _, isTyping in
                 guard isTyping, isNearBottom else { return }
                 withAnimation(ClickMotion.selection) {
@@ -128,9 +151,13 @@ public struct ChatView: View {
                         .frame(maxWidth: .infinity)
                         .padding(.vertical, 8)
                         .opacity(model.isLoadingOlder ? 1 : 0.4)
-                        .onAppear { Task { await model.loadOlder() } }
+                        .onAppear {
+                            isTopSentinelVisible = true
+                            requestOlderHistory(proxy: proxy)
+                        }
+                        .onDisappear { isTopSentinelVisible = false }
                 }
-                ForEach(Array(model.items.enumerated()), id: \.element.id) { index, item in
+                ForEach(Array(model.items.enumerated()), id: \.element.stableID) { index, item in
                     if shouldShowDateHeader(at: index) {
                         dateHeader(item.createdAt)
                     }
@@ -167,9 +194,16 @@ public struct ChatView: View {
                         },
                         onOpenBeacon: { beacon in
                             env.router.navigate(to: beacon.isEvent ? .event(beaconID: beacon.beaconID) : .beacon(beaconID: beacon.beaconID))
+                        },
+                        onDiscardFailed: { target in
+                            withAnimation(ClickMotion.content) { model.discardFailed(item: target) }
                         }
                     )
-                    .id(item.id)
+                    .id(item.stableID)
+                    .transition(.asymmetric(
+                        insertion: .move(edge: .bottom).combined(with: .scale(scale: 0.92, anchor: item.isOutgoing ? .bottomTrailing : .bottomLeading)).combined(with: .opacity),
+                        removal: .opacity
+                    ))
                 }
 
                 if model.isPeerTyping {
@@ -183,6 +217,22 @@ public struct ChatView: View {
             }
             .padding(.top, 8)
             .padding(.bottom, 8)
+            .scrollTargetLayout()
+            .animation(animatesInserts ? ClickMotion.content : nil, value: model.items.last?.stableID)
+        }
+        .scrollPosition(id: $topVisibleID, anchor: .top)
+        .dropDestination(for: Data.self) { payloads, _ in
+            guard model.supportsMedia else { return false }
+            Task {
+                for data in payloads.prefix(ConversationModel.maxStaged) {
+                    if let draft = await MediaDraftBuilder.image(from: data) {
+                        model.stage(draft)
+                    } else {
+                        model.operationError = "Only photos can be dropped here. Use + to attach a file."
+                    }
+                }
+            }
+            return true
         }
         .scrollDismissesKeyboard(.interactively)
         .defaultScrollAnchor(.bottom)
@@ -191,6 +241,47 @@ public struct ChatView: View {
         } action: { _, nearBottom in
             isNearBottom = nearBottom
         }
+    }
+
+    /// Debounced (300 ms) older-history request that restores the reader's anchor afterwards.
+    private func requestOlderHistory(proxy: ScrollViewProxy) {
+        Task { @MainActor in
+            try? await Task.sleep(for: .milliseconds(300))
+            guard isTopSentinelVisible, model.hasMoreHistory, !model.isLoadingOlder else { return }
+            let anchor = topVisibleID ?? model.items.first?.stableID
+            await model.loadOlder()
+            guard let anchor else { return }
+            var transaction = Transaction()
+            transaction.disablesAnimations = true
+            withTransaction(transaction) {
+                proxy.scrollTo(anchor, anchor: .top)
+            }
+        }
+    }
+
+    private func jumpToLatestButton(proxy: ScrollViewProxy) -> some View {
+        Button {
+            withAnimation(ClickMotion.content) {
+                proxy.scrollTo("bottom-anchor", anchor: .bottom)
+            }
+            unseenCount = 0
+        } label: {
+            HStack(spacing: 4) {
+                Image(systemName: "chevron.down")
+                    .font(.system(size: 14, weight: .semibold))
+                if unseenCount > 0 {
+                    Text("\(unseenCount)")
+                        .font(ClickTypography.metadataEmphasized)
+                        .contentTransition(.numericText())
+                }
+            }
+            .foregroundStyle(ClickColors.textPrimary)
+            .frame(minWidth: 40, minHeight: 40)
+            .padding(.horizontal, unseenCount > 0 ? 8 : 0)
+            .glassCircleBackground()
+        }
+        .buttonStyle(.plain)
+        .accessibilityLabel(unseenCount > 0 ? "Jump to latest, \(unseenCount) new" : "Jump to latest")
     }
 
     private var composer: some View {
@@ -213,32 +304,25 @@ public struct ChatView: View {
             },
             onSend: {
                 Task {
-                    await model.sendOrUpdateMessage()
+                    await model.sendComposer()
                 }
             },
             onTypingChanged: { hasText in
                 model.noteTypingActivity(hasText: hasText)
             },
-            onDraft: model.supportsMedia ? { draft in Task { await model.sendMedia(draft) } } : nil,
+            onDraft: model.supportsMedia ? { draft in
+                // Click Drops go straight out from the camera; everything else is reviewed first.
+                if draft.isClickDrop { Task { await model.sendMedia(draft) } } else { model.stage(draft) }
+            } : nil,
             onAttachmentError: { message in model.operationError = message },
-            onShareBeacon: model.supportsMedia ? { sharingBeacon = true } : nil
+            onShareBeacon: model.supportsMedia ? { sharingBeacon = true } : nil,
+            staged: model.staged,
+            onUnstage: { id in model.unstage(id) }
         )
         // Dialogs hang off the composer so the main body stays type-checkable.
-        .confirmationDialog(
-            safetyAction == .block ? "Block \(model.identity.peerDisplayName)?" : "Report this conversation?",
-            isPresented: Binding(get: { safetyAction != nil }, set: { if !$0 { safetyAction = nil } }),
-            titleVisibility: .visible
-        ) {
-            if safetyAction == .block {
-                Button("Block", role: .destructive) { Task { await block() } }
-            } else {
-                Button("Report", role: .destructive) { Task { await report() } }
-            }
-        } message: {
-            Text(safetyAction == .block
-                 ? "They won't be able to message you or see you on Click."
-                 : "Click's safety team will review this conversation.")
-        }
+        .modifier(OptionalConversationActionDialogs(model: conversations, pending: $pendingAction) {
+            env.router.resetCurrentTabPath()
+        })
         .alert("Chat", isPresented: Binding(get: { notice != nil }, set: { if !$0 { notice = nil } })) {
             Button("OK", role: .cancel) {}
         } message: {
@@ -246,48 +330,50 @@ public struct ChatView: View {
         }
     }
 
+    /// The same action list as the inbox row (one implementation, spec §29.7).
     @ViewBuilder
     private var conversationMenu: some View {
         Menu {
             switch model.identity.kind {
             case .direct:
-                Button("View profile", systemImage: "person.crop.circle") {
-                    env.router.navigate(to: .userProfile(userID: model.identity.peerUserID, connectionID: model.identity.connectionID))
-                }
-                if model.identity.connectionID != nil {
-                    Section {
-                        Button("Report", systemImage: "exclamationmark.bubble") { safetyAction = .report }
-                        Button("Block", systemImage: "hand.raised", role: .destructive) { safetyAction = .block }
+                if let conversations, let item = conversations.connection(connectionID: model.identity.connectionID) {
+                    DirectConversationActions(item: item, model: conversations, pending: $pendingAction) {
+                        env.router.navigate(to: .userProfile(userID: model.identity.peerUserID, connectionID: model.identity.connectionID))
+                    }
+                } else {
+                    Button("View profile", systemImage: "person.crop.circle") {
+                        env.router.navigate(to: .userProfile(userID: model.identity.peerUserID, connectionID: model.identity.connectionID))
+                    }
+                    if let connectionID = model.identity.connectionID {
+                        Section {
+                            Button("Report", systemImage: "exclamationmark.bubble") {
+                                pendingAction = .report(connectionID: connectionID, name: model.identity.peerDisplayName)
+                            }
+                            Button("Block", systemImage: "hand.raised", role: .destructive) {
+                                pendingAction = .block(userID: model.identity.peerUserID, name: model.identity.peerDisplayName, connectionID: connectionID)
+                            }
+                        }
                     }
                 }
             case .group:
-                Button("Group info", systemImage: "info.circle") {
-                    env.router.navigate(to: .groupProfile(chatID: model.identity.chatID))
+                if let conversations, let group = conversations.group(chatID: model.identity.chatID) {
+                    GroupConversationActions(
+                        group: group,
+                        model: conversations,
+                        currentUserID: env.session.currentSession?.userId,
+                        pending: $pendingAction,
+                        onInfo: { env.router.navigate(to: .groupProfile(chatID: model.identity.chatID)) }
+                    )
+                } else {
+                    Button("Group info", systemImage: "info.circle") {
+                        env.router.navigate(to: .groupProfile(chatID: model.identity.chatID))
+                    }
                 }
             case .hub:
                 EmptyView()
             }
         } label: {
             Label("Conversation options", systemImage: "ellipsis")
-        }
-    }
-
-    private func report() async {
-        guard let connectionID = model.identity.connectionID else { return }
-        do {
-            try await env.profiles.report(connectionID: connectionID, reason: "Reported from chat")
-            notice = "Thanks. Click's safety team will review it."
-        } catch {
-            notice = "Couldn't send the report. \(error.userFacingMessage)"
-        }
-    }
-
-    private func block() async {
-        do {
-            try await env.profiles.block(userID: model.identity.peerUserID)
-            env.router.resetCurrentTabPath()
-        } catch {
-            notice = "Couldn't block. \(error.userFacingMessage)"
         }
     }
 

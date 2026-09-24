@@ -32,3 +32,25 @@ struct EventDetailTests {
         #expect(rendered.runs.contains { $0.link?.absoluteString == "https://joinclick.co" })
     }
 }
+
+@Suite("Event reminders and beacon form rules")
+struct EventReminderTests {
+    @Test("Reminders fire 60 and 15 minutes before, only when still ahead")
+    func triggers() {
+        let now = Date()
+        #expect(EventReminderScheduler.triggers(start: now.addingTimeInterval(3 * 3600), now: now).map(\.minutes) == [60, 15])
+        #expect(EventReminderScheduler.triggers(start: now.addingTimeInterval(30 * 60), now: now).map(\.minutes) == [15])
+        #expect(EventReminderScheduler.triggers(start: now.addingTimeInterval(5 * 60), now: now).isEmpty)
+    }
+
+    @Test("Custom categories and music links")
+    func formRules() {
+        #expect(BeaconFormRules.customCategory("  Board games ", existing: []) == "Board games")
+        #expect(BeaconFormRules.customCategory(String(repeating: "x", count: 25), existing: []) == nil)
+        #expect(BeaconFormRules.customCategory("music", existing: ["Music"]) == nil)
+        #expect(BeaconFormRules.isMusicLink("https://open.spotify.com/track/abc"))
+        #expect(BeaconFormRules.isMusicLink("https://youtu.be/xyz"))
+        #expect(!BeaconFormRules.isMusicLink("https://example.com/song"))
+        #expect(!BeaconFormRules.isMusicLink("spotify:track:abc"))
+    }
+}

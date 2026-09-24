@@ -116,3 +116,36 @@ struct ProximityResultTests {
         #expect(body["simulator_mock"] == nil)
     }
 }
+
+@Suite("Cross-platform ultrasonic tokens")
+struct CrossPlatformTokenTests {
+    @Test("Generated tokens never repeat adjacent digits or start with 0")
+    func generatedTokensAreSafe() {
+        var generator = SystemRandomNumberGenerator()
+        for _ in 0..<5_000 {
+            let token = ProximityCodec.randomToken(using: &generator)
+            #expect(ProximityCodec.isCrossPlatformSafe(token), "unsafe token \(token)")
+        }
+    }
+
+    @Test("Unsafe tokens are recognized")
+    func unsafeTokens() {
+        #expect(!ProximityCodec.isCrossPlatformSafe("7700"))
+        #expect(!ProximityCodec.isCrossPlatformSafe("0123"))
+        #expect(!ProximityCodec.isCrossPlatformSafe("1223"))
+        #expect(ProximityCodec.isCrossPlatformSafe("1212"))
+    }
+}
+
+@Suite("QR redeem messages")
+struct QRRedeemMessageTests {
+    @Test("Server QR error codes map to clear copy")
+    func mapsCodes() {
+        let expired = APIError.validation(code: "400", message: #"{"error":"expired"}"#)
+        #expect(QRRedeemMessages.message(for: expired).contains("expired"))
+        let used = APIError.validation(code: "400", message: #"{"error":"already_used"}"#)
+        #expect(QRRedeemMessages.message(for: used).contains("already used"))
+        #expect(QRRedeemMessages.message(for: APIError.forbidden).contains("same place"))
+        #expect(QRRedeemMessages.message(for: APIError.validation(code: "400", message: "garbage")) == "Couldn't redeem that code. Try again.")
+    }
+}

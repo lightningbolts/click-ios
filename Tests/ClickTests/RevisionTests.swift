@@ -4,23 +4,43 @@ import Foundation
 
 @Suite("Profile timeline labels")
 struct EncounterLabelTests {
-    @Test("Chips are human-readable, never raw enum values")
+    @Test("Chips and lines are human-readable, never raw enum values")
     func chips() {
         let encounter = Encounter(
             id: "e", date: .now, place: "21310 11th Drive Southeast, Bothell", eventTitle: nil, eventBeaconID: nil,
-            contextTags: ["extended_hangout", "study"], noiseLevel: "LOUD", elevation: "BELOW_GROUND",
+            contextTags: ["extended_hangout", "study", "met_face_to_face"], noiseLevel: "LOUD", elevation: "BELOW_GROUND",
             venue: "Gas Works Park", temperatureCelsius: 16, weatherCondition: "Clear", relativeAltitudeMeters: 14
         )
-        let chips = EncounterLabels.chips(for: encounter, locale: Locale(identifier: "en_US"))
+        let chips = EncounterLabels.chips(for: encounter)
         #expect(chips.contains("Extended hangout"))
-        #expect(chips.contains("Study"))
-        #expect(chips.contains("Lively"))
-        #expect(chips.contains("Below ground"))
-        #expect(chips.contains("+14 m"))
-        #expect(chips.contains { $0.contains("Clear") && $0.contains("°") })
-        #expect(!chips.contains { $0.contains("_") || $0 == $0.uppercased() && $0.count > 3 && $0.allSatisfy(\.isLetter) })
+        #expect(chips.contains("📚 Study Session"))
+        #expect(chips.contains("Met face to face"))
+        let lines = EncounterLabels.lines(for: encounter).map(\.text)
+        #expect(lines.contains("Loud"))
+        #expect(lines.contains("Below ground · 14 m"))
+        #expect(lines.contains("61°F (16°C) · Clear"))
+        #expect(!(chips + lines).contains { $0.contains("_") })
         #expect(encounter.placeName == "Gas Works Park")
-        #expect(EncounterLabels.elevation("GROUND_LEVEL") == nil)
+        #expect(EncounterLabels.elevation("GROUND_LEVEL") == "Ground level")
+    }
+
+    @Test("KMP timeline formats")
+    func kmpFormats() {
+        var components = DateComponents()
+        components.year = 2026; components.month = 9; components.day = 22; components.hour = 19; components.minute = 4
+        let utc = TimeZone(identifier: "UTC")!
+        var calendar = Calendar(identifier: .gregorian)
+        calendar.timeZone = utc
+        let date = calendar.date(from: components)!
+        #expect(EncounterLabels.whenLine(date, timeZone: utc) == "Tue, Sep 22, 2026 · 7:04 PM")
+        #expect(EncounterLabels.placeLine(locationName: "Gas Works Park", displayLocation: "Seattle", neighbourhood: "Wallingford") == "Gas Works Park • Wallingford, Seattle")
+        #expect(EncounterLabels.placeLine(locationName: "Cafe", displayLocation: "Seattle", neighbourhood: nil) == "Cafe · Seattle")
+        #expect(EncounterLabels.noiseLine(category: "MODERATE", decibels: 58.2) == "Moderate · 58 dB")
+        #expect(EncounterLabels.barometricLine(category: "BELOW_GROUND", meters: 12.4) == "Below ground · 12 m")
+        let windy = Encounter(id: "w", date: .now, place: nil, eventTitle: nil, eventBeaconID: nil, contextTags: [],
+                              noiseLevel: nil, elevation: nil, temperatureCelsius: 16, weatherCondition: "Clear",
+                              windKph: 7, windDirectionDegrees: 45)
+        #expect(EncounterLabels.weatherLine(windy) == "61°F (16°C) · Clear · 7 km/h NE")
     }
 
     @Test("Without a venue, the place is the first address component")

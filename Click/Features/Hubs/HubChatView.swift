@@ -108,11 +108,13 @@ struct HubChatView: View {
                 chatRepository: env.chat,
                 currentUserID: env.session.currentSession?.userId ?? "",
                 currentUserName: "You",
-                    timelineCache: env.timelineCache
+                    timelineCache: env.timelineCache,
+                    pendingSends: env.pendingSends
             )
             phase = .ready(hub, model)
             await conversations.rememberHub(JoinedHub(
-                hubID: hub.id, name: hub.name, category: hub.category, eventBeaconID: hub.eventBeaconID, joinedAt: .now
+                hubID: hub.id, name: hub.name, category: hub.category, eventBeaconID: hub.eventBeaconID, joinedAt: .now,
+                creatorID: hub.creatorID
             ))
         } catch {
             if let hubError = error as? HubChatError, hubError == .ended || hubError == .accessDenied {
@@ -152,8 +154,7 @@ struct HubChatView: View {
 
     private func leave(_ hub: HubInfo) async {
         do {
-            try await env.hubs.leave(hubID: hub.id)
-            await conversations.forgetHub(id: hub.id)
+            try await conversations.leaveHub(id: hub.id)
             dismiss()
         } catch {
             notice = "Couldn't leave the hub. \(error.userFacingMessage)"
@@ -162,8 +163,7 @@ struct HubChatView: View {
 
     private func delete(_ hub: HubInfo) async {
         do {
-            try await env.hubs.delete(hubID: hub.id)
-            await conversations.forgetHub(id: hub.id)
+            try await conversations.deleteHub(id: hub.id)
             dismiss()
         } catch {
             notice = "Couldn't delete the hub. \(error.userFacingMessage)"

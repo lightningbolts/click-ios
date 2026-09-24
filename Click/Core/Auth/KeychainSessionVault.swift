@@ -10,24 +10,28 @@ public final class KeychainSessionVault: Sendable {
 
     private final class Storage: @unchecked Sendable {
         private let lock = NSLock()
-        private var fallback: SessionSnapshot?
+        private var fallback: [String: SessionSnapshot] = [:]
 
-        func set(_ value: SessionSnapshot?) {
+        func set(_ value: SessionSnapshot?, account: String) {
             lock.lock()
             defer { lock.unlock() }
-            fallback = value
+            fallback[account] = value
         }
 
-        func get() -> SessionSnapshot? {
+        func get(account: String) -> SessionSnapshot? {
             lock.lock()
             defer { lock.unlock() }
-            return fallback
+            return fallback[account]
         }
     }
 
     private static let storage = Storage()
+    private let account: String
 
-    public init() {}
+    /// `account` is overridable only so tests never touch the real session item.
+    public init(account: String = KeychainSessionVault.accountName) {
+        self.account = account
+    }
 
     /// Saves a complete v2 session without deleting the previously valid Keychain item first.
     /// Existing credentials remain intact if an update/add fails.
@@ -55,7 +59,7 @@ public final class KeychainSessionVault: Sendable {
         let matchQuery: [CFString: Any] = [
             kSecClass: kSecClassGenericPassword,
             kSecAttrService: Self.serviceName,
-            kSecAttrAccount: Self.accountName
+            kSecAttrAccount: account
         ]
         let updateAttributes: [CFString: Any] = [
             kSecValueData: data
@@ -66,7 +70,7 @@ public final class KeychainSessionVault: Sendable {
             let addQuery: [CFString: Any] = [
                 kSecClass: kSecClassGenericPassword,
                 kSecAttrService: Self.serviceName,
-                kSecAttrAccount: Self.accountName,
+                kSecAttrAccount: account,
                 kSecValueData: data,
                 kSecAttrAccessible: kSecAttrAccessibleWhenUnlockedThisDeviceOnly
             ]
@@ -75,27 +79,27 @@ public final class KeychainSessionVault: Sendable {
 
         if status == -34018 {
             // Unit-test environments may lack Keychain entitlements.
-            Self.storage.set(session)
+            Self.storage.set(session, account: account)
             return true
         }
         guard status == errSecSuccess else {
             return false
         }
 
-        Self.storage.set(nil)
+        Self.storage.set(nil, account: account)
         return true
     }
 
     /// Reads and validates the active session from Keychain.
     public func readSession() -> SessionSnapshot? {
-        if let fallback = Self.storage.get() {
+        if let fallback = Self.storage.get(account: account) {
             return fallback
         }
 
         let query: [CFString: Any] = [
             kSecClass: kSecClassGenericPassword,
             kSecAttrService: Self.serviceName,
-            kSecAttrAccount: Self.accountName,
+            kSecAttrAccount: account,
             kSecReturnData: true,
             kSecMatchLimit: kSecMatchLimitOne
         ]
@@ -131,11 +135,11 @@ public final class KeychainSessionVault: Sendable {
     /// Deletes the session record on explicit sign-out or hard authentication invalidation.
     @discardableResult
     public func deleteSession() -> Bool {
-        Self.storage.set(nil)
+        Self.storage.set(nil, account: account)
         let query: [CFString: Any] = [
             kSecClass: kSecClassGenericPassword,
             kSecAttrService: Self.serviceName,
-            kSecAttrAccount: Self.accountName
+            kSecAttrAccount: account
         ]
         let status = SecItemDelete(query as CFDictionary)
         return status == errSecSuccess || status == errSecItemNotFound || status == -34018

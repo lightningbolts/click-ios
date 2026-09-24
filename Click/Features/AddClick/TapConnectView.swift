@@ -15,11 +15,28 @@ struct TapConnectView: View {
             switch model.phase {
             case .choosingPeople(let candidates, let selected):
                 choosePeople(candidates, selected: selected)
+            case .connected(let match):
+                // Only after the server confirmed the connection (spec §28).
+                PostConnectView(
+                    model: PostConnectModel(match: match, method: .tap),
+                    onSayHi: { peer in openChat(peer, connectionID: peer.connectionID ?? match.connectionID) },
+                    onViewProfile: { peer in
+                        env.router.navigate(to: .userProfile(userID: peer.id, connectionID: peer.connectionID ?? match.connectionID))
+                    },
+                    onOpenGroups: { env.router.selectTab(.connections) },
+                    onOpenEvent: { env.router.navigate(to: .event(beaconID: $0)) },
+                    onDone: { dismiss() }
+                )
+                .id(match.connectionID ?? match.peers.map(\.id).joined())
+                .transition(.opacity)
             default:
                 statusContent
             }
         }
         .background(ClickColors.background.ignoresSafeArea())
+        .overlay(alignment: .bottom) {
+            if DebugLaunch.has("-connection-log") { ConnectionDebugLogView() }
+        }
         .navigationTitle("Tap to Connect")
         .navigationBarTitleDisplayMode(.inline)
         .toolbar(.hidden, for: .tabBar)

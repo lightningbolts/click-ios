@@ -26,6 +26,9 @@ public struct MessageMedia: Hashable, Sendable {
     public let isDisposable: Bool
     /// Click Drop reveal time (`collaboration_ttl`); the photo stays pixelated until then.
     public var revealAt: Date? = nil
+    /// Voice-note amplitude envelope (`metadata.waveform`, 0...1). iOS-written and additive;
+    /// clients that don't know it (KMP) ignore it, and bubbles without it draw a flat bar.
+    public var waveform: [Double]? = nil
 
     public func isLocked(now: Date = .now) -> Bool {
         guard isDisposable else { return false }
@@ -91,7 +94,8 @@ public struct MessageMedia: Hashable, Sendable {
                 fileKey: nil,
                 plaintextSha256: nil,
                 isDisposable: JSONFields.bool(meta["disposable_roll"]) ?? false,
-                revealAt: JSONFields.date(meta["collaboration_ttl"])
+                revealAt: JSONFields.date(meta["collaboration_ttl"]),
+                waveform: isImage ? nil : VoiceWaveform.parse(meta["waveform"])
             )
         case "file", "document":
             let descriptor = AttachmentEnvelope.decode(decryptedContent)
@@ -211,6 +215,8 @@ public struct MediaDraft: Sendable {
     public let mimeType: String
     public let fileName: String?
     public let durationSeconds: Int?
+    /// Voice-note envelope written to `metadata.waveform`.
+    public var waveform: [Double]?
     /// A Click Drop photo: revealed to everyone 24 hours after it is taken.
     public var isClickDrop = false
 
@@ -265,5 +271,45 @@ public actor ChatMediaVault {
     private func fileURL(messageID: String, fileExtension: String) -> URL {
         let safe = messageID.filter { $0.isLetter || $0.isNumber || $0 == "-" }
         return directory.appendingPathComponent("\(safe).\(fileExtension)")
+    }
+}
+
+/// Voice-note waveform helpers (40 bins, 0...1).
+public enum VoiceWaveform {
+    public static let binCount = 40
+    public static let floor = 0.06
+
+    /// Averages raw meter levels into `count` bins normalized to the loudest bin.
+    public nonisolated static func bins(from levels: [Double], count: Int = binCount) -> [Double] {
+        guard !levels.isEmpty, count > 0 else { return Array(repeating: floor, count: count) }
+        var result: [Double] = []
+        result.reserveCapacity(count)
+        for index in 0..<count {
+            let start = index * levels.count / count
+            let end = max(start + 1, (index + 1) * levels.count / count)
+            let slice = levels[min(start, levels.count - 1)..<min(end, levels.count)]
+            result.append(slice.reduce(0, +) / Double(slice.count))
+        }
+        let peak = result.max() ?? 0
+        guard peak > 0 else { return Array(repeating: floor, count: count) }
+        return result.map { max(floor, min(1, $0 / peak)) }
+    }
+
+    /// Linear amplitude (0...1) from an `AVAudioRecorder` average power in dBFS.
+    public nonisolated static func amplitude(fromDecibels power: Float) -> Double {
+        guard power.isFinite else { return 0 }
+        return Double(min(1, max(0, pow(10, power / 20))))
+    }
+
+    static func parse(_ value: Any?) -> [Double]? {
+        guard let array = value as? [Any] else { return nil }
+        let numbers = array.compactMap { ($0 as? NSNumber)?.doubleValue }
+        guard !numbers.isEmpty, numbers.count == array.count else { return nil }
+        return numbers.map { min(1, max(0, $0)) }
+    }
+
+    /// Rounded for the wire (two decimals keeps metadata small).
+    static func wire(_ bins: [Double]) -> [Double] {
+        bins.map { ($0 * 100).rounded() / 100 }
     }
 }

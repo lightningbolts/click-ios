@@ -79,6 +79,9 @@ final class TapConnectModel {
     }
 
     func cancel() {
+        if case .choosingPeople(let candidates, let selected) = phase {
+            track(.hostSelectionAbandoned, candidateCount: candidates.count, selectedCount: selected.count, reason: "dismissed")
+        }
         runTask?.cancel()
         runTask = nil
         stopSensors()
@@ -123,8 +126,11 @@ final class TapConnectModel {
         runTask = Task {
             do {
                 let match = try await environment.proximity.confirmSelection(pendingID: pendingID, memberIDs: Array(selected))
+                track(.hostSelectionConfirmed, selectedCount: selected.count)
+                if match.isGroup { track(.cliqueCreated, peerCount: match.peers.count, isGroup: true) }
                 await finish(with: match)
             } catch {
+                track(.failed, reason: "confirm_selection_failed")
                 phase = .failed("Couldn't create the group. \(error.userFacingMessage)")
             }
         }
@@ -150,6 +156,7 @@ final class TapConnectModel {
         guard !Task.isCancelled else { return }
 
         phase = .sensing
+        track(.started)
         bluetooth = .active
         sound = .active
         location = captureLocation ? .active : .skipped("Off")
@@ -208,8 +215,10 @@ final class TapConnectModel {
             await handle(try await environment.proximity.bind(evidence))
         } catch let error where error.isOffline {
             await environment.proximity.enqueue(evidence, userID: userID)
+            track(.offlineQueued)
             phase = .savedOffline
         } catch {
+            track(.failed, reason: Self.telemetryReason(error))
             phase = .failed("Tap to Connect failed. \(error.userFacingMessage)")
             ClickHaptics.error()
         }
@@ -219,20 +228,30 @@ final class TapConnectModel {
         switch result {
         case .matched(let match):
             if match.peers.isEmpty {
+                track(.failed, reason: "no_peers")
                 phase = .failed("No nearby tap detected. Try again closer together.")
                 ClickHaptics.error()
+            } else if match.rateLimited {
+                track(.reconnectRateLimited, peerCount: match.peers.count, isGroup: match.isGroup, isReconnect: true)
+                phase = .failed("You recently crossed paths with this person! Wait a bit before logging another memory.")
+                ClickHaptics.warning()
             } else {
+                track(.matched, peerCount: match.peers.count, isGroup: match.isGroup, isReconnect: match.isReconnect)
+                if match.isReconnect { track(.reconnectSaved, peerCount: match.peers.count, isGroup: match.isGroup, isReconnect: true) }
                 await finish(with: match)
             }
         case .awaitingSelection(let pendingID, let candidates):
+            track(.awaitingSelection, candidateCount: candidates.count)
             self.pendingID = pendingID
             let people = Array(candidates.prefix(ProximityRepository.maxSelectedPeers))
             ClickHaptics.impact(.heavy)
             phase = .choosingPeople(candidates: people, selected: Set(people.map(\.id)))
         case .pending(let pendingID):
+            track(.pending)
             self.pendingID = pendingID
             await recover(pendingID: pendingID)
         case .ignored:
+            track(.failed, reason: "ignored_empty_payload")
             phase = .failed("No nearby tap detected. Try again closer together.")
         }
     }
@@ -246,9 +265,11 @@ final class TapConnectModel {
             guard !Task.isCancelled else { return }
             guard let result = try? await environment.proximity.recover(pendingID: pendingID) else { continue }
             if case .pending = result { continue }
+            track(.recoverySuccess)
             await handle(result)
             return
         }
+        track(.recoveryTimeout)
         phase = .waitingForPeer(exhausted: true)
         runTask = nil
     }
@@ -259,6 +280,37 @@ final class TapConnectModel {
         ClickHaptics.success()
         phase = .connected(match)
         runTask = nil
+    }
+
+    // MARK: - Telemetry (spec §71.2)
+
+    private func track(
+        _ event: ConnectionFlowTelemetry.Event,
+        peerCount: Int? = nil,
+        isGroup: Bool? = nil,
+        isReconnect: Bool? = nil,
+        candidateCount: Int? = nil,
+        selectedCount: Int? = nil,
+        reason: String? = nil
+    ) {
+        guard let telemetry = environment?.connectionTelemetry else { return }
+        Task {
+            await telemetry.track(event, peerCount: peerCount, isGroup: isGroup, isReconnect: isReconnect,
+                                  selectedCount: selectedCount, candidateCount: candidateCount, reason: reason)
+        }
+    }
+
+    /// A short machine code for a failure (never a server message or an identifier).
+    static func telemetryReason(_ error: Error) -> String {
+        switch error as? APIError {
+        case .timeout?: "timeout"
+        case .rateLimited?: "rate_limited"
+        case .unauthorized?, .forbidden?: "auth"
+        case .validation?: "validation"
+        case .server(let status, _, _)?: "server_\(status)"
+        case .decoding?: "decoding"
+        default: "unknown"
+        }
     }
 
     // MARK: - Permissions / privacy

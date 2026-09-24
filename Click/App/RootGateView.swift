@@ -81,6 +81,10 @@ private struct AuthenticatedGateView: View {
                     OnboardingShellChrome(currentStepIndex: 4, totalSteps: 5, canGoBack: true, onBack: {})
                     PriorConnectionsView(onComplete: {}, onSkip: {})
                 }
+            } else if !DebugLaunch.has("-preview-onboarding-flow"), coordinator.step == .loading, !coordinator.isResolved, coordinator.loadErrorMessage == nil {
+                // Still resolving with no cached completion: keep the launch screen rather than
+                // the onboarding chrome, so returning users never glimpse onboarding.
+                LaunchLoadingView()
             } else if DebugLaunch.has("-preview-onboarding-flow") || coordinator.needsOnboarding {
                 OnboardingFlowView(
                     coordinator: coordinator,
@@ -196,8 +200,10 @@ public struct MainTabShellView: View {
             case .active:
                 conversations.startRealtime()
                 Task { await conversations.refreshIfStale() }
+                env.flushTelemetry()
             case .background:
                 conversations.stopRealtime()
+                env.flushTelemetry()
             default:
                 break
             }

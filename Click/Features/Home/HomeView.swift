@@ -134,12 +134,10 @@ public struct HomeView: View {
             .padding(.top, 12)
             .accessibilityLabel("Search people, places, events")
 
-            if model.isShowingOfflineData {
-                OfflineNotice("Offline — showing saved data") {
-                    Task { await model.refresh() }
-                }
-                .padding(.top, 8)
+            OfflineNotice(showing: "saved data", hasCachedValue: model.hasCachedData, refreshFailed: model.hasRefreshFailure) {
+                Task { await model.refresh() }
             }
+            .padding(.top, 8)
         }
         .padding(.horizontal, 4)
     }

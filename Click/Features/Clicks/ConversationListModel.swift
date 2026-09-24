@@ -99,7 +99,7 @@ final class ConversationListModel {
             await CacheStore.shared.save(groups ?? [], key: "groups", userID: userID)
         } catch {
             groups = nil
-            groupsError = error.userFacingMessage
+            if !error.isCancellation { groupsError = error.userFacingMessage }
         }
         do {
             let fresh = try await clicksTask
@@ -114,7 +114,7 @@ final class ConversationListModel {
             lastRefresh = Date()
             await decryptPreviews(for: merged)
         } catch {
-            refreshError = error.userFacingMessage
+            if !error.isCancellation { refreshError = error.userFacingMessage }
             if let groups, let current = snapshot {
                 snapshot = ClicksSnapshot(connections: current.connections, archivedConnections: current.archived, groups: groups, mapPins: current.mapPins)
             }
@@ -193,6 +193,15 @@ final class ConversationListModel {
     // MARK: - Hubs
 
     /// Refreshes hub previews; hubs the server reports gone or inaccessible are dropped.
+    static let hubPreviewLimit = 10
+    /// Set by the Clicks screen while its Groups filter (which lists hubs) is visible.
+    var hubPreviewsVisible = false {
+        didSet {
+            guard hubPreviewsVisible, !oldValue, let environment, let userID else { return }
+            Task { await refreshHubs(environment, userID: userID) }
+        }
+    }
+
     private func refreshHubs(_ environment: AppEnvironment, userID: String) async {
         var current = await environment.joinedHubs.hubs(userID: userID)
         // Add readable hubs this device hasn't opened yet (joined elsewhere / earlier).
@@ -200,12 +209,22 @@ final class ConversationListModel {
         for (hubID, date) in activity where !current.contains(where: { $0.hubID == hubID }) {
             guard let info = try? await environment.hubs.hub(id: hubID) else { continue }
             current.append(JoinedHub(hubID: info.id, name: info.name, category: info.category,
-                                     eventBeaconID: info.eventBeaconID, joinedAt: date, lastActivityAt: date))
+                                     eventBeaconID: info.eventBeaconID, joinedAt: date, lastActivityAt: date,
+                                     creatorID: info.creatorID))
         }
         guard !current.isEmpty else { return }
-        var updated: [JoinedHub] = []
+        // Latest-message previews cost one request per hub: only for the 10 most recently
+        // active hubs, and only while the Groups list is on screen. The rest keep their
+        // stored preview until they rise into the top 10.
+        guard hubPreviewsVisible else {
+            hubs = current
+            return
+        }
+        let ranked = current.sorted { ($0.lastActivityAt ?? $0.joinedAt) > ($1.lastActivityAt ?? $1.joinedAt) }
+        let refreshed = Array(ranked.prefix(Self.hubPreviewLimit))
+        var updated: [JoinedHub] = Array(ranked.dropFirst(Self.hubPreviewLimit))
         await withTaskGroup(of: (JoinedHub, HubRepository.LatestResult?).self) { group in
-            for hub in current {
+            for hub in refreshed {
                 group.addTask { (hub, await environment.hubs.latest(hubID: hub.hubID)) }
             }
             for await (hub, result) in group {
@@ -263,6 +282,103 @@ final class ConversationListModel {
 
     func markGroupOpened(_ group: CliqueItem) {
         replaceGroup(group.with(unreadCount: 0))
+    }
+
+    // MARK: - Conversation actions
+    // One implementation for inbox swipe/context menus, the chat header menu, profiles, group
+    // info and hub screens. Each confirms with the server first, then updates the list.
+
+    func connection(connectionID: String?) -> ConnectionItem? {
+        guard let connectionID, !connectionID.isEmpty, let snapshot else { return nil }
+        return (snapshot.connections + snapshot.archived).first { $0.connectionID == connectionID }
+    }
+
+    func group(chatID: String) -> CliqueItem? {
+        groups.first { $0.chatID == chatID }
+    }
+
+    /// Spec §34.3: server and badge agree; the row shows unread until it is opened.
+    func markUnread(_ item: ConnectionItem) async {
+        guard let environment, let chatID = item.chatID, !chatID.isEmpty else { return }
+        let original = item
+        replace(item.with(unreadCount: max(1, item.unreadCount)))
+        do {
+            try await environment.chat.markUnread(chatID: chatID)
+        } catch {
+            replace(original)
+            if !error.isCancellation { actionError = "Couldn't mark as unread. Try again." }
+        }
+    }
+
+    func markUnread(_ group: CliqueItem) async {
+        guard let environment else { return }
+        let original = group
+        replaceGroup(group.with(unreadCount: max(1, group.unreadCount)))
+        do {
+            try await environment.chat.markUnread(chatID: group.chatID)
+        } catch {
+            replaceGroup(original)
+            if !error.isCancellation { actionError = "Couldn't mark as unread. Try again." }
+        }
+    }
+
+    /// Accepts or declines a prior-connection request (found through contacts).
+    func respondToPrior(_ item: ConnectionItem, accept: Bool) async throws {
+        guard let environment else { return }
+        do {
+            try await environment.profiles.respondToPriorConnection(connectionID: item.connectionID, accept: accept)
+        } catch APIError.conflict {
+            // Already answered on another device; the refresh below shows the real state.
+        }
+        if accept { await refresh() } else { removeConnection(connectionID: item.connectionID) }
+    }
+
+    func hideConnection(connectionID: String) async throws {
+        guard let environment else { return }
+        try await environment.profiles.removeConnection(connectionID: connectionID)
+        removeConnection(connectionID: connectionID)
+    }
+
+    func report(connectionID: String, reason: String) async throws {
+        guard let environment else { return }
+        try await environment.profiles.report(connectionID: connectionID, reason: reason)
+    }
+
+    /// Blocks the person and leaves the conversation (it disappears from the inbox and map).
+    func block(userID: String, connectionID: String?) async throws {
+        guard let environment else { return }
+        try await environment.profiles.block(userID: userID)
+        if let connectionID { removeConnection(connectionID: connectionID) }
+    }
+
+    func renameGroup(_ group: CliqueItem, to name: String) async throws {
+        guard let environment else { return }
+        try await environment.groups.rename(groupID: group.id, to: name)
+        await refresh()
+    }
+
+    func leaveGroup(_ group: CliqueItem) async throws {
+        guard let environment else { return }
+        try await environment.groups.leave(groupID: group.id)
+        removeGroup(id: group.id)
+    }
+
+    func deleteGroup(_ group: CliqueItem) async throws {
+        guard let environment else { return }
+        try await environment.groups.delete(groupID: group.id)
+        removeGroup(id: group.id)
+    }
+
+    func leaveHub(id: String) async throws {
+        guard let environment else { return }
+        try await environment.hubs.leave(hubID: id)
+        await forgetHub(id: id)
+    }
+
+    func deleteHub(id: String) async throws {
+        guard let environment else { return }
+        try await environment.hubs.delete(hubID: id)
+        await forgetHub(id: id)
     }
 
     /// Drops a connection the user removed or blocked (after the server confirmed).

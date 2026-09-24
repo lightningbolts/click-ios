@@ -215,6 +215,6 @@ struct GroupJournalSection: View {
     private func load() async {
         entries.begin()
         do { entries.succeed(try await env.profiles.journal(targetUserID: chatID, targetType: "chat")) }
-        catch { entries.fail(error.userFacingMessage) }
+        catch { entries.fail(error) }
     }
 }

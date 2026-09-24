@@ -17,6 +17,8 @@ public struct ModuleState<Value: Equatable & Sendable>: Equatable, Sendable {
 
     public private(set) var value: Value?
     public private(set) var phase: Phase
+    /// The phase before the in-flight load began, restored when that load is cancelled.
+    private var phaseBeforeLoading: Phase = .idle
 
     public init(value: Value? = nil, phase: Phase = .idle) {
         self.value = value
@@ -30,6 +32,7 @@ public struct ModuleState<Value: Equatable & Sendable>: Equatable, Sendable {
     }
 
     public mutating func begin() {
+        if phase != .loading { phaseBeforeLoading = phase }
         phase = .loading
     }
 
@@ -41,6 +44,21 @@ public struct ModuleState<Value: Equatable & Sendable>: Equatable, Sendable {
     /// Records a failure but keeps any value already shown (it becomes stale, not empty).
     public mutating func fail(_ message: String) {
         phase = .failed(message)
+    }
+
+    /// Records a thrown error. Cancellation (navigation, view teardown) is not a failure: the
+    /// previous phase is restored and nothing is shown as stale.
+    public mutating func fail(_ error: any Error) {
+        if error.isCancellation {
+            if phase == .loading { phase = phaseBeforeLoading }
+            return
+        }
+        fail(error.userFacingMessage)
+    }
+
+    /// Ends a load without new data and without claiming failure (e.g. no location fix).
+    public mutating func succeedKeepingValue() {
+        phase = value == nil ? .idle : .loaded
     }
 
     public mutating func markUnavailable(_ reason: String) {
@@ -82,6 +100,14 @@ extension Error {
         case .server, .decoding, .conflict, .validation, .invalidURL, .cancelled, nil:
             "Something went wrong. Try again."
         }
+    }
+
+    /// True for cancellations from SwiftUI `.task` teardown or URLSession, which are never failures.
+    var isCancellation: Bool {
+        if self is CancellationError { return true }
+        if (self as? APIError) == .cancelled { return true }
+        if let urlError = self as? URLError, urlError.code == .cancelled { return true }
+        return false
     }
 
     var isOffline: Bool {

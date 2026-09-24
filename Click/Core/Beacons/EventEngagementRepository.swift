@@ -163,6 +163,25 @@ public actor EventEngagementRepository {
     }
 
     /// Creator-only (the server enforces it).
+    // MARK: - Guest list (§58, event managers only)
+
+    public func guestList(beaconID: String) async throws -> GuestListStatus {
+        let (data, _) = try await api.executeRaw(APIRequest(path: "/api/beacons/\(beaconID)/guest-list"))
+        return GuestListStatus(root: try JSONFields.object(data))
+    }
+
+    /// Pasted CSV or one-per-line emails / @handles (server parses both, max 2 000).
+    public func uploadGuestList(beaconID: String, text: String) async throws -> GuestListStatus {
+        let body = try JSONSerialization.data(withJSONObject: ["source": "csv", "csv_text": text])
+        let (data, _) = try await api.executeRaw(APIRequest(path: "/api/beacons/\(beaconID)/guest-list", method: .post, body: body))
+        return GuestListStatus(root: try JSONFields.object(data))
+    }
+
+    public func rematchGuestList(beaconID: String) async throws -> GuestListStatus {
+        let (data, _) = try await api.executeRaw(APIRequest(path: "/api/beacons/\(beaconID)/guest-list/match", method: .post, body: Data("{}".utf8)))
+        return GuestListStatus(root: try JSONFields.object(data))
+    }
+
     public func deleteBeacon(id: String) async throws {
         _ = try await api.executeRaw(APIRequest(path: "/api/beacons/\(id)", method: .delete))
     }
@@ -180,5 +199,30 @@ public actor EventEngagementRepository {
     private func object(_ path: String, _ method: HTTPMethod, body: Data? = nil) async throws -> [String: Any] {
         let (data, _) = try await api.executeRaw(APIRequest(path: path, method: method, body: body))
         return try JSONFields.object(data)
+    }
+}
+
+/// Organizer view of an imported guest list (emails arrive truncated from the server).
+public struct GuestListStatus: Equatable, Sendable {
+    public struct Entry: Identifiable, Equatable, Sendable {
+        public let id: String
+        public let label: String
+        public let matched: Bool
+    }
+
+    public let uploaded: Int
+    public let matched: Int
+    public let teasers: Int
+    public let entries: [Entry]
+
+    init(root: [String: Any]) {
+        uploaded = JSONFields.int(root["uploaded"]) ?? 0
+        matched = JSONFields.int(root["matched"]) ?? 0
+        teasers = JSONFields.int(root["teasers"]) ?? 0
+        entries = JSONFields.rows(root["entries"]).compactMap { row in
+            guard let id = JSONFields.string(row["id"]) else { return nil }
+            let label = JSONFields.string(row["email_truncated"]) ?? JSONFields.string(row["instagram_handle"]).map { "@" + $0 } ?? "Guest"
+            return Entry(id: id, label: label, matched: JSONFields.bool(row["matched"]) ?? false)
+        }
     }
 }

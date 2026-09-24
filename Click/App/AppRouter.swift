@@ -92,6 +92,8 @@ public struct GroupChatRoute: Hashable, Sendable {
 public enum AppRoute: Hashable, Sendable {
     case chat(DirectChatRoute)
     case userProfile(userID: String, connectionID: String?)
+    /// Limited, view-only profile for someone the viewer hasn't Clicked with (event directory).
+    case publicProfile(userID: String)
     case groupChat(GroupChatRoute)
     case groupProfile(chatID: String)
     case event(beaconID: String)
@@ -110,7 +112,7 @@ public enum AppRoute: Hashable, Sendable {
     /// (deep links, notifications) rather than from in-app navigation.
     public var canonicalTab: MainTab {
         switch self {
-        case .chat, .userProfile, .groupChat, .groupProfile:
+        case .chat, .userProfile, .publicProfile, .groupChat, .groupProfile:
             .connections
         case .event, .eventChat, .beacon, .hub:
             .map
@@ -143,6 +145,7 @@ public enum SettingsRoute: Hashable, Sendable {
     case alerts
     case privacy
     case permissions
+    case blocked
     case interests
     case personality
     case calendar
@@ -203,6 +206,13 @@ public final class AppRouter {
     /// Event and beacon details are sheets (medium/large) over whatever is on screen
     /// (interaction contract 3), owned by the shell — one modal owner.
     public var presentedSheet: SheetRoute?
+
+    /// Beacons deleted this session; map, lists and Home drop them before the next refresh.
+    public private(set) var deletedBeaconIDs: Set<String> = []
+
+    public func noteBeaconDeleted(_ id: String) {
+        deletedBeaconIDs.insert(id)
+    }
 
     public init() {}
 

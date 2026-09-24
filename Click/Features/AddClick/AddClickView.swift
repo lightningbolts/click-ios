@@ -404,7 +404,9 @@ private enum QRImageRenderer {
 
 struct ScanClickCodeView: View {
     @Environment(AppEnvironment.self) private var env
+    @Environment(ConversationListModel.self) private var conversations
     @State private var permission: PermissionStatus = .notDetermined
+    @State private var revealed: ProximityMatch?
     @State private var scannedValue: String?
     @State private var isProcessing = false
     @State private var statusText: String?
@@ -455,6 +457,34 @@ struct ScanClickCodeView: View {
                 .padding(.bottom, 30)
             }
         }
+.overlay(alignment: .top) {
+            if DebugLaunch.has("-connection-log") { ConnectionDebugLogView() }
+        }
+        .fullScreenCover(item: Binding(get: { revealed.map(RevealItem.init) }, set: { if $0 == nil { finishReveal() } })) { item in
+            PostConnectView(
+                model: PostConnectModel(match: item.match, method: .qr),
+                onSayHi: { peer in
+                    revealed = nil
+                    env.router.addClickPath.removeAll()
+                    env.router.selectTab(.connections)
+                    env.router.connectionsPath = [.chat(DirectChatRoute(
+                        chatID: nil, connectionID: peer.connectionID, peerUserID: peer.id,
+                        peerDisplayName: peer.name, peerHandle: "", peerAvatarURL: peer.avatarURL,
+                        isOnline: false, lastActiveText: ""
+                    ))]
+                },
+                onViewProfile: { peer in
+                    revealed = nil
+                    env.router.navigate(to: .userProfile(userID: peer.id, connectionID: peer.connectionID))
+                },
+                onOpenGroups: { finishReveal() },
+                onOpenEvent: { id in
+                    revealed = nil
+                    env.router.navigate(to: .event(beaconID: id))
+                },
+                onDone: { finishReveal() }
+            )
+        }
         .navigationTitle("Scan Code")
         .navigationBarTitleDisplayMode(.inline)
         .toolbar(.hidden, for: .tabBar)
@@ -464,6 +494,18 @@ struct ScanClickCodeView: View {
                 ? await env.permissions.requestPermission(for: .camera)
                 : current
         }
+    }
+
+    private struct RevealItem: Identifiable {
+        let match: ProximityMatch
+        var id: String { match.connectionID ?? match.peers.first?.id ?? "qr" }
+    }
+
+    private func finishReveal() {
+        revealed = nil
+        env.router.selectedTab = .connections
+        env.router.addClickPath.removeAll()
+        env.router.connectionsPath.removeAll()
     }
 
     private var scannerUnavailable: some View {
@@ -501,14 +543,20 @@ struct ScanClickCodeView: View {
 
         do {
             let result = try await ClickConnectionRedeemer.redeem(invocation, environment: env)
-            statusText = "Connected with \(result.name)"
+            ClickHaptics.impact(.heavy)
             ClickHaptics.notification(.success)
-            try? await Task.sleep(for: .milliseconds(500))
-            env.router.selectedTab = .connections
-            env.router.addClickPath.removeAll()
-            env.router.connectionsPath.removeAll()
+            // Same reveal and tagging as Tap to Connect (spec §22, §26–§28).
+            revealed = ProximityMatch(
+                connectionID: result.connectionID,
+                isNewConnection: result.isNew,
+                isGroup: false,
+                peers: [ProximityPeer(id: result.userID, name: result.name, avatarURL: nil, connectionID: result.connectionID, isNewConnection: result.isNew)],
+                groupMemberIDs: [],
+                encounterLogged: true
+            )
+            Task { await conversations.refresh() }
         } catch {
-            statusText = error.localizedDescription
+            statusText = QRRedeemMessages.message(for: error)
             ClickHaptics.notification(.error)
             scannedValue = nil
             isProcessing = false
@@ -526,8 +574,11 @@ struct ScanClickCodeView: View {
         guard
             let data = clean.data(using: .utf8),
             let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
-            let userID = json["userId"] as? String
+            let userID = json["userId"] as? String,
+            UUID(uuidString: userID) != nil
         else {
+            // Anything that isn't a Click code (Wi-Fi, other apps' links, arbitrary JSON) is
+            // rejected without contacting the server.
             return nil
         }
 
@@ -541,12 +592,44 @@ struct ScanClickCodeView: View {
 
 }
 
+/// User-facing copy for `POST /api/qr` failures, matching the KMP client's wording.
+enum QRRedeemMessages {
+    nonisolated static func message(forCode code: String?) -> String {
+        switch code {
+        case "proximity_failed": "Connection failed: you need to be in the same place."
+        case "expired": "This QR code has expired. Ask them to generate a new one."
+        case "already_used": "This QR code was already used. Ask them to generate a new one."
+        case "not_found": "This QR code is no longer valid. Ask them to generate a new one."
+        case "Cannot connect with yourself": "That's your own Click code."
+        default: "Couldn't redeem that code. Try again."
+        }
+    }
+
+    nonisolated static func message(for error: Error) -> String {
+        switch error as? APIError {
+        case .validation(_, let body)?:
+            let code = body
+                .flatMap { $0.data(using: .utf8) }
+                .flatMap { try? JSONSerialization.jsonObject(with: $0) as? [String: Any] }
+                .flatMap { $0["error"] as? String }
+            return message(forCode: code)
+        case .forbidden?:
+            // `/api/qr` answers 403 only for a failed proximity check.
+            return message(forCode: "proximity_failed")
+        case .notFound?:
+            return message(forCode: "not_found")
+        default:
+            return error.userFacingMessage
+        }
+    }
+}
+
 private enum ClickConnectionRedeemer {
     @MainActor
     static func redeem(
         _ invocation: ConnectionInvocation,
         environment env: AppEnvironment
-    ) async throws -> (name: String, connectionID: String?) {
+    ) async throws -> (name: String, connectionID: String?, userID: String, isNew: Bool) {
         guard let currentUserID = env.session.currentSession?.userId else {
             throw APIError.unauthorized
         }
@@ -594,13 +677,17 @@ private enum ClickConnectionRedeemer {
             let connection = createdRoot?["connection"] as? [String: Any]
             return (
                 targetName?.isEmpty == false ? targetName! : "Click user",
-                connection?["id"] as? String
+                connection?["id"] as? String,
+                targetUserID,
+                true
             )
         }
 
         return (
             targetName?.isEmpty == false ? targetName! : "Click user",
-            existingConnectionID
+            existingConnectionID,
+            targetUserID,
+            false
         )
     }
 }

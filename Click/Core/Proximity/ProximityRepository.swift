@@ -63,6 +63,14 @@ public struct ProximityMatch: Equatable, Sendable {
     public let peers: [ProximityPeer]
     public let groupMemberIDs: [String]
     public let encounterLogged: Bool
+    /// A reconnect the server declined to log (per-peer `reason: rate_limit_active`, or a
+    /// reconnect that logged nothing) — KMP `shouldBlockForRateLimit`.
+    public var rateLimited: Bool = false
+    /// The encounter row created or updated by this tap, and the Click Drop session end.
+    public var encounterID: String? = nil
+    public var collaborationEndsAt: Date? = nil
+
+    public var isReconnect: Bool { !isNewConnection }
 }
 
 public enum ProximityBindResult: Equatable, Sendable {
@@ -190,13 +198,22 @@ public actor ProximityRepository {
             return .pending(pendingID: pendingID)
         }
         let groupIDs = JSONFields.stringArray(JSONFields.dictionary(root["group_clique_candidate"])?["member_user_ids"])
+        let matchRows = JSONFields.rows(root["matches"])
+        let isNew = JSONFields.bool(root["is_new_connection"]) ?? peers.contains { $0.isNewConnection == true }
+        let logged = JSONFields.bool(root["encounter_logged"]) ?? false
+        let persistedOnBind = !matchRows.isEmpty && matchRows.allSatisfy { JSONFields.bool($0["encounter_persisted_on_bind"]) == true }
+        let rateLimited = matchRows.contains { JSONFields.string($0["reason"]) == "rate_limit_active" }
+            || (!isNew && !persistedOnBind && (!logged || matchRows.contains { JSONFields.bool($0["encounter_logged"]) == false }))
         return .matched(ProximityMatch(
             connectionID: JSONFields.string(root["connection_id"]),
-            isNewConnection: JSONFields.bool(root["is_new_connection"]) ?? peers.contains { $0.isNewConnection == true },
+            isNewConnection: isNew,
             isGroup: JSONFields.bool(root["is_group"]) ?? false,
             peers: peers,
             groupMemberIDs: groupIDs,
-            encounterLogged: JSONFields.bool(root["encounter_logged"]) ?? false
+            encounterLogged: logged,
+            rateLimited: rateLimited,
+            encounterID: JSONFields.string(root["encounter_id"]),
+            collaborationEndsAt: JSONFields.date(root["collaboration_ttl"])
         ))
     }
 

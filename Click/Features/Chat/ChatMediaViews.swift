@@ -120,8 +120,14 @@ final class VoiceNoteRecorder {
     }
 
     private(set) var state: State = .idle
+    /// Hands-free mode: recording continues after the finger lifts (slid up to lock, or tapped).
+    var isLocked = false
+    /// Recent normalized input levels for the live waveform (newest last).
+    private(set) var levels: [Double] = []
+    private var allLevels: [Double] = []
     private var recorder: AVAudioRecorder?
     private var fileURL: URL?
+    private var meterTimer: Timer?
 
     static let maxDuration: TimeInterval = 180
 
@@ -144,10 +150,14 @@ final class VoiceNoteRecorder {
                 AVEncoderAudioQualityKey: AVAudioQuality.medium.rawValue
             ]
             let next = try AVAudioRecorder(url: url, settings: settings)
+            next.isMeteringEnabled = true
             guard next.record(forDuration: Self.maxDuration) else { throw CocoaError(.fileWriteUnknown) }
             recorder = next
             fileURL = url
+            levels = []
+            allLevels = []
             state = .recording(startedAt: .now)
+            startMetering()
             ClickHaptics.impact(.light)
         } catch {
             cancel()
@@ -162,7 +172,26 @@ final class VoiceNoteRecorder {
         reset()
         defer { try? FileManager.default.removeItem(at: fileURL) }
         guard seconds >= 1, let data = try? Data(contentsOf: fileURL), !data.isEmpty else { return nil }
-        return MediaDraft(kind: .audio, data: data, mimeType: "audio/mp4", fileName: nil, durationSeconds: seconds)
+        var draft = MediaDraft(kind: .audio, data: data, mimeType: "audio/mp4", fileName: nil, durationSeconds: seconds)
+        draft.waveform = VoiceWaveform.bins(from: capturedLevels)
+        return draft
+    }
+
+    /// Levels captured by the last `finish()` (kept until the next recording).
+    private var capturedLevels: [Double] = []
+
+    private func startMetering() {
+        meterTimer?.invalidate()
+        meterTimer = Timer.scheduledTimer(withTimeInterval: 0.05, repeats: true) { [weak self] _ in
+            MainActor.assumeIsolated {
+                guard let self, let recorder = self.recorder else { return }
+                recorder.updateMeters()
+                let level = VoiceWaveform.amplitude(fromDecibels: recorder.averagePower(forChannel: 0))
+                self.allLevels.append(level)
+                self.levels.append(level)
+                if self.levels.count > 48 { self.levels.removeFirst(self.levels.count - 48) }
+            }
+        }
     }
 
     func cancel() {
@@ -172,6 +201,12 @@ final class VoiceNoteRecorder {
     }
 
     private func reset() {
+        meterTimer?.invalidate()
+        meterTimer = nil
+        capturedLevels = allLevels
+        allLevels = []
+        levels = []
+        isLocked = false
         recorder = nil
         fileURL = nil
         state = .idle
@@ -366,6 +401,7 @@ private struct ChatAudioView: View {
                 AudioScrubber(
                     progress: scrub ?? (total > 0 ? elapsed / total : 0),
                     tint: foreground,
+                    waveform: media.waveform,
                     isEnabled: isActive,
                     onScrub: { scrub = $0 },
                     onCommit: { value in
@@ -571,7 +607,7 @@ struct ComposerAttachmentButton: View {
     @State private var showingPhotos = false
     @State private var showingFiles = false
     @State private var camera: Camera?
-    @State private var photoItem: PhotosPickerItem?
+    @State private var photoItems: [PhotosPickerItem] = []
 
     private var hasCamera: Bool { UIImagePickerController.isSourceTypeAvailable(.camera) }
 
@@ -581,6 +617,9 @@ struct ComposerAttachmentButton: View {
                 Button("Take Photo", systemImage: "camera") { camera = .photo }
             }
             Button("Photo Library", systemImage: "photo.on.rectangle") { showingPhotos = true }
+            if UIPasteboard.general.hasImages {
+                Button("Paste Image", systemImage: "doc.on.clipboard") { pasteImages() }
+            }
             Button("Click Drop", systemImage: "hourglass") {
                 if hasCamera { camera = .clickDrop } else { onError("Click Drops need a camera.") }
             }
@@ -592,13 +631,10 @@ struct ComposerAttachmentButton: View {
             }
             Button("File", systemImage: "doc") { showingFiles = true }
         } label: {
-            Image(systemName: "plus")
-                .font(.system(size: 17, weight: .semibold))
-                .foregroundStyle(ClickColors.textSecondary)
-                .frame(width: 36, height: 40)
+            ComposerCircleLabel(systemImage: "plus")
         }
         .accessibilityLabel("Attach")
-        .photosPicker(isPresented: $showingPhotos, selection: $photoItem, matching: .images)
+        .photosPicker(isPresented: $showingPhotos, selection: $photoItems, maxSelectionCount: ConversationModel.maxStaged, selectionBehavior: .ordered, matching: .images)
         .fileImporter(isPresented: $showingFiles, allowedContentTypes: Self.fileTypes) { result in
             if case .success(let url) = result {
                 do { onDraft(try MediaDraftBuilder.file(at: url)) } catch { onError("Couldn't read that file.") }
@@ -619,15 +655,29 @@ struct ComposerAttachmentButton: View {
             }
             .ignoresSafeArea()
         }
-        .onChange(of: photoItem) { _, item in
-            guard let item else { return }
-            photoItem = nil
+        .onChange(of: photoItems) { _, items in
+            guard !items.isEmpty else { return }
+            photoItems = []
             Task {
-                guard let data = try? await item.loadTransferable(type: Data.self),
-                      let draft = await MediaDraftBuilder.image(from: data) else {
-                    onError("Couldn't prepare that photo.")
-                    return
+                // Keep the picked order; each photo is downscaled off the main actor.
+                for item in items {
+                    guard let data = try? await item.loadTransferable(type: Data.self),
+                          let draft = await MediaDraftBuilder.image(from: data) else {
+                        onError("Couldn't prepare that photo.")
+                        continue
+                    }
+                    onDraft(draft)
                 }
+            }
+        }
+    }
+
+    private func pasteImages() {
+        let images = UIPasteboard.general.images ?? []
+        Task {
+            for image in images.prefix(ConversationModel.maxStaged) {
+                guard let data = image.jpegData(compressionQuality: 0.9),
+                      let draft = await MediaDraftBuilder.image(from: data) else { continue }
                 onDraft(draft)
             }
         }
@@ -671,6 +721,8 @@ struct CameraCapture: UIViewControllerRepresentable {
 struct AudioScrubber: View {
     let progress: Double
     let tint: Color
+    /// Draws the voice note's envelope instead of a plain track when present.
+    var waveform: [Double]? = nil
     let isEnabled: Bool
     let onScrub: (Double) -> Void
     let onCommit: (Double) -> Void
@@ -680,10 +732,14 @@ struct AudioScrubber: View {
             let width = max(proxy.size.width, 1)
             let clamped = min(max(progress, 0), 1)
             ZStack(alignment: .leading) {
-                Capsule().fill(tint.opacity(0.25)).frame(height: 4)
-                Capsule().fill(tint).frame(width: width * clamped, height: 4)
-                Circle().fill(tint).frame(width: 14, height: 14)
-                    .offset(x: width * clamped - 7)
+                if let waveform, !waveform.isEmpty {
+                    WaveformBars(values: waveform, progress: clamped, tint: tint)
+                } else {
+                    Capsule().fill(tint.opacity(0.25)).frame(height: 4)
+                    Capsule().fill(tint).frame(width: width * clamped, height: 4)
+                    Circle().fill(tint).frame(width: 14, height: 14)
+                        .offset(x: width * clamped - 7)
+                }
             }
             .frame(maxHeight: .infinity)
             .contentShape(Rectangle())
@@ -775,7 +831,9 @@ struct BeaconSharePicker: View {
 /// Recording strip shown in place of the text field while a voice note records.
 struct VoiceRecordingBar: View {
     let startedAt: Date
+    let levels: [Double]
     let onCancel: () -> Void
+    /// Stops recording and stages the clip for review.
     let onSend: () -> Void
 
     var body: some View {
@@ -789,26 +847,228 @@ struct VoiceRecordingBar: View {
             .accessibilityLabel("Discard voice note")
 
             Circle().fill(ClickColors.destructive).frame(width: 8, height: 8)
-            TimelineView(.periodic(from: startedAt, by: 1)) { context in
-                let seconds = Int(context.date.timeIntervalSince(startedAt))
-                Text(String(format: "%d:%02d", seconds / 60, seconds % 60))
-                    .font(ClickTypography.body)
-                    .monospacedDigit()
-                    .foregroundStyle(ClickColors.textPrimary)
-            }
-            Text("Recording")
-                .font(ClickTypography.supporting)
-                .foregroundStyle(ClickColors.textSecondary)
-            Spacer()
+            RecordingTimer(startedAt: startedAt)
+            LiveWaveform(levels: levels, tint: ClickColors.textSecondary)
+                .frame(height: 24)
             Button(action: onSend) {
-                Image(systemName: "arrow.up")
-                    .font(.system(size: 17, weight: .bold))
-                    .foregroundStyle(ClickColors.primaryActionForeground)
-                    .frame(width: 40, height: 40)
-                    .background(ClickColors.primaryActionFill, in: Circle())
+                ComposerCircleLabel(systemImage: "stop.fill", isProminent: true)
             }
             .buttonStyle(.plain)
-            .accessibilityLabel("Send voice note")
+            .accessibilityLabel("Stop and review voice note")
         }
+    }
+}
+
+/// Push-to-talk strip shown in place of the text field while the mic is held.
+struct VoiceHoldStrip: View {
+    let startedAt: Date
+    let levels: [Double]
+    /// 0...1 toward cancel (slide left) and toward lock (slide up).
+    let slideProgress: Double
+    let lockProgress: Double
+
+    var body: some View {
+        HStack(spacing: 10) {
+            Circle().fill(ClickColors.destructive).frame(width: 8, height: 8)
+            RecordingTimer(startedAt: startedAt)
+            LiveWaveform(levels: levels, tint: ClickColors.textSecondary)
+                .frame(height: 22)
+                .opacity(1 - slideProgress * 0.6)
+            HStack(spacing: 2) {
+                Image(systemName: "chevron.left")
+                Text("Slide to cancel")
+            }
+            .font(ClickTypography.metadata)
+            .foregroundStyle(slideProgress > 0.8 ? ClickColors.destructive : ClickColors.textSecondary)
+            .offset(x: -24 * slideProgress)
+            Image(systemName: lockProgress > 0.9 ? "lock.fill" : "lock.open")
+                .font(.system(size: 13, weight: .semibold))
+                .foregroundStyle(ClickColors.textSecondary)
+                .offset(y: -10 * lockProgress)
+                .accessibilityLabel("Slide up to lock")
+        }
+        .padding(.horizontal, 14)
+        .frame(minHeight: 40)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(.regularMaterial, in: RoundedRectangle(cornerRadius: ClickRadius.messageBubble, style: .continuous))
+    }
+}
+
+private struct RecordingTimer: View {
+    let startedAt: Date
+
+    var body: some View {
+        TimelineView(.periodic(from: startedAt, by: 1)) { context in
+            let seconds = max(0, Int(context.date.timeIntervalSince(startedAt)))
+            Text(String(format: "%d:%02d", seconds / 60, seconds % 60))
+                .font(ClickTypography.body)
+                .monospacedDigit()
+                .foregroundStyle(ClickColors.textPrimary)
+        }
+    }
+}
+
+/// Scrolling bars for live input levels (newest on the right).
+struct LiveWaveform: View {
+    let levels: [Double]
+    let tint: Color
+    var barCount = 32
+
+    var body: some View {
+        let recent = Array(levels.suffix(barCount))
+        let padded = Array(repeating: 0.0, count: max(0, barCount - recent.count)) + recent
+        WaveformBars(values: padded.map { max(VoiceWaveform.floor, min(1, $0 * 1.6)) }, progress: 1, tint: tint)
+            .animation(.linear(duration: 0.05), value: levels.count)
+            .accessibilityHidden(true)
+    }
+}
+
+/// Vertical bars; bars before `progress` are drawn at full tint.
+struct WaveformBars: View {
+    let values: [Double]
+    let progress: Double
+    let tint: Color
+
+    var body: some View {
+        GeometryReader { proxy in
+            let count = max(values.count, 1)
+            let spacing: CGFloat = 2
+            let width = max(1.5, (proxy.size.width - spacing * CGFloat(count - 1)) / CGFloat(count))
+            HStack(alignment: .center, spacing: spacing) {
+                ForEach(values.indices, id: \.self) { index in
+                    Capsule()
+                        .fill(Double(index) / Double(count) < progress ? tint : tint.opacity(0.35))
+                        .frame(width: width, height: max(3, proxy.size.height * values[index]))
+                }
+            }
+            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .center)
+        }
+    }
+}
+
+/// Composer tray of staged attachments, each removable, with a play/review control for voice.
+struct StagedAttachmentTray: View {
+    let items: [StagedAttachment]
+    let onRemove: (UUID) -> Void
+
+    var body: some View {
+        ScrollView(.horizontal, showsIndicators: false) {
+            HStack(spacing: 8) {
+                ForEach(items) { item in
+                    StagedAttachmentChip(item: item)
+                        .overlay(alignment: .topTrailing) {
+                            Button {
+                                onRemove(item.id)
+                            } label: {
+                                Image(systemName: "xmark")
+                                    .font(.system(size: 10, weight: .bold))
+                                    .foregroundStyle(.white)
+                                    .frame(width: 20, height: 20)
+                                    .background(.black.opacity(0.6), in: Circle())
+                            }
+                            .buttonStyle(.plain)
+                            .offset(x: 6, y: -6)
+                            .accessibilityLabel("Remove \(item.draft.kind == .image ? "photo" : item.draft.kind == .audio ? "voice note" : "file")")
+                        }
+                        .transition(.scale(scale: 0.85).combined(with: .opacity))
+                }
+            }
+            .padding(.horizontal, 12)
+            .padding(.top, 10)
+            .padding(.bottom, 2)
+        }
+    }
+}
+
+private struct StagedAttachmentChip: View {
+    let item: StagedAttachment
+    @State private var thumbnail: UIImage?
+    @State private var player = AudioPlaybackService.shared
+    @State private var previewURL: URL?
+
+    var body: some View {
+        switch item.draft.kind {
+        case .image:
+            Group {
+                if let thumbnail {
+                    Image(uiImage: thumbnail).resizable().scaledToFill()
+                } else {
+                    ClickColors.fillSubtle
+                }
+            }
+            .frame(width: 64, height: 64)
+            .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
+            .task(id: item.id) {
+                let data = item.draft.data
+                thumbnail = await Task.detached(priority: .userInitiated) {
+                    UIImage(data: data)?.preparingThumbnail(of: CGSize(width: 192, height: 192))
+                }.value
+            }
+            .accessibilityLabel("Photo")
+        case .audio:
+            HStack(spacing: 8) {
+                Button {
+                    togglePreview()
+                } label: {
+                    Image(systemName: isPlaying ? "pause.fill" : "play.fill")
+                        .font(.system(size: 13, weight: .bold))
+                        .foregroundStyle(ClickColors.textPrimary)
+                        .frame(width: 30, height: 30)
+                        .background(ClickColors.fillStrong, in: Circle())
+                }
+                .buttonStyle(.plain)
+                .accessibilityLabel(isPlaying ? "Pause review" : "Play review")
+                WaveformBars(values: item.draft.waveform ?? Array(repeating: 0.3, count: VoiceWaveform.binCount),
+                             progress: progress, tint: ClickColors.textSecondary)
+                    .frame(width: 110, height: 22)
+                Text(Self.duration(item.draft.durationSeconds ?? 0))
+                    .font(ClickTypography.caption)
+                    .monospacedDigit()
+                    .foregroundStyle(ClickColors.textSecondary)
+            }
+            .padding(.horizontal, 10)
+            .frame(height: 64)
+            .background(ClickColors.fillSubtle, in: RoundedRectangle(cornerRadius: 12, style: .continuous))
+            .onDisappear { if isActive { player.stop() } }
+        case .file:
+            VStack(spacing: 4) {
+                Image(systemName: "doc.fill")
+                    .font(.system(size: 20))
+                    .foregroundStyle(ClickColors.accentForeground)
+                Text(item.draft.fileName ?? "File")
+                    .font(ClickTypography.caption)
+                    .lineLimit(1)
+                    .foregroundStyle(ClickColors.textSecondary)
+            }
+            .padding(.horizontal, 8)
+            .frame(width: 96, height: 64)
+            .background(ClickColors.fillSubtle, in: RoundedRectangle(cornerRadius: 12, style: .continuous))
+            .accessibilityElement(children: .combine)
+        }
+    }
+
+    private var previewID: String { "staged-\(item.id.uuidString)" }
+    private var isActive: Bool { player.isActive(previewID) }
+    private var isPlaying: Bool { isActive && player.isPlaying }
+    private var progress: Double {
+        guard isActive, player.duration > 0 else { return 0 }
+        return player.currentTime / player.duration
+    }
+
+    private func togglePreview() {
+        if isPlaying {
+            player.pause()
+            return
+        }
+        let url = previewURL ?? FileManager.default.temporaryDirectory.appendingPathComponent("\(previewID).m4a")
+        if previewURL == nil {
+            try? item.draft.data.write(to: url, options: .completeFileProtection)
+            previewURL = url
+        }
+        try? player.play(url: url, messageID: previewID)
+    }
+
+    static func duration(_ seconds: Int) -> String {
+        String(format: "%d:%02d", seconds / 60, seconds % 60)
     }
 }

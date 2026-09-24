@@ -92,6 +92,8 @@ final class MapFeatureModel {
     var query = ""
     var selection: MapSelection?
     var sheetDetent: SheetDetent = .lip
+    /// `sheetDetent` once its snap animation finished; drives tab-bar and chrome visibility.
+    var settledDetent: SheetDetent = .lip
 
     private var environment: AppEnvironment?
     private var locationTask: Task<Void, Never>?
@@ -107,7 +109,8 @@ final class MapFeatureModel {
     // MARK: - Derived data (map and list read the same items)
 
     func items(pins: [ConnectionPin], applyingFilter: Bool = true, now: Date = .now) -> [MapItem] {
-        var beacons = (discovery.value?.beacons ?? []).filter { $0.isActive(at: now) }
+        let deleted = environment?.router.deletedBeaconIDs ?? []
+        var beacons = (discovery.value?.beacons ?? []).filter { $0.isActive(at: now) && !deleted.contains($0.id) }
         for focused in focusedBeacons where !beacons.contains(where: { $0.id == focused.id }) {
             beacons.append(focused)
         }
@@ -235,7 +238,11 @@ final class MapFeatureModel {
     }
 
     /// Coalesces viewport changes: refetches only when the center moved ~1 km from the last fetch.
-    func cameraSettled(center: CLLocationCoordinate2D) {
+    /// Latitude span of the visible region; clustering kicks in when zoomed out.
+    private(set) var visibleLatitudeDelta: Double = 0.05
+
+    func cameraSettled(center: CLLocationCoordinate2D, latitudeDelta: Double? = nil) {
+        if let latitudeDelta { visibleLatitudeDelta = latitudeDelta }
         guard userCoordinate == nil || locationState == .denied else { return }
         fetchIfMoved(to: center)
     }
@@ -267,7 +274,7 @@ final class MapFeatureModel {
                 discovery.succeed(fresh)
             } catch {
                 guard !Task.isCancelled else { return }
-                discovery.fail(error.userFacingMessage)
+                discovery.fail(error)
             }
         }
     }
@@ -336,5 +343,42 @@ final class MapFeatureModel {
     private func startDate(_ item: MapItem) -> Date {
         if case .beacon(let beacon) = item.kind { return beacon.schedule?.start ?? .distantFuture }
         return .distantFuture
+    }
+}
+
+/// A group of nearby map items drawn as one bubble when zoomed out.
+struct MapCluster: Identifiable {
+    let id: String
+    let coordinate: CLLocationCoordinate2D
+    let items: [MapItem]
+}
+
+extension MapFeatureModel {
+    /// Clustering starts above this latitude span (~9 km); closer in, every pin is drawn.
+    nonisolated static let clusteringSpan: Double = 0.08
+
+    /// Grid clustering: items in the same cell (a tenth of the visible span) merge into one
+    /// bubble. Deterministic and cheap, so panning never reshuffles pins.
+    nonisolated static func clusters(_ items: [MapItem], latitudeDelta: Double) -> [MapCluster] {
+        guard latitudeDelta > clusteringSpan else {
+            return items.map { MapCluster(id: "\($0.id)", coordinate: $0.coordinate, items: [$0]) }
+        }
+        let cell = latitudeDelta / 10
+        var buckets: [String: [MapItem]] = [:]
+        var order: [String] = []
+        for item in items {
+            let key = "\(Int((item.coordinate.latitude / cell).rounded(.down))):\(Int((item.coordinate.longitude / cell).rounded(.down)))"
+            if buckets[key] == nil { order.append(key) }
+            buckets[key, default: []].append(item)
+        }
+        return order.compactMap { key in
+            guard let members = buckets[key] else { return nil }
+            if members.count == 1 {
+                return MapCluster(id: "\(members[0].id)", coordinate: members[0].coordinate, items: members)
+            }
+            let lat = members.map(\.coordinate.latitude).reduce(0, +) / Double(members.count)
+            let lon = members.map(\.coordinate.longitude).reduce(0, +) / Double(members.count)
+            return MapCluster(id: "cluster.\(key)", coordinate: CLLocationCoordinate2D(latitude: lat, longitude: lon), items: members)
+        }
     }
 }

@@ -147,14 +147,22 @@ public struct MeView: View {
                     .redacted(reason: profile.value == nil ? .placeholder : [])
                     .padding(.top, 8)
 
+                if let bio = profile.value?.bio {
+                    Text(bio)
+                        .font(ClickTypography.body)
+                        .foregroundStyle(ClickColors.textSecondary)
+                        .multilineTextAlignment(.center)
+                        .padding(.horizontal, 24)
+                }
+
                 if let summary = connectionSummary {
                     Text(summary)
                         .font(ClickTypography.supporting)
                         .foregroundStyle(ClickColors.textTertiary)
                 }
 
-                if profile.isStale {
-                    OfflineNotice("Offline — showing saved profile") {
+                if profile.value != nil {
+                    OfflineNotice(showing: "saved profile", hasCachedValue: true, refreshFailed: profile.isStale) {
                         Task { await refresh() }
                     }
                     .padding(.top, 8)
@@ -383,7 +391,7 @@ public struct MeView: View {
             meTabAvatar?.update(avatarURL: fresh.avatarURL)
             if let free = fresh.isFreeCurrently { env.settings.freeThisWeek = free }
         } catch {
-            profile.fail(error.userFacingMessage)
+            profile.fail(error)
         }
     }
 
@@ -393,7 +401,7 @@ public struct MeView: View {
         do {
             intents.succeed(try await env.me.availabilityIntents(userID: userID))
         } catch {
-            intents.fail(error.userFacingMessage)
+            intents.fail(error)
         }
     }
 
@@ -403,7 +411,7 @@ public struct MeView: View {
         do {
             savedEvents.succeed(try await env.beacons.bookmarks(userID: userID))
         } catch {
-            savedEvents.fail(error.userFacingMessage)
+            savedEvents.fail(error)
         }
     }
 

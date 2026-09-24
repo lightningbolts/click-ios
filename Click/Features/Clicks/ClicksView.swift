@@ -10,6 +10,7 @@ public struct ClicksView: View {
     @State private var selectedTab: InboxTab = .active
     @State private var query = ""
     @State private var creatingGroup = false
+    @State private var pendingAction: PendingConversationAction?
 
     init(model: ConversationListModel) {
         self.model = model
@@ -18,8 +19,8 @@ public struct ClicksView: View {
     public var body: some View {
         List {
             Section {
-                if model.refreshError != nil, model.snapshot != nil {
-                    OfflineNotice("Offline — showing saved Clicks") {
+                if model.snapshot != nil {
+                    OfflineNotice(showing: "saved Clicks", hasCachedValue: true, refreshFailed: model.refreshError != nil) {
                         Task { await model.refresh() }
                     }
                 }
@@ -80,6 +81,11 @@ public struct ClicksView: View {
         .onAppear {
             Task { await model.refreshIfStale() }
         }
+        .onChange(of: selectedTab, initial: true) { _, tab in
+            model.hubPreviewsVisible = tab == .groups
+        }
+        .onDisappear { model.hubPreviewsVisible = false }
+        .conversationActionDialogs(model: model, pending: $pendingAction)
         .alert(
             "Something went wrong",
             isPresented: Binding(
@@ -120,7 +126,7 @@ public struct ClicksView: View {
             HStack(spacing: 14) {
                 ForEach(model.core) { item in
                     Button {
-                        openProfile(item)
+                        openChat(item)
                     } label: {
                         VStack(spacing: 6) {
                             ConnectionAvatar(item: item, size: ClickMetrics.Avatar.conversation)
@@ -132,7 +138,11 @@ public struct ClicksView: View {
                         }
                     }
                     .buttonStyle(.plain)
+                    .contextMenu {
+                        Button("View Profile", systemImage: "person.crop.circle") { openProfile(item) }
+                    }
                     .accessibilityLabel("\(item.displayName), Core")
+                    .accessibilityHint("Opens the chat. Touch and hold for the profile.")
                 }
             }
             .padding(.vertical, 2)
@@ -158,8 +168,7 @@ public struct ClicksView: View {
                     onOpen: { isArchived ? openProfile(item) : openChat(item) },
                     onProfile: { openProfile(item) }
                 )
-                .listRowInsets(EdgeInsets(top: 0, leading: ClickSpacing.screenGutter, bottom: 0, trailing: ClickSpacing.screenGutter))
-                .listRowBackground(Color.clear)
+                .inboxRowChrome()
                 .swipeActions(edge: .trailing, allowsFullSwipe: true) {
                     Button {
                         Task { await model.setArchived(item, archived: !isArchived) }
@@ -167,6 +176,14 @@ public struct ClicksView: View {
                         Label(isArchived ? "Unarchive" : "Archive", systemImage: isArchived ? "tray.and.arrow.up" : "archivebox")
                     }
                     .tint(ClickColors.offline)
+                    if item.chatID?.isEmpty == false {
+                        Button {
+                            Task { await model.markUnread(item) }
+                        } label: {
+                            Label("Unread", systemImage: "envelope.badge")
+                        }
+                        .tint(ClickColors.accentForeground)
+                    }
                 }
                 .swipeActions(edge: .leading) {
                     if !isArchived {
@@ -175,11 +192,7 @@ public struct ClicksView: View {
                     }
                 }
                 .contextMenu {
-                    Button("View Profile", systemImage: "person.crop.circle") { openProfile(item) }
-                    if !isArchived { coreButton(item) }
-                    Button(isArchived ? "Unarchive" : "Archive", systemImage: isArchived ? "tray.and.arrow.up" : "archivebox") {
-                        Task { await model.setArchived(item, archived: !isArchived) }
-                    }
+                    DirectConversationActions(item: item, model: model, pending: $pendingAction, onProfile: { openProfile(item) })
                 }
             }
         case .groups:
@@ -220,18 +233,40 @@ public struct ClicksView: View {
                         onOpen: { openGroup(group) },
                         onProfile: { env.router.navigate(to: .groupProfile(chatID: group.chatID)) }
                     )
-                    .listRowBackground(Color.clear)
-                    .contextMenu {
-                        Button("Group Info", systemImage: "info.circle") {
-                            env.router.navigate(to: .groupProfile(chatID: group.chatID))
+                    .inboxRowChrome()
+                    .swipeActions(edge: .trailing) {
+                        Button {
+                            Task { await model.markUnread(group) }
+                        } label: {
+                            Label("Unread", systemImage: "envelope.badge")
                         }
+                        .tint(ClickColors.accentForeground)
+                    }
+                    .contextMenu {
+                        GroupConversationActions(
+                            group: group,
+                            model: model,
+                            currentUserID: env.session.currentSession?.userId,
+                            pending: $pendingAction,
+                            onInfo: { env.router.navigate(to: .groupProfile(chatID: group.chatID)) }
+                        )
                     }
                 case .hub(let hub):
                     HubInboxRow(hub: hub) {
                         ClickHaptics.selection()
                         env.router.navigate(to: .hub(hubID: hub.hubID))
                     }
-                    .listRowBackground(Color.clear)
+                    .inboxRowChrome()
+                    .swipeActions(edge: .trailing) {
+                        Button(role: .destructive) {
+                            pendingAction = .leaveHub(hub)
+                        } label: {
+                            Label("Leave", systemImage: "rectangle.portrait.and.arrow.right")
+                        }
+                    }
+                    .contextMenu {
+                        HubConversationActions(hub: hub, currentUserID: env.session.currentSession?.userId, pending: $pendingAction)
+                    }
                 }
             }
             if !groups.isEmpty || !hubs.isEmpty {
@@ -399,7 +434,7 @@ private struct InboxFilterChip: View {
     }
 }
 
-private struct ConversationRow: View {
+struct ConversationRow: View {
     let item: ConnectionItem
     let preview: String
     let onOpen: () -> Void
@@ -443,11 +478,7 @@ private struct ConversationRow: View {
                                 .padding(.top, 3)
                                 .accessibilityHidden(true)
                         }
-                        Text(preview)
-                            .font(ClickTypography.supporting)
-                            .foregroundStyle(ClickColors.textSecondary)
-                            .lineLimit(2)
-                            .frame(maxWidth: .infinity, alignment: .leading)
+                        InboxPreviewText(preview)
                         trailingStatus
                     }
                 }
@@ -474,6 +505,14 @@ private struct ConversationRow: View {
                 .padding(.horizontal, 6)
                 .frame(minWidth: 20, minHeight: 20)
                 .background(ClickColors.primaryActionFill, in: Capsule())
+        } else if item.awaitsPriorResponse {
+            Text("Knows you?")
+                .font(ClickTypography.badge)
+                .foregroundStyle(ClickColors.accentForeground)
+                .padding(.horizontal, 7)
+                .padding(.vertical, 3)
+                .background(ClickColors.selectionTint, in: Capsule())
+                .accessibilityLabel("Prior connection request. Touch and hold to accept or decline.")
         } else if let deadline = item.sayHiDeadline, let remaining = InboxFormatting.sayHiRemaining(until: deadline) {
             Text(remaining)
                 .font(ClickTypography.badge)
@@ -521,7 +560,7 @@ private enum GroupsTabRow: Identifiable {
     }
 }
 
-private struct HubInboxRow: View {
+struct HubInboxRow: View {
     let hub: JoinedHub
     let onOpen: () -> Void
 
@@ -544,10 +583,7 @@ private struct HubInboxRow: View {
                                 .monospacedDigit()
                         }
                     }
-                    Text(preview)
-                        .font(ClickTypography.supporting)
-                        .foregroundStyle(ClickColors.textSecondary)
-                        .lineLimit(2)
+                    InboxPreviewText(preview)
                 }
             }
             .padding(.vertical, 10)
@@ -581,7 +617,7 @@ private struct ConnectionAvatar: View {
     }
 }
 
-private struct GroupInboxRow: View {
+struct GroupInboxRow: View {
     let group: CliqueItem
     let preview: String
     let avatarMembers: [GroupMember]
@@ -618,11 +654,7 @@ private struct GroupInboxRow: View {
                         }
                     }
                     HStack(alignment: .top, spacing: 4) {
-                        Text(preview)
-                            .font(ClickTypography.supporting)
-                            .foregroundStyle(ClickColors.textSecondary)
-                            .lineLimit(2)
-                            .frame(maxWidth: .infinity, alignment: .leading)
+                        InboxPreviewText(preview)
                         if group.unreadCount > 0 {
                             Text(group.unreadCount > 99 ? "99+" : "\(group.unreadCount)")
                                 .font(ClickTypography.badge)
@@ -656,6 +688,30 @@ private struct GroupInboxRow: View {
 }
 
 /// Direct, group, and hub rows share one height so the inbox reads as one list.
-private enum InboxRowMetrics {
+enum InboxRowMetrics {
     static let minHeight: CGFloat = ClickMetrics.Avatar.conversation + 30
+}
+
+/// The one preview style for every inbox row. Two lines are always reserved, so a one-line
+/// group preview is exactly as tall as a two-line DM preview.
+struct InboxPreviewText: View {
+    let text: String
+    init(_ text: String) { self.text = text }
+
+    var body: some View {
+        Text(text)
+            .font(ClickTypography.supporting)
+            .foregroundStyle(ClickColors.textSecondary)
+            .lineLimit(2, reservesSpace: true)
+            .frame(maxWidth: .infinity, alignment: .leading)
+    }
+}
+
+extension View {
+    /// The single owner of an inbox row's list insets and background (the row itself owns
+    /// only its vertical padding), shared by direct, group and hub rows.
+    func inboxRowChrome() -> some View {
+        listRowInsets(EdgeInsets(top: 0, leading: ClickSpacing.screenGutter, bottom: 0, trailing: ClickSpacing.screenGutter))
+            .listRowBackground(Color.clear)
+    }
 }

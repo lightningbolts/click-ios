@@ -20,11 +20,13 @@ public actor GroupRepository {
     private let api: ClickAPIClient
     private let supabaseURL: URL?
     private let supabaseAnonKey: String
+    private let identityCache: IdentityCache
 
-    public init(api: ClickAPIClient, supabaseURL: URL?, supabaseAnonKey: String) {
+    public init(api: ClickAPIClient, supabaseURL: URL?, supabaseAnonKey: String, identities: IdentityCache? = nil) {
         self.api = api
         self.supabaseURL = supabaseURL
         self.supabaseAnonKey = supabaseAnonKey
+        self.identityCache = identities ?? IdentityCache(api: api)
     }
 
     /// Every group the user belongs to that has a chat, with members, latest message, and unread.
@@ -244,21 +246,7 @@ public actor GroupRepository {
     }
 
     private func identities(_ userIDs: [String]) async -> [String: (name: String?, avatarURL: String?)] {
-        var result: [String: (name: String?, avatarURL: String?)] = [:]
-        for start in stride(from: 0, to: userIDs.count, by: 100) {
-            let chunk = Array(userIDs[start..<min(start + 100, userIDs.count)])
-            guard
-                let body = try? JSONSerialization.data(withJSONObject: ["userIds": chunk]),
-                let (data, _) = try? await api.executeRaw(APIRequest(path: "/api/users/display-names", method: .post, body: body)),
-                let root = try? JSONFields.object(data)
-            else { continue }
-            let names = root["names"] as? [String: Any] ?? [:]
-            let images = root["images"] as? [String: Any] ?? [:]
-            for id in chunk {
-                result[id] = (JSONFields.string(names[id]), JSONFields.string(images[id]))
-            }
-        }
-        return result
+        await identityCache.resolve(userIDs).mapValues { ($0.name, $0.avatarURL) }
     }
 
     private func rest(_ table: String, _ query: [URLQueryItem]) async throws -> [[String: Any]] {

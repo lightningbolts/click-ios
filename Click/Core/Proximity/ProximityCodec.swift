@@ -31,8 +31,31 @@ enum ProximityCodec {
         return padded.count == 4 ? padded : nil
     }
 
+    /// A 4-digit token the KMP (Android) decoder can hear reliably: its Goertzel pass merges
+    /// repeated adjacent digits (\"7700\" is heard as \"70\") and digit 0 shares the 18.5 kHz
+    /// carrier, so a leading 0 merges with the chirp. iOS therefore never emits either. This
+    /// still leaves 9·9·9·9 = 6 561 tokens; the server matches on overlapping evidence, not the
+    /// token alone.
+    static func randomToken<G: RandomNumberGenerator>(using generator: inout G) -> String {
+        var digits: [Int] = [Int.random(in: 1...9, using: &generator)]
+        while digits.count < 4 {
+            var next = Int.random(in: 0...8, using: &generator)
+            if next >= digits[digits.count - 1] { next += 1 }
+            digits.append(next)
+        }
+        return digits.map(String.init).joined()
+    }
+
     static func randomToken() -> String {
-        String(format: "%04d", Int.random(in: 0...9999))
+        var generator = SystemRandomNumberGenerator()
+        return randomToken(using: &generator)
+    }
+
+    /// True when the KMP decoder can hear `token` unambiguously.
+    nonisolated static func isCrossPlatformSafe(_ token: String) -> Bool {
+        let digits = Array(token)
+        guard digits.count == 4, digits.allSatisfy(\.isNumber), digits.first != "0" else { return false }
+        return zip(digits, digits.dropFirst()).allSatisfy { $0 != $1 }
     }
 
     static func gattPayload(_ token: String) -> Data {

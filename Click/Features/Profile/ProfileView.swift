@@ -12,6 +12,7 @@ public struct ProfileView: View {
     @State private var model: PeerProfileModel
     @State private var tab: ProfileTab = .timeline
     @State private var journalEditor: JournalEditorTarget?
+    @State private var taggingEncounter: Encounter?
     @State private var safetyAction: SafetyAction?
     @State private var reportReason = ""
     @State private var isWorking = false
@@ -85,6 +86,11 @@ public struct ProfileView: View {
             model.attach(env, fallbackConnectionID: inboxItem?.connectionID)
             await model.load()
         }
+        .sheet(item: $taggingEncounter) { encounter in
+            EncounterTagEditor(encounter: encounter) {
+                Task { await model.loadEncounters() }
+            }
+        }
         .sheet(item: $journalEditor) { target in
             JournalEditor(target: target) { body, visibility in
                 try await model.saveJournal(body: body, visibility: visibility, editing: target.entry)
@@ -132,6 +138,13 @@ public struct ProfileView: View {
                 .multilineTextAlignment(.center)
                 .redacted(reason: profile == nil && inboxItem == nil ? .placeholder : [])
                 .padding(.top, 8)
+            if let bio = profile?.bio {
+                Text(bio)
+                    .font(ClickTypography.body)
+                    .foregroundStyle(ClickColors.textSecondary)
+                    .multilineTextAlignment(.center)
+                    .padding(.horizontal, 24)
+            }
             if let line = model.relationshipLine {
                 Text(line)
                     .font(ClickTypography.supporting)
@@ -146,8 +159,10 @@ public struct ProfileView: View {
             if model.profile.value == nil, let message = model.profile.errorMessage {
                 Button("Couldn't load this profile. \(message) Retry") { Task { await model.loadProfile() } }
                     .font(ClickTypography.supporting)
-            } else if model.profile.isStale {
-                OfflineNotice("Showing a saved profile") { Task { await model.loadProfile() } }
+            } else {
+                OfflineNotice(showing: "a saved profile", hasCachedValue: model.profile.value != nil, refreshFailed: model.profile.isStale) {
+                    Task { await model.loadProfile() }
+                }
             }
         }
         .frame(maxWidth: .infinity)
@@ -348,6 +363,8 @@ public struct ProfileView: View {
                     Task { try? await model.deleteJournal(entry) }
                 } onOpenEvent: { beaconID in
                     env.router.navigate(to: .event(beaconID: beaconID))
+                } onEditTags: { encounter in
+                    taggingEncounter = encounter
                 }
             }
         }
@@ -563,16 +580,14 @@ public struct ProfileView: View {
         do {
             switch action {
             case .report:
-                try await env.profiles.report(connectionID: connectionID, reason: reportReason.trimmingCharacters(in: .whitespacesAndNewlines))
+                try await conversations.report(connectionID: connectionID, reason: reportReason.trimmingCharacters(in: .whitespacesAndNewlines))
                 reportReason = ""
                 notice = "Thanks. Your report was sent."
             case .block:
-                try await env.profiles.block(userID: model.userID)
-                conversations.removeConnection(connectionID: connectionID)
+                try await conversations.block(userID: model.userID, connectionID: connectionID)
                 dismiss()
             case .remove:
-                try await env.profiles.removeConnection(connectionID: connectionID)
-                conversations.removeConnection(connectionID: connectionID)
+                try await conversations.hideConnection(connectionID: connectionID)
                 dismiss()
             }
         } catch {
@@ -602,6 +617,7 @@ private struct TimelineRow: View {
     let onEdit: (JournalEntry) -> Void
     let onDelete: (JournalEntry) -> Void
     let onOpenEvent: (String) -> Void
+    let onEditTags: (Encounter) -> Void
 
     var body: some View {
         HStack(alignment: .top, spacing: 14) {
@@ -624,6 +640,9 @@ private struct TimelineRow: View {
             if case .journal(let entry) = item, isOwn {
                 Button("Edit", systemImage: "pencil") { onEdit(entry) }
                 Button("Delete", systemImage: "trash", role: .destructive) { onDelete(entry) }
+            }
+            if case .encounter(let encounter, _) = item {
+                Button("Edit tags", systemImage: "tag") { onEditTags(encounter) }
             }
         }
     }
@@ -676,12 +695,38 @@ private struct TimelineRow: View {
                     .font(ClickTypography.bodyEmphasized)
                     .foregroundStyle(ClickColors.textPrimary)
             }
+            // Secondary lines (KMP ProfileConnectionMoment): when, place, weather, sound, floor.
+            ForEach(EncounterLabels.lines(for: encounter), id: \.text) { line in
+                Label(line.text, systemImage: line.symbol)
+                    .font(ClickTypography.supporting)
+                    .foregroundStyle(ClickColors.textSecondary)
+                    .labelStyle(.titleAndIcon)
+            }
+            let badges = EncounterLabels.badges(for: encounter)
+            if !badges.isEmpty {
+                HStack(spacing: 10) {
+                    ForEach(badges, id: \.text) { badge in
+                        Label(badge.text, systemImage: badge.symbol)
+                            .font(ClickTypography.metadata)
+                            .foregroundStyle(ClickColors.textTertiary)
+                    }
+                }
+            }
             let chips = EncounterLabels.chips(for: encounter)
             if !chips.isEmpty {
                 TagFlow(tags: chips, highlighted: false, compact: true)
                     .padding(.top, 4)
             }
-            EncounterDetailList(encounter: encounter)
+            if let vibe = encounter.vibeCapture {
+                Text("“\(vibe)”")
+                    .font(ClickTypography.supporting.italic())
+                    .foregroundStyle(ClickColors.textSecondary)
+            }
+            Button("Edit tags") { onEditTags(encounter) }
+                .font(ClickTypography.metadataEmphasized)
+                .foregroundStyle(ClickColors.accentForeground)
+                .buttonStyle(.borderless)
+                .padding(.top, 2)
         case .journal(let entry):
             Text(entry.visibility == .private ? "Note to self" : "Shared note")
                 .font(ClickTypography.bodyEmphasized)
@@ -731,32 +776,63 @@ private struct InterestChip: View {
     }
 }
 
-/// Expandable environmental detail for one encounter (KMP connection moment).
-private struct EncounterDetailList: View {
+/// "Edit tags" for one timeline encounter (KMP `ConnectionRepositoryEncounters` update).
+private struct EncounterTagEditor: View {
+    @Environment(AppEnvironment.self) private var env
+    @Environment(\.dismiss) private var dismiss
     let encounter: Encounter
-    @State private var expanded = false
+    let onSaved: () -> Void
+
+    @State private var selected: [String]
+    @State private var custom = ""
+    @State private var saving = false
+    @State private var error: String?
+
+    init(encounter: Encounter, onSaved: @escaping () -> Void) {
+        self.encounter = encounter
+        self.onSaved = onSaved
+        _selected = State(initialValue: encounter.contextTags)
+    }
 
     var body: some View {
-        let rows = EncounterLabels.details(for: encounter)
-        if rows.count > 1 {
-            VStack(alignment: .leading, spacing: 6) {
-                Button {
-                    withAnimation(ClickMotion.selection) { expanded.toggle() }
-                } label: {
-                    Label(expanded ? "Hide details" : "Details", systemImage: expanded ? "chevron.up" : "chevron.down")
-                        .font(ClickTypography.metadataEmphasized)
-                        .foregroundStyle(ClickColors.accentForeground)
-                }
-                .buttonStyle(.plain)
-                if expanded {
-                    ForEach(rows, id: \.text) { row in
-                        Label(row.text, systemImage: row.symbol)
-                            .font(ClickTypography.supporting)
-                            .foregroundStyle(ClickColors.textSecondary)
+        NavigationStack {
+            ScrollView {
+                VStack(alignment: .leading, spacing: 12) {
+                    Text(EncounterLabels.whenLine(encounter.date))
+                        .font(ClickTypography.supporting)
+                        .foregroundStyle(ClickColors.textTertiary)
+                    ContextTagPicker(
+                        selected: $selected,
+                        custom: $custom,
+                        suggestions: ContextTagTaxonomy.suggest(locationName: encounter.placeName, hour: Calendar.current.component(.hour, from: encounter.date))
+                    )
+                    if let error {
+                        Text(error).font(ClickTypography.metadata).foregroundStyle(ClickColors.destructive)
                     }
                 }
+                .padding(ClickSpacing.screenGutter)
             }
-            .padding(.top, 6)
+            .navigationTitle("Edit tags")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) { Button("Cancel") { dismiss() } }
+                ToolbarItem(placement: .confirmationAction) {
+                    Button(saving ? "Saving…" : "Save") { Task { await save() } }.disabled(saving)
+                }
+            }
+        }
+        .presentationDetents([.medium, .large])
+    }
+
+    private func save() async {
+        saving = true
+        defer { saving = false }
+        do {
+            try await env.encounterContext.setTags(encounterID: encounter.id, tags: ContextTagPicker.resolved(selected: selected, custom: custom))
+            onSaved()
+            dismiss()
+        } catch {
+            self.error = "Tags weren't saved. \(error.userFacingMessage)"
         }
     }
 }

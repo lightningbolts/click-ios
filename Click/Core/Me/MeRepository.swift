@@ -255,8 +255,21 @@ public actor MeRepository {
     }
 
     public func updateName(userID: String, firstName: String, lastName: String) async throws {
-        let body = try JSONSerialization.data(withJSONObject: ["first_name": firstName, "last_name": lastName])
+        try await updateProfile(userID: userID, fields: ["first_name": firstName, "last_name": lastName])
+    }
+
+    public static let bioMaxLength = 160
+
+    /// Name and bio in one `PATCH /api/users/{id}/profile` (an empty bio clears it).
+    public func updateProfile(userID: String, fields: [String: Any]) async throws {
+        let body = try JSONSerialization.data(withJSONObject: fields)
         _ = try await api.executeRaw(APIRequest(path: "/api/users/\(userID)/profile", method: .patch, body: body))
+    }
+
+    /// `DELETE /api/user/avatar`: clears the photo and removes the stored image.
+    public func removeAvatar(userID: String) async throws {
+        _ = try await api.executeRaw(APIRequest(path: "/api/user/avatar", method: .delete))
+        await cache.remove(key: "self-profile", userID: userID)
     }
 
     /// Persists "Free currently" (`PATCH /api/user/availability`) and returns the saved value.
@@ -358,6 +371,8 @@ public struct SelfProfile: Codable, Equatable, Sendable {
     public let personality: [String]
     /// `nil` when the server has no availability row yet.
     public let isFreeCurrently: Bool?
+    /// Short tagline (≤160), `users.bio`.
+    public var bio: String? = nil
 
     public var initials: String { Phase3Repository.initials(from: displayName) }
 
@@ -375,7 +390,8 @@ public struct SelfProfile: Codable, Equatable, Sendable {
             avatarURL: JSONFields.string(user["image"]),
             interests: JSONFields.stringArray(root["tags"]),
             personality: JSONFields.stringArray(root["personality_tags"] ?? user["personality_tags"]),
-            isFreeCurrently: availability.flatMap { JSONFields.bool($0["is_free_this_week"]) }
+            isFreeCurrently: availability.flatMap { JSONFields.bool($0["is_free_this_week"]) },
+            bio: JSONFields.string(user["bio"])
         )
     }
 }

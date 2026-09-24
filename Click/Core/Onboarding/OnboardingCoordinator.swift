@@ -19,6 +19,9 @@ public final class OnboardingCoordinator {
     public private(set) var state: OnboardingState
     public private(set) var step: Step = .loading
     public private(set) var loadErrorMessage: String?
+    /// True once server (or its offline fallback) resolution has hydrated this coordinator.
+    /// Before that, a cached completion may already show the shell, but nothing else does.
+    public private(set) var isResolved = false
 
     private var stepOverride: Step?
     private let userId: String
@@ -53,11 +56,24 @@ public final class OnboardingCoordinator {
     /// Hydrates remote or cached state into the coordinator.
     public func hydrate(_ next: OnboardingState, hasAvatar: Bool? = nil) {
         loadErrorMessage = nil
+        isResolved = true
         if let hasAvatar = hasAvatar {
             self.userHasAvatarClosure = { hasAvatar }
         }
         self.state = next
         self.step = computeStep(next)
+    }
+
+    /// Cold start: a returning user whose last resolved state was complete goes straight to the
+    /// shell while the server re-check runs in the background. Anything short of complete stays
+    /// on Loading until resolved, so no onboarding step ever flashes.
+    public func adoptCachedCompletion(_ cached: OnboardingState) {
+        guard !isResolved, cached.completedAt != nil else { return }
+        state = cached
+        userHasAvatarClosure = { cached.avatarSetOrSkipped }
+        if computeStep(cached) == .complete {
+            step = .complete
+        }
     }
 
     public func beginLoading() {

@@ -57,8 +57,29 @@ public struct ChatMessageItem: Identifiable, Hashable, Sendable {
     public var localMediaURL: URL?
     /// A shared event/beacon card (`message_type: beacon`).
     public var beacon: SharedBeacon?
+    /// The sender's client message ID (`metadata.client_message_id`). For our own messages it
+    /// is the optimistic row's ID, kept after the server row replaces it.
+    public var clientMessageID: String?
+    /// Encrypting/uploading stage while an outgoing attachment is in flight (never persisted).
+    public var uploadProgress: MediaUploadProgress?
+    /// "Message deleted" placeholder (server tombstone or a realtime delete seen live).
+    public var isDeleted = false
+
+    /// The placeholder that replaces a deleted message in place.
+    public func tombstoned() -> ChatMessageItem {
+        var copy = ChatMessageItem(id: id, chatID: chatID, senderID: senderID, senderName: senderName,
+                                   senderAvatarURL: senderAvatarURL, content: "", messageType: .text,
+                                   createdAt: createdAt, deliveryStatus: deliveryStatus, isOutgoing: isOutgoing,
+                                   clientMessageID: clientMessageID)
+        copy.isDeleted = true
+        return copy
+    }
 
     public var isMedia: Bool { media != nil }
+
+    /// View identity for the whole life of a message: the client ID when known, so swapping
+    /// the optimistic row for the server row (or a refresh) never re-inserts the view.
+    public var stableID: String { clientMessageID ?? id }
 
     public init(
         id: String,
@@ -79,8 +100,10 @@ public struct ChatMessageItem: Identifiable, Hashable, Sendable {
         isEdited: Bool = false,
         media: MessageMedia? = nil,
         localMediaURL: URL? = nil,
-        beacon: SharedBeacon? = nil
+        beacon: SharedBeacon? = nil,
+        clientMessageID: String? = nil
     ) {
+        self.clientMessageID = clientMessageID
         self.beacon = beacon
         self.media = media
         self.localMediaURL = localMediaURL

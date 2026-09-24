@@ -273,7 +273,10 @@ struct ChatConversationTests {
 
         await model.deleteMessage(item: message)
 
-        #expect(model.items.isEmpty)
+        // Deleted messages stay in place as a "Message deleted" tombstone.
+        #expect(model.items.count == 1)
+        #expect(model.items.first?.isDeleted == true)
+        #expect(model.items.first?.content.isEmpty == true)
         #expect(repo.deletedIDs.contains("msg-delete-1"))
     }
 
@@ -301,6 +304,7 @@ struct ChatConversationTests {
         await model.deleteMessage(item: message)
 
         #expect(model.items.map(\.id) == ["msg-delete-fail"])
+        #expect(model.items.first?.isDeleted == false)
         #expect(model.operationError != nil)
     }
 

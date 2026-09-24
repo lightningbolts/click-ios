@@ -12,6 +12,8 @@ public struct JoinedHub: Codable, Equatable, Identifiable, Sendable {
     public var lastMessage: String?
     public var lastSenderName: String?
     public var lastActivityAt: Date?
+    /// Hub owner, when known (enables Delete in the inbox for the owner).
+    public var creatorID: String?
 
     public var id: String { hubID }
     public var isEvent: Bool { eventBeaconID != nil || category?.lowercased() == "event" }

@@ -247,7 +247,9 @@ public actor Phase3Repository {
                 lastActivityAt: activity,
                 sayHiDeadline: sayHiDeadline,
                 unreadCount: preview?.unreadCount ?? 0,
-                isCore: coreIDs.contains(connectionID)
+                isCore: coreIDs.contains(connectionID),
+                awaitsPriorResponse: string(row["source"]) == "prior" && status == "pending"
+                    && string(row["initiator_id"]).map { $0 != currentUserID } ?? false
             )
         }
         return items.sorted { ($0.lastActivityAt ?? .distantPast) > ($1.lastActivityAt ?? .distantPast) }

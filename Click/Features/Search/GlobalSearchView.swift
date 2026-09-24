@@ -361,7 +361,7 @@ struct GlobalSearchView: View {
             remote.succeed(JSONFields.rows(root["hits"]).compactMap(MessageHit.decode))
         } catch {
             guard !Task.isCancelled else { return }
-            remote.fail(error.userFacingMessage)
+            remote.fail(error)
         }
     }
 }

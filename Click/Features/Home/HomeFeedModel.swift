@@ -133,9 +133,14 @@ final class HomeFeedModel {
         (nudges.value ?? []).filter { !resolvedNudgeIDs.contains($0.id) }
     }
 
-    /// True when any module is showing cached data because its refresh failed while offline.
-    var isShowingOfflineData: Bool {
+    /// A module is showing cached data because its last refresh failed (not cancelled).
+    /// Whether that reads as "Offline" is decided by `NetworkMonitor`, not by this flag.
+    var hasRefreshFailure: Bool {
         [intents.isStale, savedEvents.isStale, nudges.isStale, discovery.isStale, recap.isStale].contains(true)
+    }
+
+    var hasCachedData: Bool {
+        intents.value != nil || savedEvents.value != nil || nudges.value != nil || discovery.value != nil || recap.value != nil
     }
 
     func opportunity(connections: [ConnectionItem], now: Date = .now) -> HomeOpportunity? {
@@ -167,6 +172,8 @@ final class HomeFeedModel {
         guard !hasLoaded, let environment, let userID else { return }
         hasLoaded = true
         await seedFromCache(environment, userID: userID)
+        // Let the cached frame commit before network work competes for the main actor.
+        await Task.yield()
         await refresh()
     }
 
@@ -247,7 +254,7 @@ final class HomeFeedModel {
         do {
             intents.succeed(try await environment.me.availabilityIntents(userID: userID))
         } catch {
-            intents.fail(error.userFacingMessage)
+            intents.fail(error)
         }
     }
 
@@ -257,7 +264,7 @@ final class HomeFeedModel {
         do {
             savedEvents.succeed(try await environment.beacons.bookmarks(userID: userID))
         } catch {
-            savedEvents.fail(error.userFacingMessage)
+            savedEvents.fail(error)
         }
     }
 
@@ -267,7 +274,7 @@ final class HomeFeedModel {
         do {
             nudges.succeed(try await environment.me.nudges(userID: userID))
         } catch {
-            nudges.fail(error.userFacingMessage)
+            nudges.fail(error)
         }
     }
 
@@ -279,7 +286,7 @@ final class HomeFeedModel {
         do {
             state.succeed(try await environment.me.recap(window: window, userID: userID))
         } catch {
-            state.fail(error.userFacingMessage)
+            state.fail(error)
         }
         recaps[window] = state
     }
@@ -294,13 +301,19 @@ final class HomeFeedModel {
         }
         discovery.begin()
         guard let location = await environment.location.currentLocation() else {
-            discovery.fail("Couldn't find your location.")
+            // A missing fix is a location problem, not a network one: keep any cached value
+            // and don't flag the module as a failed refresh.
+            if discovery.value == nil {
+                discovery.markUnavailable("Couldn't find your location.")
+            } else {
+                discovery.succeedKeepingValue()
+            }
             return
         }
         do {
             discovery.succeed(try await environment.beacons.discovery(around: location.coordinate, userID: userID))
         } catch {
-            discovery.fail(error.userFacingMessage)
+            discovery.fail(error)
         }
     }
 

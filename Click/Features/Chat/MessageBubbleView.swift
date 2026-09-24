@@ -18,6 +18,8 @@ public struct MessageBubbleView: View {
     let mediaLoader: ((ChatMessageItem) async throws -> URL)?
     let onOpenMedia: ((URL, MessageMedia.Kind) -> Void)?
     let onOpenBeacon: ((SharedBeacon) -> Void)?
+    /// Removes a failed outgoing row (✕ on a failed attachment).
+    var onDiscardFailed: ((ChatMessageItem) -> Void)?
 
     @State private var dragOffset: CGFloat = 0
     @State private var dragIntent: DragIntent = .undecided
@@ -29,7 +31,6 @@ public struct MessageBubbleView: View {
         case vertical
     }
 
-    private let replyThreshold: CGFloat = 60
     private let quickEmojis = ["👍", "❤️", "😂", "😮", "😢", "😡"]
 
     public init(
@@ -43,8 +44,10 @@ public struct MessageBubbleView: View {
         showsReceipts: Bool = true,
         mediaLoader: ((ChatMessageItem) async throws -> URL)? = nil,
         onOpenMedia: ((URL, MessageMedia.Kind) -> Void)? = nil,
-        onOpenBeacon: ((SharedBeacon) -> Void)? = nil
+        onOpenBeacon: ((SharedBeacon) -> Void)? = nil,
+        onDiscardFailed: ((ChatMessageItem) -> Void)? = nil
     ) {
+        self.onDiscardFailed = onDiscardFailed
         self.onOpenBeacon = onOpenBeacon
         self.mediaLoader = mediaLoader
         self.onOpenMedia = onOpenMedia
@@ -59,6 +62,32 @@ public struct MessageBubbleView: View {
     }
 
     public var body: some View {
+        if message.isDeleted {
+            deletedPlaceholder
+        } else {
+            liveBubble
+        }
+    }
+
+    private var deletedPlaceholder: some View {
+        HStack {
+            if message.isOutgoing { Spacer(minLength: 58) }
+            Label("Message deleted", systemImage: "nosign")
+                .font(ClickTypography.supporting.italic())
+                .foregroundStyle(ClickColors.textTertiary)
+                .padding(.horizontal, 12)
+                .padding(.vertical, 8)
+                .overlay(
+                    RoundedRectangle(cornerRadius: ClickRadius.messageBubble, style: .continuous)
+                        .stroke(ClickColors.separator, lineWidth: ClickMetrics.strokeWidth)
+                )
+            if !message.isOutgoing { Spacer(minLength: 58) }
+        }
+        .padding(.horizontal, 5)
+        .accessibilityLabel(message.isOutgoing ? "You deleted a message" : "\(message.senderName) deleted a message")
+    }
+
+    private var liveBubble: some View {
         HStack(alignment: .bottom, spacing: 0) {
             if message.isOutgoing {
                 Spacer(minLength: 58)
@@ -76,6 +105,7 @@ public struct MessageBubbleView: View {
                 content
                     .frame(maxWidth: 320, alignment: message.isOutgoing ? .trailing : .leading)
                     .offset(x: dragOffset)
+                    .overlay(alignment: message.isOutgoing ? .trailing : .leading) { replyHint }
                     // A voice note's seek slider must win over swipe-to-reply (spec §37.6).
                     .simultaneousGesture(replyGesture, including: message.media?.kind == .audio ? .subviews : .all)
                     .contextMenu {
@@ -160,10 +190,11 @@ public struct MessageBubbleView: View {
                     load: { try await mediaLoader(message) },
                     onOpen: { url in onOpenMedia?(url, media.kind) }
                 )
+                .overlay { UploadStateOverlay(message: message, onRetry: onRetrySend, onDiscard: onDiscardFailed) }
                 HStack(spacing: 4) {
                     Text(message.formattedTime).monospacedDigit()
                     if message.isOutgoing, showsReceipts || [.pending, .sending, .failed].contains(message.deliveryStatus) {
-                        statusIcon
+                        animatedStatusIcon
                     }
                 }
                 .font(ClickTypography.caption)
@@ -225,7 +256,7 @@ public struct MessageBubbleView: View {
         HStack(spacing: 3) {
             if message.isEdited { Text("edited") }
             Text(message.formattedTime).monospacedDigit()
-            if showsStatus { statusIcon }
+            if showsStatus { animatedStatusIcon }
         }
         .font(ClickTypography.caption)
         .foregroundStyle(message.isOutgoing ? ClickColors.messageOutgoingForeground.opacity(0.72) : ClickColors.textSecondary)
@@ -298,43 +329,68 @@ public struct MessageBubbleView: View {
         .padding(.horizontal, 5)
     }
 
+    /// Reply arrow that fades and scales in from 20 pt of drag and fills at the threshold.
+    private var replyHint: some View {
+        let progress = SwipeReplyPhysics.hintProgress(offset: abs(dragOffset))
+        return Image(systemName: progress >= 1 ? "arrowshape.turn.up.left.fill" : "arrowshape.turn.up.left")
+            .font(.system(size: 15, weight: .semibold))
+            .foregroundStyle(progress >= 1 ? ClickColors.accentForeground : ClickColors.textSecondary)
+            .frame(width: 30, height: 30)
+            .background(ClickColors.fillStrong.opacity(progress), in: Circle())
+            .scaleEffect(0.6 + 0.4 * progress * (progress >= 1 ? 1.12 : 1))
+            .opacity(progress)
+            // Centered in the space the bubble reveals as it moves.
+            .offset(x: dragOffset * 0.5 + (message.isOutgoing ? 15 : -15))
+            .allowsHitTesting(false)
+            .accessibilityHidden(true)
+    }
+
     private var replyGesture: some Gesture {
-        DragGesture(minimumDistance: 10)
+        DragGesture(minimumDistance: SwipeReplyPhysics.activationDistance)
             .onChanged { value in
                 let dx = value.translation.width
                 let dy = value.translation.height
 
                 if dragIntent == .undecided {
-                    if abs(dx) > abs(dy) * 1.2 {
-                        dragIntent = .horizontal
-                    } else if abs(dy) > abs(dx) {
-                        dragIntent = .vertical
+                    switch SwipeReplyPhysics.intent(dx: dx, dy: dy) {
+                    case .horizontal: dragIntent = .horizontal
+                    case .vertical: dragIntent = .vertical
+                    case nil: break
                     }
                 }
-
                 guard dragIntent == .horizontal else { return }
 
+                // Incoming bubbles swipe right, outgoing swipe left; the other way is inert.
                 let allowed = message.isOutgoing ? min(dx, 0) : max(dx, 0)
-                dragOffset = max(-72, min(72, allowed * 0.56))
+                dragOffset = SwipeReplyPhysics.rubberBand(allowed)
 
-                if abs(dragOffset) >= replyThreshold,
-                   !hasTriggeredReplyHaptic {
-                    ClickHaptics.impact(.heavy)
+                let crossed = abs(dragOffset) >= SwipeReplyPhysics.threshold
+                if crossed, !hasTriggeredReplyHaptic {
+                    ClickHaptics.impact(.light)
                     hasTriggeredReplyHaptic = true
+                } else if !crossed {
+                    // Backing off re-arms, but only one haptic fires per crossing.
+                    hasTriggeredReplyHaptic = false
                 }
             }
             .onEnded { _ in
-                if dragIntent == .horizontal,
-                   abs(dragOffset) >= replyThreshold {
+                if dragIntent == .horizontal, abs(dragOffset) >= SwipeReplyPhysics.threshold {
                     onReply(message)
                 }
-
-                withAnimation(ClickMotion.selection) {
+                withAnimation(.spring(response: 0.35, dampingFraction: 0.7)) {
                     dragOffset = 0
                 }
                 dragIntent = .undecided
                 hasTriggeredReplyHaptic = false
             }
+    }
+
+    /// clock → ✓ → ✓✓ with a small pop on each step.
+    private var animatedStatusIcon: some View {
+        statusIcon
+            .id(message.deliveryStatus)
+            .transition(.scale(scale: 0.5).combined(with: .opacity))
+            .animation(ClickMotion.press, value: message.deliveryStatus)
     }
 
     @ViewBuilder
@@ -379,6 +435,7 @@ public struct MessageBubbleView: View {
 
 /// A shared event/beacon as a card (prototype "Sunset Run Club"), not as "Beacon: …" text.
 private struct BeaconMessageCard: View {
+    @Environment(AppEnvironment.self) private var env: AppEnvironment?
     let beacon: SharedBeacon
     let time: String
     let isOutgoing: Bool
@@ -422,11 +479,107 @@ private struct BeaconMessageCard: View {
         }
         .buttonStyle(.plain)
         .accessibilityLabel("\(beacon.title). \(detail ?? ""). Opens details.")
+        .task(id: beacon.beaconID) { await env?.beacons.prefetch(id: beacon.beaconID) }
     }
 
     private var detail: String? {
         let parts = [beacon.scheduleLabel ?? beacon.start.map { $0.formatted(.dateTime.weekday(.abbreviated).hour().minute()) },
                      beacon.locationName].compactMap { $0 }
         return parts.isEmpty ? nil : parts.joined(separator: " · ")
+    }
+}
+
+/// Swipe-to-reply physics (prototype interaction contract), pure for unit tests.
+enum SwipeReplyPhysics {
+    enum Intent: Equatable { case horizontal, vertical }
+
+    nonisolated static let activationDistance: CGFloat = 6
+    nonisolated static let threshold: CGFloat = 58
+    nonisolated static let hintStart: CGFloat = 20
+    nonisolated static let resistance: CGFloat = 90
+
+    /// Follows the finger with exponential resistance so it never stops dead:
+    /// `L · (1 − e^(−|dx|/L))`, signed.
+    nonisolated static func rubberBand(_ dx: CGFloat, limit: CGFloat = resistance) -> CGFloat {
+        let magnitude = limit * (1 - exp(-abs(dx) / limit))
+        return dx < 0 ? -magnitude : magnitude
+    }
+
+    /// 0 below 20 pt, 1 at the threshold.
+    nonisolated static func hintProgress(offset: CGFloat) -> Double {
+        Double(min(1, max(0, (offset - hintStart) / (threshold - hintStart))))
+    }
+
+    /// Horizontal only when clearly sideways; vertical scrolling wins once it passes 8 pt.
+    nonisolated static func intent(dx: CGFloat, dy: CGFloat) -> Intent? {
+        if abs(dy) > 8, abs(dy) >= abs(dx) { return .vertical }
+        if abs(dx) > abs(dy) * 1.2, abs(dx) >= activationDistance { return .horizontal }
+        return nil
+    }
+}
+
+/// Progress veil over an outgoing attachment's own frame: a determinate "encrypting" stage, then
+/// byte-accurate upload progress; on failure, retry or remove in place.
+private struct UploadStateOverlay: View {
+    let message: ChatMessageItem
+    let onRetry: ((ChatMessageItem) -> Void)?
+    let onDiscard: ((ChatMessageItem) -> Void)?
+
+    var body: some View {
+        if message.isOutgoing, message.deliveryStatus == .sending || message.deliveryStatus == .failed {
+            ZStack {
+                RoundedRectangle(cornerRadius: ClickRadius.messageBubble, style: .continuous)
+                    .fill(.black.opacity(0.28))
+                if message.deliveryStatus == .failed {
+                    HStack(spacing: 14) {
+                        circleButton("arrow.clockwise", label: "Retry sending") { onRetry?(message) }
+                        if let onDiscard {
+                            circleButton("xmark", label: "Remove") { onDiscard(message) }
+                        }
+                    }
+                } else {
+                    ring
+                }
+            }
+            .transition(.opacity)
+            .animation(ClickMotion.subtleFade, value: message.deliveryStatus)
+        }
+    }
+
+    private var fraction: Double? {
+        switch message.uploadProgress {
+        case .uploading(let fraction)?: fraction
+        case .encrypting?, nil: nil
+        }
+    }
+
+    private var ring: some View {
+        ZStack {
+            Circle().stroke(.white.opacity(0.3), lineWidth: 3)
+            if let fraction {
+                Circle()
+                    .trim(from: 0, to: max(0.03, fraction))
+                    .stroke(.white, style: StrokeStyle(lineWidth: 3, lineCap: .round))
+                    .rotationEffect(.degrees(-90))
+                    .animation(.linear(duration: 0.15), value: fraction)
+            } else {
+                ProgressView().tint(.white)
+            }
+        }
+        .frame(width: 36, height: 36)
+        .accessibilityElement()
+        .accessibilityLabel(fraction.map { "Uploading, \(Int($0 * 100)) percent" } ?? "Encrypting")
+    }
+
+    private func circleButton(_ icon: String, label: String, action: @escaping () -> Void) -> some View {
+        Button(action: action) {
+            Image(systemName: icon)
+                .font(.system(size: 15, weight: .bold))
+                .foregroundStyle(.white)
+                .frame(width: 36, height: 36)
+                .background(.black.opacity(0.45), in: Circle())
+        }
+        .buttonStyle(.plain)
+        .accessibilityLabel(label)
     }
 }

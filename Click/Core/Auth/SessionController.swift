@@ -62,6 +62,8 @@ public final class SessionController: SessionControlling {
     public var apiClient: ClickAPIClient?
     public var settingsStore: SettingsStore?
     public var onPostAuthResolved: (@MainActor () -> Void)?
+    /// Clears session-scoped caches owned by the environment (identities, uploads, telemetry).
+    public var onSignOut: (@MainActor () async -> Void)?
 
     public init(
         migrator: LegacyKMPStateMigrator = .shared,
@@ -152,10 +154,18 @@ public final class SessionController: SessionControlling {
 
         if isFresh {
             retainedSession = snapshot
-            // Keep the root on the launch gate until server-backed profile requirements resolve.
-            state = .restoring
-            await resolveProfileGate(for: snapshot.userId)
-            onPostAuthResolved?()
+            if settingsStore?.onboardingState(for: snapshot.userId)?.completedAt != nil {
+                // Returning user with a completed profile and onboarding on this device: admit
+                // immediately and re-check the profile gate in the background.
+                state = .authenticated(snapshot)
+                onPostAuthResolved?()
+                Task { [weak self] in await self?.resolveProfileGate(for: snapshot.userId) }
+            } else {
+                // Keep the root on the launch gate until server-backed profile requirements resolve.
+                state = .restoring
+                await resolveProfileGate(for: snapshot.userId)
+                onPostAuthResolved?()
+            }
 
             // Opportunistic background refresh if expiring in under 15 minutes
             if let exp = snapshot.expiresAt, exp < Date().addingTimeInterval(900) {
@@ -165,34 +175,16 @@ public final class SessionController: SessionControlling {
             }
         } else {
             // Expired: attempt single-flight refresh before admitting
+            // Expired: go through the same single-flight refresh as every API call, so a
+            // concurrent 401 retry can never spend the (single-use) refresh token twice.
             do {
-                let refreshed = try await authService.refreshToken(snapshot.refreshToken)
-                vault.saveSession(refreshed)
-                retainedSession = refreshed
-                state = .restoring
+                let refreshed = try await refreshSession()
                 await resolveProfileGate(for: refreshed.userId)
                 onPostAuthResolved?()
-            } catch let apiErr as APIError {
-                switch apiErr {
-                case .offline, .timeout:
-                    // Preserve offline identity if network unavailable
-                    retainedSession = snapshot
-                    state = .offlineAuthenticated(snapshot)
-                    onPostAuthResolved?()
-                case .unauthorized, .forbidden, .validation:
-                    // Hard refresh-token rejection
-                    vault.deleteSession()
-                    migrator.deleteLegacySession()
-                    retainedSession = nil
-                    state = .unauthenticated
-                default:
-                    retainedSession = snapshot
-                    state = .offlineAuthenticated(snapshot)
-                    onPostAuthResolved?()
-                }
             } catch {
-                retainedSession = snapshot
-                state = .offlineAuthenticated(snapshot)
+                // `refreshSession` already applied the state: signed out on a hard rejection,
+                // offline identity otherwise.
+                if case .unauthenticated = state { return }
                 onPostAuthResolved?()
             }
         }
@@ -387,8 +379,28 @@ public final class SessionController: SessionControlling {
         settingsStore?.resetSessionScopedData()
         // Decrypted chat media never outlives the session that decrypted it.
         await ChatMediaVault.shared.clear()
+        await FreshnessCache.shared.removeAll()
+        await onSignOut?()
         retainedSession = nil
         state = .unauthenticated
+    }
+
+    /// Seconds before expiry at which API calls proactively refresh.
+    public nonisolated static let proactiveRefreshWindow: TimeInterval = 5 * 60
+
+    public nonisolated static func needsProactiveRefresh(expiresAt: Date?, now: Date = .now) -> Bool {
+        guard let expiresAt else { return false }
+        return expiresAt.timeIntervalSince(now) < proactiveRefreshWindow
+    }
+
+    /// The bearer token for an API call. Refreshes first (single-flight) when the token is within
+    /// five minutes of expiry; if that refresh fails transiently the current token is still used
+    /// and the server's 401 path decides.
+    public func validAccessToken() async -> String? {
+        guard let current = currentSession else { return nil }
+        guard Self.needsProactiveRefresh(expiresAt: current.expiresAt) else { return current.jwt }
+        if let refreshed = try? await refreshSession() { return refreshed.jwt }
+        return currentSession?.jwt
     }
 
     /// Refreshes the session token proactively or on demand.

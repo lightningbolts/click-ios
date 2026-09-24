@@ -23,6 +23,9 @@ struct BeaconDetailView: View {
     @State private var confirmDelete = false
     @State private var people = ModuleState<EventDirectory>()
     @State private var sharingToChat = false
+    @State private var editingBeacon = false
+    /// Readable place for legacy beacons saved with the label "Current location".
+    @State private var resolvedPlace: (name: String?, address: String?)?
 
     var body: some View {
         Group {
@@ -45,6 +48,7 @@ struct BeaconDetailView: View {
         .navigationTitle(beacon.value?.title ?? "")
         .toolbar(.hidden, for: .navigationBar)
         .task { if beacon.value == nil { await load() } }
+        .task(id: rsvp.value?.request) { await watchPendingRequest() }
         .alert("Event", isPresented: Binding(get: { notice != nil }, set: { if !$0 { notice = nil } })) {
             Button("OK", role: .cancel) {}
         } message: {
@@ -105,8 +109,18 @@ struct BeaconDetailView: View {
                     }
 
                     if beacon.creatorID == env.session.currentSession?.userId {
-                        Button("Delete", systemImage: "trash", role: .destructive) { confirmDelete = true }
-                            .padding(.top, 4)
+                        if beacon.isEvent {
+                            NavigationLink {
+                                GuestListView(beaconID: beacon.id)
+                            } label: {
+                                Label("Guest list", systemImage: "list.bullet.rectangle")
+                            }
+                        }
+                        HStack(spacing: 20) {
+                            Button("Edit", systemImage: "pencil") { editingBeacon = true }
+                            Button("Delete", systemImage: "trash", role: .destructive) { confirmDelete = true }
+                        }
+                        .padding(.top, 4)
                     }
                 }
                 .padding(.horizontal, 20)
@@ -121,6 +135,12 @@ struct BeaconDetailView: View {
         }
         .sheet(isPresented: $sharingToChat) {
             ShareToChatSheet(beacon: beacon)
+        }
+        .sheet(isPresented: $editingBeacon) {
+            CreateBeaconSheet(fallback: nil, editing: beacon) { updated in
+                self.beacon.succeed(updated)
+                resolvedPlace = nil
+            }
         }
         .confirmationDialog("Cancel your RSVP?", isPresented: $confirmCancelRSVP, titleVisibility: .visible) {
             Button(rsvp.value?.isGoing == true ? "Cancel RSVP" : "Withdraw request", role: .destructive) {
@@ -287,12 +307,17 @@ struct BeaconDetailView: View {
             Button {
                 env.router.showOnMap(.place(beacon.id))
             } label: {
+                let label = Self.displayPlace(beacon, resolved: resolvedPlace)
                 infoRow(
                     systemImage: "mappin.and.ellipse",
-                    title: beacon.locationName ?? beacon.formattedAddress ?? "Show on map",
-                    subtitle: beacon.locationName != nil ? beacon.formattedAddress : nil,
+                    title: label.title ?? "Show on map",
+                    subtitle: label.subtitle,
                     chevron: true
                 )
+                .task(id: beacon.id) {
+                    guard Self.needsReverseGeocode(beacon), resolvedPlace == nil else { return }
+                    resolvedPlace = await PlaceSearchModel.reverseGeocode(beacon.coordinate)
+                }
             }
             .buttonStyle(.plain)
             if beacon.isEvent {
@@ -392,7 +417,9 @@ struct BeaconDetailView: View {
                 ScrollView(.horizontal, showsIndicators: false) {
                     HStack(spacing: 16) {
                         ForEach(ranked.prefix(10)) { person in
-                            NavigationLink(value: AppRoute.userProfile(userID: person.userID, connectionID: nil)) {
+                            NavigationLink(value: person.relationship == .connection
+                ? AppRoute.userProfile(userID: person.userID, connectionID: nil)
+                : AppRoute.publicProfile(userID: person.userID)) {
                                 VStack(spacing: 6) {
                                     AvatarView(imageURL: person.avatarURL, seed: person.userID, initials: person.initials, size: 60)
                                     Text(person.name.split(separator: " ").first.map(String.init) ?? person.name)
@@ -432,16 +459,29 @@ struct BeaconDetailView: View {
 
     // MARK: - Loading & writes
 
+    /// Paints from the beacon cache instantly (chat card, map, Home), then refreshes. For an
+    /// event whose kind is already known, RSVP/engagement/people load in parallel with it.
     private func load() async {
-        beacon.begin()
-        do {
-            let result = try await env.beacons.beacon(id: beaconID)
-            isExpired = result.isExpired
-            beacon.succeed(result.beacon)
-            if result.beacon.isEvent { await loadEngagement() }
-        } catch {
-            beacon.fail(error.userFacingMessage)
+        let cached = await env.beacons.cachedBeacon(id: beaconID)
+        if let cached {
+            beacon.seed(cached.beacon)
+            isExpired = cached.isExpired
         }
+        beacon.begin()
+        async let engagementTask: Void = cached?.beacon.isEvent == true ? loadEngagement() : ()
+        if cached?.isFresh == true {
+            beacon.succeedKeepingValue()
+        } else {
+            do {
+                let result = try await env.beacons.beacon(id: beaconID)
+                isExpired = result.isExpired
+                beacon.succeed(result.beacon)
+            } catch {
+                beacon.fail(error)
+            }
+        }
+        await engagementTask
+        if cached?.beacon.isEvent != true, beacon.value?.isEvent == true { await loadEngagement() }
     }
 
     private func loadEngagement() async {
@@ -450,9 +490,9 @@ struct BeaconDetailView: View {
         async let rsvpTask = env.events.rsvpState(beaconID: beaconID)
         async let engagementTask = env.events.engagement(beaconID: beaconID)
         async let peopleTask = env.events.directory(beaconID: beaconID)
-        do { rsvp.succeed(try await rsvpTask) } catch { rsvp.fail(error.userFacingMessage) }
-        do { engagement.succeed(try await engagementTask) } catch { engagement.fail(error.userFacingMessage) }
-        do { people.succeed(try await peopleTask) } catch { people.fail(error.userFacingMessage) }
+        do { rsvp.succeed(try await rsvpTask) } catch { rsvp.fail(error) }
+        do { engagement.succeed(try await engagementTask) } catch { engagement.fail(error) }
+        do { people.succeed(try await peopleTask) } catch { people.fail(error) }
     }
 
     private func setRSVP(_ beacon: MapBeacon) async {
@@ -466,8 +506,9 @@ struct BeaconDetailView: View {
             case .waitlisted?: notice = "The event is full — you're on the waitlist."
             default: ClickHaptics.success()
             }
+            await syncReminders(beacon)
         } catch {
-            notice = error.localizedDescription
+            notice = error.userFacingMessage
         }
     }
 
@@ -477,6 +518,7 @@ struct BeaconDetailView: View {
         do {
             try await env.events.cancelRSVP(beaconID: beacon.id)
             rsvp.succeed(try await env.events.rsvpState(beaconID: beacon.id))
+            await syncReminders(beacon)
         } catch {
             notice = "Couldn't cancel. \(error.userFacingMessage)"
         }
@@ -494,10 +536,45 @@ struct BeaconDetailView: View {
             current.bookmarked = try await env.events.setBookmark(beaconID: beacon.id, bookmarked: target)
             engagement.succeed(current)
             ClickHaptics.selection()
+            await syncReminders(beacon)
         } catch {
             current.bookmarked = !target
             engagement.succeed(current)
             notice = "Couldn't update your saved events. \(error.userFacingMessage)"
+        }
+    }
+
+    /// Reminders exist while the user is going or has saved the event (spec §59).
+    private func syncReminders(_ beacon: MapBeacon) async {
+        let interested = rsvp.value?.isGoing == true || engagement.value?.bookmarked == true
+        guard interested, let schedule = beacon.schedule else {
+            await EventReminderScheduler.cancel(beaconID: beacon.id)
+            return
+        }
+        var enabled = true
+        if let userID = env.session.currentSession?.userId,
+           let preferences = try? await env.me.notificationPreferences(userID: userID) {
+            enabled = preferences[.eventReminders]
+        }
+        await EventReminderScheduler.schedule(beaconID: beacon.id, title: beacon.title, start: schedule.start,
+                                              place: beacon.locationName, enabled: enabled)
+    }
+
+    /// While a join request is pending, re-check every 30 s so the host's decision shows
+    /// without leaving the screen (push/realtime also refresh it when available).
+    private func watchPendingRequest() async {
+        while !Task.isCancelled, rsvp.value?.request == .pending {
+            try? await Task.sleep(for: .seconds(30))
+            guard !Task.isCancelled, let fresh = try? await env.events.rsvpState(beaconID: beaconID) else { continue }
+            if fresh != rsvp.value {
+                rsvp.succeed(fresh)
+                if fresh.request == .approved || fresh.isGoing {
+                    notice = "You're in — the host approved your request."
+                    ClickHaptics.success()
+                } else if fresh.request == .denied {
+                    notice = "The host couldn't approve your request this time."
+                }
+            }
         }
     }
 
@@ -533,10 +610,26 @@ struct BeaconDetailView: View {
     private func delete(_ beacon: MapBeacon) async {
         do {
             try await env.events.deleteBeacon(id: beacon.id)
+            await env.beacons.evict(id: beacon.id)
+            env.router.noteBeaconDeleted(beacon.id)
             dismiss()
         } catch {
             notice = "Couldn't delete. \(error.userFacingMessage)"
         }
+    }
+
+    /// Legacy KMP beacons stored the literal label "Current location"; show a real place.
+    nonisolated static func needsReverseGeocode(_ beacon: MapBeacon) -> Bool {
+        let label = beacon.locationName?.trimmingCharacters(in: .whitespaces).lowercased()
+        return label == nil || label == "current location"
+    }
+
+    nonisolated static func displayPlace(_ beacon: MapBeacon, resolved: (name: String?, address: String?)?) -> (title: String?, subtitle: String?) {
+        if needsReverseGeocode(beacon) {
+            let title = resolved?.name ?? beacon.formattedAddress
+            return (title, resolved?.address ?? (resolved?.name != nil ? beacon.formattedAddress : nil))
+        }
+        return (beacon.locationName, beacon.formattedAddress)
     }
 
     /// Descriptions keep their inline formatting (links, emphasis) instead of raw markdown.
@@ -716,7 +809,7 @@ struct EventDirectoryView: View {
         do {
             directory.succeed(try await env.events.directory(beaconID: beaconID))
         } catch {
-            directory.fail(error.userFacingMessage)
+            directory.fail(error)
         }
     }
 }

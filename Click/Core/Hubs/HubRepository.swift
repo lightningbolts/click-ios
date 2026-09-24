@@ -27,11 +27,13 @@ public actor HubRepository {
     private let api: ClickAPIClient
     private let supabaseURL: URL?
     private let supabaseAnonKey: String
+    private let identities: IdentityCache
 
-    public init(api: ClickAPIClient, supabaseURL: URL?, supabaseAnonKey: String) {
+    public init(api: ClickAPIClient, supabaseURL: URL?, supabaseAnonKey: String, identities: IdentityCache? = nil) {
         self.api = api
         self.supabaseURL = supabaseURL
         self.supabaseAnonKey = supabaseAnonKey
+        self.identities = identities ?? IdentityCache(api: api)
     }
 
     public func hub(id: String) async throws -> HubInfo {
@@ -148,11 +150,8 @@ public actor HubRepository {
             default: text = ClickCryptoV2.isEncrypted(body) || ClickCryptoV1.isAnyV1WireContent(body) ? "Encrypted message" : body
             }
             var sender: String?
-            if let userID = JSONFields.string(row["user_id"]),
-               let payload = try? JSONSerialization.data(withJSONObject: ["userIds": [userID]]),
-               let (names, _) = try? await api.executeRaw(APIRequest(path: "/api/users/display-names", method: .post, body: payload)),
-               let root = try? JSONFields.object(names) {
-                sender = (root["names"] as? [String: Any]).flatMap { JSONFields.string($0[userID]) }
+            if let userID = JSONFields.string(row["user_id"]) {
+                sender = await identities.resolve([userID])[userID]?.name
             }
             return .message(text: text, senderName: sender, date: JSONFields.date(row["created_at"]))
         } catch {

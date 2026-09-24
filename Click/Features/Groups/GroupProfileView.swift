@@ -268,7 +268,7 @@ struct GroupProfileView: View {
         do {
             tabs.succeed(try await env.profiles.sharedTabs(chatID: chatID))
         } catch {
-            tabs.fail(error.userFacingMessage)
+            tabs.fail(error)
         }
     }
 
@@ -341,8 +341,7 @@ struct GroupProfileView: View {
         isWorking = true
         defer { isWorking = false }
         do {
-            try await env.groups.leave(groupID: group.id)
-            conversations.removeGroup(id: group.id)
+            try await conversations.leaveGroup(group)
             env.router.resetCurrentTabPath()
         } catch {
             notice = "Couldn't leave the group. \(error.userFacingMessage)"
@@ -353,8 +352,7 @@ struct GroupProfileView: View {
         isWorking = true
         defer { isWorking = false }
         do {
-            try await env.groups.delete(groupID: group.id)
-            conversations.removeGroup(id: group.id)
+            try await conversations.deleteGroup(group)
             env.router.resetCurrentTabPath()
         } catch {
             notice = "Couldn't delete the group. \(error.userFacingMessage)"
@@ -366,8 +364,7 @@ struct GroupProfileView: View {
         isWorking = true
         defer { isWorking = false }
         do {
-            try await env.groups.rename(groupID: group.id, to: name)
-            await conversations.refresh()
+            try await conversations.renameGroup(group, to: name)
         } catch {
             notice = "Couldn't rename the group. \(error.userFacingMessage)"
         }

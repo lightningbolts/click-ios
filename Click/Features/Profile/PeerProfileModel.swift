@@ -107,7 +107,7 @@ final class PeerProfileModel {
         do {
             profile.succeed(try await environment.profiles.profile(userID: userID, connectionID: connectionID, viewerID: viewerID))
         } catch {
-            profile.fail(error.userFacingMessage)
+            profile.fail(error)
         }
     }
 
@@ -124,7 +124,7 @@ final class PeerProfileModel {
                 await CacheStore.shared.save(fresh, key: "encounters.\(userID)", userID: viewerID)
             }
         } catch {
-            encounters.fail(error.userFacingMessage)
+            encounters.fail(error)
         }
     }
 
@@ -138,7 +138,7 @@ final class PeerProfileModel {
                 await CacheStore.shared.save(fresh, key: "journal.\(userID)", userID: viewerID)
             }
         } catch {
-            journal.fail(error.userFacingMessage)
+            journal.fail(error)
         }
     }
 
@@ -153,7 +153,7 @@ final class PeerProfileModel {
             tabs.succeed(fresh)
             await loadMediaItems(fresh)
         } catch {
-            tabs.fail(error.userFacingMessage)
+            tabs.fail(error)
         }
     }
 
@@ -181,7 +181,7 @@ final class PeerProfileModel {
             )
             links.succeed(Self.extractLinks(from: messages.map(\.content)))
         } catch {
-            links.fail(error.userFacingMessage)
+            links.fail(error)
         }
     }
 

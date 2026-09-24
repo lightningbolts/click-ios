@@ -35,9 +35,13 @@ public struct ConnectionItem: Codable, Equatable, Identifiable, Sendable {
     public let sayHiDeadline: Date?
     private let unread: Int?
     private let core: Bool?
+    /// A pending self-reported "we already know each other" request that this user must
+    /// accept or decline (`source = prior`, viewer is not the initiator).
+    private let priorPending: Bool?
 
     public var unreadCount: Int { unread ?? 0 }
     public var isCore: Bool { core ?? false }
+    public var awaitsPriorResponse: Bool { priorPending ?? false }
 
     public init(
         id: String,
@@ -60,8 +64,10 @@ public struct ConnectionItem: Codable, Equatable, Identifiable, Sendable {
         lastActivityAt: Date? = nil,
         sayHiDeadline: Date? = nil,
         unreadCount: Int = 0,
-        isCore: Bool = false
+        isCore: Bool = false,
+        awaitsPriorResponse: Bool = false
     ) {
+        self.priorPending = awaitsPriorResponse
         self.id = id
         self.userID = userID
         self.connectionID = connectionID
@@ -100,7 +106,7 @@ public struct ConnectionItem: Codable, Equatable, Identifiable, Sendable {
             encounterCount: encounterCount, segment: segment, lastMessagePreview: lastMessagePreview,
             chatID: chatID, lastMessage: lastMessage ?? self.lastMessage, lastActivityAt: lastActivityAt ?? self.lastActivityAt,
             sayHiDeadline: sayHiDeadline, unreadCount: unreadCount ?? self.unreadCount,
-            isCore: isCore ?? self.isCore
+            isCore: isCore ?? self.isCore, awaitsPriorResponse: awaitsPriorResponse
         )
     }
 }

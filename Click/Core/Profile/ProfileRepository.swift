@@ -11,6 +11,7 @@ public struct PeerProfile: Codable, Equatable, Sendable {
     /// Interests the viewer and this person share (server-computed).
     public let sharedInterests: [String]
     public let isFreeCurrently: Bool?
+    public var bio: String? = nil
 
     public var initials: String { Phase3Repository.initials(from: displayName) }
 
@@ -29,7 +30,8 @@ public struct PeerProfile: Codable, Equatable, Sendable {
             interests: JSONFields.stringArray(root["tags"]),
             personality: JSONFields.stringArray(root["personality_tags"]),
             sharedInterests: JSONFields.stringArray(root["sharedInterestTags"]),
-            isFreeCurrently: availability.flatMap { JSONFields.bool($0["is_free_this_week"]) }
+            isFreeCurrently: availability.flatMap { JSONFields.bool($0["is_free_this_week"]) },
+            bio: JSONFields.string(user["bio"])
         )
     }
 }
@@ -58,6 +60,13 @@ public struct Encounter: Codable, Equatable, Identifiable, Sendable {
     public var motionVariance: Double? = nil
     public var windKph: Double? = nil
     public var windDirectionDegrees: Double? = nil
+    /// Raw `location_name` / `display_location` (KMP `formatEncounterPlaceLine` inputs).
+    public var locationName: String? = nil
+    public var displayLocation: String? = nil
+    public var compassAzimuth: Double? = nil
+    public var batteryLevel: Int? = nil
+    /// Optional `vibe_capture` text written by KMP's vibe check.
+    public var vibeCapture: String? = nil
 
     /// Venue name, else the first component of the stored label (never a full address).
     public var placeName: String? {
@@ -89,7 +98,12 @@ public struct Encounter: Codable, Equatable, Identifiable, Sendable {
             lux: JSONFields.double(row["lux_level"]),
             motionVariance: JSONFields.double(row["motion_variance"]),
             windKph: weather.flatMap { JSONFields.double($0["windSpeedKph"]) },
-            windDirectionDegrees: weather.flatMap { JSONFields.double($0["windDirectionDegrees"]) }
+            windDirectionDegrees: weather.flatMap { JSONFields.double($0["windDirectionDegrees"]) },
+            locationName: JSONFields.string(row["location_name"]),
+            displayLocation: JSONFields.string(row["display_location"]),
+            compassAzimuth: JSONFields.double(row["compass_azimuth"]),
+            batteryLevel: JSONFields.int(row["battery_level"]),
+            vibeCapture: JSONFields.string(row["vibe_capture"])
         )
     }
 }
@@ -185,6 +199,19 @@ public actor ProfileRepository {
     }
 
     /// Encounters from the event-redacted single-connection read, newest first.
+    /// `GET /api/users/{id}/public-profile` — the limited card anyone may see (App Clip, QR
+    /// previews, event directories): display name, avatar, aura colors only.
+    public func publicProfile(userID: String) async throws -> PublicProfile {
+        let (data, _) = try await api.executeRaw(APIRequest(path: "/api/users/\(userID)/public-profile", requiresAuth: false))
+        let root = try JSONFields.object(data)
+        return PublicProfile(
+            userID: userID,
+            displayName: JSONFields.string(root["display_name"]) ?? "Click user",
+            avatarURL: JSONFields.string(root["avatar_url"]),
+            auraColors: JSONFields.stringArray(root["aura_colors"])
+        )
+    }
+
     public func encounters(connectionID: String) async throws -> [Encounter] {
         let (data, _) = try await api.executeRaw(APIRequest(
             path: "/api/connections",
@@ -269,12 +296,33 @@ public actor ProfileRepository {
         _ = try await api.executeRaw(APIRequest(path: "/api/safety/block", method: .post, body: body))
     }
 
-    /// Removes the connection for this user (`DELETE /api/connections?connectionId=` hides it).
+    /// Removes the connection for this user only (`POST /api/connections/hide`; the server's
+    /// `DELETE /api/connections` is the same per-user hide, so there is one action, not two).
     public func removeConnection(connectionID: String) async throws {
+        let body = try JSONSerialization.data(withJSONObject: ["connection_id": connectionID])
+        _ = try await api.executeRaw(APIRequest(path: "/api/connections/hide", method: .post, body: body))
+    }
+
+    /// `POST /api/connections/prior/respond`: accept creates the chat; decline removes it for
+    /// both people. A 409 (`not_pending`) means it was already answered elsewhere.
+    public func respondToPriorConnection(connectionID: String, accept: Bool) async throws {
+        let body = try JSONSerialization.data(withJSONObject: ["connection_id": connectionID, "action": accept ? "accept" : "decline"])
+        _ = try await api.executeRaw(APIRequest(path: "/api/connections/prior/respond", method: .post, body: body))
+    }
+
+    /// `GET /api/safety/block` → the caller's blocks, newest first.
+    public func blockedUsers() async throws -> [BlockedUser] {
+        let (data, _) = try await api.executeRaw(APIRequest(path: "/api/safety/block", method: .get))
+        return JSONFields.rows(try JSONFields.object(data)["blocks"]).compactMap { row in
+            JSONFields.string(row["blocked_id"]).map { BlockedUser(userID: $0, blockedAt: JSONFields.date(row["blocked_at"])) }
+        }
+    }
+
+    /// `DELETE /api/safety/block?blocked_id=`.
+    public func unblock(userID: String) async throws {
         _ = try await api.executeRaw(APIRequest(
-            path: "/api/connections",
-            method: .delete,
-            queryItems: [URLQueryItem(name: "connectionId", value: connectionID)]
+            path: "/api/safety/block", method: .delete,
+            queryItems: [URLQueryItem(name: "blocked_id", value: userID)]
         ))
     }
 }
@@ -282,88 +330,143 @@ public actor ProfileRepository {
 /// Human labels for encounter context chips (prototype: "Outdoors / Nature", "61°F · Clear",
 /// "Lively", "+14 m") — never raw enum values like `BELOW_GROUND`.
 enum EncounterLabels {
-    static func chips(for encounter: Encounter, locale: Locale = .current) -> [String] {
-        var chips = encounter.contextTags.map(tag)
-        if let weather = weather(encounter, locale: locale) { chips.append(weather) }
-        if let noise = encounter.noiseLevel.flatMap(noise) { chips.append(noise) }
-        if let elevation = encounter.elevation.flatMap(elevation) { chips.append(elevation) }
-        if let altitude = encounter.relativeAltitudeMeters, abs(altitude) >= 3 {
-            chips.append(String(format: "%@%d m", altitude > 0 ? "+" : "−", Int(abs(altitude).rounded())))
-        }
+    /// Context tags as chips (KMP labels with emoji; custom tags as written).
+    nonisolated static func chips(for encounter: Encounter) -> [String] {
         var seen = Set<String>()
-        return chips.filter { seen.insert($0.lowercased()).inserted }
+        return encounter.contextTags.map(tag).filter { seen.insert($0.lowercased()).inserted }
     }
 
-    /// Detail rows (KMP ProfileConnectionMoment): place, weather, sound, floor, light, motion.
-    static func details(for encounter: Encounter, locale: Locale = .current) -> [(symbol: String, text: String)] {
-        var rows: [(String, String)] = []
-        let area = [encounter.neighbourhood, encounter.city].compactMap { $0 }.joined(separator: ", ")
-        if !area.isEmpty, area != encounter.placeName { rows.append(("mappin", area)) }
-        rows.append(("clock", encounter.date.formatted(.dateTime.weekday(.abbreviated).month(.abbreviated).day().year().hour().minute())))
-        if var weather = weather(encounter, locale: locale) {
-            if let wind = encounter.windKph, wind > 0 {
-                let dirs = ["N", "NE", "E", "SE", "S", "SW", "W", "NW"]
-                let dir = encounter.windDirectionDegrees.map { " " + dirs[Int((($0.truncatingRemainder(dividingBy: 360)) + 22.5) / 45) % 8] } ?? ""
-                weather += " · \(Int(wind.rounded())) km/h\(dir)"
-            }
-            rows.append(("cloud.sun", weather))
+    /// Secondary lines under the title, in KMP `ProfileConnectionMoment` order.
+    nonisolated static func lines(for encounter: Encounter, timeZone: TimeZone = .current) -> [(symbol: String, text: String)] {
+        var rows: [(String, String)] = [("clock", whenLine(encounter.date, timeZone: timeZone))]
+        if let place = placeLine(locationName: encounter.locationName ?? encounter.venue,
+                                 displayLocation: encounter.displayLocation,
+                                 neighbourhood: encounter.neighbourhood) {
+            rows.append(("mappin", place))
         }
-        let noise = [encounter.noiseLevel.flatMap(noise), encounter.noiseDecibels.map { "\(Int($0.rounded())) dB" }].compactMap { $0 }
-        if !noise.isEmpty { rows.append(("waveform", noise.joined(separator: " · "))) }
-        let floor = [encounter.elevation.flatMap(elevation), encounter.relativeAltitudeMeters.map { String(format: "%+d m relative", Int($0.rounded())) }]
-            .compactMap { $0 }
-        if !floor.isEmpty { rows.append(("building.2", floor.joined(separator: " · "))) }
-        if let lux = encounter.lux, lux >= 0 {
-            let feel = lux < 50 ? "Dim" : lux < 1000 ? "Indoor light" : "Bright daylight"
-            rows.append(("sun.max", "\(feel) · \(Int(lux.rounded())) lx"))
-        }
-        if let motion = encounter.motionVariance, motion >= 0 {
-            rows.append(("figure.walk", motion < 0.05 ? "Standing still" : motion < 0.5 ? "Moving a little" : "On the move"))
+        if let weather = weatherLine(encounter) { rows.append(("cloud.sun", weather)) }
+        if let noise = noiseLine(category: encounter.noiseLevel, decibels: encounter.noiseDecibels) { rows.append(("waveform", noise)) }
+        if let floor = barometricLine(category: encounter.elevation, meters: encounter.relativeAltitudeMeters ?? encounter.barometricElevationMeters) {
+            rows.append(("building.2", floor))
         }
         return rows
     }
 
-    static func tag(_ raw: String) -> String {
-        let known: [String: String] = [
-            "outdoors": "Outdoors / Nature", "nature": "Outdoors / Nature", "cafe": "Cafe / Coffee", "coffee": "Cafe / Coffee",
-            "extended_hangout": "Extended hangout", "met_face_to_face": "Met face-to-face", "dining": "Dining",
-            "study": "Study", "party": "Party", "club": "Club", "lecture": "Lecture", "conference": "Conference",
-            "dorm": "Dorm", "transit": "Transit", "event": "Event", "lounge": "Lounge"
-        ]
-        let key = raw.lowercased().replacingOccurrences(of: " ", with: "_").replacingOccurrences(of: "-", with: "_")
-        if let label = known[key] { return label }
-        let words = raw.replacingOccurrences(of: "_", with: " ")
-        return words.prefix(1).uppercased() + words.dropFirst().lowercased()
+    /// Light, motion, compass and battery: small muted badges, not chips.
+    nonisolated static func badges(for encounter: Encounter) -> [(symbol: String, text: String)] {
+        var out: [(String, String)] = []
+        if let lux = encounter.lux, lux.isFinite, lux >= 0 { out.append(("sun.max", "\(Int(lux.rounded())) lx")) }
+        if let motion = encounter.motionVariance, motion.isFinite, motion >= 0 {
+            out.append(("figure.walk", String(format: "%.2f", motion)))
+        }
+        if let azimuth = encounter.compassAzimuth, azimuth.isFinite {
+            var degrees = azimuth.truncatingRemainder(dividingBy: 360)
+            if degrees < 0 { degrees += 360 }
+            out.append(("location.north.line", "\(Int(degrees.rounded()))°"))
+        }
+        if let battery = encounter.batteryLevel, (0...100).contains(battery) { out.append(("battery.50", "\(battery)%")) }
+        return out
     }
 
-    static func noise(_ raw: String) -> String? {
-        switch raw.uppercased() {
+    /// "Tue, Sep 22, 2026 · 7:04 PM" (KMP `formatEncounterTimelineWhenLine`).
+    nonisolated static func whenLine(_ date: Date, timeZone: TimeZone = .current) -> String {
+        let formatter = DateFormatter()
+        formatter.locale = Locale(identifier: "en_US_POSIX")
+        formatter.timeZone = timeZone
+        formatter.dateFormat = "EEE, MMM d, yyyy '·' h:mm a"
+        return formatter.string(from: date)
+    }
+
+    /// KMP `formatEncounterPlaceLine`: "Location • Neighbourhood, display".
+    nonisolated static func placeLine(locationName: String?, displayLocation: String?, neighbourhood: String?) -> String? {
+        func clean(_ value: String?) -> String? {
+            guard let trimmed = value?.trimmingCharacters(in: .whitespacesAndNewlines), !trimmed.isEmpty else { return nil }
+            return trimmed
+        }
+        let name = clean(locationName)
+        let display = clean(displayLocation)
+        let area = clean(neighbourhood)
+        switch (name, area, display) {
+        case let (name?, area?, display?): return "\(name) • \(area), \(display)"
+        case let (name?, area?, nil): return "\(name) • \(area)"
+        case let (nil, area?, display?): return "\(area), \(display)"
+        case let (name?, nil, display?) where name != display: return "\(name) · \(display)"
+        default: return display ?? name ?? area
+        }
+    }
+
+    /// "61°F (16°C) · Clear · 7 km/h NE".
+    nonisolated static func weatherLine(_ encounter: Encounter) -> String? {
+        var parts: [String] = []
+        if let celsius = encounter.temperatureCelsius, celsius.isFinite {
+            parts.append("\(Int((celsius * 9 / 5 + 32).rounded()))°F (\(Int(celsius.rounded()))°C)")
+        }
+        if let condition = encounter.weatherCondition?.trimmingCharacters(in: .whitespaces), !condition.isEmpty {
+            parts.append(condition)
+        }
+        if let wind = encounter.windKph, wind.isFinite {
+            let direction = encounter.windDirectionDegrees.map { " " + compass($0) } ?? ""
+            parts.append("\(Int(wind.rounded())) km/h\(direction)")
+        }
+        return parts.isEmpty ? nil : parts.joined(separator: " · ")
+    }
+
+    /// "Moderate · 58 dB".
+    nonisolated static func noiseLine(category: String?, decibels: Double?) -> String? {
+        let parts = [category.flatMap(noise), decibels.flatMap { $0.isFinite ? "\(Int($0.rounded())) dB" : nil }].compactMap { $0 }
+        return parts.isEmpty ? nil : parts.joined(separator: " · ")
+    }
+
+    /// "Below ground · 12 m".
+    nonisolated static func barometricLine(category: String?, meters: Double?) -> String? {
+        let parts = [category.flatMap(elevation), meters.flatMap { $0.isFinite ? "\(Int($0.rounded())) m" : nil }].compactMap { $0 }
+        return parts.isEmpty ? nil : parts.joined(separator: " · ")
+    }
+
+    nonisolated static func compass(_ degrees: Double) -> String {
+        let directions = ["N", "NE", "E", "SE", "S", "SW", "W", "NW"]
+        let normalized = (degrees.truncatingRemainder(dividingBy: 360) + 360).truncatingRemainder(dividingBy: 360)
+        return directions[Int(((normalized + 22.5) / 45).rounded(.down)) % 8]
+    }
+
+    nonisolated static func tag(_ raw: String) -> String {
+        ContextTagTaxonomy.label(for: raw)
+    }
+
+    /// KMP `formatNoiseCategory`.
+    nonisolated static func noise(_ raw: String) -> String? {
+        switch raw.uppercased().replacingOccurrences(of: " ", with: "_") {
         case "VERY_QUIET": "Very quiet"
         case "QUIET": "Quiet"
         case "MODERATE": "Moderate"
-        case "LOUD": "Lively"
-        case "VERY_LOUD": "Loud"
+        case "LOUD": "Loud"
+        case "VERY_LOUD": "Very loud"
         default: nil
         }
     }
 
-    static func elevation(_ raw: String) -> String? {
-        switch raw.uppercased() {
+    /// KMP `formatElevationCategoryLabel`.
+    nonisolated static func elevation(_ raw: String) -> String? {
+        switch raw.uppercased().replacingOccurrences(of: " ", with: "_") {
         case "BELOW_GROUND": "Below ground"
-        case "ELEVATED": "Upstairs"
-        case "HIGH_RISE": "High up"
-        default: nil // Ground level is the unremarkable default.
+        case "GROUND_LEVEL": "Ground level"
+        case "ELEVATED": "Elevated"
+        case "HIGH_RISE": "High rise"
+        default: nil
         }
     }
+}
 
-    static func weather(_ encounter: Encounter, locale: Locale) -> String? {
-        guard let celsius = encounter.temperatureCelsius else { return encounter.weatherCondition }
-        let measurement = Measurement(value: celsius, unit: UnitTemperature.celsius)
-        let formatter = MeasurementFormatter()
-        formatter.locale = locale
-        formatter.unitStyle = .short
-        formatter.numberFormatter.maximumFractionDigits = 0
-        let temperature = formatter.string(from: measurement)
-        return [temperature, encounter.weatherCondition].compactMap { $0 }.joined(separator: " · ")
-    }
+public struct BlockedUser: Identifiable, Equatable, Sendable {
+    public let userID: String
+    public let blockedAt: Date?
+    public var id: String { userID }
+}
+
+public struct PublicProfile: Equatable, Sendable {
+    public let userID: String
+    public let displayName: String
+    public let avatarURL: String?
+    public let auraColors: [String]
+    public var initials: String { Phase3Repository.initials(from: displayName) }
 }

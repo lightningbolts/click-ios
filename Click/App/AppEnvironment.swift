@@ -22,8 +22,17 @@ public final class AppEnvironment {
     public let profiles: ProfileRepository
     public let groups: GroupRepository
     public let hubs: HubRepository
+    public let encounterContext: EncounterContextRepository
+    public let telemetryQueue = TelemetryQueue()
+    public let connectionTelemetry: ConnectionFlowTelemetry
+    public let friction: FrictionTelemetry
     public let joinedHubs = JoinedHubStore()
     public let timelineCache = ConversationTimelineCache()
+    public let network: NetworkMonitor
+    /// Optimistic sends and uploads that outlive the chat screen.
+    public let pendingSends = PendingSendStore()
+    /// Shared display-name resolver for chat, groups and hubs.
+    public let identities: IdentityCache
     /// The conversation currently on screen, so inbox realtime doesn't count it as unread.
     public var activeChatID: String?
 
@@ -34,8 +43,10 @@ public final class AppEnvironment {
         api: ClickAPIClient? = nil,
         permissions: PermissionCoordinator = .shared,
         avatarService: AvatarService = .shared,
-        location: LocationProvider = .shared
+        location: LocationProvider = .shared,
+        network: NetworkMonitor? = nil
     ) {
+        self.network = network ?? NetworkMonitor()
         self.session = session
         self.router = router
         self.settings = settings
@@ -46,7 +57,7 @@ public final class AppEnvironment {
         let resolvedAPI = api ?? ClickAPIClient(
             baseURL: AppConfig.shared.apiBaseURL,
             tokenProvider: { [weak session] in
-                await session?.currentSession?.jwt
+                await session?.validAccessToken()
             },
             tokenRefresher: { [weak session] in
                 guard let session = session else { throw APIError.unauthorized }
@@ -55,6 +66,8 @@ public final class AppEnvironment {
             }
         )
         self.api = resolvedAPI
+        let identities = IdentityCache(api: resolvedAPI)
+        self.identities = identities
         self.onboardingRepository = OnboardingRepository(client: resolvedAPI, settings: settings)
         self.phase3 = Phase3Repository(
             api: resolvedAPI,
@@ -65,6 +78,7 @@ public final class AppEnvironment {
             apiClient: resolvedAPI,
             supabaseURL: AppConfig.shared.supabaseURL,
             supabaseAnonKey: AppConfig.shared.supabaseAnonKey,
+            identities: identities,
             hubCoordinates: { @Sendable in
                 // A transient fix for the hub geofence check only; never stored or shared.
                 guard let fix = await location.currentLocation(maximumAge: 60, acceptableAccuracy: 150, timeout: .seconds(4)) else {
@@ -74,18 +88,27 @@ public final class AppEnvironment {
             }
         )
         self.proximity = ProximityRepository(api: resolvedAPI)
+        self.encounterContext = EncounterContextRepository(
+            api: resolvedAPI,
+            supabaseURL: AppConfig.shared.supabaseURL,
+            supabaseAnonKey: AppConfig.shared.supabaseAnonKey
+        )
+        self.connectionTelemetry = ConnectionFlowTelemetry(queue: telemetryQueue)
+        self.friction = FrictionTelemetry(queue: telemetryQueue)
         self.profiles = ProfileRepository(api: resolvedAPI)
         self.groups = GroupRepository(
             api: resolvedAPI,
             supabaseURL: AppConfig.shared.supabaseURL,
-            supabaseAnonKey: AppConfig.shared.supabaseAnonKey
+            supabaseAnonKey: AppConfig.shared.supabaseAnonKey,
+            identities: identities
         )
         self.beacons = BeaconRepository(api: resolvedAPI)
         self.events = EventEngagementRepository(api: resolvedAPI)
         self.hubs = HubRepository(
             api: resolvedAPI,
             supabaseURL: AppConfig.shared.supabaseURL,
-            supabaseAnonKey: AppConfig.shared.supabaseAnonKey
+            supabaseAnonKey: AppConfig.shared.supabaseAnonKey,
+            identities: identities
         )
         self.me = MeRepository(
             api: resolvedAPI,
@@ -96,9 +119,23 @@ public final class AppEnvironment {
         // Connect dependencies to session controller
         session.apiClient = resolvedAPI
         session.settingsStore = settings
+        session.onSignOut = { [weak self] in
+            await self?.clearSessionCaches()
+        }
         session.onPostAuthResolved = { [weak self] in
             self?.handlePostAuthResolved()
         }
+    }
+
+    /// Everything user-scoped that lives outside the Keychain and settings store.
+    public func clearSessionCaches() async {
+        await identities.removeAll()
+        timelineCache.clear()
+        pendingSends.removeAll()
+        await beacons.clearCache()
+        await telemetryQueue.removeAll()
+        await EventReminderScheduler.cancelAll()
+        onboardingCoordinators.removeAll()
     }
 
     private var onboardingCoordinators: [String: OnboardingCoordinator] = [:]
@@ -110,6 +147,9 @@ public final class AppEnvironment {
         }
         let coordinator = OnboardingCoordinator(userId: userId)
         onboardingCoordinators[userId] = coordinator
+        if let cached = settings.onboardingState(for: userId) {
+            coordinator.adoptCachedCompletion(cached)
+        }
 
         resolveOnboarding(for: userId, coordinator: coordinator)
         return coordinator
@@ -129,6 +169,9 @@ public final class AppEnvironment {
                 coordinator.hydrate(resolved.state, hasAvatar: resolved.hasAvatar)
                 self.handlePostAuthResolved()
             } catch {
+                // A cached completion already admitted the user; a failed background re-check
+                // must not bounce them back to onboarding.
+                guard coordinator.step != .complete else { return }
                 coordinator.markLoadFailed("We couldn't load your onboarding state. Check your connection and try again.")
             }
         }
@@ -182,6 +225,16 @@ public final class AppEnvironment {
 
     /// Initializes and restores local app state.
     public func bootstrap() async {
+        let api = self.api
+        await telemetryQueue.setSender { envelope in
+            let body = try JSONSerialization.data(withJSONObject: envelope.payload.mapValues(\.jsonObject))
+            _ = try await api.executeRaw(APIRequest(path: envelope.path, method: .post, body: body))
+        }
         await session.restoreSession()
+    }
+
+    /// Sends queued telemetry (called on foreground and background; never blocks the UI).
+    public func flushTelemetry() {
+        Task.detached(priority: .utility) { [telemetryQueue] in await telemetryQueue.flush() }
     }
 }

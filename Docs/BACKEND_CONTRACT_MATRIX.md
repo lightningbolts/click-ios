@@ -59,3 +59,26 @@ Authoritative ledger of backend HTTP endpoints, authorization requirements, and 
 | `/api/beacons/{id}/attendees/directory` | GET | Bearer JWT | Events | `{attendees[{user_id, name, avatar_url, shared_interests, relationship, mutual_via, mutual_connection_count}], mutuals_section_unlocked}` |
 | `/api/beacons/{id}` | DELETE | Bearer JWT | Beacons | Creator only |
 | `/api/chat/search` | GET `?q` (≥2 chars) | Bearer JWT | Search | `{hits[{messageId, chatId, connectionId, chatName, snippet, timestamp, isHub, hubId?}]}` — plaintext bodies only |
+| `/api/ping` | GET | Bearer JWT | Reachability | `{status:"ok", message, user_id}` — `APIRequest.ping` |
+| `/api/chat/media` | POST JSON `{chat_id, mime_type, file_b64, [e2ee_v2_envelope, media_ciphertext_sha256, epoch, sender_device_id, client_message_id]}` | Bearer JWT | Chat media | 25 MiB; 413 too large, 415 type; `201 {url, path, ttl_seconds}`. iOS sends via upload task for byte progress; audio metadata adds optional `waveform` (40 floats) |
+| `/api/chat/attachments` | POST JSON `{chat_id, mime_type, file_name, file_b64, …v2}` | Bearer JWT | Chat files | 2 MiB plaintext (+256 B ciphertext) |
+| `/api/chat/messages/unread` | PATCH `{chat_id}` | Bearer JWT | Chat | Marks the latest peer message unread (§34.3); 200/204 empty |
+| `/api/connections/hide` | POST `{connection_id}` | Bearer JWT | Connections | Per-user hide (same effect as `DELETE /api/connections`); `{success, connection_id}` |
+| `/api/connections/prior/respond` | POST `{connection_id, action: accept\|decline}` | Bearer JWT | Connections | Accept → active + chat; decline → removed for both; 409 `not_pending` |
+| `/api/safety/block` | GET | Bearer JWT | Safety | **New.** `{blocks:[{blocked_id, blocked_at}]}` newest first (≤500); names via `/api/users/display-names` |
+| `/api/safety/block` | DELETE `?blocked_id=` | Bearer JWT | Safety | Unblock |
+| `/api/safety/report` | POST `{connection_id, reason}` | Bearer JWT | Safety | Reason is one of the iOS `ReportReason` labels |
+| `/api/connections/{id}/event-recommendation` | GET `?lat&lng` | Bearer JWT | Events | `{recommendation: null \| {beacon_id, title, event_start_at, event_end_at, location_name, peer_name, peer_user_id, score, shared_category_tags}}`; groups always null |
+| `rest/v1/connection_encounters` | GET/PATCH (RLS) | Bearer JWT + apikey | Encounters | Context tags + opt-in sensor columns (`context_tags`, `exact_barometric_elevation_m`, …); KMP merge semantics |
+| `/api/telemetry/connection-flow` | POST `{event, peer_count?, is_group?, is_reconnect?, selected_count?, candidate_count?, reason?}` | Bearer JWT | Telemetry | 60/min/user; allowlisted events |
+| `/api/telemetry/friction` | POST `{event:"map_friction_anomaly", duration_sec, pan_count, action_taken:null, hexbin_id}` | Bearer JWT | Telemetry | Hexbin only; coordinate-like ids rejected |
+| `/api/qr` | POST redeem | Bearer JWT | QR | 400 `{error: expired\|already_used\|not_found}`, 403 `proximity_failed` |
+| `/api/users/{id}/profile` | PATCH `{…, bio}` | Bearer JWT (self) | Profile | **New field** `bio` (string ≤160 or null; an empty string clears it); GET returns `user.bio` (falls back if the column is missing) |
+| `/api/user/avatar` | DELETE | Bearer JWT | Profile | **New.** Clears `users.image`, removes `avatars/{uid}/*`; `{image:null}` |
+| `/api/users/{id}/public-profile` | GET | None | Profile | `{display_name, avatar_url, aura_colors}` |
+| `/api/beacons/image` | POST `{file_b64, mime_type}` | Bearer JWT | Beacons | ≤2 MB, jpeg/png/webp/gif; `{image}` public URL |
+| `/api/beacons/{id}` | PATCH | Bearer JWT (creator) | Beacons | metadata merge (title ≤80, description), event schedule/visibility/capacity/approval/guest_list_visibility/timezone, lat/lon, `show_creator_name`, `expires_at`/`ttl_ms` |
+| `/api/beacons/{id}/guest-list` | GET · POST `{source, csv_text}` · POST `/match` | Bearer JWT (event manager) | Events | `{uploaded, matched, teasers, entries[{id, email_truncated, instagram_handle, matched, match_confidence}]}` |
+| `/api/hub/{id}/participants/me` | DELETE | Bearer JWT | Hubs | Same as `POST /api/hub/leave` |
+| `/api/chat/messages` | GET `?include_tombstones=1` | Bearer JWT | Chat | **New opt-in** `tombstones[{message_id, user_id, time_created, deleted_at}]` within the returned window |
+| `/api/chat/messages` | DELETE `?messageId=` | Bearer JWT (owner) | Chat | Hard delete unchanged; also writes `message_tombstones` |

@@ -9,12 +9,10 @@ struct SavedEventsView: View {
     var body: some View {
         List {
             if let items = events.value {
-                if events.isStale {
-                    OfflineNotice("Showing saved events from earlier") {
-                        Task { await load() }
-                    }
-                    .listRowSeparator(.hidden)
+                OfflineNotice(showing: "saved events", hasCachedValue: true, refreshFailed: events.isStale) {
+                    Task { await load() }
                 }
+                .listRowSeparator(.hidden)
                 ForEach(sections(items), id: \.title) { section in
                     Section(section.title) {
                         ForEach(section.events) { event in
@@ -73,7 +71,7 @@ struct SavedEventsView: View {
         do {
             events.succeed(try await env.beacons.bookmarks(userID: userID))
         } catch {
-            events.fail(error.userFacingMessage)
+            events.fail(error)
         }
     }
 }

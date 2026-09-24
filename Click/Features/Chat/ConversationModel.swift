@@ -1,6 +1,12 @@
 import Foundation
 import Observation
 
+/// An attachment waiting in the composer tray.
+public struct StagedAttachment: Identifiable, Sendable {
+    public let id = UUID()
+    public let draft: MediaDraft
+}
+
 public enum LoadPhase: Sendable, Equatable {
     case initial
     case loading
@@ -33,8 +39,8 @@ public final class ConversationModel {
     private let currentUserName: String
     /// Decrypted media locations by message ID (this conversation only).
     private var mediaURLs: [String: URL] = [:]
-    /// Drafts of media sends that failed, kept in memory for retry.
-    private var failedMediaDrafts: [String: MediaDraft] = [:]
+    /// Optimistic rows and their payloads; outlives this screen so sends finish in the background.
+    private let pendingSends: PendingSendStore
     private var pendingSendCount = 0
     private var typingActive = false
     private var typingStopTask: Task<Void, Never>?
@@ -46,9 +52,11 @@ public final class ConversationModel {
         currentUserID: String,
         currentUserName: String = "You",
         initialItems: [ChatMessageItem]? = nil,
-        timelineCache: ConversationTimelineCache? = nil
+        timelineCache: ConversationTimelineCache? = nil,
+        pendingSends: PendingSendStore? = nil
     ) {
         self.timelineCache = timelineCache
+        self.pendingSends = pendingSends ?? PendingSendStore()
         self.identity = identity
         self.chatRepository = chatRepository
         self.realtimeManager = realtimeManager
@@ -83,12 +91,18 @@ public final class ConversationModel {
                     connectionID: identity.connectionID
                 )
             } catch {
-                if items.isEmpty {
-                    phase = .failed(error.localizedDescription)
+                if items.isEmpty, !error.isCancellation {
+                    phase = .failed(error.userFacingMessage)
                 }
                 return
             }
         }
+
+        // Restore sends that were still in flight (or failed) when this chat last closed.
+        for pending in pendingSends.attach(self, chatID: identity.chatID) where !items.contains(where: { $0.id == pending.id }) {
+            items.append(pending)
+        }
+        items.sort { $0.createdAt < $1.createdAt }
 
         if let supabaseURL, let anonKey {
             realtimeManager.subscribe(
@@ -107,7 +121,20 @@ public final class ConversationModel {
     /// Keeps optimistic rows that are still sending when a refresh lands.
     private func mergeFetched(_ fetched: [ChatMessageItem]) -> [ChatMessageItem] {
         let fetchedIDs = Set(fetched.map(\.id))
-        let pending = items.filter { ($0.deliveryStatus == .sending || $0.deliveryStatus == .failed) && !fetchedIDs.contains($0.id) }
+        let fetchedClientIDs = Set(fetched.compactMap(\.clientMessageID))
+        // A refresh can land before the send POST returns: the server already has the row
+        // (matched by client ID), so the optimistic copy must not show twice.
+        let pending = items.filter {
+            ($0.deliveryStatus == .sending || $0.deliveryStatus == .failed)
+                && !fetchedIDs.contains($0.id) && !fetchedClientIDs.contains($0.id)
+        }
+        let knownClientIDs = Dictionary(items.compactMap { item in item.clientMessageID.map { (item.id, $0) } }, uniquingKeysWith: { first, _ in first })
+        let fetched = fetched.map { item -> ChatMessageItem in
+            guard item.clientMessageID == nil, let clientID = knownClientIDs[item.id] else { return item }
+            var kept = item
+            kept.clientMessageID = clientID
+            return kept
+        }
         // Older pages already loaded stay put when the latest page refreshes.
         let oldestFetched = fetched.map(\.createdAt).min() ?? .distantFuture
         let older = items.filter { $0.createdAt < oldestFetched && !fetchedIDs.contains($0.id) && $0.deliveryStatus != .sending && $0.deliveryStatus != .failed }
@@ -123,6 +150,7 @@ public final class ConversationModel {
 
     public func onDisappear() {
         saveToCache()
+        pendingSends.detach(self, chatID: identity.chatID)
         typingStopTask?.cancel()
         typingStopTask = nil
         if typingActive {
@@ -161,10 +189,12 @@ public final class ConversationModel {
                 try? await chatRepository.markRead(chatID: identity.chatID, messageIDs: unreadIDs)
             }
         } catch {
-            if items.isEmpty {
-                phase = .failed(error.localizedDescription)
+            if error.isCancellation {
+                if phase == .loading { phase = items.isEmpty ? .initial : .loaded }
+            } else if items.isEmpty {
+                phase = .failed(error.userFacingMessage)
             } else {
-                operationError = error.localizedDescription
+                operationError = error.userFacingMessage
             }
         }
     }
@@ -180,92 +210,140 @@ public final class ConversationModel {
             return
         }
 
-        let clientID = UUID().uuidString.lowercased()
-        let capturedReply = replyTarget
-        let optimistic = ChatMessageItem(
+        let reply = replyTarget
+        composerText = ""
+        replyTarget = nil
+        stopTyping()
+        await performSend(makeOptimistic(content: text, type: .text, reply: reply), payload: nil)
+    }
+
+    /// Retries a failed row in place with its original client ID (never a duplicate).
+    public func retrySend(item: ChatMessageItem) async {
+        let chatID = identity.chatID
+        if pendingSends.item(clientID: item.id, chatID: chatID) == nil {
+            // A failed text row from before this store existed: re-register it as-is.
+            pendingSends.add(item, chatID: chatID, payload: nil)
+        }
+        pendingSends.ensureAttached(self, chatID: chatID)
+        await transmitPending(clientID: item.id, chatID: chatID)
+    }
+
+    /// Removes a failed row the user gave up on.
+    public func discardFailed(item: ChatMessageItem) {
+        guard item.deliveryStatus == .failed else { return }
+        pendingSends.discard(clientID: item.id, chatID: identity.chatID)
+        items.removeAll { $0.id == item.id }
+    }
+
+    private func makeOptimistic(
+        content: String,
+        type: MessageType,
+        reply: ChatMessageItem?,
+        media: MessageMedia? = nil,
+        localMediaURL: URL? = nil,
+        beacon: SharedBeacon? = nil,
+        clientID: String = UUID().uuidString.lowercased()
+    ) -> ChatMessageItem {
+        ChatMessageItem(
             id: clientID,
             chatID: identity.chatID,
             senderID: currentUserID,
             senderName: currentUserName,
-            content: text,
-            messageType: .text,
+            content: content,
+            messageType: type,
             createdAt: Date(),
             deliveryStatus: .sending,
             isOutgoing: true,
-            replyToID: capturedReply?.id,
-            replyToSnippet: capturedReply?.content,
-            replyToSenderName: capturedReply?.senderName
+            replyToID: reply?.id,
+            replyToSnippet: reply.map(Self.quoteText),
+            replyToSenderName: reply?.senderName,
+            media: media,
+            localMediaURL: localMediaURL,
+            beacon: beacon,
+            clientMessageID: clientID
         )
-
-        items.append(optimistic)
-        composerText = ""
-        replyTarget = nil
-        stopTyping()
-        beginSend()
-
-        do {
-            let serverItem = try await chatRepository.sendMessage(
-                conversation: identity,
-                currentUserID: currentUserID,
-                currentUserName: currentUserName,
-                content: text,
-                replyToID: capturedReply?.id,
-                replyToSnippet: capturedReply?.content,
-                replyToSenderName: capturedReply?.senderName,
-                clientMessageID: clientID
-            )
-
-            replaceOptimistic(clientID, with: serverItem)
-            operationError = nil
-        } catch {
-            if let index = items.firstIndex(where: { $0.id == clientID }) {
-                items[index].deliveryStatus = .failed
-            }
-            operationError = error.localizedDescription
-        }
-
-        endSend()
     }
 
-    public func retrySend(item: ChatMessageItem) async {
-        if let draft = failedMediaDrafts.removeValue(forKey: item.id) {
-            items.removeAll { $0.id == item.id }
-            await sendMedia(draft, replyToID: item.replyToID, replyToSnippet: item.replyToSnippet, replyToSenderName: item.replyToSenderName)
-            return
-        }
-        guard let index = items.firstIndex(where: { $0.id == item.id }) else { return }
-        items[index].deliveryStatus = .sending
-        beginSend()
+    /// One path for every outgoing kind (text, media, beacon) in DMs, groups and hubs: the row
+    /// appears immediately, then is sent; the result replaces it in place.
+    private func performSend(_ optimistic: ChatMessageItem, payload: PendingSendPayload?) async {
+        let chatID = identity.chatID
+        pendingSends.ensureAttached(self, chatID: chatID)
+        pendingSends.add(optimistic, chatID: chatID, payload: payload)
+        await transmitPending(clientID: optimistic.id, chatID: chatID)
+    }
 
+    private func transmitPending(clientID: String, chatID: String) async {
+        guard let item = pendingSends.item(clientID: clientID, chatID: chatID) else { return }
+        let payload = pendingSends.payload(for: clientID)
+        let store = pendingSends
+        store.update(clientID: clientID, chatID: chatID) {
+            $0.deliveryStatus = .sending
+            $0.uploadProgress = nil
+        }
+        beginSend()
+        defer { endSend() }
         do {
-            let serverItem = try await chatRepository.sendMessage(
-                conversation: identity,
-                currentUserID: currentUserID,
-                currentUserName: currentUserName,
-                content: item.content,
-                replyToID: item.replyToID,
-                replyToSnippet: item.replyToSnippet,
-                replyToSenderName: item.replyToSenderName,
-                clientMessageID: item.id
-            )
-            replaceOptimistic(item.id, with: serverItem)
+            let server: ChatMessageItem
+            switch payload {
+            case .media(let draft)?:
+                var sent = try await chatRepository.sendMedia(
+                    conversation: identity,
+                    currentUserID: currentUserID,
+                    currentUserName: currentUserName,
+                    draft: draft,
+                    replyToID: item.replyToID,
+                    clientMessageID: clientID,
+                    progress: { stage in
+                        Task { @MainActor in
+                            store.update(clientID: clientID, chatID: chatID) { $0.uploadProgress = stage }
+                        }
+                    }
+                )
+                sent.replyToSnippet = item.replyToSnippet
+                sent.replyToSenderName = item.replyToSenderName
+                server = sent
+            case .beacon(let beacon)?:
+                server = try await chatRepository.sendBeacon(
+                    conversation: identity, currentUserID: currentUserID, currentUserName: currentUserName,
+                    beacon: beacon, clientMessageID: clientID
+                )
+            case nil:
+                server = try await chatRepository.sendMessage(
+                    conversation: identity,
+                    currentUserID: currentUserID,
+                    currentUserName: currentUserName,
+                    content: item.content,
+                    replyToID: item.replyToID,
+                    replyToSnippet: item.replyToSnippet,
+                    replyToSenderName: item.replyToSenderName,
+                    clientMessageID: clientID
+                )
+            }
+            store.finish(clientID: clientID, chatID: chatID, serverItem: server)
             operationError = nil
         } catch {
-            if let index = items.firstIndex(where: { $0.id == item.id }) {
-                items[index].deliveryStatus = .failed
+            store.update(clientID: clientID, chatID: chatID) {
+                $0.deliveryStatus = .failed
+                $0.uploadProgress = nil
             }
-            operationError = error.localizedDescription
+            if !error.isCancellation { operationError = error.userFacingMessage }
         }
-
-        endSend()
     }
 
     /// Swaps an optimistic row for the server's, unless the realtime echo already added it.
+    /// The server row keeps the optimistic row's `stableID`, so SwiftUI updates the bubble in
+    /// place (receipt tick animates) instead of removing and re-inserting it.
     private func replaceOptimistic(_ clientID: String, with serverItem: ChatMessageItem) {
-        if serverItem.id != clientID, items.contains(where: { $0.id == serverItem.id }) {
+        var server = serverItem
+        server.clientMessageID = clientID
+        if server.id != clientID, let echoed = items.firstIndex(where: { $0.id == server.id }) {
+            // The realtime echo already landed; keep one row with the optimistic identity.
+            items[echoed].clientMessageID = clientID
             items.removeAll { $0.id == clientID }
         } else if let index = items.firstIndex(where: { $0.id == clientID }) {
-            items[index] = serverItem
+            if server.localMediaURL == nil { server.localMediaURL = items[index].localMediaURL }
+            items[index] = server
         }
     }
 
@@ -293,34 +371,79 @@ public final class ConversationModel {
             items = (fresh + items).sorted { $0.createdAt < $1.createdAt }
             resolveReplyQuotes()
         } catch {
-            operationError = error.localizedDescription
+            operationError = error.userFacingMessage
         }
     }
 
-    /// Shares an event/beacon card into this conversation.
+    /// Shares an event/beacon card into this conversation (optimistic, same send animation).
     public func sendBeacon(_ beacon: MapBeacon) async {
-        beginSend()
-        defer { endSend() }
-        do {
-            let sent = try await chatRepository.sendBeacon(
-                conversation: identity, currentUserID: currentUserID, currentUserName: currentUserName,
-                beacon: beacon, clientMessageID: UUID().uuidString.lowercased()
-            )
-            if !items.contains(where: { $0.id == sent.id }) { items.append(sent) }
-            operationError = nil
-        } catch {
-            operationError = error.localizedDescription
+        let clientID = UUID().uuidString.lowercased()
+        let content = "Beacon: \(beacon.title)"
+        let card = SharedBeacon.parse(messageType: "beacon", metadata: ChatRepository.beaconMetadata(beacon, clientMessageID: clientID), content: content)
+        await performSend(makeOptimistic(content: content, type: .beacon, reply: nil, beacon: card, clientID: clientID), payload: .beacon(beacon))
+    }
+
+    /// Attachments picked but not yet sent (photos, a file, a reviewed voice note).
+    public private(set) var staged: [StagedAttachment] = []
+    public static let maxStaged = 10
+
+    /// Adds a picked attachment to the tray above the composer after checking server limits.
+    public func stage(_ draft: MediaDraft) {
+        if let rejection = MediaValidator.validate(draft) {
+            operationError = rejection.errorDescription
+            return
+        }
+        guard staged.count < Self.maxStaged else {
+            operationError = "You can send up to \(Self.maxStaged) attachments at a time."
+            return
+        }
+        staged.append(StagedAttachment(draft: draft))
+    }
+
+    public func unstage(_ id: UUID) {
+        staged.removeAll { $0.id == id }
+    }
+
+    /// The composer's send: staged attachments (all rows appear at once, uploads run in
+    /// parallel), then the text as a caption. Edits go through `sendOrUpdateMessage`.
+    public func sendComposer() async {
+        guard editTarget == nil, !staged.isEmpty else {
+            await sendOrUpdateMessage()
+            return
+        }
+        let drafts = staged.map(\.draft)
+        staged.removeAll()
+        let reply = replyTarget
+        replyTarget = nil
+        let chatID = identity.chatID
+        let clientIDs = drafts.enumerated().compactMap { index, draft in
+            enqueueMedia(draft, reply: index == 0 ? reply : nil)
+        }
+        await withTaskGroup(of: Void.self) { group in
+            for clientID in clientIDs {
+                group.addTask { await self.transmitPending(clientID: clientID, chatID: chatID) }
+            }
+        }
+        if !composerText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+            await sendOrUpdateMessage()
         }
     }
 
-    /// Sends an image, voice note, or file with an optimistic local bubble.
+    /// Sends one image, voice note, or file immediately (Click Drop, tests).
     public func sendMedia(_ draft: MediaDraft) async {
         let reply = replyTarget
         replyTarget = nil
-        await sendMedia(draft, replyToID: reply?.id, replyToSnippet: reply.map(Self.quoteText), replyToSenderName: reply?.senderName)
+        guard let clientID = enqueueMedia(draft, reply: reply) else { return }
+        await transmitPending(clientID: clientID, chatID: identity.chatID)
     }
 
-    private func sendMedia(_ draft: MediaDraft, replyToID: String?, replyToSnippet: String?, replyToSenderName: String?) async {
+    /// Validates, then shows the optimistic bubble with the local file at its real aspect ratio.
+    /// Returns nil (and a clear message) when the server would reject it.
+    private func enqueueMedia(_ draft: MediaDraft, reply: ChatMessageItem?) -> String? {
+        if let rejection = MediaValidator.validate(draft) {
+            operationError = rejection.errorDescription
+            return nil
+        }
         let clientID = UUID().uuidString.lowercased()
         let local = FileManager.default.temporaryDirectory
             .appendingPathComponent("\(clientID).\(MessageMedia.fileExtension(forMIME: draft.mimeType))")
@@ -328,48 +451,21 @@ public final class ConversationModel {
         let media = MessageMedia(
             kind: draft.kind, mimeType: draft.mimeType, fileName: draft.fileName, sizeBytes: draft.data.count,
             durationSeconds: draft.durationSeconds, remoteURL: nil, storagePath: nil, v2: nil,
-            fileKey: nil, plaintextSha256: nil, isDisposable: false
+            fileKey: nil, plaintextSha256: nil, isDisposable: false,
+            revealAt: nil, waveform: draft.waveform
         )
-        items.append(ChatMessageItem(
-            id: clientID,
-            chatID: identity.chatID,
-            senderID: currentUserID,
-            senderName: currentUserName,
+        let optimistic = makeOptimistic(
             content: draft.fileName ?? "",
-            messageType: MessageType(rawValue: draft.kind.rawValue) ?? .file,
-            createdAt: Date(),
-            deliveryStatus: .sending,
-            isOutgoing: true,
-            replyToID: replyToID,
-            replyToSnippet: replyToSnippet,
-            replyToSenderName: replyToSenderName,
+            type: MessageType(rawValue: draft.kind.rawValue) ?? .file,
+            reply: reply,
             media: media,
-            localMediaURL: local
-        ))
-        mediaURLs[clientID] = local
-        beginSend()
-        do {
-            var sent = try await chatRepository.sendMedia(
-                conversation: identity,
-                currentUserID: currentUserID,
-                currentUserName: currentUserName,
-                draft: draft,
-                replyToID: replyToID,
-                clientMessageID: clientID
-            )
-            sent.replyToSnippet = replyToSnippet
-            sent.replyToSenderName = replyToSenderName
-            mediaURLs[sent.id] = sent.localMediaURL ?? local
-            replaceOptimistic(clientID, with: sent)
-            operationError = nil
-        } catch {
-            if let index = items.firstIndex(where: { $0.id == clientID }) {
-                items[index].deliveryStatus = .failed
-            }
-            failedMediaDrafts[clientID] = draft
-            operationError = error.localizedDescription
-        }
-        endSend()
+            localMediaURL: local,
+            clientID: clientID
+        )
+        let chatID = identity.chatID
+        pendingSends.ensureAttached(self, chatID: chatID)
+        pendingSends.add(optimistic, chatID: chatID, payload: .media(draft))
+        return clientID
     }
 
     /// Decrypted local file for a media message; fetched at most once per conversation visit.
@@ -418,21 +514,21 @@ public final class ConversationModel {
             if let currentIndex = items.firstIndex(where: { $0.id == target.id }) {
                 items[currentIndex] = original
             }
-            operationError = error.localizedDescription
+            operationError = error.userFacingMessage
         }
     }
 
     public func deleteMessage(item: ChatMessageItem) async {
         guard let index = items.firstIndex(where: { $0.id == item.id }) else { return }
-        let removed = items.remove(at: index)
+        let original = items[index]
+        items[index] = original.tombstoned()
 
         do {
             try await chatRepository.deleteMessage(messageID: item.id, conversation: identity)
             operationError = nil
         } catch {
-            let safeIndex = min(index, items.count)
-            items.insert(removed, at: safeIndex)
-            operationError = error.localizedDescription
+            if let current = items.firstIndex(where: { $0.id == item.id }) { items[current] = original }
+            operationError = error.userFacingMessage
         }
     }
 
@@ -461,7 +557,7 @@ public final class ConversationModel {
             if let currentIndex = items.firstIndex(where: { $0.id == item.id }) {
                 items[currentIndex].reactions = original
             }
-            operationError = error.localizedDescription
+            operationError = error.userFacingMessage
         }
     }
 
@@ -555,7 +651,9 @@ public final class ConversationModel {
 
         realtimeManager.onMessageDeleted = { [weak self] messageID in
             Task { @MainActor in
-                self?.items.removeAll { $0.id == messageID }
+                // Shown as "Message deleted" in place rather than vanishing mid-read.
+                guard let self, let index = self.items.firstIndex(where: { $0.id == messageID }) else { return }
+                self.items[index] = self.items[index].tombstoned()
             }
         }
 
@@ -614,7 +712,7 @@ public final class ConversationModel {
                 )
             }
         } catch {
-            operationError = error.localizedDescription
+            operationError = error.userFacingMessage
         }
     }
 }
@@ -745,5 +843,22 @@ private struct PreviewChatRepo: ChatRepositoryProtocol {
             deliveryStatus: .delivered,
             isOutgoing: payload.senderID == currentUserID
         )
+    }
+}
+
+extension ConversationModel: PendingSendReceiver {
+    public func pendingSendChanged(_ item: ChatMessageItem) {
+        if let local = item.localMediaURL { mediaURLs[item.id] = local }
+        if let index = items.firstIndex(where: { $0.id == item.id }) {
+            items[index] = item
+        } else if !items.contains(where: { $0.clientMessageID == item.id && $0.id != item.id }) {
+            items.append(item)
+        }
+    }
+
+    public func pendingSendFinished(clientID: String, serverItem: ChatMessageItem) {
+        if let local = mediaURLs[clientID] { mediaURLs[serverItem.id] = serverItem.localMediaURL ?? local }
+        replaceOptimistic(clientID, with: serverItem)
+        saveToCache()
     }
 }

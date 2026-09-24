@@ -9,6 +9,7 @@ struct SettingsPageView: View {
         case .alerts: AlertsSettingsView()
         case .privacy: PrivacySettingsView()
         case .permissions: PermissionsSettingsView()
+        case .blocked: BlockedUsersView()
         case .interests: InterestsSettingsView()
         case .personality: PersonalitySettingsView()
         case .calendar: CalendarSettingsView()
@@ -126,7 +127,7 @@ struct AlertsSettingsView: View {
         do {
             preferences.succeed(try await env.me.notificationPreferences(userID: userID))
         } catch {
-            preferences.fail(error.userFacingMessage)
+            preferences.fail(error)
         }
     }
 
@@ -139,6 +140,7 @@ struct AlertsSettingsView: View {
             let saved = try await env.me.setNotificationPreference(key, enabled: enabled)
             preferences.succeed(saved)
             if key == .messages { env.settings.messageNotificationsEnabled = saved[.messages] }
+            if key == .eventReminders, !saved[.eventReminders] { await EventReminderScheduler.cancelAll() }
             if enabled, systemStatus == .notDetermined {
                 systemStatus = await env.permissions.requestPermission(for: .notifications)
             }
@@ -211,6 +213,9 @@ struct PrivacySettingsView: View {
                 NavigationLink(value: AppRoute.settings(.permissions)) {
                     Text("Permissions")
                 }
+                NavigationLink(value: AppRoute.settings(.blocked)) {
+                    Text("Blocked people")
+                }
             }
         }
         .navigationTitle("Privacy & data")
@@ -248,7 +253,7 @@ struct PrivacySettingsView: View {
         do {
             privacy.succeed(try await env.me.locationPrivacy(userID: userID))
         } catch {
-            privacy.fail(error.userFacingMessage)
+            privacy.fail(error)
         }
     }
 
@@ -269,6 +274,89 @@ struct PrivacySettingsView: View {
         let resolved = status == .notDetermined ? await env.permissions.requestPermission(for: .locationWhenInUse) : status
         if resolved != .authorized {
             locationHint = "Location snap is on, but location access is off for Click, so no location is saved. Turn it on in Permissions."
+        }
+    }
+}
+
+// MARK: - Blocked people
+
+/// People the user blocked (`GET /api/safety/block`), with Unblock. Names come from the shared
+/// identity cache; a failed load is shown as a failure, never as an empty list.
+struct BlockedUsersView: View {
+    @Environment(AppEnvironment.self) private var env
+
+    @State private var blocked = ModuleState<[BlockedUser]>()
+    @State private var names: [String: UserIdentity] = [:]
+    @State private var unblocking: Set<String> = []
+    @State private var errorMessage: String?
+
+    var body: some View {
+        List {
+            if let items = blocked.value {
+                if items.isEmpty {
+                    ContentUnavailableView("No one blocked", systemImage: "hand.raised", description: Text("People you block can't message you or see you on Click."))
+                        .listRowBackground(Color.clear)
+                } else {
+                    Section {
+                        ForEach(items) { item in
+                            row(item)
+                        }
+                    } footer: {
+                        if let errorMessage { Text(errorMessage).foregroundStyle(ClickColors.destructive) }
+                    }
+                }
+            } else if blocked.isPending {
+                HStack { Spacer(); ProgressView(); Spacer() }
+            } else {
+                Button("Couldn't load blocked people. Retry") { Task { await load() } }
+            }
+        }
+        .navigationTitle("Blocked people")
+        .navigationBarTitleDisplayMode(.inline)
+        .task { await load() }
+        .refreshable { await load() }
+    }
+
+    private func row(_ item: BlockedUser) -> some View {
+        let identity = names[item.userID]
+        return HStack(spacing: 12) {
+            AvatarView(imageURL: identity?.avatarURL, seed: item.userID, initials: String((identity?.name ?? "?").prefix(1)), size: 36)
+            VStack(alignment: .leading, spacing: 2) {
+                Text(identity?.name ?? "Click user")
+                    .font(ClickTypography.body)
+                if let date = item.blockedAt {
+                    Text("Blocked \(date.formatted(date: .abbreviated, time: .omitted))")
+                        .font(ClickTypography.metadata)
+                        .foregroundStyle(ClickColors.textTertiary)
+                }
+            }
+            Spacer()
+            Button("Unblock") { Task { await unblock(item) } }
+                .buttonStyle(.bordered)
+                .disabled(unblocking.contains(item.userID))
+        }
+    }
+
+    private func load() async {
+        blocked.begin()
+        do {
+            let items = try await env.profiles.blockedUsers()
+            blocked.succeed(items)
+            names = await env.identities.resolve(items.map(\.userID))
+        } catch {
+            blocked.fail(error)
+        }
+    }
+
+    private func unblock(_ item: BlockedUser) async {
+        unblocking.insert(item.userID)
+        defer { unblocking.remove(item.userID) }
+        do {
+            try await env.profiles.unblock(userID: item.userID)
+            blocked.succeed((blocked.value ?? []).filter { $0.userID != item.userID })
+            errorMessage = nil
+        } catch {
+            errorMessage = "Couldn't unblock. \(error.userFacingMessage)"
         }
     }
 }
@@ -426,7 +514,7 @@ enum SelfProfileLoader {
         do {
             state.wrappedValue.succeed(try await env.me.selfProfile(userID: userID))
         } catch {
-            state.wrappedValue.fail(error.userFacingMessage)
+            state.wrappedValue.fail(error)
         }
     }
 }
@@ -500,17 +588,37 @@ struct EditProfileView: View {
     @State private var profile = ModuleState<SelfProfile>()
     @State private var firstName = ""
     @State private var lastName = ""
+    @State private var bio = ""
     @State private var isSaving = false
+    @State private var removingPhoto = false
+    @State private var confirmRemovePhoto = false
     @State private var errorMessage: String?
 
     var body: some View {
         Form {
-            if profile.value != nil {
+            if let value = profile.value {
                 Section("Name") {
                     TextField("First name", text: $firstName)
                         .textContentType(.givenName)
                     TextField("Last name", text: $lastName)
                         .textContentType(.familyName)
+                }
+                Section {
+                    TextField("A line about you", text: $bio, axis: .vertical)
+                        .lineLimit(2...4)
+                        .onChange(of: bio) { _, next in
+                            if next.count > MeRepository.bioMaxLength { bio = String(next.prefix(MeRepository.bioMaxLength)) }
+                        }
+                } header: {
+                    Text("Bio")
+                } footer: {
+                    Text("\(bio.count)/\(MeRepository.bioMaxLength) · Shown on your profile to people you've Clicked with.")
+                }
+                if value.avatarURL != nil {
+                    Section {
+                        Button(removingPhoto ? "Removing…" : "Remove photo", role: .destructive) { confirmRemovePhoto = true }
+                            .disabled(removingPhoto)
+                    }
                 }
                 if let errorMessage {
                     Section {
@@ -523,6 +631,11 @@ struct EditProfileView: View {
         }
         .navigationTitle("Edit profile")
         .navigationBarTitleDisplayMode(.inline)
+        .confirmationDialog("Remove your photo?", isPresented: $confirmRemovePhoto, titleVisibility: .visible) {
+            Button("Remove photo", role: .destructive) { Task { await removePhoto() } }
+        } message: {
+            Text("People will see your initials instead.")
+        }
         .toolbar {
             ToolbarItem(placement: .confirmationAction) {
                 if isSaving {
@@ -541,6 +654,20 @@ struct EditProfileView: View {
         if let value = profile.value {
             firstName = value.firstName
             lastName = value.lastName
+            bio = value.bio ?? ""
+        }
+    }
+
+    private func removePhoto() async {
+        guard let userID = env.session.currentSession?.userId else { return }
+        removingPhoto = true
+        defer { removingPhoto = false }
+        do {
+            try await env.me.removeAvatar(userID: userID)
+            if let refreshed = try? await env.me.selfProfile(userID: userID) { profile.succeed(refreshed) }
+            ClickHaptics.success()
+        } catch {
+            errorMessage = "Your photo wasn't removed. \(error.userFacingMessage)"
         }
     }
 
@@ -550,16 +677,16 @@ struct EditProfileView: View {
         errorMessage = nil
         defer { isSaving = false }
         do {
-            try await env.me.updateName(
-                userID: userID,
-                firstName: firstName.trimmingCharacters(in: .whitespacesAndNewlines),
-                lastName: lastName.trimmingCharacters(in: .whitespacesAndNewlines)
-            )
+            try await env.me.updateProfile(userID: userID, fields: [
+                "first_name": firstName.trimmingCharacters(in: .whitespacesAndNewlines),
+                "last_name": lastName.trimmingCharacters(in: .whitespacesAndNewlines),
+                "bio": bio.trimmingCharacters(in: .whitespacesAndNewlines)
+            ])
             _ = try? await env.me.selfProfile(userID: userID)
             ClickHaptics.success()
             dismiss()
         } catch {
-            errorMessage = "Your name wasn't saved. \(error.userFacingMessage)"
+            errorMessage = "Your profile wasn't saved. \(error.userFacingMessage)"
         }
     }
 }

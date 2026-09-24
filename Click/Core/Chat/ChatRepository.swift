@@ -55,6 +55,17 @@ public protocol ChatRepositoryProtocol: Sendable {
         clientMessageID: String
     ) async throws -> ChatMessageItem
 
+    /// Same as `sendMedia`, reporting encrypting/uploading progress.
+    func sendMedia(
+        conversation: ConversationIdentity,
+        currentUserID: String,
+        currentUserName: String,
+        draft: MediaDraft,
+        replyToID: String?,
+        clientMessageID: String,
+        progress: (@Sendable (MediaUploadProgress) -> Void)?
+    ) async throws -> ChatMessageItem
+
     /// Shares an event/beacon card (plaintext card fields only; the server allows it in v2 chats).
     func sendBeacon(conversation: ConversationIdentity, currentUserID: String, currentUserName: String, beacon: MapBeacon, clientMessageID: String) async throws -> ChatMessageItem
 
@@ -63,6 +74,19 @@ public protocol ChatRepositoryProtocol: Sendable {
 }
 
 public extension ChatRepositoryProtocol {
+    func sendMedia(
+        conversation: ConversationIdentity,
+        currentUserID: String,
+        currentUserName: String,
+        draft: MediaDraft,
+        replyToID: String?,
+        clientMessageID: String,
+        progress: (@Sendable (MediaUploadProgress) -> Void)?
+    ) async throws -> ChatMessageItem {
+        try await sendMedia(conversation: conversation, currentUserID: currentUserID, currentUserName: currentUserName,
+                            draft: draft, replyToID: replyToID, clientMessageID: clientMessageID)
+    }
+
     func sendMedia(
         conversation: ConversationIdentity,
         currentUserID: String,
@@ -175,7 +199,9 @@ public actor ChatRepository: ChatRepositoryProtocol {
     private var groupMasterCache: [String: Data] = [:]
     private var v2SessionCache: [String: V2Session] = [:]
     private var hubParticipants: [String: [String]] = [:]
+    /// Actor-local mirror of `identities` so synchronous mapping can read resolved names.
     private var senderNames: [String: (name: String, avatarURL: String?)] = [:]
+    private let identities: IdentityCache
     /// Device registration is idempotent; once per app session is enough.
     private var deviceRegistered = false
 
@@ -184,9 +210,11 @@ public actor ChatRepository: ChatRepositoryProtocol {
         vault: DeviceIdentityVault = .shared,
         supabaseURL: URL? = nil,
         supabaseAnonKey: String = "",
+        identities: IdentityCache? = nil,
         hubCoordinates: Coordinates? = nil
     ) {
         self.apiClient = apiClient
+        self.identities = identities ?? IdentityCache(api: apiClient)
         self.vault = vault
         self.supabaseURL = supabaseURL
         self.supabaseAnonKey = supabaseAnonKey
@@ -521,7 +549,9 @@ public actor ChatRepository: ChatRepositoryProtocol {
         let canonicalChatID = try await canonicalChatID(conversation)
         var queryItems = [
             URLQueryItem(name: "chatId", value: canonicalChatID),
-            URLQueryItem(name: "limit", value: String(limit))
+            URLQueryItem(name: "limit", value: String(limit)),
+            // Opt-in "Message deleted" placeholders (older servers ignore it).
+            URLQueryItem(name: "include_tombstones", value: "1")
         ]
         if let cursor {
             queryItems.append(URLQueryItem(name: "cursor", value: String(cursor)))
@@ -539,11 +569,22 @@ public actor ChatRepository: ChatRepositoryProtocol {
         let (data, _) = try await apiClient.executeRaw(request)
         let rawResponse = try JSONDecoder().decode(RawMessagesResponse.self, from: data)
         var metadataByID: [String: [String: Any]] = [:]
+        var tombstones: [ChatMessageItem] = []
         if let root = try? JSONFields.object(data) {
             for row in JSONFields.rows(root["messages"]) {
                 if let id = JSONFields.string(row["id"]), let meta = JSONFields.dictionary(row["metadata"]) {
                     metadataByID[id] = meta
                 }
+            }
+            tombstones = JSONFields.rows(root["tombstones"]).compactMap { row in
+                guard let id = JSONFields.string(row["message_id"]), let sender = JSONFields.string(row["user_id"]),
+                      let created = JSONFields.double(row["time_created"]) else { return nil }
+                var item = ChatMessageItem(id: id, chatID: canonicalChatID, senderID: sender,
+                                           senderName: sender == currentUserID ? "You" : (conversation.isDirect ? conversation.peerDisplayName : "Click user"),
+                                           content: "", createdAt: Date(timeIntervalSince1970: created / 1000),
+                                           isOutgoing: sender == currentUserID)
+                item.isDeleted = true
+                return item
             }
         }
 
@@ -557,7 +598,7 @@ public actor ChatRepository: ChatRepositoryProtocol {
             await resolveNames(rawResponse.messages.filter { $0.senderName == nil }.map(\.userID))
         }
 
-        return rawResponse.messages.map {
+        return tombstones + rawResponse.messages.map {
             mapRawMessage(
                 $0,
                 canonicalChatID: canonicalChatID,
@@ -814,6 +855,13 @@ public actor ChatRepository: ChatRepositoryProtocol {
         _ = try await apiClient.executeRaw(request)
     }
 
+    /// Marks the latest peer message unread (spec §34.3; `PATCH /api/chat/messages/unread`),
+    /// so server unread state matches the inbox badge on every device.
+    public func markUnread(chatID: String) async throws {
+        let body = try JSONSerialization.data(withJSONObject: ["chat_id": chatID])
+        _ = try await apiClient.executeRaw(APIRequest(path: "/api/chat/messages/unread", method: .patch, body: body))
+    }
+
     public func markRead(chatID: String, messageIDs: [String]) async throws {
         guard !messageIDs.isEmpty else { return }
         let request = APIRequest(
@@ -873,7 +921,8 @@ public actor ChatRepository: ChatRepositoryProtocol {
                 replyToSnippet: string(metadata["reply_to_content"]) ?? string(metadata["reply_to_snippet"]),
                 replyToSenderName: string(metadata["reply_to_sender_name"]),
                 reactions: [],
-                isEdited: payload.isEdited
+                isEdited: payload.isEdited,
+                clientMessageID: string(metadata["client_message_id"])
             )
         }
 
@@ -917,7 +966,8 @@ public actor ChatRepository: ChatRepositoryProtocol {
             reactions: [],
             isEdited: bool(payload.metadata?["is_edited"]) ?? payload.isEdited,
             media: MessageMedia.parse(messageType: payload.messageType, metadata: payload.metadata, decryptedContent: decrypted, chatID: canonicalChatID),
-            beacon: SharedBeacon.parse(messageType: payload.messageType, metadata: payload.metadata, content: decrypted)
+            beacon: SharedBeacon.parse(messageType: payload.messageType, metadata: payload.metadata, content: decrypted),
+            clientMessageID: string(payload.metadata?["client_message_id"])
         )
     }
 
@@ -995,14 +1045,26 @@ public actor ChatRepository: ChatRepositoryProtocol {
         replyToID: String?,
         clientMessageID: String
     ) async throws -> ChatMessageItem {
+        try await sendMedia(conversation: conversation, currentUserID: currentUserID, currentUserName: currentUserName,
+                            draft: draft, replyToID: replyToID, clientMessageID: clientMessageID, progress: nil)
+    }
+
+    public func sendMedia(
+        conversation: ConversationIdentity,
+        currentUserID: String,
+        currentUserName: String,
+        draft: MediaDraft,
+        replyToID: String?,
+        clientMessageID: String,
+        progress: (@Sendable (MediaUploadProgress) -> Void)?
+    ) async throws -> ChatMessageItem {
         guard conversation.hubID == nil else { throw ChatRepositoryError.mediaUnsupported }
-        switch draft.kind {
-        case .file:
-            guard draft.data.count <= MediaDraft.maxFileBytes else { throw ChatRepositoryError.mediaTooLarge }
-            guard MediaDraft.allowedFileMIMEs.contains(draft.mimeType.lowercased()) else { throw ChatRepositoryError.mediaTypeNotAllowed }
-        case .image, .audio:
-            guard draft.data.count <= MediaDraft.maxMediaBytes else { throw ChatRepositoryError.mediaTooLarge }
+        switch MediaValidator.validate(draft) {
+        case .tooLarge?: throw ChatRepositoryError.mediaTooLarge
+        case .typeNotAllowed?, .empty?: throw ChatRepositoryError.mediaTypeNotAllowed
+        case nil: break
         }
+        progress?(.encrypting)
         let chatID = try await canonicalChatID(conversation)
         let fileName = draft.fileName ?? "\(draft.kind.rawValue).\(MessageMedia.fileExtension(forMIME: draft.mimeType))"
 
@@ -1032,7 +1094,7 @@ public actor ChatRepository: ChatRepositoryProtocol {
                 "sender_device_id": session.deviceID,
                 "client_message_id": clientMessageID
             ]
-            let uploaded = try await upload(draft, bytes: encrypted.uploadedBytes, chatID: chatID, fileName: fileName, extra: v2Fields)
+            let uploaded = try await upload(draft, progress: progress, bytes: encrypted.uploadedBytes, chatID: chatID, fileName: fileName, extra: v2Fields)
             guard let path = uploaded.path else { throw ChatRepositoryError.invalidServerPayload }
             metadata = [
                 "media_chat_id": chatID,
@@ -1063,7 +1125,7 @@ public actor ChatRepository: ChatRepositoryProtocol {
             switch draft.kind {
             case .image, .audio:
                 let cipher = try ClickCryptoV1.encryptMediaBytes(draft.data, keys: try Self.mediaKeys(legacy))
-                let uploaded = try await upload(draft, bytes: cipher, chatID: chatID, fileName: fileName, extra: [:])
+                let uploaded = try await upload(draft, progress: progress, bytes: cipher, chatID: chatID, fileName: fileName, extra: [:])
                 guard let url = uploaded.url else { throw ChatRepositoryError.invalidServerPayload }
                 metadata["media_url"] = url
                 content = " "
@@ -1073,7 +1135,7 @@ public actor ChatRepository: ChatRepositoryProtocol {
                     draft.data,
                     keys: try ClickCryptoV1.deriveKeysFromGroupMaster(groupMasterKey32: fileKey)
                 )
-                let uploaded = try await upload(draft, bytes: cipher, chatID: chatID, fileName: fileName, extra: [:])
+                let uploaded = try await upload(draft, progress: progress, bytes: cipher, chatID: chatID, fileName: fileName, extra: [:])
                 guard let path = uploaded.path else { throw ChatRepositoryError.invalidServerPayload }
                 content = try AttachmentEnvelope(
                     version: 1, name: fileName, mime: draft.mimeType, size: draft.data.count, path: path,
@@ -1098,6 +1160,7 @@ public actor ChatRepository: ChatRepositoryProtocol {
                 metadata["collaboration_ttl"] = ISO8601DateFormatter().string(from: Date().addingTimeInterval(86_400))
             }
             if let duration = draft.durationSeconds { metadata["duration_seconds"] = duration }
+            if draft.kind == .audio, let waveform = draft.waveform { metadata["waveform"] = VoiceWaveform.wire(waveform) }
         case .file:
             if let path = metadata["media_path"] as? String ?? AttachmentEnvelope.decode(content)?.path {
                 metadata["attachment_path"] = path
@@ -1249,7 +1312,7 @@ public actor ChatRepository: ChatRepositoryProtocol {
     }
 
     /// Images and voice notes use `/api/chat/media`; files use `/api/chat/attachments`.
-    private func upload(_ draft: MediaDraft, bytes: Data, chatID: String, fileName: String, extra: [String: Any]) async throws -> UploadResult {
+    private func upload(_ draft: MediaDraft, progress: (@Sendable (MediaUploadProgress) -> Void)?, bytes: Data, chatID: String, fileName: String, extra: [String: Any]) async throws -> UploadResult {
         var body = extra
         body["chat_id"] = chatID
         body["mime_type"] = draft.mimeType
@@ -1261,7 +1324,11 @@ public actor ChatRepository: ChatRepositoryProtocol {
         } else {
             path = "/api/chat/media"
         }
-        let (data, _) = try await apiClient.executeRaw(APIRequest(path: path, method: .post, body: try JSONSerialization.data(withJSONObject: body)))
+        progress?(.uploading(fraction: 0))
+        let (data, _) = try await apiClient.executeRaw(
+            APIRequest(path: path, method: .post, body: try JSONSerialization.data(withJSONObject: body)),
+            uploadProgress: progress.map { report in { @Sendable fraction in report(.uploading(fraction: fraction)) } }
+        )
         let root = try JSONFields.object(data)
         return UploadResult(url: JSONFields.string(root["url"]), path: JSONFields.string(root["path"]))
     }
@@ -1533,21 +1600,11 @@ public actor ChatRepository: ChatRepositoryProtocol {
     }
 
     private func resolveNames(_ userIDs: [String]) async {
-        let missing = Array(Set(userIDs.filter { !$0.isEmpty && senderNames[$0] == nil }))
+        let missing = userIDs.filter { !$0.isEmpty && senderNames[$0] == nil }
         guard !missing.isEmpty else { return }
-        for start in stride(from: 0, to: missing.count, by: 100) {
-            let chunk = Array(missing[start..<min(start + 100, missing.count)])
-            guard
-                let body = try? JSONSerialization.data(withJSONObject: ["userIds": chunk]),
-                let (data, _) = try? await apiClient.executeRaw(APIRequest(path: "/api/users/display-names", method: .post, body: body)),
-                let root = try? JSONFields.object(data)
-            else { continue }
-            let names = root["names"] as? [String: Any] ?? [:]
-            let images = root["images"] as? [String: Any] ?? [:]
-            for id in chunk {
-                guard let name = JSONFields.string(names[id]) else { continue }
-                senderNames[id] = (name, JSONFields.string(images[id]))
-            }
+        for (id, identity) in await identities.resolve(missing) {
+            guard let name = identity.name else { continue }
+            senderNames[id] = (name, identity.avatarURL)
         }
     }
 
@@ -1619,7 +1676,8 @@ public actor ChatRepository: ChatRepositoryProtocol {
             reactions: reactions,
             isEdited: isEdited,
             media: MessageMedia.parse(messageType: raw.messageType ?? "text", metadata: metadata, decryptedContent: content, chatID: canonicalChatID),
-            beacon: SharedBeacon.parse(messageType: raw.messageType ?? "text", metadata: metadata, content: content)
+            beacon: SharedBeacon.parse(messageType: raw.messageType ?? "text", metadata: metadata, content: content),
+            clientMessageID: raw.metadata?.clientMessageID
         )
     }
 

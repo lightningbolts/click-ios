@@ -19,6 +19,9 @@ public struct APIRequest: Sendable {
     public let headers: [String: String]
     public let body: Data?
     public let requiresAuth: Bool
+    /// Safe to repeat after a transient failure. GETs are idempotent by default; PUT/DELETE
+    /// callers opt in explicitly. POST/PATCH are never retried automatically.
+    public let isIdempotent: Bool
 
     public init(
         baseURL: URL? = nil,
@@ -27,7 +30,8 @@ public struct APIRequest: Sendable {
         queryItems: [URLQueryItem] = [],
         headers: [String: String] = [:],
         body: Data? = nil,
-        requiresAuth: Bool = true
+        requiresAuth: Bool = true,
+        idempotent: Bool? = nil
     ) {
         self.baseURL = baseURL
         self.path = path
@@ -36,5 +40,9 @@ public struct APIRequest: Sendable {
         self.headers = headers
         self.body = body
         self.requiresAuth = requiresAuth
+        self.isIdempotent = idempotent ?? (method == .get)
     }
+
+    /// Cheap authenticated reachability probe (same route the KMP client uses).
+    public static let ping = APIRequest(path: "/api/ping")
 }

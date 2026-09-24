@@ -49,7 +49,7 @@ public struct ClickMapView: View {
                         .accessibilityLabel("Create beacon or event")
                         }
                     }
-                    .opacity(model.sheetDetent == .expanded ? 0 : 1)
+                    .opacity(model.settledDetent == .expanded ? 0 : 1)
                 }
                 .padding(.horizontal, ClickSpacing.screenGutter)
                 .padding(.bottom, NearbySheet.height(for: model.sheetDetent, available: proxy.size.height) + 12)
@@ -79,24 +79,48 @@ public struct ClickMapView: View {
             }
             .padding(.horizontal, ClickSpacing.screenGutter)
             .padding(.top, 4)
-            .opacity(model.sheetDetent == .expanded ? 0 : 1)
+            .opacity(model.settledDetent == .expanded ? 0 : 1)
         }
         .navigationTitle("Map")
         .toolbar(.hidden, for: .navigationBar)
         // Fully expanded, Nearby takes over the screen including the tab bar area.
-        .toolbar(model.sheetDetent == .expanded ? .hidden : .visible, for: .tabBar)
+        .toolbar(model.settledDetent == .expanded ? .hidden : .visible, for: .tabBar)
         .task {
             model.attach(env)
             await model.loadCached()
             model.startLocationIfAllowed()
             await consumeFocus()
         }
-        .onDisappear { model.stopLocation() }
+        .onAppear { env.friction.beginSession() }
+        .onDisappear {
+            model.stopLocation()
+            Task { await env.friction.endSession() }
+        }
+        .onChange(of: model.userCoordinate?.latitude) { _, _ in
+            if let coordinate = model.userCoordinate {
+                env.friction.updateLocation(latitude: coordinate.latitude, longitude: coordinate.longitude)
+            }
+        }
+        .overlay(alignment: .top) {
+            TimelineView(.periodic(from: .now, by: 30)) { context in
+                if env.friction.showsGrassNudge(now: context.date) {
+                    grassNudge
+                        .padding(.top, 60)
+                        .transition(.move(edge: .top).combined(with: .opacity))
+                }
+            }
+        }
         .onChange(of: env.router.mapFocus) { _, _ in
             Task { await consumeFocus() }
         }
         .onChange(of: scenePhase) { _, phase in
-            if phase == .active { model.startLocationIfAllowed() } else if phase == .background { model.stopLocation() }
+            if phase == .active {
+                model.startLocationIfAllowed()
+                env.friction.beginSession()
+            } else if phase == .background {
+                model.stopLocation()
+                Task { await env.friction.endSession() }
+            }
         }
         .sheet(isPresented: $creating) {
             CreateBeaconSheet(fallback: mapCenter) { beacon in
@@ -118,12 +142,35 @@ public struct ClickMapView: View {
     private var map: some View {
         Map(position: $model.camera, selection: $model.selection) {
             UserAnnotation()
-            ForEach(model.items(pins: pins)) { item in
-                Annotation(item.title, coordinate: item.coordinate, anchor: .bottom) {
-                    MapPinView(item: item, isSelected: model.selection == item.id)
+            ForEach(MapFeatureModel.clusters(model.items(pins: pins), latitudeDelta: model.visibleLatitudeDelta)) { cluster in
+                if cluster.items.count == 1, let item = cluster.items.first {
+                    Annotation(item.title, coordinate: item.coordinate, anchor: .bottom) {
+                        MapPinView(item: item, isSelected: model.selection == item.id) {
+                            openProfile(for: item)
+                        }
+                    }
+                    .tag(item.id)
+                    .annotationTitles(.hidden)
+                } else {
+                    Annotation("\(cluster.items.count) places", coordinate: cluster.coordinate) {
+                        Button {
+                            zoom(into: cluster)
+                        } label: {
+                            Text("\(cluster.items.count)")
+                                .font(ClickTypography.supportingEmphasized)
+                                .monospacedDigit()
+                                .foregroundStyle(ClickColors.primaryActionForeground)
+                                .frame(minWidth: 40, minHeight: 40)
+                                .padding(.horizontal, 4)
+                                .background(ClickColors.primaryActionFill, in: Capsule())
+                                .overlay(Capsule().stroke(.white, lineWidth: 3))
+                                .shadow(color: .black.opacity(0.25), radius: 4, y: 2)
+                        }
+                        .buttonStyle(.plain)
+                        .accessibilityLabel("\(cluster.items.count) places. Zoom in.")
+                    }
+                    .annotationTitles(.hidden)
                 }
-                .tag(item.id)
-                .annotationTitles(.hidden)
             }
         }
         .mapStyle(.standard(pointsOfInterest: .excludingAll))
@@ -131,7 +178,8 @@ public struct ClickMapView: View {
             MapCompass()
         }
         .onMapCameraChange(frequency: .onEnd) { context in
-            model.cameraSettled(center: context.region.center)
+            model.cameraSettled(center: context.region.center, latitudeDelta: context.region.span.latitudeDelta)
+            env.friction.recordPan()
             mapCenter = context.region.center
         }
     }
@@ -172,7 +220,51 @@ public struct ClickMapView: View {
         model.select(item.id, at: item.coordinate)
     }
 
+    private func openProfile(for item: MapItem) {
+        guard case .person(let pin) = item.kind else { return }
+        model.selection = nil
+        env.router.navigate(to: .userProfile(userID: pin.userID, connectionID: pin.connectionID))
+    }
+
+    /// Zooms to fit a cluster's members.
+    private func zoom(into cluster: MapCluster) {
+        let lats = cluster.items.map(\.coordinate.latitude)
+        let lons = cluster.items.map(\.coordinate.longitude)
+        guard let minLat = lats.min(), let maxLat = lats.max(), let minLon = lons.min(), let maxLon = lons.max() else { return }
+        let span = MKCoordinateSpan(
+            latitudeDelta: max((maxLat - minLat) * 1.6, MapFeatureModel.clusteringSpan * 0.6),
+            longitudeDelta: max((maxLon - minLon) * 1.6, MapFeatureModel.clusteringSpan * 0.6)
+        )
+        withAnimation(ClickMotion.content) {
+            model.camera = .region(MKCoordinateRegion(center: cluster.coordinate, span: span))
+        }
+    }
+
+    /// Spec §71.1 "grass nudge": a long, aimless map session gets a gentle prompt.
+    private var grassNudge: some View {
+        HStack(spacing: 10) {
+            Text("🌱")
+            VStack(alignment: .leading, spacing: 1) {
+                Text("Still looking?").font(ClickTypography.supportingEmphasized)
+                Text("The best Clicks happen in person. Try an event nearby.").font(ClickTypography.metadata)
+                    .foregroundStyle(ClickColors.textSecondary)
+            }
+            Spacer(minLength: 4)
+            Button {
+                env.friction.dismissGrassNudge()
+            } label: {
+                Image(systemName: "xmark").font(.caption.weight(.bold))
+            }
+            .buttonStyle(.plain)
+            .accessibilityLabel("Dismiss")
+        }
+        .padding(12)
+        .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
+        .padding(.horizontal, ClickSpacing.screenGutter)
+    }
+
     private func handleSelection(_ selection: MapSelection?) {
+        if selection != nil { env.friction.recordMeaningfulAction() }
         switch selection {
         case .beacon(let id):
             let isEvent = model.items(pins: pins, applyingFilter: false).contains {
@@ -183,10 +275,10 @@ public struct ClickMapView: View {
         case .hub(let id):
             model.selection = nil
             env.router.navigate(to: .hub(hubID: id))
-        case .person(let userID):
-            model.selection = nil
-            let pin = pins.first { $0.userID == userID }
-            env.router.navigate(to: .userProfile(userID: userID, connectionID: pin?.connectionID))
+        case .person:
+            // First tap shows the callout ("Priya Raman · first met here"); tapping it opens
+            // the profile.
+            break
         case nil:
             break
         }
@@ -198,11 +290,31 @@ public struct ClickMapView: View {
 private struct MapPinView: View {
     let item: MapItem
     let isSelected: Bool
+    var onOpenCallout: () -> Void = {}
 
     var body: some View {
         VStack(spacing: 2) {
             switch item.kind {
             case .person(let pin):
+                if isSelected {
+                    Button(action: onOpenCallout) {
+                        HStack(spacing: 4) {
+                            Text(pin.displayName).font(ClickTypography.supportingEmphasized)
+                            Text("· \(pin.locationName.map { "first met at \($0)" } ?? "first met here")")
+                                .font(ClickTypography.supporting)
+                                .foregroundStyle(ClickColors.textSecondary)
+                            Image(systemName: "chevron.right").font(.caption2.weight(.semibold))
+                        }
+                        .lineLimit(1)
+                        .foregroundStyle(ClickColors.textPrimary)
+                        .padding(.horizontal, 10)
+                        .padding(.vertical, 6)
+                        .background(.regularMaterial, in: Capsule())
+                    }
+                    .buttonStyle(.plain)
+                    .transition(.scale(scale: 0.8, anchor: .bottom).combined(with: .opacity))
+                    .accessibilityLabel("\(pin.displayName), first met here. Open profile.")
+                }
                 AvatarView(imageURL: pin.avatarURL, seed: pin.userID, initials: pin.initials, size: 40)
                     .overlay(Circle().stroke(.white, lineWidth: 3))
             case .beacon(let beacon):
@@ -223,7 +335,7 @@ private struct MapPinView: View {
         .shadow(color: .black.opacity(0.25), radius: 4, y: 2)
         .scaleEffect(isSelected ? 1.18 : 1)
         .animation(ClickMotion.selection, value: isSelected)
-        .accessibilityElement(children: .ignore)
+        .accessibilityElement(children: isSelected ? .contain : .ignore)
         .accessibilityLabel(item.title)
         .accessibilityAddTraits(.isButton)
     }
