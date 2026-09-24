@@ -9,6 +9,7 @@ public struct ClicksView: View {
 
     @State private var selectedTab: InboxTab = .active
     @State private var query = ""
+    @State private var creatingGroup = false
 
     init(model: ConversationListModel) {
         self.model = model
@@ -48,12 +49,10 @@ public struct ClicksView: View {
         .searchable(text: $query, placement: .navigationBarDrawer(displayMode: .always), prompt: "Search")
         .toolbar {
             ToolbarItem(placement: .topBarLeading) {
-                Menu {
+                RootMenu {
                     Button("Refresh", systemImage: "arrow.clockwise") {
                         Task { await model.refresh() }
                     }
-                } label: {
-                    Label("Clicks menu", systemImage: "ellipsis")
                 }
             }
             ToolbarItem(placement: .topBarTrailing) {
@@ -63,8 +62,21 @@ public struct ClicksView: View {
                     Label("Scan QR", systemImage: "qrcode.viewfinder")
                 }
             }
+            ToolbarItem(placement: .topBarTrailing) {
+                Button {
+                    creatingGroup = true
+                } label: {
+                    Label("New verified group", systemImage: "plus")
+                }
+                .buttonStyle(.borderedProminent)
+                .tint(ClickColors.primaryActionFill)
+                .buttonBorderShape(.circle)
+            }
         }
         .refreshable { await model.refresh() }
+        .sheet(isPresented: $creatingGroup) {
+            NewGroupSheet()
+        }
         .onAppear {
             Task { await model.refreshIfStale() }
         }
@@ -172,17 +184,61 @@ public struct ClicksView: View {
             }
         case .groups:
             let groups = model.groups.filter { query.isEmpty || $0.name.localizedCaseInsensitiveContains(query) }
-            if groups.isEmpty {
-                ContentUnavailableView(
-                    "No group Clicks yet",
-                    systemImage: "person.3",
-                    description: Text("Verified Click groups will appear here when native group chat is available.")
-                )
-                .listRowSeparator(.hidden)
-                .listRowBackground(Color.clear)
+            let hubs = model.hubs.filter { query.isEmpty || $0.name.localizedCaseInsensitiveContains(query) }
+            if groups.isEmpty, hubs.isEmpty {
+                if let error = model.groupsError, !model.groupsLoaded {
+                    ContentUnavailableView {
+                        Label("Couldn't load groups", systemImage: "exclamationmark.triangle")
+                    } description: {
+                        Text(error)
+                    } actions: {
+                        Button("Try Again") { Task { await model.refresh() } }
+                    }
+                    .listRowSeparator(.hidden)
+                    .listRowBackground(Color.clear)
+                } else if model.groupsLoaded {
+                    ContentUnavailableView {
+                        Label("No groups yet", systemImage: "person.3")
+                    } description: {
+                        Text("Verified groups, event chats, and hubs you join appear here.")
+                    } actions: {
+                        Button("New verified group") { creatingGroup = true }
+                    }
+                    .listRowSeparator(.hidden)
+                    .listRowBackground(Color.clear)
+                } else {
+                    ProgressView().frame(maxWidth: .infinity).listRowBackground(Color.clear)
+                }
             }
-            ForEach(groups) { group in
-                GroupInboxRow(group: group)
+            ForEach(GroupsTabRow.merge(groups: groups, hubs: hubs)) { row in
+                switch row {
+                case .group(let group):
+                    GroupInboxRow(
+                        group: group,
+                        preview: model.previewText(for: group),
+                        avatarMembers: group.avatarMembers(excluding: env.session.currentSession?.userId),
+                        onOpen: { openGroup(group) }
+                    )
+                    .listRowBackground(Color.clear)
+                    .contextMenu {
+                        Button("Group Info", systemImage: "info.circle") {
+                            env.router.navigate(to: .groupProfile(chatID: group.chatID))
+                        }
+                    }
+                case .hub(let hub):
+                    HubInboxRow(hub: hub) {
+                        ClickHaptics.selection()
+                        env.router.navigate(to: .hub(hubID: hub.hubID))
+                    }
+                    .listRowBackground(Color.clear)
+                }
+            }
+            if !groups.isEmpty || !hubs.isEmpty {
+                Label("Private chats are end-to-end encrypted", systemImage: "lock")
+                    .font(ClickTypography.caption)
+                    .foregroundStyle(ClickColors.textTertiary)
+                    .frame(maxWidth: .infinity)
+                    .listRowSeparator(.hidden)
                     .listRowBackground(Color.clear)
             }
         }
@@ -242,7 +298,7 @@ public struct ClicksView: View {
     private func count(for tab: InboxTab) -> Int {
         switch tab {
         case .active: model.active.count
-        case .groups: model.groups.count
+        case .groups: model.groups.count + model.hubs.count
         case .archived: model.archived.count
         }
     }
@@ -273,6 +329,12 @@ public struct ClicksView: View {
                 lastActiveText: item.lastActiveRelative
             )
         ))
+    }
+
+    private func openGroup(_ group: CliqueItem) {
+        ClickHaptics.selection()
+        model.markGroupOpened(group)
+        env.router.navigate(to: .groupChat(group.chatRoute))
     }
 
     private func openProfile(_ item: ConnectionItem) {
@@ -433,6 +495,74 @@ private struct ConversationRow: View {
     }
 }
 
+/// One Groups-tab row: a verified group or a joined hub / event chat, ordered by activity.
+private enum GroupsTabRow: Identifiable {
+    case group(CliqueItem)
+    case hub(JoinedHub)
+
+    var id: String {
+        switch self {
+        case .group(let group): "group.\(group.id)"
+        case .hub(let hub): "hub.\(hub.hubID)"
+        }
+    }
+
+    var activity: Date {
+        switch self {
+        case .group(let group): group.lastActivityAt ?? .distantPast
+        case .hub(let hub): hub.lastActivityAt ?? hub.joinedAt
+        }
+    }
+
+    static func merge(groups: [CliqueItem], hubs: [JoinedHub]) -> [GroupsTabRow] {
+        (groups.map(GroupsTabRow.group) + hubs.map(GroupsTabRow.hub)).sorted { $0.activity > $1.activity }
+    }
+}
+
+private struct HubInboxRow: View {
+    let hub: JoinedHub
+    let onOpen: () -> Void
+
+    var body: some View {
+        Button(action: onOpen) {
+            HStack(spacing: 12) {
+                EventVisual(seed: hub.hubID, symbol: hub.isEvent ? "calendar" : "house", cornerRadius: ClickMetrics.Avatar.conversation / 2)
+                    .frame(width: ClickMetrics.Avatar.conversation, height: ClickMetrics.Avatar.conversation)
+                VStack(alignment: .leading, spacing: 3) {
+                    HStack(alignment: .firstTextBaseline, spacing: 5) {
+                        Text(hub.name)
+                            .font(ClickTypography.bodyEmphasized)
+                            .foregroundStyle(ClickColors.textPrimary)
+                            .lineLimit(1)
+                        Spacer(minLength: 8)
+                        if let date = hub.lastActivityAt {
+                            Text(InboxFormatting.timestamp(for: date))
+                                .font(ClickTypography.metadata)
+                                .foregroundStyle(ClickColors.textTertiary)
+                                .monospacedDigit()
+                        }
+                    }
+                    Text(preview)
+                        .font(ClickTypography.supporting)
+                        .foregroundStyle(ClickColors.textSecondary)
+                        .lineLimit(2)
+                }
+            }
+            .padding(.vertical, 10)
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .alignmentGuide(.listRowSeparatorLeading) { dimensions in
+            dimensions[.leading] + ClickMetrics.Avatar.conversation + 12
+        }
+    }
+
+    private var preview: String {
+        guard let message = hub.lastMessage else { return hub.isEvent ? "Event chat" : "Community hub" }
+        return hub.lastSenderName.map { "\($0.split(separator: " ").first.map(String.init) ?? $0): \(message)" } ?? message
+    }
+}
+
 private struct ConnectionAvatar: View {
     let item: ConnectionItem
     let size: CGFloat
@@ -450,28 +580,68 @@ private struct ConnectionAvatar: View {
 
 private struct GroupInboxRow: View {
     let group: CliqueItem
+    let preview: String
+    let avatarMembers: [GroupMember]
+    let onOpen: () -> Void
 
     var body: some View {
-        HStack(spacing: 12) {
-            AvatarView(imageURL: nil, seed: group.chatID, initials: group.initials, size: ClickMetrics.Avatar.conversation)
+        Button(action: onOpen) {
+            HStack(spacing: 12) {
+                GroupAvatarView(
+                    avatarURL: group.avatarURL,
+                    seed: group.chatID,
+                    initials: group.initials,
+                    members: avatarMembers,
+                    size: ClickMetrics.Avatar.conversation
+                )
 
-            VStack(alignment: .leading, spacing: 4) {
-                Text(group.name)
-                    .font(ClickTypography.bodyEmphasized)
-                    .foregroundStyle(ClickColors.textPrimary)
-                Text("\(group.memberCount) members")
-                    .font(ClickTypography.supporting)
-                    .foregroundStyle(ClickColors.textSecondary)
+                VStack(alignment: .leading, spacing: 3) {
+                    HStack(alignment: .firstTextBaseline, spacing: 5) {
+                        Text(group.name)
+                            .font(ClickTypography.bodyEmphasized)
+                            .foregroundStyle(ClickColors.textPrimary)
+                            .lineLimit(1)
+                        Spacer(minLength: 8)
+                        if let date = group.lastActivityAt {
+                            Text(InboxFormatting.timestamp(for: date))
+                                .font(ClickTypography.metadata)
+                                .foregroundStyle(group.unreadCount > 0 ? ClickColors.accentForeground : ClickColors.textTertiary)
+                                .monospacedDigit()
+                        }
+                    }
+                    HStack(alignment: .top, spacing: 4) {
+                        Text(preview)
+                            .font(ClickTypography.supporting)
+                            .foregroundStyle(ClickColors.textSecondary)
+                            .lineLimit(2)
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                        if group.unreadCount > 0 {
+                            Text(group.unreadCount > 99 ? "99+" : "\(group.unreadCount)")
+                                .font(ClickTypography.badge)
+                                .monospacedDigit()
+                                .foregroundStyle(ClickColors.primaryActionForeground)
+                                .padding(.horizontal, 6)
+                                .frame(minWidth: 20, minHeight: 20)
+                                .background(ClickColors.primaryActionFill, in: Capsule())
+                        }
+                    }
+                }
             }
-
-            Spacer()
-
-            if !group.lastActiveRelative.isEmpty {
-                Text(group.lastActiveRelative)
-                    .font(ClickTypography.metadata)
-                    .foregroundStyle(ClickColors.textTertiary)
-            }
+            .padding(.vertical, 10)
+            .contentShape(Rectangle())
         }
-        .padding(.vertical, 10)
+        .buttonStyle(.plain)
+        .accessibilityElement(children: .combine)
+        .accessibilityLabel(accessibilityText)
+        .alignmentGuide(.listRowSeparatorLeading) { dimensions in
+            dimensions[.leading] + ClickMetrics.Avatar.conversation + 12
+        }
+    }
+
+    private var accessibilityText: String {
+        var parts = [group.name, "\(group.memberCount) members"]
+        if group.unreadCount > 0 { parts.append("\(group.unreadCount) unread") }
+        parts.append(preview)
+        return parts.joined(separator: ", ")
     }
 }

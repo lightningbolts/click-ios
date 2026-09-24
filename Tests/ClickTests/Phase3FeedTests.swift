@@ -39,25 +39,25 @@ struct Phase3FeedTests {
         // Morning: 9am
         comps.hour = 9
         let morningDate = calendar.date(from: comps)!
-        #expect(HomeFeedSnapshot.timeBasedSalutation(for: "Alex", date: morningDate) == "Good morning, Alex.")
+        #expect(HomeGreeting.salutation(for: "Alex", date: morningDate) == "Good morning, Alex")
 
         // Afternoon: 2pm (14:00)
         comps.hour = 14
         let afternoonDate = calendar.date(from: comps)!
-        #expect(HomeFeedSnapshot.timeBasedSalutation(for: "Alex", date: afternoonDate) == "Good afternoon, Alex.")
+        #expect(HomeGreeting.salutation(for: "Alex", date: afternoonDate) == "Good afternoon, Alex")
 
         // Evening: 8pm (20:00)
         comps.hour = 20
         let eveningDate = calendar.date(from: comps)!
-        #expect(HomeFeedSnapshot.timeBasedSalutation(for: "Alex", date: eveningDate) == "Good evening, Alex.")
+        #expect(HomeGreeting.salutation(for: "Alex", date: eveningDate) == "Good evening, Alex")
 
         // Late night: 2am
         comps.hour = 2
         let lateNightDate = calendar.date(from: comps)!
-        #expect(HomeFeedSnapshot.timeBasedSalutation(for: "Alex", date: lateNightDate) == "Hello, Alex.")
+        #expect(HomeGreeting.salutation(for: "Alex", date: lateNightDate) == "Hello, Alex")
 
         // Empty name fallback
-        #expect(HomeFeedSnapshot.timeBasedSalutation(for: "", date: morningDate) == "Good morning.")
+        #expect(HomeGreeting.salutation(for: "", date: morningDate) == "Good morning")
     }
 
     @Test("ClicksSnapshot segments filter correctly")

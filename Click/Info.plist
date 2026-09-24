@@ -2,6 +2,48 @@
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
 <dict>
+	<!-- Non-Apple and array keys must live here: Xcode's INFOPLIST_KEY_* settings only
+	     generate keys it recognizes, and silently drop the rest. -->
+	<key>CLICK_API_BASE_URL</key>
+	<string>$(CLICK_API_BASE_URL)</string>
+	<key>SUPABASE_URL</key>
+	<string>$(SUPABASE_URL)</string>
+	<key>SUPABASE_ANON_KEY</key>
+	<string>$(SUPABASE_ANON_KEY)</string>
+	<key>GIDClientID</key>
+	<string>530817233802-crnehf5a9duauov4vos4lgsijkgingdj.apps.googleusercontent.com</string>
+	<key>GIDServerClientID</key>
+	<string>530817233802-3ki7usecs885vvag9uq92ubu5hgkv2sp.apps.googleusercontent.com</string>
+	<key>CFBundleURLTypes</key>
+	<array>
+		<dict>
+			<key>CFBundleTypeRole</key>
+			<string>Editor</string>
+			<key>CFBundleURLName</key>
+			<string>compose.project.click.click</string>
+			<key>CFBundleURLSchemes</key>
+			<array>
+				<string>click</string>
+			</array>
+		</dict>
+		<dict>
+			<key>CFBundleTypeRole</key>
+			<string>Editor</string>
+			<key>CFBundleURLName</key>
+			<string>GoogleSignIn</string>
+			<key>CFBundleURLSchemes</key>
+			<array>
+				<string>com.googleusercontent.apps.530817233802-crnehf5a9duauov4vos4lgsijkgingdj</string>
+			</array>
+		</dict>
+	</array>
+	<key>UIBackgroundModes</key>
+	<array>
+		<string>remote-notification</string>
+		<string>bluetooth-central</string>
+		<string>bluetooth-peripheral</string>
+		<string>audio</string>
+	</array>
 	<key>UIAppFonts</key>
 	<array>
 		<string>Manrope-Regular.ttf</string>

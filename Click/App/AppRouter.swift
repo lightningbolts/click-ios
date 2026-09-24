@@ -59,34 +59,101 @@ public struct DirectChatRoute: Hashable, Sendable {
     }
 }
 
+/// Identity needed to paint a verified group chat's first frame. Membership used for encryption
+/// is re-read from the server by `ChatRepository` before any write.
+public struct GroupChatRoute: Hashable, Sendable {
+    public let chatID: String
+    public let groupID: String
+    public let name: String
+    public let avatarURL: String?
+    public let memberUserIDs: [String]
+
+    public init(chatID: String, groupID: String, name: String, avatarURL: String? = nil, memberUserIDs: [String] = []) {
+        self.chatID = chatID
+        self.groupID = groupID
+        self.name = name
+        self.avatarURL = avatarURL
+        self.memberUserIDs = memberUserIDs
+    }
+
+    public var conversationIdentity: ConversationIdentity {
+        ConversationIdentity(
+            chatID: chatID,
+            peerUserID: "",
+            peerDisplayName: name,
+            peerAvatarURL: avatarURL,
+            kind: .group(groupID: groupID),
+            participantUserIDs: memberUserIDs
+        )
+    }
+}
+
 /// Typed destination routes for the application.
 public enum AppRoute: Hashable, Sendable {
     case chat(DirectChatRoute)
     case userProfile(userID: String, connectionID: String?)
+    case groupChat(GroupChatRoute)
     case groupProfile(chatID: String)
     case event(beaconID: String)
+    /// Event chat, always resolved through the server's event-chat resolver.
+    case eventChat(beaconID: String)
     case beacon(beaconID: String)
     case hub(hubID: String)
     case myQR
     case scanQR
     case tapConnect
     case savedEvents
+    case settings(SettingsRoute)
     case connectionInvocation(ConnectionInvocation)
 
     /// The tab whose stack hosts this route when it arrives from outside the app
     /// (deep links, notifications) rather than from in-app navigation.
     public var canonicalTab: MainTab {
         switch self {
-        case .chat, .userProfile, .groupProfile:
+        case .chat, .userProfile, .groupChat, .groupProfile:
             .connections
-        case .event, .beacon, .hub:
+        case .event, .eventChat, .beacon, .hub:
             .map
         case .myQR, .scanQR, .tapConnect, .connectionInvocation:
             .addClick
-        case .savedEvents:
+        case .savedEvents, .settings:
             .settings
         }
     }
+}
+
+/// A route presented as a sheet.
+public struct SheetRoute: Identifiable, Hashable, Sendable {
+    public let route: AppRoute
+    public var id: AppRoute { route }
+}
+
+extension AppRoute {
+    /// Detail surfaces the contract presents as sheets rather than pushes.
+    public var presentsAsSheet: Bool {
+        switch self {
+        case .event, .beacon: true
+        default: false
+        }
+    }
+}
+
+/// Preference pages under the Me root. Typed so notifications/deep links can open them.
+public enum SettingsRoute: Hashable, Sendable {
+    case alerts
+    case privacy
+    case permissions
+    case interests
+    case personality
+    case calendar
+    case editProfile
+}
+
+/// What the Map root should bring into view when it is opened from elsewhere.
+public enum MapFocus: Hashable, Sendable {
+    case beacon(String)
+    case hub(String)
+    case layer(MapLayer)
 }
 
 /// Invocation payload for canonical connection flow initiated via deep link / QR scan.
@@ -128,11 +195,32 @@ public final class AppRouter {
     /// Pending destination queued while waiting for auth/onboarding gating resolution.
     public var pendingRoute: AppRoute?
 
+    /// A pending "show this on the map" intent, consumed by the Map root when it appears.
+    public var mapFocus: MapFocus?
+
+    /// Event and beacon details are sheets (medium/large) over whatever is on screen
+    /// (interaction contract 3), owned by the shell — one modal owner.
+    public var presentedSheet: SheetRoute?
+
     public init() {}
+
+    /// Switches to the Map root and asks it to focus a beacon, hub, or layer ("View on Map").
+    public func showOnMap(_ focus: MapFocus? = nil) {
+        presentedSheet = nil
+        mapFocus = focus
+        mapPath.removeAll()
+        selectedTab = .map
+    }
 
     /// Navigates to a typed route within the active tab's stack. Every stack registers the
     /// canonical `AppRouteDestination`, so any route may be pushed onto any tab.
     public func navigate(to route: AppRoute) {
+        if route.presentsAsSheet {
+            presentedSheet = SheetRoute(route: route)
+            return
+        }
+        // Continuing elsewhere from a detail sheet closes it first.
+        presentedSheet = nil
         self[path: selectedTab].append(route)
     }
 

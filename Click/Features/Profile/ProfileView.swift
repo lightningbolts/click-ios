@@ -1,348 +1,404 @@
 import SwiftUI
 
-/// Peer profile surface. The self/account experience lives in SettingsView; this view is shaped
-/// around the relationship with another Click user.
+/// The one canonical person profile (spec §47), reached from Clicks, chat headers, map pins,
+/// search, event directories, and Home. Identity first; Message is the primary relationship
+/// action; secondary and safety actions are quieter; the Timeline is relationship history.
 public struct ProfileView: View {
     @Environment(AppEnvironment.self) private var env
-    private let requestedUserID: String?
-    private let connectionID: String?
+    @Environment(ConversationListModel.self) private var conversations
+    @Environment(\.openURL) private var openURL
+    @Environment(\.dismiss) private var dismiss
 
-    @State private var data: Phase3ProfileData?
-    @State private var refreshError: String?
-    @State private var selectedTab: ProfileTab = .timeline
-    @State private var timelineDraft = ""
-    @State private var timelineVisibility: TimelineVisibility = .privateOnly
-    @State private var isPostingTimeline = false
-    @State private var tabPayload = ProfileTabPayload.empty
-    @State private var isSendingNudge = false
-    @State private var nudgeStatus: String?
+    @State private var model: PeerProfileModel
+    @State private var tab: ProfileTab = .timeline
+    @State private var journalEditor: JournalEditorTarget?
+    @State private var safetyAction: SafetyAction?
+    @State private var reportReason = ""
+    @State private var isWorking = false
+    @State private var notice: String?
+    @State private var showsCompactTitle = false
+    @State private var viewerURL: ProfileViewerURL?
+    @State private var quickLookURL: URL?
 
-    public init(
-        userID: String? = nil,
-        connectionID: String? = nil,
-        initialProfile: UserProfileSnapshot? = nil
-    ) {
-        self.requestedUserID = userID
-        self.connectionID = connectionID
-        self._data = State(
-            initialValue: initialProfile.map {
-                Phase3ProfileData(profile: $0, timeline: [])
-            }
-        )
+    public init(userID: String, connectionID: String? = nil) {
+        _model = State(initialValue: PeerProfileModel.shared(userID: userID, connectionID: connectionID))
     }
 
-    private var resolvedUserID: String? {
-        requestedUserID ?? env.session.currentSession?.userId
+    private var inboxItem: ConnectionItem? {
+        (conversations.active + conversations.archived).first { $0.userID == model.userID }
     }
 
-    private var isSelf: Bool {
-        guard let resolvedUserID,
-              let current = env.session.currentSession?.userId else {
-            return false
-        }
-        return resolvedUserID == current
-    }
+    private var isSelf: Bool { env.session.currentSession?.userId == model.userID }
 
     public var body: some View {
-        Group {
-            if let data {
-                ScrollView {
-                    LazyVStack(alignment: .leading, spacing: 20) {
-                        if refreshError != nil {
-                            offlineNotice
-                        }
-
-                        profileHeader(data.profile)
-
-                        if !isSelf {
-                            relationshipActions(data.profile)
-                        }
-
-                        if !data.profile.interests.isEmpty {
-                            sharedInterests(data.profile.interests)
-                        }
-
-                        profileTabBar
-
-                        switch selectedTab {
-                        case .timeline:
-                            timelineTab(data.timeline)
-                        case .beacons:
-                            attachmentTab(
-                                items: tabPayload.beacons,
-                                emptyTitle: "No shared beacons",
-                                emptyDescription: "Beacons shared in this conversation appear here.",
-                                icon: "mappin.and.ellipse"
-                            )
-                        case .media:
-                            attachmentTab(
-                                items: tabPayload.media,
-                                emptyTitle: "No shared media",
-                                emptyDescription: "Photos and audio shared in this conversation appear here.",
-                                icon: "photo.on.rectangle.angled"
-                            )
-                        case .links:
-                            linksTab
-                        }
-                    }
-                    .padding(.horizontal, 18)
-                    .padding(.top, 8)
-                    .padding(.bottom, 30)
-                }
-                .refreshable { await refresh() }
-            } else {
-                loadingState
-            }
-        }
-        .background(ClickColors.background.ignoresSafeArea())
-        .navigationTitle("Profile")
-        .navigationBarTitleDisplayMode(.inline)
-        .toolbar(.hidden, for: .tabBar)
-        .tint(ClickColors.accentForeground)
-        .task { await bootstrap() }
-    }
-
-    private func profileHeader(_ profile: UserProfileSnapshot) -> some View {
-        HStack(spacing: 15) {
-            AvatarView(
-                imageURL: profile.avatarUrl,
-                seed: profile.userId,
-                initials: profile.initials,
-                size: ClickMetrics.Avatar.identity
-            )
-
-            VStack(alignment: .leading, spacing: 4) {
-                Text(profile.displayName)
-                    .font(ClickTypography.sectionTitle)
-                    .foregroundStyle(ClickColors.textPrimary)
-                    .lineLimit(2)
-
-                if !profile.handle.isEmpty {
-                    Text(profile.handle)
-                        .font(ClickTypography.body)
-                        .foregroundStyle(ClickColors.textSecondary)
-                }
-
-                if !profile.bio.isEmpty {
-                    Text(profile.bio)
+        ScrollView {
+            LazyVStack(alignment: .leading, spacing: 20, pinnedViews: [.sectionHeaders]) {
+                identity
+                if !isSelf { actions }
+                if let notice {
+                    Text(notice)
                         .font(ClickTypography.supporting)
                         .foregroundStyle(ClickColors.textSecondary)
-                        .lineLimit(2)
-                        .padding(.top, 2)
+                        .frame(maxWidth: .infinity)
+                }
+                commonGround
+                Section {
+                    tabContent
+                } header: {
+                    tabChips
                 }
             }
-
-            Spacer(minLength: 0)
+            .padding(.horizontal, ClickSpacing.screenGutter)
+            .padding(.bottom, 32)
+        }
+        .background(ClickColors.background.ignoresSafeArea())
+        .onScrollGeometryChange(for: Bool.self) { geometry in
+            geometry.contentOffset.y + geometry.contentInsets.top > 170
+        } action: { _, scrolledPastName in
+            showsCompactTitle = scrolledPastName
+        }
+        .refreshable { await model.load(force: true) }
+        .fullScreenCover(item: $viewerURL) { item in MediaViewer(url: item.url) }
+        .quickLookPreview($quickLookURL)
+        .navigationTitle(model.profile.value?.displayName ?? "Profile")
+        .navigationBarTitleDisplayMode(.inline)
+        .toolbar {
+            ToolbarItem(placement: .principal) {
+                Text(model.profile.value?.displayName ?? "")
+                    .font(.headline)
+                    .opacity(showsCompactTitle ? 1 : 0)
+            }
+            if !isSelf, model.connectionID != nil {
+                ToolbarItem(placement: .topBarTrailing) {
+                    Menu {
+                        Button("Remove connection", systemImage: "person.badge.minus", role: .destructive) { safetyAction = .remove }
+                        Button("Report", systemImage: "exclamationmark.bubble") { safetyAction = .report }
+                        Button("Block", systemImage: "hand.raised", role: .destructive) { safetyAction = .block }
+                    } label: {
+                        Label("More actions", systemImage: "ellipsis")
+                    }
+                }
+            }
+        }
+        .task {
+            model.attach(env, fallbackConnectionID: inboxItem?.connectionID)
+            await model.load()
+        }
+        .sheet(item: $journalEditor) { target in
+            JournalEditor(target: target) { body, visibility in
+                try await model.saveJournal(body: body, visibility: visibility, editing: target.entry)
+            }
+        }
+        .confirmationDialog(safetyTitle, isPresented: Binding(
+            get: { safetyAction == .remove || safetyAction == .block },
+            set: { if !$0 { safetyAction = nil } }
+        ), titleVisibility: .visible) {
+            Button(safetyAction == .block ? "Block" : "Remove", role: .destructive) {
+                Task { await performSafety() }
+            }
+        } message: {
+            Text(safetyAction == .block
+                 ? "They won't be able to message you, and they'll be removed from your Clicks."
+                 : "This Click is removed from your inbox and map. It can't be undone.")
+        }
+        .alert("Report \(model.profile.value?.firstName ?? "this person")", isPresented: Binding(
+            get: { safetyAction == .report },
+            set: { if !$0 { safetyAction = nil; reportReason = "" } }
+        )) {
+            TextField("What happened?", text: $reportReason)
+            Button("Submit") { Task { await performSafety() } }
+                .disabled(reportReason.trimmingCharacters(in: .whitespaces).isEmpty)
+            Button("Cancel", role: .cancel) {}
+        } message: {
+            Text("Reports are private and reviewed by the Click team.")
         }
     }
 
-    private func relationshipActions(_ profile: UserProfileSnapshot) -> some View {
-        VStack(spacing: 12) {
+    // MARK: - Identity
+
+    private var identity: some View {
+        let profile = model.profile.value
+        return VStack(spacing: 6) {
+            AvatarView(
+                imageURL: profile?.avatarURL ?? inboxItem?.avatarUrl,
+                seed: model.userID,
+                initials: profile?.initials ?? inboxItem?.initials ?? "",
+                size: 112
+            )
+            Text(profile?.displayName ?? inboxItem?.displayName ?? " ")
+                .font(ClickTypography.identityTitle)
+                .foregroundStyle(ClickColors.textPrimary)
+                .multilineTextAlignment(.center)
+                .redacted(reason: profile == nil && inboxItem == nil ? .placeholder : [])
+                .padding(.top, 8)
+            if let line = model.relationshipLine {
+                Text(line)
+                    .font(ClickTypography.supporting)
+                    .foregroundStyle(ClickColors.textTertiary)
+                    .multilineTextAlignment(.center)
+            }
+            HStack(spacing: 6) {
+                if inboxItem?.isCore == true { StatusPill("Core") }
+                if profile?.isFreeCurrently == true { StatusPill("Free now") }
+            }
+            .padding(.top, 4)
+            if model.profile.value == nil, let message = model.profile.errorMessage {
+                Button("Couldn't load this profile. \(message) Retry") { Task { await model.loadProfile() } }
+                    .font(ClickTypography.supporting)
+            } else if model.profile.isStale {
+                OfflineNotice("Showing a saved profile") { Task { await model.loadProfile() } }
+            }
+        }
+        .frame(maxWidth: .infinity)
+        .padding(.top, 8)
+    }
+
+    // MARK: - Actions
+
+    private var actions: some View {
+        VStack(spacing: 10) {
             Button {
-                openChat(profile)
+                openChat()
             } label: {
                 Label("Message", systemImage: "message.fill")
             }
             .buttonStyle(.clickPrimary)
-            .disabled(connectionID == nil)
+            .disabled(model.connectionID == nil)
 
-            HStack(spacing: 10) {
+            if model.connectionID != nil {
                 Button {
-                    Task { await sendNudge(profile) }
+                    Task { await sendNudge() }
                 } label: {
-                    Label("Nudge", systemImage: "bell.badge.fill")
-                }
-                .buttonStyle(.clickSecondary)
-                .disabled(connectionID == nil)
-
-                Button {
-                    selectedTab = .media
-                    ClickHaptics.selection()
-                } label: {
-                    Label("Drops", systemImage: "camera.fill")
-                }
-                .buttonStyle(.clickSecondary)
-            }
-        }
-    }
-
-    private func sharedInterests(_ tags: [String]) -> some View {
-        VStack(alignment: .leading, spacing: 9) {
-            Text("Shared interests")
-                .font(ClickTypography.metadata)
-                .foregroundStyle(ClickColors.textSecondary)
-
-            ScrollView(.horizontal) {
-                HStack(spacing: 7) {
-                    ForEach(tags.prefix(8), id: \.self) { tag in
-                        Text(tag)
-                            .font(ClickTypography.metadata)
-                            .foregroundStyle(ClickColors.accentForeground)
-                            .padding(.horizontal, 10)
-                            .frame(height: 30)
-                            .background(ClickColors.selectionTint)
-                            .clipShape(Capsule())
+                    if isWorking {
+                        ProgressView()
+                    } else {
+                        Label("Nudge", systemImage: "hand.wave")
                     }
                 }
+                .buttonStyle(.clickSecondary)
+                .disabled(isWorking)
+            } else {
+                Text("You can message people after you Click in person.")
+                    .font(ClickTypography.metadata)
+                    .foregroundStyle(ClickColors.textTertiary)
             }
-            .scrollIndicators(.hidden)
         }
     }
 
-    private var profileTabBar: some View {
-        HStack(spacing: 0) {
-            ForEach(ProfileTab.allCases) { tab in
-                Button {
-                    selectedTab = tab
-                    ClickHaptics.selection()
-                } label: {
-                    VStack(spacing: 7) {
-                        Image(systemName: tab.systemImage)
-                            .font(.system(size: 17, weight: .semibold))
-                        Text(tab.title)
-                            .font(ClickTypography.metadata)
-                            .foregroundStyle(selectedTab == tab ? ClickColors.textPrimary : ClickColors.textSecondary)
-                            .frame(maxWidth: .infinity)
+    // MARK: - Common ground
 
-                        Rectangle()
-                            .fill(selectedTab == tab ? ClickColors.accentForeground : .clear)
-                            .frame(height: 2)
-                    }
-                }
-                .buttonStyle(.plain)
-            }
-        }
-        .overlay(alignment: .bottom) {
-            Rectangle()
-                .fill(ClickColors.separator)
-                .frame(height: 1)
-        }
-    }
-
-    private func timelineTab(_ entries: [ProfileTimelineEntry]) -> some View {
-        VStack(alignment: .leading, spacing: 14) {
+    @ViewBuilder
+    private var commonGround: some View {
+        if let profile = model.profile.value, !(profile.sharedInterests.isEmpty && profile.personality.isEmpty && profile.interests.isEmpty) {
             VStack(alignment: .leading, spacing: 10) {
-                TextField("Write a quick memory, note, or plan…", text: $timelineDraft, axis: .vertical)
-                    .font(ClickTypography.body)
-                    .lineLimit(4...7)
-                    .padding(14)
-                    .frame(minHeight: 118, alignment: .topLeading)
-                    .background(ClickColors.surfaceElevated)
-                    .clipShape(RoundedRectangle(cornerRadius: ClickRadius.field, style: .continuous))
+                let shared = profile.sharedInterests
+                Text("Common ground")
+                    .font(ClickTypography.bodyEmphasized)
+                if !shared.isEmpty {
+                    Text(shared.count == 1 ? "1 shared interest" : "\(shared.count) shared interests")
+                        .font(ClickTypography.supporting)
+                        .foregroundStyle(ClickColors.textTertiary)
+                }
+                TagFlow(tags: shared.isEmpty ? Array(profile.interests.prefix(8)) : shared, highlighted: !shared.isEmpty)
+                if !profile.personality.isEmpty {
+                    Divider().padding(.vertical, 4)
+                    Text("Personality")
+                        .font(ClickTypography.bodyEmphasized)
+                    TagFlow(tags: profile.personality, highlighted: false)
+                }
+            }
+            .padding(18)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .groupedSurface()
+        }
+    }
 
-                HStack(spacing: 10) {
-                    visibilityButton(.privateOnly)
-                    visibilityButton(.shared)
+    // MARK: - Tabs
 
-                    Spacer()
-
+    private var tabChips: some View {
+        ScrollView(.horizontal) {
+            HStack(spacing: 8) {
+                ForEach(ProfileTab.allCases) { value in
                     Button {
-                        Task { await postTimeline() }
+                        tab = value
+                        ClickHaptics.selection()
+                        if value == .links, let name = model.profile.value?.displayName {
+                            Task { await model.loadLinks(peerName: name) }
+                        }
                     } label: {
-                        if isPostingTimeline {
-                            ProgressView().controlSize(.small)
-                                .frame(minWidth: 54)
-                        } else {
-                            Text("Add")
-                                .font(ClickTypography.bodyEmphasized)
-                                .frame(minWidth: 54)
+                        Text(value.title)
+                            .font(ClickTypography.supporting.weight(tab == value ? .semibold : .medium))
+                            .foregroundStyle(tab == value ? ClickColors.accentForeground : ClickColors.textSecondary)
+                            .padding(.horizontal, 15)
+                            .frame(minHeight: ClickMetrics.chipHeight)
+                            .background(tab == value ? ClickColors.selectionTint : ClickColors.fillSubtle, in: Capsule())
+                    }
+                    .buttonStyle(.plain)
+                    .accessibilityAddTraits(tab == value ? .isSelected : [])
+                }
+            }
+            .padding(.vertical, 8)
+        }
+        .scrollIndicators(.hidden)
+        .background(ClickColors.background)
+    }
+
+    @ViewBuilder
+    private var tabContent: some View {
+        switch tab {
+        case .timeline: timelineTab
+        case .media: mediaTab
+        case .links: linksTab
+        case .files: filesTab
+        case .beacons: sharedList(model.tabs.value?.beacons, empty: "No events or beacons shared yet.")
+        }
+    }
+
+    private var timelineTab: some View {
+        VStack(spacing: 0) {
+            Button {
+                journalEditor = JournalEditorTarget(entry: nil)
+            } label: {
+                HStack(spacing: 14) {
+                    Image(systemName: "square.and.pencil")
+                        .foregroundStyle(ClickColors.accentForeground)
+                        .frame(width: 34, height: 34)
+                        .background(ClickColors.selectionTint, in: Circle())
+                    Text("Add journal note")
+                        .font(ClickTypography.body)
+                        .foregroundStyle(ClickColors.accentForeground)
+                    Spacer()
+                }
+                .padding(.horizontal, 16)
+                .frame(minHeight: ClickMetrics.rowMinHeight)
+                .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+
+            let items = model.timeline
+            if items.isEmpty {
+                Divider().padding(.leading, 64)
+                Group {
+                    if model.encounters.isPending || model.journal.isPending {
+                        ProgressView().padding(20)
+                    } else if model.encounters.errorMessage != nil || model.journal.errorMessage != nil {
+                        Button("Couldn't load your history. Retry") {
+                            Task { await model.loadEncounters(); await model.loadJournal() }
+                        }
+                        .font(ClickTypography.supporting)
+                        .padding(20)
+                    } else {
+                        Text("Your shared history appears here.")
+                            .font(ClickTypography.supporting)
+                            .foregroundStyle(ClickColors.textTertiary)
+                            .padding(20)
+                    }
+                }
+                .frame(maxWidth: .infinity)
+            }
+            ForEach(items) { item in
+                Divider().padding(.leading, 64)
+                TimelineRow(item: item, isOwn: isOwn(item)) { entry in
+                    journalEditor = JournalEditorTarget(entry: entry)
+                } onDelete: { entry in
+                    Task { try? await model.deleteJournal(entry) }
+                } onOpenEvent: { beaconID in
+                    env.router.navigate(to: .event(beaconID: beaconID))
+                }
+            }
+        }
+        .groupedSurface()
+    }
+
+    private func isOwn(_ item: TimelineItem) -> Bool {
+        if case .journal(let entry) = item { return entry.authorID == env.session.currentSession?.userId }
+        return false
+    }
+
+    @ViewBuilder
+    private func sharedList(_ items: [SharedItem]?, empty: String) -> some View {
+        VStack(spacing: 0) {
+            if let items {
+                if items.isEmpty {
+                    Text(empty)
+                        .font(ClickTypography.supporting)
+                        .foregroundStyle(ClickColors.textTertiary)
+                        .padding(20)
+                        .frame(maxWidth: .infinity)
+                }
+                ForEach(items) { item in
+                    Button { open(item) } label: { SharedItemRow(item: item, isOwn: item.senderID == env.session.currentSession?.userId) }
+                        .buttonStyle(.plain)
+                    if item.id != items.last?.id { Divider().padding(.leading, 68) }
+                }
+            } else {
+                switch model.tabs.phase {
+                case .unavailable(let reason):
+                    Text(reason).font(ClickTypography.supporting).foregroundStyle(ClickColors.textTertiary).padding(20)
+                case .failed:
+                    Button("Couldn't load shared content. Retry") { Task { await model.loadTabs() } }
+                        .font(ClickTypography.supporting).padding(20)
+                default:
+                    ProgressView().padding(20)
+                }
+            }
+        }
+        .frame(maxWidth: .infinity)
+        .groupedSurface()
+    }
+
+    // MARK: - Media & files
+
+    @ViewBuilder
+    private var mediaTab: some View {
+        if model.tabs.value == nil {
+            sharedList(nil, empty: "")
+        } else if model.mediaItems.isEmpty {
+            sharedList([], empty: "No photos or voice notes shared yet.")
+        } else {
+            let photos = model.mediaItems.filter { $0.media?.kind == .image }
+            let voice = model.mediaItems.filter { $0.media?.kind == .audio }
+            VStack(alignment: .leading, spacing: 14) {
+                if !photos.isEmpty {
+                    LazyVGrid(columns: Array(repeating: GridItem(.flexible(), spacing: 3), count: 3), spacing: 3) {
+                        ForEach(photos) { item in
+                            ProfileMediaThumbnail(item: item, load: { try await model.mediaURL(for: item) }) { url in
+                                viewerURL = ProfileViewerURL(url: url)
+                            }
                         }
                     }
-                    .buttonStyle(.borderedProminent)
-                    .tint(ClickColors.primaryActionFill)
-                    .disabled(
-                        timelineDraft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
-                            || isPostingTimeline
-                    )
+                    .clipShape(RoundedRectangle(cornerRadius: ClickRadius.compact, style: .continuous))
+                }
+                if !voice.isEmpty {
+                    VStack(alignment: .leading, spacing: 8) {
+                        Text("Voice notes")
+                            .font(ClickTypography.supportingEmphasized)
+                            .foregroundStyle(ClickColors.textSecondary)
+                        ForEach(voice) { item in
+                            if let media = item.media {
+                                MessageMediaContent(message: item, media: media, load: { try await model.mediaURL(for: item) }, onOpen: { _ in })
+                            }
+                        }
+                    }
                 }
             }
-            .padding(14)
-            .groupedSurface()
+        }
+    }
 
-            Text("Journal")
-                .font(ClickTypography.supportingEmphasized)
-                .foregroundStyle(ClickColors.textSecondary)
-                .padding(.top, 8)
-
-            if entries.isEmpty {
-                profileEmpty(
-                    title: "No timeline notes yet",
-                    description: "Private notes stay with you. Shared notes are visible to this connection.",
-                    icon: "note.text"
-                )
-            } else {
-                VStack(spacing: 0) {
-                    ForEach(entries) { entry in
-                        VStack(alignment: .leading, spacing: 7) {
-                            Text(entry.body)
-                                .font(ClickTypography.body)
-                                .foregroundStyle(ClickColors.textPrimary)
-                                .fixedSize(horizontal: false, vertical: true)
-
-                            HStack(spacing: 5) {
-                                if let author = entry.authorName, !author.isEmpty {
-                                    Text(author)
-                                }
-                                Text(entry.visibility.capitalized)
-                                if let created = entry.createdAt {
-                                    Text("·")
-                                    Text(created, style: .relative)
-                                }
-                            }
-                            .font(ClickTypography.caption)
-                            .foregroundStyle(ClickColors.textSecondary)
+    @ViewBuilder
+    private var filesTab: some View {
+        if model.tabs.value == nil {
+            sharedList(nil, empty: "")
+        } else if model.fileItems.isEmpty {
+            sharedList([], empty: "No files shared yet.")
+        } else {
+            VStack(spacing: 8) {
+                ForEach(model.fileItems) { item in
+                    if let media = item.media {
+                        MessageMediaContent(message: item, media: media, load: { try await model.mediaURL(for: item) }) { url in
+                            quickLookURL = url
                         }
                         .frame(maxWidth: .infinity, alignment: .leading)
-                        .padding(.vertical, 13)
-
-                        if entry.id != entries.last?.id {
-                            Divider()
-                        }
-                    }
-                }
-            }
-        }
-    }
-
-    private func attachmentTab(
-        items: [ProfileTabItem],
-        emptyTitle: String,
-        emptyDescription: String,
-        icon: String
-    ) -> some View {
-        Group {
-            if items.isEmpty {
-                profileEmpty(title: emptyTitle, description: emptyDescription, icon: icon)
-            } else {
-                VStack(spacing: 0) {
-                    ForEach(items) { item in
-                        HStack(spacing: 12) {
-                            Image(systemName: item.systemImage)
-                                .font(.system(size: 17, weight: .semibold))
-                                .foregroundStyle(ClickColors.accentForeground)
-                                .frame(width: 38, height: 38)
-                                .background(ClickColors.selectionTint)
-                                .clipShape(RoundedRectangle(cornerRadius: ClickRadius.compact, style: .continuous))
-
-                            VStack(alignment: .leading, spacing: 2) {
-                                Text(item.title)
-                                    .font(ClickTypography.body)
-                                    .foregroundStyle(ClickColors.textPrimary)
-                                    .lineLimit(1)
-                                if let subtitle = item.subtitle {
-                                    Text(subtitle)
-                                        .font(ClickTypography.metadata)
-                                        .foregroundStyle(ClickColors.textSecondary)
-                                        .lineLimit(1)
-                                }
-                            }
-                            Spacer()
-                        }
-                        .padding(.vertical, 10)
-
-                        if item.id != items.last?.id {
-                            Divider().padding(.leading, 50)
-                        }
                     }
                 }
             }
@@ -350,287 +406,399 @@ public struct ProfileView: View {
     }
 
     private var linksTab: some View {
-        profileEmpty(
-            title: "No links yet",
-            description: "Links are derived locally from decrypted conversation history and will populate with the native media phase.",
-            icon: "link"
-        )
-    }
-
-    private func profileEmpty(title: String, description: String, icon: String) -> some View {
-        VStack(spacing: 8) {
-            Image(systemName: icon)
-                .font(.system(size: 28))
-                .foregroundStyle(ClickColors.textTertiary)
-            Text(title)
-                .font(ClickTypography.bodyEmphasized)
-                .foregroundStyle(ClickColors.textPrimary)
-            Text(description)
-                .font(ClickTypography.supporting)
-                .foregroundStyle(ClickColors.textSecondary)
-                .multilineTextAlignment(.center)
-        }
-        .frame(maxWidth: .infinity)
-        .padding(.vertical, 34)
-    }
-
-    private var loadingState: some View {
-        VStack(spacing: 10) {
-            ProgressView().tint(ClickColors.accentForeground)
-            Text("Loading profile…")
-                .font(ClickTypography.supporting)
-                .foregroundStyle(ClickColors.textSecondary)
-        }
-        .frame(maxWidth: .infinity, maxHeight: .infinity)
-    }
-
-    private var offlineNotice: some View {
-        OfflineNotice("Offline — showing saved profile") {
-            Task { await refresh() }
-        }
-    }
-
-    private func openChat(_ profile: UserProfileSnapshot) {
-        guard let connectionID, let userID = resolvedUserID else { return }
-        env.router.navigate(to:
-            .chat(
-                DirectChatRoute(
-                    connectionID: connectionID,
-                    peerUserID: userID,
-                    peerDisplayName: profile.displayName,
-                    peerHandle: profile.handle,
-                    peerAvatarURL: profile.avatarUrl
-                )
-            )
-        )
-    }
-
-    private func visibilityButton(_ value: TimelineVisibility) -> some View {
-        Button {
-            timelineVisibility = value
-            ClickHaptics.selection()
-        } label: {
-            Text(value.label)
-                .font(ClickTypography.supportingEmphasized)
-                .foregroundStyle(timelineVisibility == value ? ClickColors.accentForeground : ClickColors.textPrimary)
-                .padding(.horizontal, 14)
-                .frame(minHeight: ClickMetrics.chipHeight)
-                .background(
-                    timelineVisibility == value ? ClickColors.selectionTint : ClickColors.fillSubtle,
-                    in: Capsule()
-                )
-                .frame(minHeight: ClickMetrics.minimumHitTarget)
-                .contentShape(Rectangle())
-        }
-        .buttonStyle(.plain)
-        .accessibilityAddTraits(timelineVisibility == value ? .isSelected : [])
-    }
-
-    @MainActor
-    private func bootstrap() async {
-        guard data == nil, let userID = resolvedUserID else { return }
-        if let cached = await env.phase3.cachedProfile(for: userID) {
-            data = cached
-        }
-        await refresh()
-        await loadTabs()
-    }
-
-    @MainActor
-    private func refresh() async {
-        guard let userID = resolvedUserID else { return }
-
-        do {
-            data = isSelf
-                ? try await env.phase3.refreshSelfProfile(userID: userID)
-                : try await env.phase3.refreshProfile(userID: userID, connectionID: connectionID)
-            refreshError = nil
-        } catch {
-            refreshError = error.localizedDescription
-        }
-    }
-
-    @MainActor
-    private func sendNudge(_ profile: UserProfileSnapshot) async {
-        guard
-            let connectionID,
-            let peerUserID = resolvedUserID,
-            let currentUserID = env.session.currentSession?.userId
-        else { return }
-
-        isSendingNudge = true
-        defer { isSendingNudge = false }
-
-        do {
-            let cachedProfile = await env.phase3.cachedProfile(for: currentUserID)
-            let currentProfile: Phase3ProfileData?
-            if let cachedProfile {
-                currentProfile = cachedProfile
-            } else {
-                currentProfile = try? await env.phase3.refreshSelfProfile(userID: currentUserID)
+        VStack(alignment: .leading, spacing: 8) {
+            VStack(spacing: 0) {
+                if let links = model.links.value {
+                    if links.isEmpty {
+                        Text("No links shared yet.")
+                            .font(ClickTypography.supporting)
+                            .foregroundStyle(ClickColors.textTertiary)
+                            .padding(20)
+                            .frame(maxWidth: .infinity)
+                    }
+                    ForEach(links, id: \.absoluteString) { url in
+                        Link(destination: url) {
+                            HStack(spacing: 14) {
+                                Image(systemName: "link")
+                                    .frame(width: 38, height: 38)
+                                    .background(ClickColors.fillSubtle, in: RoundedRectangle(cornerRadius: ClickRadius.compact, style: .continuous))
+                                VStack(alignment: .leading, spacing: 1) {
+                                    Text(url.host() ?? url.absoluteString)
+                                        .font(ClickTypography.body)
+                                        .foregroundStyle(ClickColors.textPrimary)
+                                        .lineLimit(1)
+                                    Text(url.absoluteString)
+                                        .font(ClickTypography.supporting)
+                                        .foregroundStyle(ClickColors.textTertiary)
+                                        .lineLimit(1)
+                                }
+                                Spacer()
+                            }
+                            .padding(.horizontal, 16)
+                            .padding(.vertical, 8)
+                        }
+                        if url != links.last { Divider().padding(.leading, 68) }
+                    }
+                } else if case .unavailable(let reason) = model.links.phase {
+                    Text(reason).font(ClickTypography.supporting).foregroundStyle(ClickColors.textTertiary).padding(20)
+                } else if model.links.errorMessage != nil {
+                    Button("Couldn't read your messages for links. Retry") {
+                        Task { await model.loadLinks(peerName: model.profile.value?.displayName ?? "") }
+                    }
+                    .font(ClickTypography.supporting).padding(20)
+                } else {
+                    ProgressView().padding(20).frame(maxWidth: .infinity)
+                }
             }
-            let senderName = currentProfile?.profile.displayName.nonEmpty ?? "Someone"
-            let canonicalChatID = try await env.chat.resolveCanonicalChatID(
-                chatID: connectionID,
-                connectionID: connectionID
+            .groupedSurface()
+            Text("Links are collected on this iPhone from your decrypted messages.")
+                .font(ClickTypography.metadata)
+                .foregroundStyle(ClickColors.textTertiary)
+                .padding(.horizontal, 12)
+        }
+    }
+
+    // MARK: - Actions
+
+    private func open(_ item: SharedItem) {
+        if let beaconID = item.beaconID {
+            env.router.navigate(to: .event(beaconID: beaconID))
+        } else {
+            openChat()
+        }
+    }
+
+    private func openChat() {
+        guard let connectionID = model.connectionID else { return }
+        let profile = model.profile.value
+        env.router.navigate(to: .chat(DirectChatRoute(
+            chatID: inboxItem?.chatID,
+            connectionID: connectionID,
+            peerUserID: model.userID,
+            peerDisplayName: profile?.displayName ?? inboxItem?.displayName ?? "Click user",
+            peerAvatarURL: profile?.avatarURL ?? inboxItem?.avatarUrl
+        )))
+    }
+
+    /// Nudge is an ordinary encrypted chat message, like the shipping client (spec §29.7).
+    private func sendNudge() async {
+        guard let connectionID = model.connectionID, let currentUserID = env.session.currentSession?.userId else { return }
+        isWorking = true
+        defer { isWorking = false }
+        let senderName = await env.me.cachedSelfProfile(userID: currentUserID)?.firstName.nonEmptyTrimmed ?? "Someone"
+        do {
+            let chatID = try await env.chat.resolveCanonicalChatID(chatID: connectionID, connectionID: connectionID)
+            let conversation = ConversationIdentity(
+                chatID: chatID, connectionID: connectionID, peerUserID: model.userID,
+                peerDisplayName: model.profile.value?.displayName ?? "Click user"
             )
             _ = try await env.chat.sendMessage(
-                chatID: canonicalChatID,
-                connectionID: connectionID,
-                peerUserID: peerUserID,
-                currentUserID: currentUserID,
-                currentUserName: senderName,
-                content: "👋 \(senderName) nudged you!",
-                replyToID: nil,
-                replyToSnippet: nil,
-                replyToSenderName: nil,
-                clientMessageID: UUID().uuidString.lowercased()
+                conversation: conversation,
+                currentUserID: currentUserID, currentUserName: senderName,
+                content: "👋 \(senderName) nudged you!", replyToID: nil, replyToSnippet: nil,
+                replyToSenderName: nil, clientMessageID: UUID().uuidString.lowercased()
             )
-            nudgeStatus = "Nudge sent to \(profile.displayName)."
+            notice = "Nudge sent."
             ClickHaptics.success()
         } catch {
-            nudgeStatus = error.localizedDescription
+            notice = "Couldn't send the nudge. \(error.userFacingMessage)"
             ClickHaptics.error()
         }
     }
 
-    @MainActor
-    private func postTimeline() async {
-        guard let userID = resolvedUserID else { return }
-        let clean = timelineDraft.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !clean.isEmpty else { return }
-
-        isPostingTimeline = true
-        defer { isPostingTimeline = false }
-
-        do {
-            let body = try JSONSerialization.data(withJSONObject: [
-                "target_type": "user",
-                "target_id": userID,
-                "body": clean,
-                "visibility": timelineVisibility.apiValue
-            ])
-            let request = APIRequest(
-                path: "/api/profile/timeline",
-                method: .post,
-                body: body,
-                requiresAuth: true
-            )
-            _ = try await env.api.executeRaw(request)
-            timelineDraft = ""
-            await refresh()
-            ClickHaptics.success()
-        } catch {
-            refreshError = error.localizedDescription
-            ClickHaptics.error()
-        }
+    private var safetyTitle: String {
+        safetyAction == .block ? "Block \(model.profile.value?.firstName ?? "this person")?" : "Remove this Click?"
     }
 
-    @MainActor
-    private func loadTabs() async {
-        guard let connectionID, !connectionID.isEmpty else { return }
+    /// The UI changes only after the server confirms (no optimistic removal).
+    private func performSafety() async {
+        guard let action = safetyAction, let connectionID = model.connectionID else { return }
+        safetyAction = nil
+        isWorking = true
+        defer { isWorking = false }
         do {
-            let request = APIRequest(
-                path: "/api/connections/\(connectionID)/tabs",
-                method: .get,
-                queryItems: [URLQueryItem(name: "limit", value: "200")],
-                requiresAuth: true
-            )
-            let (raw, _) = try await env.api.executeRaw(request)
-            tabPayload = ProfileTabPayload.decode(raw)
+            switch action {
+            case .report:
+                try await env.profiles.report(connectionID: connectionID, reason: reportReason.trimmingCharacters(in: .whitespacesAndNewlines))
+                reportReason = ""
+                notice = "Thanks. Your report was sent."
+            case .block:
+                try await env.profiles.block(userID: model.userID)
+                conversations.removeConnection(connectionID: connectionID)
+                dismiss()
+            case .remove:
+                try await env.profiles.removeConnection(connectionID: connectionID)
+                conversations.removeConnection(connectionID: connectionID)
+                dismiss()
+            }
         } catch {
-            // Timeline/profile remain usable even when optional attachment metadata is unavailable.
+            notice = "That didn't go through. \(error.userFacingMessage)"
         }
     }
 }
 
 private enum ProfileTab: String, CaseIterable, Identifiable {
-    case timeline
-    case beacons
-    case media
-    case links
-
+    case timeline, media, links, files, beacons
     var id: String { rawValue }
     var title: String { rawValue.capitalized }
+}
 
-    var systemImage: String {
-        switch self {
-        case .timeline: return "clock.arrow.circlepath"
-        case .beacons: return "mappin"
-        case .media: return "photo"
-        case .links: return "link"
+private enum SafetyAction {
+    case remove, report, block
+}
+
+struct JournalEditorTarget: Identifiable {
+    let entry: JournalEntry?
+    var id: String { entry?.id ?? "new" }
+}
+
+private struct TimelineRow: View {
+    let item: TimelineItem
+    let isOwn: Bool
+    let onEdit: (JournalEntry) -> Void
+    let onDelete: (JournalEntry) -> Void
+    let onOpenEvent: (String) -> Void
+
+    var body: some View {
+        HStack(alignment: .top, spacing: 14) {
+            Image(systemName: symbol)
+                .font(.system(size: 15, weight: .semibold))
+                .foregroundStyle(isJournal ? ClickColors.textSecondary : ClickColors.accentForeground)
+                .frame(width: 38, height: 38)
+                .background(isJournal ? ClickColors.fillSubtle : ClickColors.selectionTint, in: Circle())
+            VStack(alignment: .leading, spacing: 4) {
+                Text(header)
+                    .font(ClickTypography.supporting)
+                    .foregroundStyle(ClickColors.textTertiary)
+                content
+            }
+            Spacer(minLength: 0)
         }
-    }
-}
-
-private enum TimelineVisibility: String, CaseIterable, Identifiable {
-    case privateOnly
-    case shared
-
-    var id: String { rawValue }
-    var label: String { self == .privateOnly ? "Private" : "Everyone" }
-    var apiValue: String { self == .privateOnly ? "private" : "shared" }
-}
-
-private struct ProfileTabItem: Identifiable {
-    let id: String
-    let title: String
-    let subtitle: String?
-    let systemImage: String
-}
-
-private struct ProfileTabPayload {
-    var media: [ProfileTabItem]
-    var beacons: [ProfileTabItem]
-
-    static let empty = ProfileTabPayload(media: [], beacons: [])
-
-    static func decode(_ data: Data) -> ProfileTabPayload {
-        guard let root = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else {
-            return .empty
-        }
-
-        func makeItems(_ rows: [[String: Any]], fallbackIcon: String) -> [ProfileTabItem] {
-            rows.compactMap { row in
-                guard let id = row["id"] as? String else { return nil }
-                let type = (row["message_type"] as? String) ?? ""
-                let metadata = row["metadata"] as? [String: Any] ?? [:]
-                let fileName =
-                    (metadata["file_name"] as? String)
-                    ?? (metadata["filename"] as? String)
-                    ?? (metadata["name"] as? String)
-                let title = fileName ?? {
-                    switch type {
-                    case "image": return "Photo"
-                    case "audio": return "Audio"
-                    case "file": return "File"
-                    case "beacon": return "Shared beacon"
-                    default: return "Shared item"
-                    }
-                }()
-                let icon: String = {
-                    switch type {
-                    case "image": return "photo"
-                    case "audio": return "waveform"
-                    case "file": return "doc"
-                    case "beacon": return "mappin.and.ellipse"
-                    default: return fallbackIcon
-                    }
-                }()
-                return ProfileTabItem(id: id, title: title, subtitle: nil, systemImage: icon)
+        .padding(.horizontal, 16)
+        .padding(.vertical, 14)
+        .contextMenu {
+            if case .journal(let entry) = item, isOwn {
+                Button("Edit", systemImage: "pencil") { onEdit(entry) }
+                Button("Delete", systemImage: "trash", role: .destructive) { onDelete(entry) }
             }
         }
+    }
 
-        return ProfileTabPayload(
-            media: makeItems(root["media"] as? [[String: Any]] ?? [], fallbackIcon: "photo"),
-            beacons: makeItems(root["beacons"] as? [[String: Any]] ?? [], fallbackIcon: "mappin")
-        )
+    private var isJournal: Bool {
+        if case .journal = item { return true }
+        return false
+    }
+
+    private var symbol: String {
+        switch item {
+        case .encounter(let encounter, let isFirst):
+            encounter.eventTitle != nil ? "calendar" : (isFirst ? "sparkles" : "arrow.clockwise")
+        case .journal: "pencil"
+        }
+    }
+
+    /// "Yesterday · Sep 22", "Aug 29", "Journal · Sep 21".
+    private var header: String {
+        let date = item.date
+        let day = date.formatted(.dateTime.month(.abbreviated).day())
+        let calendar = Calendar.current
+        let dayWithYear = calendar.isDate(date, equalTo: .now, toGranularity: .year)
+            ? day : date.formatted(.dateTime.month(.abbreviated).day().year())
+        if isJournal { return "Journal · \(dayWithYear)" }
+        if calendar.isDateInToday(date) { return "Today · \(day)" }
+        if calendar.isDateInYesterday(date) { return "Yesterday · \(day)" }
+        return dayWithYear
+    }
+
+    @ViewBuilder
+    private var content: some View {
+        switch item {
+        case .encounter(let encounter, let isFirst):
+            if let title = encounter.eventTitle {
+                Button {
+                    if let beaconID = encounter.eventBeaconID { onOpenEvent(beaconID) }
+                } label: {
+                    Text([title, encounter.placeName].compactMap { $0 }.joined(separator: " · "))
+                        .font(ClickTypography.bodyEmphasized)
+                        .foregroundStyle(ClickColors.textPrimary)
+                        .multilineTextAlignment(.leading)
+                }
+                .buttonStyle(.plain)
+                Text("You were both at this event.")
+                    .font(ClickTypography.supporting)
+                    .foregroundStyle(ClickColors.textSecondary)
+            } else {
+                Text(title(encounter, isFirst: isFirst))
+                    .font(ClickTypography.bodyEmphasized)
+                    .foregroundStyle(ClickColors.textPrimary)
+            }
+            let chips = EncounterLabels.chips(for: encounter)
+            if !chips.isEmpty {
+                TagFlow(tags: chips, highlighted: false, compact: true)
+                    .padding(.top, 4)
+            }
+        case .journal(let entry):
+            Text(entry.visibility == .private ? "Note to self" : "Shared note")
+                .font(ClickTypography.bodyEmphasized)
+                .foregroundStyle(ClickColors.textPrimary)
+            Text(entry.body)
+                .font(ClickTypography.body)
+                .foregroundStyle(ClickColors.textSecondary)
+                .fixedSize(horizontal: false, vertical: true)
+            if !isOwn, let author = entry.authorName {
+                Text("From \(author)")
+                    .font(ClickTypography.metadata)
+                    .foregroundStyle(ClickColors.textTertiary)
+            }
+            if isOwn {
+                HStack(spacing: 20) {
+                    Button("Edit") { onEdit(entry) }
+                        .foregroundStyle(ClickColors.accentForeground)
+                    Button("Delete", role: .destructive) { onDelete(entry) }
+                        .foregroundStyle(ClickColors.destructive)
+                }
+                .font(ClickTypography.body)
+                .buttonStyle(.borderless)
+                .padding(.top, 6)
+            }
+        }
+    }
+
+    private func title(_ encounter: Encounter, isFirst: Bool) -> String {
+        let place = encounter.placeName
+        if isFirst { return place.map { "First Clicked at \($0)" } ?? "First Clicked" }
+        return place.map { "Reconnected at \($0)" } ?? "Reconnected"
     }
 }
 
+struct ProfileViewerURL: Identifiable {
+    let url: URL
+    var id: URL { url }
+}
 
-private extension String {
-    var nonEmpty: String? {
+/// A square, decrypted photo thumbnail in the profile Media grid.
+private struct ProfileMediaThumbnail: View {
+    let item: ChatMessageItem
+    let load: () async throws -> URL
+    let onOpen: (URL) -> Void
+
+    @State private var image: UIImage?
+    @State private var url: URL?
+    @State private var failed = false
+
+    var body: some View {
+        Color.clear
+            .aspectRatio(1, contentMode: .fit)
+            .overlay {
+                if let image {
+                    Image(uiImage: image).resizable().scaledToFill()
+                } else if failed {
+                    Image(systemName: "photo.badge.exclamationmark").foregroundStyle(ClickColors.textTertiary)
+                } else {
+                    ProgressView()
+                }
+            }
+            .background(ClickColors.fillSubtle)
+            .clipped()
+            .contentShape(Rectangle())
+            .onTapGesture { if let url { onOpen(url) } }
+            .task(id: item.id) {
+                guard image == nil else { return }
+                do {
+                    let fileURL = try await load()
+                    let thumb = await Task.detached(priority: .utility) {
+                        UIImage(contentsOfFile: fileURL.path)?.preparingThumbnail(of: CGSize(width: 360, height: 360))
+                    }.value
+                    url = fileURL
+                    image = thumb
+                    failed = thumb == nil
+                } catch {
+                    failed = true
+                }
+            }
+            .accessibilityLabel("Photo from \(item.createdAt.formatted(date: .abbreviated, time: .omitted))")
+            .accessibilityAddTraits(.isButton)
+    }
+}
+
+private struct SharedItemRow: View {
+    let item: SharedItem
+    let isOwn: Bool
+
+    var body: some View {
+        HStack(spacing: 14) {
+            Group {
+                if let beaconID = item.beaconID {
+                    EventVisual(seed: beaconID, symbol: "calendar")
+                } else {
+                    Image(systemName: symbol)
+                        .foregroundStyle(ClickColors.accentForeground)
+                        .frame(maxWidth: .infinity, maxHeight: .infinity)
+                        .background(ClickColors.selectionTint, in: RoundedRectangle(cornerRadius: ClickRadius.compact, style: .continuous))
+                }
+            }
+            .frame(width: 40, height: 40)
+            VStack(alignment: .leading, spacing: 1) {
+                Text(title)
+                    .font(ClickTypography.body)
+                    .foregroundStyle(ClickColors.textPrimary)
+                    .lineLimit(1)
+                Text([isOwn ? "You" : nil, item.createdAt?.formatted(date: .abbreviated, time: .omitted)].compactMap { $0 }.joined(separator: " · "))
+                    .font(ClickTypography.supporting)
+                    .foregroundStyle(ClickColors.textTertiary)
+            }
+            Spacer()
+            Image(systemName: "chevron.right")
+                .font(.footnote.weight(.semibold))
+                .foregroundStyle(ClickColors.textTertiary)
+        }
+        .padding(.horizontal, 14)
+        .padding(.vertical, 10)
+        .contentShape(Rectangle())
+    }
+
+    private var title: String {
+        if item.beaconID != nil { return item.beaconTitle ?? "Shared event" }
+        switch item.messageType {
+        case "image": return "Photo"
+        case "audio": return "Voice note"
+        case "file": return "File"
+        default: return "Shared item"
+        }
+    }
+
+    private var symbol: String {
+        switch item.messageType {
+        case "image": "photo"
+        case "audio": "waveform"
+        case "file": "doc"
+        default: "paperclip"
+        }
+    }
+}
+
+/// Wrapping chip layout for interests, traits, and encounter context.
+struct TagFlow: View {
+    let tags: [String]
+    let highlighted: Bool
+    var compact = false
+
+    var body: some View {
+        FlowLayout(spacing: 7) {
+            ForEach(tags, id: \.self) { tag in
+                Text(tag)
+                    .font(compact ? ClickTypography.metadata : ClickTypography.supporting)
+                    .foregroundStyle(highlighted ? ClickColors.accentForeground : ClickColors.textSecondary)
+                    .padding(.horizontal, compact ? 9 : 12)
+                    .frame(minHeight: compact ? 24 : 32)
+                    .background(highlighted ? ClickColors.selectionTint : ClickColors.fillSubtle, in: Capsule())
+            }
+        }
+    }
+}
+
+extension String {
+    var nonEmptyTrimmed: String? {
         let value = trimmingCharacters(in: .whitespacesAndNewlines)
         return value.isEmpty ? nil : value
     }

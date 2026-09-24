@@ -6,13 +6,23 @@ public struct PersonalityTaggingView: View {
     @State private var isSaving: Bool = false
     @State private var errorMessage: String?
 
+    let title: String
+    let subtitle: String
+    let actionTitle: String
     let onSave: ([String]) async throws -> Void
 
+    /// Settings reuses this picker with its own copy; onboarding keeps the defaults.
     public init(
         initialTraits: [String] = [],
+        title: String = "How would friends describe you?",
+        subtitle: String = "Pick exactly 5 traits that capture how you show up in the world.",
+        actionTitle: String = "Continue",
         onSave: @escaping ([String]) async throws -> Void
     ) {
         self._selectedTraits = State(initialValue: Set(canonicalizePersonalityTags(initialTraits)))
+        self.title = title
+        self.subtitle = subtitle
+        self.actionTitle = actionTitle
         self.onSave = onSave
     }
 
@@ -22,10 +32,7 @@ public struct PersonalityTaggingView: View {
 
     public var body: some View {
         VStack(spacing: 0) {
-            OnboardingHeaderView(
-                title: "How would friends describe you?",
-                subtitle: "Pick exactly 5 traits that capture how you show up in the world."
-            )
+            OnboardingHeaderView(title: title, subtitle: subtitle)
 
             // Counter indicator
             HStack(spacing: ClickSpacing.xs) {
@@ -109,7 +116,7 @@ public struct PersonalityTaggingView: View {
                     if isSaving {
                         ProgressView()
                     } else {
-                        Text("Continue")
+                        Text(actionTitle)
                     }
                 }
                 .buttonStyle(.clickPrimary)
@@ -153,45 +160,3 @@ public struct PersonalityTaggingView: View {
     }
 }
 
-/// Multi-line flow layout for personality tags.
-private struct FlowLayout: Layout {
-    var spacing: CGFloat
-
-    func sizeThatFits(proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) -> CGSize {
-        let width = proposal.width ?? .infinity
-        var currentX: CGFloat = 0
-        var currentY: CGFloat = 0
-        var rowHeight: CGFloat = 0
-
-        for subview in subviews {
-            let size = subview.sizeThatFits(.unspecified)
-            if currentX + size.width > width && currentX > 0 {
-                currentX = 0
-                currentY += rowHeight + spacing
-                rowHeight = 0
-            }
-            currentX += size.width + spacing
-            rowHeight = max(rowHeight, size.height)
-        }
-
-        return CGSize(width: width, height: currentY + rowHeight)
-    }
-
-    func placeSubviews(in bounds: CGRect, proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) {
-        var currentX = bounds.minX
-        var currentY = bounds.minY
-        var rowHeight: CGFloat = 0
-
-        for subview in subviews {
-            let size = subview.sizeThatFits(.unspecified)
-            if currentX + size.width > bounds.maxX && currentX > bounds.minX {
-                currentX = bounds.minX
-                currentY += rowHeight + spacing
-                rowHeight = 0
-            }
-            subview.place(at: CGPoint(x: currentX, y: currentY), proposal: .unspecified)
-            currentX += size.width + spacing
-            rowHeight = max(rowHeight, size.height)
-        }
-    }
-}

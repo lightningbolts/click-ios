@@ -6,28 +6,25 @@ public struct RootGateView: View {
 
     public init() {}
 
+    private static var isShellPreview: Bool { DebugLaunch.has("-preview-shell") }
+
     public var body: some View {
         Group {
-            if CommandLine.arguments.contains("-preview-chat") {
+            if Self.isShellPreview {
+                // DEBUG-only: the real shell without a session, for layout checks in the Simulator.
+                MainTabShellView()
+            } else if DebugLaunch.has("-preview-chat") {
                 NavigationStack {
                     ChatView(model: .preview)
                 }
-            } else if CommandLine.arguments.contains("-preview-clicks") {
+            } else if DebugLaunch.has("-preview-clicks") {
                 ClicksPreviewHost()
-            } else if CommandLine.arguments.contains("-preview-home") {
-                NavigationStack {
-                    HomeView(initialSnapshot: .preview)
-                }
-            } else if CommandLine.arguments.contains("-preview-profile") {
-                NavigationStack {
-                    ProfileView(initialProfile: .preview)
-                }
             } else {
                 switch env.session.state {
                 case .restoring:
                     LaunchLoadingView()
                 case .unauthenticated, .terminalError:
-                    if CommandLine.arguments.contains("-preview-signup") {
+                    if DebugLaunch.has("-preview-signup") {
                         AuthView(initialMode: .signUp)
                     } else {
                         AuthView(initialMode: .signIn)
@@ -53,46 +50,38 @@ private struct AuthenticatedGateView: View {
         let coordinator = env.onboardingCoordinator(for: snapshot.userId)
 
         Group {
-            if CommandLine.arguments.contains("-preview-chat") {
+            if DebugLaunch.has("-preview-chat") {
                 NavigationStack {
                     ChatView(model: .preview)
                 }
-            } else if CommandLine.arguments.contains("-preview-home") {
-                NavigationStack {
-                    HomeView(initialSnapshot: .preview)
-                }
-            } else if CommandLine.arguments.contains("-preview-clicks") {
+            } else if DebugLaunch.has("-preview-clicks") {
                 ClicksPreviewHost()
-            } else if CommandLine.arguments.contains("-preview-profile") {
-                NavigationStack {
-                    ProfileView(initialProfile: .preview)
-                }
-            } else if CommandLine.arguments.contains("-preview-onboarding-welcome") {
+            } else if DebugLaunch.has("-preview-onboarding-welcome") {
                 VStack(spacing: 0) {
                     OnboardingShellChrome(currentStepIndex: 0, totalSteps: 5, canGoBack: false, onBack: {})
                     WelcomeView(firstName: "Alex") {}
                 }
-            } else if CommandLine.arguments.contains("-preview-onboarding-interests") {
+            } else if DebugLaunch.has("-preview-onboarding-interests") {
                 VStack(spacing: 0) {
                     OnboardingShellChrome(currentStepIndex: 1, totalSteps: 5, canGoBack: true, onBack: {})
                     InterestsPickerView { _ in }
                 }
-            } else if CommandLine.arguments.contains("-preview-onboarding-personality") {
+            } else if DebugLaunch.has("-preview-onboarding-personality") {
                 VStack(spacing: 0) {
                     OnboardingShellChrome(currentStepIndex: 2, totalSteps: 5, canGoBack: true, onBack: {})
                     PersonalityTaggingView { _ in }
                 }
-            } else if CommandLine.arguments.contains("-preview-onboarding-avatar") {
+            } else if DebugLaunch.has("-preview-onboarding-avatar") {
                 VStack(spacing: 0) {
                     OnboardingShellChrome(currentStepIndex: 3, totalSteps: 5, canGoBack: true, onBack: {})
                     AvatarUploadView(onUpload: { _ in }, onSkip: {})
                 }
-            } else if CommandLine.arguments.contains("-preview-onboarding-connections") {
+            } else if DebugLaunch.has("-preview-onboarding-connections") {
                 VStack(spacing: 0) {
                     OnboardingShellChrome(currentStepIndex: 4, totalSteps: 5, canGoBack: true, onBack: {})
                     PriorConnectionsView(onComplete: {}, onSkip: {})
                 }
-            } else if CommandLine.arguments.contains("-preview-onboarding-flow") || coordinator.needsOnboarding {
+            } else if DebugLaunch.has("-preview-onboarding-flow") || coordinator.needsOnboarding {
                 OnboardingFlowView(
                     coordinator: coordinator,
                     firstName: nil,
@@ -129,6 +118,7 @@ public struct MainTabShellView: View {
     @Environment(AppEnvironment.self) private var env
     @State private var meTabAvatar = MeTabAvatarModel()
     @State private var conversations = ConversationListModel()
+    @Environment(\.scenePhase) private var scenePhase
 
     public init() {}
 
@@ -169,7 +159,7 @@ public struct MainTabShellView: View {
 
             Tab(value: MainTab.settings) {
                 NavigationStack(path: $r.settingsPath) {
-                    SettingsView()
+                    MeView()
                         .appRouteDestinations()
                 }
             } label: {
@@ -185,14 +175,51 @@ public struct MainTabShellView: View {
             }
         }
         .tint(ClickColors.accentForeground)
+        .sheet(item: $r.presentedSheet) { item in
+            NavigationStack {
+                AppRouteDestination(route: item.route)
+                    .appRouteDestinations()
+            }
+            .presentationDetents([.medium, .large])
+            .presentationDragIndicator(.visible)
+            .environment(meTabAvatar)
+            .environment(conversations)
+        }
         .environment(meTabAvatar)
+        .environment(conversations)
         .task(id: env.session.currentSession?.userId) {
             await seedMeTabAvatar()
         }
+        .onChange(of: scenePhase) { _, phase in
+            // Rebind with the current token on return; tear down while backgrounded.
+            switch phase {
+            case .active:
+                conversations.startRealtime()
+                Task { await conversations.refreshIfStale() }
+            case .background:
+                conversations.stopRealtime()
+            default:
+                break
+            }
+        }
         .task(id: env.session.currentSession?.userId) {
+            // Ghost Mode was removed from the app. Clear the server bit an older client may
+            // have left on, so nobody stays hidden from Nearby without a way to turn it off.
+            try? await env.me.clearLegacyGhostMode()
+        }
+        .task(id: env.session.currentSession?.userId) {
+            // Decrypted timelines never carry over from another account.
+            env.timelineCache.clear()
+            PeerProfileModel.resetRegistry()
             // Loaded at the shell so the Clicks badge is right before the tab is opened.
             conversations.attach(env)
+            conversations.startRealtime()
             await conversations.load()
+            // Replay Tap to Connect captures that were saved while offline (same user only).
+            if let userID = env.session.currentSession?.userId,
+               !(await env.proximity.flushQueue(userID: userID)).isEmpty {
+                await conversations.refresh()
+            }
         }
     }
 
@@ -203,12 +230,12 @@ public struct MainTabShellView: View {
             meTabAvatar.update(avatarURL: nil)
             return
         }
-        if let cached = await env.phase3.cachedProfile(for: userID) {
-            meTabAvatar.update(avatarURL: cached.profile.avatarUrl)
-        } else if let fresh = try? await env.phase3.refreshSelfProfile(userID: userID) {
+        if let cached = await env.me.cachedSelfProfile(userID: userID) {
+            meTabAvatar.update(avatarURL: cached.avatarURL)
+        } else if let fresh = try? await env.me.selfProfile(userID: userID) {
             // A failed fetch intentionally leaves the fallback symbol; the Me root refreshes
             // the profile itself and forwards the avatar when it succeeds.
-            meTabAvatar.update(avatarURL: fresh.profile.avatarUrl)
+            meTabAvatar.update(avatarURL: fresh.avatarURL)
         }
     }
 }

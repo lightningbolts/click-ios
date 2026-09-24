@@ -24,37 +24,44 @@ public final class SettingsStore {
     }
 
     public init(suiteName: String = SettingsStore.suiteName) {
-        self.defaults = UserDefaults(suiteName: suiteName) ?? .standard
+        let defaults = UserDefaults(suiteName: suiteName) ?? .standard
+        self.defaults = defaults
+        self.freeThisWeek = defaults.bool(forKey: Key.freeThisWeek)
+        self.darkModeEnabled = defaults.bool(forKey: Key.darkModeEnabled)
+        self.messageNotificationsEnabled = defaults.object(forKey: Key.messageNotificationsEnabled) as? Bool ?? true
+        self.ambientNoiseOptIn = defaults.bool(forKey: Key.ambientNoiseOptIn)
+        self.barometricContextOptIn = defaults.bool(forKey: Key.barometricContextOptIn)
     }
 
+    // User-visible preferences are stored properties so SwiftUI observes changes; a computed
+    // UserDefaults accessor never invalidates views (Dark mode would not apply live). Each
+    // write-through keeps the legacy `click_auth_prefs` key current.
+
+    /// Local cache of "Free currently". Server truth is `user_availability.is_free_this_week`.
     public var freeThisWeek: Bool {
-        get { defaults.bool(forKey: Key.freeThisWeek) }
-        set { defaults.set(newValue, forKey: Key.freeThisWeek) }
+        didSet { defaults.set(freeThisWeek, forKey: Key.freeThisWeek) }
+    }
+
+    public var darkModeEnabled: Bool {
+        didSet { defaults.set(darkModeEnabled, forKey: Key.darkModeEnabled) }
+    }
+
+    public var messageNotificationsEnabled: Bool {
+        didSet { defaults.set(messageNotificationsEnabled, forKey: Key.messageNotificationsEnabled) }
+    }
+
+    /// Ambient sound enrichment opt-in (encounter context). Local, like the KMP build.
+    public var ambientNoiseOptIn: Bool {
+        didSet { defaults.set(ambientNoiseOptIn, forKey: Key.ambientNoiseOptIn) }
+    }
+
+    public var barometricContextOptIn: Bool {
+        didSet { defaults.set(barometricContextOptIn, forKey: Key.barometricContextOptIn) }
     }
 
     public var tagsInitialized: Bool {
         get { defaults.bool(forKey: Key.tagsInitialized) }
         set { defaults.set(newValue, forKey: Key.tagsInitialized) }
-    }
-
-    public var darkModeEnabled: Bool {
-        get { defaults.bool(forKey: Key.darkModeEnabled) }
-        set { defaults.set(newValue, forKey: Key.darkModeEnabled) }
-    }
-
-    public var messageNotificationsEnabled: Bool {
-        get { defaults.object(forKey: Key.messageNotificationsEnabled) as? Bool ?? true }
-        set { defaults.set(newValue, forKey: Key.messageNotificationsEnabled) }
-    }
-
-    public var ambientNoiseOptIn: Bool {
-        get { defaults.bool(forKey: Key.ambientNoiseOptIn) }
-        set { defaults.set(newValue, forKey: Key.ambientNoiseOptIn) }
-    }
-
-    public var barometricContextOptIn: Bool {
-        get { defaults.bool(forKey: Key.barometricContextOptIn) }
-        set { defaults.set(newValue, forKey: Key.barometricContextOptIn) }
     }
 
     public var locationExplainerSeen: Bool {

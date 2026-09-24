@@ -3,282 +3,335 @@ import CoreImage
 import CoreImage.CIFilterBuiltins
 import VisionKit
 
+/// The Add Click root: Tap to Connect is the signature action; My QR and Scan stay one tap
+/// away (prototype "interaction-first" hierarchy). Only working capabilities are shown.
 public struct AddClickView: View {
     @Environment(AppEnvironment.self) private var env
+
+    private enum Sheet: String, Identifiable {
+        case newGroup, createHub, joinHub, howItWorks
+        var id: String { rawValue }
+    }
+
+    @State private var sheet: Sheet?
 
     public init() {}
 
     public var body: some View {
         ScrollView {
-            VStack(alignment: .leading, spacing: 24) {
-                Text("Connect in person or join a nearby community")
-                    .font(ClickTypography.supporting)
-                    .foregroundStyle(ClickColors.textSecondary)
+            VStack(alignment: .leading, spacing: 26) {
+                tapHero
 
-                Button {
-                    ClickHaptics.impact(.medium)
-                    env.router.navigate(to: .tapConnect)
-                } label: {
-                    HStack(spacing: 18) {
-                        ZStack {
-                            Circle()
-                                .fill(ClickColors.selectionTint)
-                                .frame(width: 58, height: 58)
-                            Image(systemName: "wave.3.right.circle.fill")
-                                .font(.system(size: 30, weight: .semibold))
-                                .foregroundStyle(ClickColors.accentForeground)
+                HStack(spacing: 0) {
+                    quickAction("My QR", systemImage: "qrcode") { env.router.navigate(to: .myQR) }
+                    quickAction("Scan", systemImage: "qrcode.viewfinder") { env.router.navigate(to: .scanQR) }
+                    quickAction("Group", systemImage: "person.2") { sheet = .newGroup }
+                    quickAction("Join hub", systemImage: "house") { sheet = .joinHub }
+                }
+
+                VStack(alignment: .leading, spacing: 10) {
+                    HomeSectionTitle("Community")
+                        .padding(.horizontal, 4)
+                    VStack(spacing: 0) {
+                        communityRow("Create Community Hub", subtitle: "Host a venue for nearby Clicks", systemImage: "house") {
+                            sheet = .createHub
                         }
-
-                        VStack(alignment: .leading, spacing: 4) {
-                            Text("Tap to Connect")
-                                .font(ClickTypography.sectionTitle)
-                                .foregroundStyle(ClickColors.textPrimary)
-                            Text("Nearby handshake with Bluetooth and audio")
-                                .font(ClickTypography.body)
-                                .foregroundStyle(ClickColors.textSecondary)
-                                .fixedSize(horizontal: false, vertical: true)
+                        Divider().padding(.leading, 56)
+                        communityRow("Join Community Hub", subtitle: "Enter a venue code", systemImage: "plus.circle") {
+                            sheet = .joinHub
                         }
-
-                        Spacer()
-                        Image(systemName: "chevron.right")
-                            .font(.system(size: 14, weight: .bold))
-                            .foregroundStyle(ClickColors.textSecondary)
+                        Divider().padding(.leading, 56)
+                        communityRow("How Tap to Connect works", subtitle: nil, systemImage: "waveform") {
+                            sheet = .howItWorks
+                        }
                     }
-                    .padding(18)
-                    .frame(maxWidth: .infinity)
                     .groupedSurface()
                 }
-                .buttonStyle(.plain)
-
-                VStack(spacing: 0) {
-                    addClickRow(title: "My QR", subtitle: "Share your code", systemImage: "qrcode") {
-                        env.router.navigate(to: .myQR)
-                    }
-                    Divider().padding(.leading, 62)
-                    addClickRow(title: "Scan QR", subtitle: "Friend or hub code", systemImage: "viewfinder") {
-                        env.router.navigate(to: .scanQR)
-                    }
-                    Divider().padding(.leading, 62)
-                    addClickUnavailableRow(
-                        title: "Create Group Chat",
-                        subtitle: "Start a verified group with your Clicks",
-                        systemImage: "person.3.fill"
-                    )
-                    Divider().padding(.leading, 62)
-                    addClickUnavailableRow(
-                        title: "Create Community Hub",
-                        subtitle: "Host a venue for nearby Clicks",
-                        systemImage: "megaphone.fill"
-                    )
-                    Divider().padding(.leading, 62)
-                    addClickUnavailableRow(
-                        title: "Join Community Hub",
-                        subtitle: "Enter a venue code",
-                        systemImage: "person.badge.plus"
-                    )
-                }
             }
-            .padding(.horizontal, 18)
-            .padding(.top, 10)
+            .padding(.horizontal, ClickSpacing.screenGutter)
+            .padding(.top, 4)
             .padding(.bottom, 28)
         }
         .background(ClickColors.background.ignoresSafeArea())
         .navigationTitle("Add Click")
-        .navigationBarTitleDisplayMode(.large)
+        .navigationBarTitleDisplayMode(.inline)
         .toolbar {
             ToolbarItem(placement: .topBarLeading) {
-                Menu {
-                    Button("My QR", systemImage: "qrcode") {
-                        env.router.navigate(to: .myQR)
-                    }
-                    Button("Scan QR", systemImage: "viewfinder") {
-                        env.router.navigate(to: .scanQR)
-                    }
+                RootMenu()
+            }
+            ToolbarItem(placement: .topBarTrailing) {
+                Button {
+                    env.router.navigate(to: .scanQR)
                 } label: {
-                    Label("Add Click menu", systemImage: "ellipsis")
+                    Label("Scan QR", systemImage: "qrcode.viewfinder")
                 }
+            }
+        }
+        .sheet(item: $sheet) { item in
+            switch item {
+            case .newGroup: NewGroupSheet()
+            case .createHub: CreateHubSheet()
+            case .joinHub: JoinHubSheet()
+            case .howItWorks: howItWorks
             }
         }
     }
 
-    private func addClickRow(
-        title: String,
-        subtitle: String,
-        systemImage: String,
-        action: @escaping () -> Void
-    ) -> some View {
-        Button {
-            ClickHaptics.selection()
-            action()
-        } label: {
-            addClickRowContent(title: title, subtitle: subtitle, systemImage: systemImage, trailing: "chevron.right")
+    private func communityRow(_ title: String, subtitle: String?, systemImage: String, action: @escaping () -> Void) -> some View {
+        Button(action: action) {
+            HStack(spacing: 16) {
+                Image(systemName: systemImage)
+                    .font(.system(size: 20))
+                    .foregroundStyle(ClickColors.textPrimary)
+                    .frame(width: 24)
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(title).font(ClickTypography.body).foregroundStyle(ClickColors.textPrimary)
+                    if let subtitle {
+                        Text(subtitle).font(ClickTypography.supporting).foregroundStyle(ClickColors.textSecondary)
+                    }
+                }
+                Spacer()
+                Image(systemName: "chevron.right")
+                    .font(.footnote.weight(.semibold))
+                    .foregroundStyle(ClickColors.textTertiary)
+            }
+            .padding(.horizontal, 16)
+            .frame(minHeight: ClickMetrics.rowMinHeight)
+            .padding(.vertical, 6)
+            .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
     }
 
-    private func addClickUnavailableRow(
-        title: String,
-        subtitle: String,
-        systemImage: String
-    ) -> some View {
-        addClickRowContent(title: title, subtitle: subtitle, systemImage: systemImage, trailing: nil)
-            .opacity(0.72)
-            .accessibilityHint("Not yet available in the native rebuild")
-    }
-
-    private func addClickRowContent(
-        title: String,
-        subtitle: String,
-        systemImage: String,
-        trailing: String?
-    ) -> some View {
-        HStack(spacing: 16) {
-            Image(systemName: systemImage)
-                .font(.system(size: 20, weight: .semibold))
-                .foregroundStyle(ClickColors.textSecondary)
-                .frame(width: 34)
-
-            VStack(alignment: .leading, spacing: 2) {
-                Text(title)
-                    .font(ClickTypography.bodyEmphasized)
-                    .foregroundStyle(ClickColors.textPrimary)
-                Text(subtitle)
-                    .font(ClickTypography.supporting)
-                    .foregroundStyle(ClickColors.textSecondary)
-                    .lineLimit(1)
+    private var howItWorks: some View {
+        NavigationStack {
+            VStack(alignment: .leading, spacing: 18) {
+                explainer("dot.radiowaves.left.and.right", "Bluetooth finds the other phone nearby.")
+                explainer("waveform", "A short inaudible tone confirms you're in the same room.")
+                explainer("location", "Location helps only when Location snap is on.")
+                explainer("checkmark.shield", "Click's server confirms the match before anyone is connected.")
+                Spacer()
             }
-
-            Spacer()
-
-            if let trailing {
-                Image(systemName: trailing)
-                    .font(.system(size: 13, weight: .semibold))
-                    .foregroundStyle(ClickColors.textSecondary)
-            }
+            .padding(24)
+            .navigationTitle("How Tap to Connect works")
+            .navigationBarTitleDisplayMode(.inline)
         }
-        .padding(.vertical, 14)
-        .contentShape(Rectangle())
+        .presentationDetents([.medium])
     }
 
+    private var tapHero: some View {
+        VStack(spacing: 0) {
+            ZStack {
+                Circle()
+                    .fill(ClickColors.primaryActionFill.opacity(0.14))
+                    .frame(width: 120, height: 120)
+                Circle()
+                    .fill(ClickColors.primaryActionFill)
+                    .frame(width: 88, height: 88)
+                Image(systemName: "wave.3.right")
+                    .font(.system(size: 32, weight: .semibold))
+                    .foregroundStyle(ClickColors.primaryActionForeground)
+            }
+            .accessibilityHidden(true)
+            Text("Tap to Connect")
+                .font(ClickTypography.identityTitle)
+                .foregroundStyle(ClickColors.textPrimary)
+                .padding(.top, 16)
+            Text("Hold phones together. Bluetooth, a short inaudible tone, and location confirm you're really there.")
+                .font(ClickTypography.supporting)
+                .foregroundStyle(ClickColors.textTertiary)
+                .multilineTextAlignment(.center)
+                .padding(.top, 4)
+                .padding(.horizontal, 12)
+                .padding(.bottom, 20)
+            Button("Start") {
+                ClickHaptics.impact(.medium)
+                env.router.navigate(to: .tapConnect)
+            }
+            .buttonStyle(.clickPrimary)
+        }
+        .padding(.horizontal, 22)
+        .padding(.top, 30)
+        .padding(.bottom, 22)
+        .frame(maxWidth: .infinity)
+        .background(ClickColors.surface, in: RoundedRectangle(cornerRadius: ClickRadius.prominent, style: .continuous))
+    }
+
+    private func quickAction(_ title: String, systemImage: String, action: @escaping () -> Void) -> some View {
+        Button {
+            ClickHaptics.selection()
+            action()
+        } label: {
+            VStack(spacing: 8) {
+                Image(systemName: systemImage)
+                    .font(.system(size: 22, weight: .medium))
+                    .foregroundStyle(ClickColors.textPrimary)
+                    .frame(width: ClickMetrics.quickActionSize, height: ClickMetrics.quickActionSize)
+                    .background(ClickColors.surface, in: Circle())
+                Text(title)
+                    .font(ClickTypography.supporting)
+                    .foregroundStyle(ClickColors.textTertiary)
+            }
+            .frame(maxWidth: .infinity)
+        }
+        .buttonStyle(.plain)
+    }
+
+    private func explainer(_ symbol: String, _ text: String) -> some View {
+        HStack(alignment: .firstTextBaseline, spacing: 12) {
+            Image(systemName: symbol)
+                .foregroundStyle(ClickColors.accentForeground)
+                .frame(width: 22)
+                .accessibilityHidden(true)
+            Text(text)
+                .font(ClickTypography.supporting)
+                .foregroundStyle(ClickColors.textSecondary)
+                .fixedSize(horizontal: false, vertical: true)
+        }
+    }
 }
 
+/// My QR (spec §22.2): a 90-second single-use token from `GET /api/qr`. The code is refreshed
+/// before it expires and is hidden the moment it expires, so a stale code is never shown.
 struct MyClickCodeView: View {
     @Environment(AppEnvironment.self) private var env
+    @Environment(\.scenePhase) private var scenePhase
     @State private var qrPayload: String?
     @State private var expiresAt: Date?
     @State private var errorMessage: String?
     @State private var refreshTask: Task<Void, Never>?
+    @State private var identity: SelfProfile?
 
     var body: some View {
-        VStack(spacing: 22) {
-            Spacer(minLength: 20)
-
-            VStack(spacing: 7) {
-                Text("My Code")
-                    .font(ClickTypography.identityTitle)
+        ScrollView {
+            VStack(spacing: 0) {
+                AvatarView(
+                    imageURL: identity?.avatarURL,
+                    seed: env.session.currentSession?.userId ?? "",
+                    initials: identity?.initials ?? "",
+                    size: 56
+                )
+                .padding(.top, 12)
+                Text(identity?.displayName ?? " ")
+                    .font(ClickTypography.sectionTitle)
+                    .foregroundStyle(ClickColors.textPrimary)
+                    .padding(.top, 10)
                 Text("Keep this screen open while the other person scans.")
                     .font(ClickTypography.supporting)
-                    .foregroundStyle(ClickColors.textSecondary)
+                    .foregroundStyle(ClickColors.textTertiary)
                     .multilineTextAlignment(.center)
-            }
 
-            ZStack {
-                RoundedRectangle(cornerRadius: ClickRadius.surface, style: .continuous)
-                    .fill(.white)
-                    .frame(width: 278, height: 278)
-
-                if let qrPayload, let image = QRImageRenderer.image(for: qrPayload) {
-                    Image(uiImage: image)
-                        .interpolation(.none)
-                        .resizable()
-                        .scaledToFit()
-                        .frame(width: 238, height: 238)
-                } else {
-                    ProgressView()
-                        .tint(ClickColors.accentForeground)
-                }
-            }
-            .shadow(color: .black.opacity(0.08), radius: 18, y: 8)
-
-            if let expiresAt {
                 TimelineView(.periodic(from: .now, by: 1)) { context in
-                    Text(countdown(to: expiresAt, now: context.date))
+                    let remaining = expiresAt.map { max(0, Int($0.timeIntervalSince(context.date))) } ?? 0
+                    VStack(spacing: 18) {
+                        codeCard(showsCode: remaining > 0)
+                        Text(remaining > 0 ? "Refreshes in \(remaining / 60):\(String(format: "%02d", remaining % 60))" : "Getting a new code…")
+                            .font(ClickTypography.supportingEmphasized)
+                            .foregroundStyle(ClickColors.textPrimary)
+                            .monospacedDigit()
+                            .accessibilityLabel(remaining > 0 ? "Code refreshes in \(remaining) seconds" : "Getting a new code")
+                    }
+                }
+                .padding(.top, 22)
+
+                if let errorMessage {
+                    Text(errorMessage)
                         .font(ClickTypography.metadata)
-                        .foregroundStyle(ClickColors.textSecondary)
-                        .monospacedDigit()
+                        .foregroundStyle(ClickColors.destructive)
+                        .multilineTextAlignment(.center)
+                        .padding(.top, 8)
                 }
-            }
 
-            if let errorMessage {
-                Text(errorMessage)
+                Text("Single-use code. It changes every 90 seconds so screenshots can't be reused.")
                     .font(ClickTypography.metadata)
-                    .foregroundStyle(ClickColors.destructive)
+                    .foregroundStyle(ClickColors.textTertiary)
                     .multilineTextAlignment(.center)
-            }
+                    .padding(.top, 8)
+                    .padding(.horizontal, 20)
 
-            if let qrPayload {
-                ShareLink(item: qrPayload) {
-                    Label("Share QR Code", systemImage: "square.and.arrow.up")
+                HStack(spacing: 10) {
+                    Button("Scan instead") { env.router.navigate(to: .scanQR) }
+                        .buttonStyle(.clickSecondary)
+                    if let qrPayload, let url = URL(string: qrPayload) {
+                        ShareLink(item: url) { Text("Share") }
+                            .buttonStyle(.clickPrimary)
+                    } else {
+                        Button("Share") {}
+                            .buttonStyle(.clickPrimary)
+                            .disabled(true)
+                    }
                 }
-                .buttonStyle(.clickPrimary)
+                .padding(.top, 24)
             }
-
-            Spacer()
+            .padding(.horizontal, 28)
         }
-        .padding(.horizontal, 22)
         .background(ClickColors.background.ignoresSafeArea())
-        .navigationTitle("My Code")
+        .navigationTitle("My QR")
         .navigationBarTitleDisplayMode(.inline)
         .toolbar(.hidden, for: .tabBar)
         .task {
-            await refreshCode()
+            if let userID = env.session.currentSession?.userId {
+                identity = await env.me.cachedSelfProfile(userID: userID)
+            }
             startRefreshLoop()
         }
+        .onAppear { UIApplication.shared.isIdleTimerDisabled = true }
         .onDisappear {
+            UIApplication.shared.isIdleTimerDisabled = false
             refreshTask?.cancel()
         }
-    }
-
-    @MainActor
-    private func refreshCode() async {
-        do {
-            let request = APIRequest(path: "/api/qr", method: .get, requiresAuth: true)
-            let (data, _) = try await env.api.executeRaw(request)
-            guard
-                let root = try JSONSerialization.jsonObject(with: data) as? [String: Any],
-                let payload = root["data"] as? [String: Any],
-                let value = payload["qrPayload"] as? String,
-                !value.isEmpty
-            else {
-                throw APIError.decoding
-            }
-
-            qrPayload = value
-            if let raw = payload["expiresAt"] as? NSNumber {
-                expiresAt = Date(timeIntervalSince1970: raw.doubleValue / 1000.0)
-            } else {
-                expiresAt = Date().addingTimeInterval(90)
-            }
-            errorMessage = nil
-        } catch {
-            errorMessage = error.localizedDescription
+        .onChange(of: scenePhase) { _, phase in
+            if phase == .active, (expiresAt ?? .distantPast) <= .now { startRefreshLoop() }
         }
     }
 
+    private func codeCard(showsCode: Bool) -> some View {
+        ZStack {
+            RoundedRectangle(cornerRadius: ClickRadius.prominent, style: .continuous)
+                .fill(.white)
+                .frame(width: 272, height: 272)
+            if showsCode, let qrPayload, let image = QRImageRenderer.image(for: qrPayload) {
+                Image(uiImage: image)
+                    .interpolation(.none)
+                    .resizable()
+                    .scaledToFit()
+                    .frame(width: 236, height: 236)
+                    .accessibilityLabel("Your Click QR code")
+            } else {
+                ProgressView().tint(.black)
+            }
+        }
+    }
+
+    /// Fetches a code, then sleeps until shortly before it expires; failures retry quickly.
     private func startRefreshLoop() {
         refreshTask?.cancel()
         refreshTask = Task {
             while !Task.isCancelled {
-                try? await Task.sleep(for: .seconds(75))
-                guard !Task.isCancelled else { return }
-                await refreshCode()
+                let succeeded = await refreshCode()
+                let wait = succeeded
+                    ? max(5, (expiresAt ?? .now).timeIntervalSinceNow - 10)
+                    : 5
+                try? await Task.sleep(for: .seconds(wait))
             }
         }
     }
 
-    private func countdown(to expiry: Date, now: Date) -> String {
-        let seconds = max(0, Int(expiry.timeIntervalSince(now)))
-        return "Scan to connect · \(seconds / 60):\(String(format: "%02d", seconds % 60))"
+    private func refreshCode() async -> Bool {
+        do {
+            let (data, _) = try await env.api.executeRaw(APIRequest(path: "/api/qr", method: .get))
+            guard
+                let payload = JSONFields.dictionary(try JSONFields.object(data)["data"]),
+                let value = JSONFields.string(payload["qrPayload"])
+            else { throw APIError.decoding }
+            qrPayload = value
+            expiresAt = JSONFields.date(payload["expiresAt"]) ?? Date().addingTimeInterval(90)
+            errorMessage = nil
+            return true
+        } catch {
+            errorMessage = "Couldn't get a fresh code. \(error.userFacingMessage)"
+            return false
+        }
     }
 }
 
@@ -544,66 +597,6 @@ private struct ClickDataScannerView: UIViewControllerRepresentable {
                     return
                 }
             }
-        }
-    }
-}
-
-struct TapConnectCapabilityView: View {
-    @Environment(AppEnvironment.self) private var env
-    @State private var microphone: PermissionStatus = .notDetermined
-    @State private var location: PermissionStatus = .notDetermined
-
-    var body: some View {
-        VStack(spacing: 24) {
-            Spacer()
-
-            ZStack {
-                Circle()
-                    .fill(ClickColors.selectionTint.opacity(0.55))
-                    .frame(width: 144, height: 144)
-                Circle()
-                    .fill(ClickColors.selectionTint)
-                    .frame(width: 104, height: 104)
-                Image(systemName: "bolt.horizontal.fill")
-                    .font(.system(size: 38, weight: .bold))
-                    .foregroundStyle(ClickColors.accentForeground)
-            }
-
-            VStack(spacing: 7) {
-                Text("Ready to Connect")
-                    .font(ClickTypography.identityTitle)
-                Text("Tap to Connect verifies that both people are physically together before creating the Click.")
-                    .font(ClickTypography.supporting)
-                    .foregroundStyle(ClickColors.textSecondary)
-                    .multilineTextAlignment(.center)
-            }
-
-            if microphone != .authorized || location != .authorized {
-                Button("Enable required access") {
-                    Task {
-                        microphone = await env.permissions.requestPermission(for: .microphone)
-                        location = await env.permissions.requestPermission(for: .locationWhenInUse)
-                    }
-                }
-                .buttonStyle(.clickPrimary)
-            }
-
-            Text("The existing tri-factor BLE/ultrasonic handshake engine is not yet ported to the native target. QR connection is fully functional in this build.")
-                .font(ClickTypography.metadata)
-                .foregroundStyle(ClickColors.textSecondary)
-                .multilineTextAlignment(.center)
-                .padding(.horizontal, 16)
-
-            Spacer()
-        }
-        .padding(24)
-        .background(ClickColors.background.ignoresSafeArea())
-        .navigationTitle("Tap to Connect")
-        .navigationBarTitleDisplayMode(.inline)
-        .toolbar(.hidden, for: .tabBar)
-        .task {
-            microphone = env.permissions.status(for: .microphone)
-            location = env.permissions.status(for: .locationWhenInUse)
         }
     }
 }

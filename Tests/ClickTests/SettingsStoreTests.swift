@@ -48,3 +48,17 @@ struct SettingsStoreTests {
     }
 
 }
+
+@Suite("App configuration")
+struct AppConfigTests {
+    @Test("Supabase and API settings are present in the built Info.plist")
+    func infoPlistKeys() {
+        // Regression: custom INFOPLIST_KEY_* build settings are silently dropped by Xcode,
+        // which left the anon key empty and broke every direct Supabase read and realtime.
+        #expect(!AppConfig.shared.supabaseAnonKey.isEmpty)
+        #expect(Bundle.main.object(forInfoDictionaryKey: "GIDClientID") != nil)
+        let schemes = (Bundle.main.object(forInfoDictionaryKey: "CFBundleURLTypes") as? [[String: Any]])?
+            .flatMap { $0["CFBundleURLSchemes"] as? [String] ?? [] } ?? []
+        #expect(schemes.contains("click"))
+    }
+}

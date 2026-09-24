@@ -8,7 +8,7 @@ public enum LoadPhase: Sendable, Equatable {
     case failed(String)
 }
 
-/// Single authoritative presentation model for a direct conversation.
+/// Single authoritative presentation model for every conversation kind (spec §31.1).
 @Observable
 @MainActor
 public final class ConversationModel {
@@ -23,9 +23,14 @@ public final class ConversationModel {
     public var operationError: String?
 
     private let chatRepository: ChatRepositoryProtocol
+    private let timelineCache: ConversationTimelineCache?
     private let realtimeManager: ChatRealtimeManager
     private let currentUserID: String
     private let currentUserName: String
+    /// Decrypted media locations by message ID (this conversation only).
+    private var mediaURLs: [String: URL] = [:]
+    /// Drafts of media sends that failed, kept in memory for retry.
+    private var failedMediaDrafts: [String: MediaDraft] = [:]
     private var pendingSendCount = 0
     private var typingActive = false
     private var typingStopTask: Task<Void, Never>?
@@ -36,8 +41,10 @@ public final class ConversationModel {
         realtimeManager: ChatRealtimeManager = ChatRealtimeManager(),
         currentUserID: String,
         currentUserName: String = "You",
-        initialItems: [ChatMessageItem]? = nil
+        initialItems: [ChatMessageItem]? = nil,
+        timelineCache: ConversationTimelineCache? = nil
     ) {
+        self.timelineCache = timelineCache
         self.identity = identity
         self.chatRepository = chatRepository
         self.realtimeManager = realtimeManager
@@ -46,6 +53,12 @@ public final class ConversationModel {
 
         if let initialItems {
             self.items = initialItems
+            self.phase = .loaded
+        } else if let cached = timelineCache.flatMap({ cache in
+            [identity.chatID, identity.connectionID ?? ""].lazy.compactMap { cache.items(for: $0) }.first
+        }) {
+            // Paint the last-seen timeline immediately; loadMessages refreshes it in place.
+            self.items = cached
             self.phase = .loaded
         }
     }
@@ -59,33 +72,50 @@ public final class ConversationModel {
     public func onAppear(supabaseURL: URL?, anonKey: String?, authToken: String?) async {
         setupRealtimeCallbacks()
 
-        do {
-            identity.chatID = try await chatRepository.resolveCanonicalChatID(
-                chatID: identity.chatID,
-                connectionID: identity.connectionID
-            )
-        } catch {
-            if items.isEmpty {
-                phase = .failed(error.localizedDescription)
+        if identity.hubID == nil {
+            do {
+                identity.chatID = try await chatRepository.resolveCanonicalChatID(
+                    chatID: identity.chatID,
+                    connectionID: identity.connectionID
+                )
+            } catch {
+                if items.isEmpty {
+                    phase = .failed(error.localizedDescription)
+                }
+                return
             }
-            return
         }
 
         if let supabaseURL, let anonKey {
             realtimeManager.subscribe(
                 to: identity.chatID,
+                stream: identity.hubID == nil ? .chat : .hub,
                 supabaseURL: supabaseURL,
                 anonKey: anonKey,
                 authToken: authToken
             )
         }
 
-        if items.isEmpty {
-            await loadMessages()
-        }
+        // Always refresh: a cached timeline painted first is updated in place.
+        await loadMessages()
+    }
+
+    /// Keeps optimistic rows that are still sending when a refresh lands.
+    private func mergeFetched(_ fetched: [ChatMessageItem]) -> [ChatMessageItem] {
+        let fetchedIDs = Set(fetched.map(\.id))
+        let pending = items.filter { ($0.deliveryStatus == .sending || $0.deliveryStatus == .failed) && !fetchedIDs.contains($0.id) }
+        return (fetched + pending).sorted { $0.createdAt < $1.createdAt }
+    }
+
+    private func saveToCache() {
+        timelineCache?.store(
+            items.filter { $0.deliveryStatus != .sending && $0.deliveryStatus != .failed },
+            for: [identity.chatID, identity.connectionID ?? ""]
+        )
     }
 
     public func onDisappear() {
+        saveToCache()
         typingStopTask?.cancel()
         typingStopTask = nil
         if typingActive {
@@ -105,21 +135,21 @@ public final class ConversationModel {
 
         do {
             let fetched = try await chatRepository.fetchMessages(
-                chatID: identity.chatID,
-                connectionID: identity.connectionID,
-                peerUserID: identity.peerUserID,
+                conversation: identity,
                 currentUserID: currentUserID,
                 cursor: nil,
                 limit: 50
             )
-            items = fetched.sorted { $0.createdAt < $1.createdAt }
+            items = mergeFetched(fetched)
+            resolveReplyQuotes()
             phase = .loaded
+            saveToCache()
             operationError = nil
 
             let unreadIDs = items
                 .filter { !$0.isOutgoing && $0.deliveryStatus != .read }
                 .map(\.id)
-            if !unreadIDs.isEmpty {
+            if identity.supportsReceipts, !unreadIDs.isEmpty {
                 try? await chatRepository.markRead(chatID: identity.chatID, messageIDs: unreadIDs)
             }
         } catch {
@@ -167,9 +197,7 @@ public final class ConversationModel {
 
         do {
             let serverItem = try await chatRepository.sendMessage(
-                chatID: identity.chatID,
-                connectionID: identity.connectionID,
-                peerUserID: identity.peerUserID,
+                conversation: identity,
                 currentUserID: currentUserID,
                 currentUserName: currentUserName,
                 content: text,
@@ -179,9 +207,7 @@ public final class ConversationModel {
                 clientMessageID: clientID
             )
 
-            if let index = items.firstIndex(where: { $0.id == clientID }) {
-                items[index] = serverItem
-            }
+            replaceOptimistic(clientID, with: serverItem)
             operationError = nil
         } catch {
             if let index = items.firstIndex(where: { $0.id == clientID }) {
@@ -194,15 +220,18 @@ public final class ConversationModel {
     }
 
     public func retrySend(item: ChatMessageItem) async {
+        if let draft = failedMediaDrafts.removeValue(forKey: item.id) {
+            items.removeAll { $0.id == item.id }
+            await sendMedia(draft, replyToID: item.replyToID, replyToSnippet: item.replyToSnippet, replyToSenderName: item.replyToSenderName)
+            return
+        }
         guard let index = items.firstIndex(where: { $0.id == item.id }) else { return }
         items[index].deliveryStatus = .sending
         beginSend()
 
         do {
             let serverItem = try await chatRepository.sendMessage(
-                chatID: identity.chatID,
-                connectionID: identity.connectionID,
-                peerUserID: identity.peerUserID,
+                conversation: identity,
                 currentUserID: currentUserID,
                 currentUserName: currentUserName,
                 content: item.content,
@@ -211,9 +240,7 @@ public final class ConversationModel {
                 replyToSenderName: item.replyToSenderName,
                 clientMessageID: item.id
             )
-            if let index = items.firstIndex(where: { $0.id == item.id }) {
-                items[index] = serverItem
-            }
+            replaceOptimistic(item.id, with: serverItem)
             operationError = nil
         } catch {
             if let index = items.firstIndex(where: { $0.id == item.id }) {
@@ -223,6 +250,102 @@ public final class ConversationModel {
         }
 
         endSend()
+    }
+
+    /// Swaps an optimistic row for the server's, unless the realtime echo already added it.
+    private func replaceOptimistic(_ clientID: String, with serverItem: ChatMessageItem) {
+        if serverItem.id != clientID, items.contains(where: { $0.id == serverItem.id }) {
+            items.removeAll { $0.id == clientID }
+        } else if let index = items.firstIndex(where: { $0.id == clientID }) {
+            items[index] = serverItem
+        }
+    }
+
+    // MARK: - Media (spec §37)
+
+    public var supportsMedia: Bool { identity.hubID == nil }
+
+    /// Sends an image, voice note, or file with an optimistic local bubble.
+    public func sendMedia(_ draft: MediaDraft) async {
+        let reply = replyTarget
+        replyTarget = nil
+        await sendMedia(draft, replyToID: reply?.id, replyToSnippet: reply.map(Self.quoteText), replyToSenderName: reply?.senderName)
+    }
+
+    private func sendMedia(_ draft: MediaDraft, replyToID: String?, replyToSnippet: String?, replyToSenderName: String?) async {
+        let clientID = UUID().uuidString.lowercased()
+        let local = FileManager.default.temporaryDirectory
+            .appendingPathComponent("\(clientID).\(MessageMedia.fileExtension(forMIME: draft.mimeType))")
+        try? draft.data.write(to: local, options: .completeFileProtection)
+        let media = MessageMedia(
+            kind: draft.kind, mimeType: draft.mimeType, fileName: draft.fileName, sizeBytes: draft.data.count,
+            durationSeconds: draft.durationSeconds, remoteURL: nil, storagePath: nil, v2: nil,
+            fileKey: nil, plaintextSha256: nil, isDisposable: false
+        )
+        items.append(ChatMessageItem(
+            id: clientID,
+            chatID: identity.chatID,
+            senderID: currentUserID,
+            senderName: currentUserName,
+            content: draft.fileName ?? "",
+            messageType: MessageType(rawValue: draft.kind.rawValue) ?? .file,
+            createdAt: Date(),
+            deliveryStatus: .sending,
+            isOutgoing: true,
+            replyToID: replyToID,
+            replyToSnippet: replyToSnippet,
+            replyToSenderName: replyToSenderName,
+            media: media,
+            localMediaURL: local
+        ))
+        mediaURLs[clientID] = local
+        beginSend()
+        do {
+            var sent = try await chatRepository.sendMedia(
+                conversation: identity,
+                currentUserID: currentUserID,
+                currentUserName: currentUserName,
+                draft: draft,
+                replyToID: replyToID,
+                clientMessageID: clientID
+            )
+            sent.replyToSnippet = replyToSnippet
+            sent.replyToSenderName = replyToSenderName
+            mediaURLs[sent.id] = sent.localMediaURL ?? local
+            replaceOptimistic(clientID, with: sent)
+            operationError = nil
+        } catch {
+            if let index = items.firstIndex(where: { $0.id == clientID }) {
+                items[index].deliveryStatus = .failed
+            }
+            failedMediaDrafts[clientID] = draft
+            operationError = error.localizedDescription
+        }
+        endSend()
+    }
+
+    /// Decrypted local file for a media message; fetched at most once per conversation visit.
+    public func mediaURL(for item: ChatMessageItem) async throws -> URL {
+        if let url = mediaURLs[item.id] { return url }
+        let url = try await chatRepository.loadMedia(for: item, conversation: identity, currentUserID: currentUserID)
+        mediaURLs[item.id] = url
+        return url
+    }
+
+    /// Text for a reply quote, never exposing attachment envelopes.
+    static func quoteText(_ item: ChatMessageItem) -> String {
+        if let media = item.media { return media.kind == .file ? "📎 \(media.displayName)" : media.displayName }
+        return item.content
+    }
+
+    /// Fills reply quotes from the local, decrypted timeline (no excerpt is stored server-side).
+    private func resolveReplyQuotes() {
+        let byID = Dictionary(items.map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first })
+        for index in items.indices {
+            guard let target = items[index].replyToID.flatMap({ byID[$0] }) else { continue }
+            if items[index].replyToSnippet == nil { items[index].replyToSnippet = Self.quoteText(target) }
+            if items[index].replyToSenderName == nil { items[index].replyToSenderName = target.senderName }
+        }
     }
 
     private func applyEdit(target: ChatMessageItem, newContent: String) async {
@@ -238,8 +361,7 @@ public final class ConversationModel {
         do {
             try await chatRepository.editMessage(
                 message: original,
-                connectionID: identity.connectionID,
-                peerUserID: identity.peerUserID,
+                conversation: identity,
                 currentUserID: currentUserID,
                 newContent: newContent
             )
@@ -257,7 +379,7 @@ public final class ConversationModel {
         let removed = items.remove(at: index)
 
         do {
-            try await chatRepository.deleteMessage(messageID: item.id)
+            try await chatRepository.deleteMessage(messageID: item.id, conversation: identity)
             operationError = nil
         } catch {
             let safeIndex = min(index, items.count)
@@ -283,7 +405,8 @@ public final class ConversationModel {
             try await chatRepository.setReaction(
                 messageID: item.id,
                 reactionType: reactionType,
-                adding: adding
+                adding: adding,
+                conversation: identity
             )
             operationError = nil
         } catch {
@@ -330,7 +453,7 @@ public final class ConversationModel {
     public func noteTypingActivity(hasText: Bool) {
         typingStopTask?.cancel()
 
-        guard hasText else {
+        guard hasText, identity.hubID == nil else {
             stopTyping()
             return
         }
@@ -391,7 +514,9 @@ public final class ConversationModel {
         realtimeManager.onTypingChanged = { [weak self] userIDs in
             Task { @MainActor in
                 guard let self else { return }
-                self.isPeerTyping = userIDs.contains(self.identity.peerUserID)
+                self.isPeerTyping = self.identity.isDirect
+                    ? userIDs.contains(self.identity.peerUserID)
+                    : !userIDs.subtracting([self.currentUserID]).isEmpty
             }
         }
     }
@@ -405,13 +530,20 @@ public final class ConversationModel {
         do {
             let decoded = try await chatRepository.decodeRealtimeMessage(
                 payload,
-                connectionID: identity.connectionID,
-                peerUserID: identity.peerUserID,
-                peerDisplayName: identity.peerDisplayName,
+                conversation: identity,
                 currentUserID: currentUserID
             )
 
-            if let index = items.firstIndex(where: { $0.id == decoded.id }) {
+            // Our own send can echo back before the POST returns; it replaces the optimistic row.
+            let clientID = payload.metadata?["client_message_id"] as? String
+            if decoded.isOutgoing, let clientID, !items.contains(where: { $0.id == decoded.id }),
+               let index = items.firstIndex(where: { $0.id == clientID }) {
+                var replacement = decoded
+                replacement.localMediaURL = items[index].localMediaURL
+                if replacement.replyToSnippet == nil { replacement.replyToSnippet = items[index].replyToSnippet }
+                if let local = items[index].localMediaURL { mediaURLs[decoded.id] = local }
+                items[index] = replacement
+            } else if let index = items.firstIndex(where: { $0.id == decoded.id }) {
                 var replacement = decoded
                 if replacement.reactions.isEmpty {
                     replacement.reactions = items[index].reactions
@@ -421,8 +553,9 @@ public final class ConversationModel {
                 items.append(decoded)
                 items.sort { $0.createdAt < $1.createdAt }
             }
+            resolveReplyQuotes()
 
-            if !decoded.isOutgoing {
+            if !decoded.isOutgoing, identity.supportsReceipts {
                 try? await chatRepository.markDelivered(
                     chatID: identity.chatID,
                     messageIDs: [decoded.id]
@@ -518,21 +651,12 @@ private struct PreviewChatRepo: ChatRepositoryProtocol {
         chatID
     }
 
-    func fetchMessages(
-        chatID: String,
-        connectionID: String?,
-        peerUserID: String,
-        currentUserID: String,
-        cursor: Int64?,
-        limit: Int
-    ) async throws -> [ChatMessageItem] {
+    func fetchMessages(conversation: ConversationIdentity, currentUserID: String, cursor: Int64?, limit: Int) async throws -> [ChatMessageItem] {
         initial
     }
 
     func sendMessage(
-        chatID: String,
-        connectionID: String?,
-        peerUserID: String,
+        conversation: ConversationIdentity,
         currentUserID: String,
         currentUserName: String,
         content: String,
@@ -543,7 +667,7 @@ private struct PreviewChatRepo: ChatRepositoryProtocol {
     ) async throws -> ChatMessageItem {
         ChatMessageItem(
             id: clientMessageID,
-            chatID: chatID,
+            chatID: conversation.chatID,
             senderID: currentUserID,
             senderName: currentUserName,
             content: content,
@@ -555,32 +679,19 @@ private struct PreviewChatRepo: ChatRepositoryProtocol {
         )
     }
 
-    func editMessage(
-        message: ChatMessageItem,
-        connectionID: String?,
-        peerUserID: String,
-        currentUserID: String,
-        newContent: String
-    ) async throws {}
-
-    func deleteMessage(messageID: String) async throws {}
-    func setReaction(messageID: String, reactionType: String, adding: Bool) async throws {}
+    func editMessage(message: ChatMessageItem, conversation: ConversationIdentity, currentUserID: String, newContent: String) async throws {}
+    func deleteMessage(messageID: String, conversation: ConversationIdentity) async throws {}
+    func setReaction(messageID: String, reactionType: String, adding: Bool, conversation: ConversationIdentity) async throws {}
     func markRead(chatID: String, messageIDs: [String]) async throws {}
     func markDelivered(chatID: String, messageIDs: [String]) async throws {}
     func registerDevice() async throws {}
 
-    func decodeRealtimeMessage(
-        _ payload: RealtimeMessagePayload,
-        connectionID: String?,
-        peerUserID: String,
-        peerDisplayName: String,
-        currentUserID: String
-    ) async throws -> ChatMessageItem {
+    func decodeRealtimeMessage(_ payload: RealtimeMessagePayload, conversation: ConversationIdentity, currentUserID: String) async throws -> ChatMessageItem {
         ChatMessageItem(
             id: payload.id,
             chatID: payload.chatID,
             senderID: payload.senderID,
-            senderName: peerDisplayName,
+            senderName: conversation.peerDisplayName,
             content: payload.content,
             createdAt: Date(timeIntervalSince1970: Double(payload.timeCreated) / 1000.0),
             deliveryStatus: .delivered,

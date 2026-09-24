@@ -385,6 +385,8 @@ public final class SessionController: SessionControlling {
             settingsStore?.clearOnboardingState(for: userId)
         }
         settingsStore?.resetSessionScopedData()
+        // Decrypted chat media never outlives the session that decrypted it.
+        await ChatMediaVault.shared.clear()
         retainedSession = nil
         state = .unauthenticated
     }

@@ -18,35 +18,42 @@ struct AppRouteDestination: View {
                     identity: chat.conversationIdentity,
                     chatRepository: env.chat,
                     currentUserID: env.session.currentSession?.userId ?? "",
-                    currentUserName: "You"
+                    currentUserName: "You",
+                    timelineCache: env.timelineCache
                 )
             )
         case .userProfile(let userID, let connectionID):
             ProfileView(userID: userID, connectionID: connectionID)
-        case .groupProfile:
-            // Group profiles are not implemented yet and nothing links here; show an honest
-            // state instead of a blank pushed screen if a route ever arrives.
-            ContentUnavailableView(
-                "Group profile unavailable",
-                systemImage: "person.3",
-                description: Text("Group profiles aren't available in this version of Click yet.")
+        case .groupChat(let group):
+            ChatView(
+                model: ConversationModel(
+                    identity: group.conversationIdentity,
+                    chatRepository: env.chat,
+                    currentUserID: env.session.currentSession?.userId ?? "",
+                    currentUserName: "You",
+                    timelineCache: env.timelineCache
+                )
             )
-            .navigationTitle("Group")
-            .navigationBarTitleDisplayMode(.inline)
+        case .groupProfile(let chatID):
+            GroupProfileView(chatID: chatID)
+        case .eventChat(let beaconID):
+            EventChatView(beaconID: beaconID)
         case .event(let beaconID), .beacon(let beaconID):
-            MapRouteDetailView(kind: .beacon, id: beaconID)
+            BeaconDetailView(beaconID: beaconID)
         case .hub(let hubID):
-            MapRouteDetailView(kind: .hub, id: hubID)
+            HubChatView(hubID: hubID)
         case .myQR:
             MyClickCodeView()
         case .scanQR:
             ScanClickCodeView()
         case .tapConnect:
-            TapConnectCapabilityView()
+            TapConnectView()
         case .connectionInvocation(let invocation):
             ConnectionInvocationView(invocation: invocation)
         case .savedEvents:
-            SavedEventsSettingsView()
+            SavedEventsView()
+        case .settings(let page):
+            SettingsPageView(page: page)
         }
     }
 }

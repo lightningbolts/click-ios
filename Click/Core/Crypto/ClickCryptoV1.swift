@@ -33,6 +33,14 @@ public enum ClickCryptoV1 {
         return DerivedKeys(encKey: encKey, macKey: macKey)
     }
 
+    /// Legacy hub broadcast keys. Derived from the public hub ID, so this is compatibility for
+    /// reading old hub content only, never a security boundary (spec §36.1).
+    public static func deriveKeysForHub(hubID: String) -> DerivedKeys {
+        let input = "\(salt):hub-broadcast:\(hubID.trimmingCharacters(in: .whitespacesAndNewlines))"
+        let master = sha256(Data(input.utf8))
+        return DerivedKeys(encKey: sha256(master + Data([0x01])), macKey: sha256(master + Data([0x02])))
+    }
+
     /// Derives pairwise AES and HMAC keys from a 32-byte group master key.
     public static func deriveKeysFromGroupMaster(groupMasterKey32: Data) throws -> DerivedKeys {
         guard groupMasterKey32.count == groupMasterKeyBytes else {
@@ -81,6 +89,31 @@ public enum ClickCryptoV1 {
     /// Checks if content uses any v1 wire prefix.
     public static func isAnyV1WireContent(_ content: String) -> Bool {
         isEncrypted(content) || isGroupEncrypted(content)
+    }
+
+    // MARK: - Media bytes (KMP `MessageCrypto.encryptMediaBytes`)
+
+    /// Legacy media/file bytes: `IV[16] || HMAC-SHA256(IV || ct)[32] || AES-256-CBC ct`.
+    public static func encryptMediaBytes(_ plain: Data, keys: DerivedKeys) throws -> Data {
+        var iv = Data(count: ivLength)
+        let ivResult = iv.withUnsafeMutableBytes { ptr in
+            SecRandomCopyBytes(kSecRandomDefault, ivLength, ptr.baseAddress!)
+        }
+        guard ivResult == errSecSuccess else { throw CryptoError.randomGenerationFailed }
+        let ciphertext = try aesCbcEncrypt(data: plain, key: keys.encKey, iv: iv)
+        let hmac = HMAC<SHA256>.authenticationCode(for: iv + ciphertext, using: SymmetricKey(data: keys.macKey))
+        return iv + Data(hmac) + ciphertext
+    }
+
+    public static func decryptMediaBytes(_ blob: Data, keys: DerivedKeys) throws -> Data {
+        guard blob.count >= ivLength + hmacLength + 1 else { throw CryptoError.mediaAuthenticationFailed }
+        let bytes = Data(blob)
+        let iv = bytes.subdata(in: 0..<ivLength)
+        let stored = bytes.subdata(in: ivLength..<(ivLength + hmacLength))
+        let ciphertext = bytes.subdata(in: (ivLength + hmacLength)..<bytes.count)
+        let computed = HMAC<SHA256>.authenticationCode(for: iv + ciphertext, using: SymmetricKey(data: keys.macKey))
+        guard Data(computed) == stored else { throw CryptoError.mediaAuthenticationFailed }
+        return try aesCbcDecrypt(data: ciphertext, key: keys.encKey, iv: iv)
     }
 
     // MARK: - Internal Primitives
@@ -210,9 +243,13 @@ public enum ClickCryptoV1 {
         case randomGenerationFailed
         case encryptionFailed(status: Int32)
         case decryptionFailed(status: Int32)
+        case mediaAuthenticationFailed
 
         public var errorDescription: String? {
             switch self {
+            case .mediaAuthenticationFailed:
+                return "Encrypted media failed authentication"
+
             case .invalidKeyLength(let expected, let actual):
                 return "Invalid key length: expected \(expected) bytes, got \(actual)"
             case .randomGenerationFailed:

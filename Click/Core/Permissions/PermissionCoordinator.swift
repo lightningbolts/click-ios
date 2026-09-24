@@ -66,7 +66,8 @@ public final class PermissionCoordinator: NSObject, @preconcurrency CLLocationMa
 
         case .contacts:
             switch CNContactStore.authorizationStatus(for: .contacts) {
-            case .authorized: return .authorized
+            // Limited access (iOS 18) still lets discovery hash the contacts the user shared.
+            case .authorized, .limited: return .authorized
             case .denied: return .denied
             case .restricted: return .restricted
             case .notDetermined: return .notDetermined

@@ -19,6 +19,7 @@ public struct RealtimeMessagePayload: @unchecked Sendable {
     public let isRead: Bool
     public let deliveredAt: Int64?
     public let metadata: [String: Any]?
+    public let isEdited: Bool
 
     public init(
         id: String,
@@ -29,7 +30,8 @@ public struct RealtimeMessagePayload: @unchecked Sendable {
         timeCreated: Int64 = Int64(Date().timeIntervalSince1970 * 1000),
         isRead: Bool = false,
         deliveredAt: Int64? = nil,
-        metadata: [String: Any]? = nil
+        metadata: [String: Any]? = nil,
+        isEdited: Bool = false
     ) {
         self.id = id
         self.chatID = chatID
@@ -40,7 +42,18 @@ public struct RealtimeMessagePayload: @unchecked Sendable {
         self.isRead = isRead
         self.deliveredAt = deliveredAt
         self.metadata = metadata
+        self.isEdited = isEdited
     }
+}
+
+/// Which table a conversation's changes stream from.
+public enum RealtimeStream: Sendable {
+    /// `messages` filtered by `chat_id` (direct and group chats).
+    case chat
+    /// `hub_messages` filtered by `hub_id`.
+    case hub
+    /// Every `messages` row the viewer can read (RLS-scoped); drives inbox freshness.
+    case inbox
 }
 
 /// Realtime coordinator for one active chat.
@@ -61,6 +74,7 @@ public final class ChatRealtimeManager {
 
     private struct ConnectionContext {
         let chatID: String
+        let stream: RealtimeStream
         let supabaseURL: URL
         let anonKey: String
         let authToken: String?
@@ -77,9 +91,10 @@ public final class ChatRealtimeManager {
 
     public init() {}
 
-    public func subscribe(to chatID: String, supabaseURL: URL, anonKey: String, authToken: String?) {
+    public func subscribe(to chatID: String, stream: RealtimeStream = .chat, supabaseURL: URL, anonKey: String, authToken: String?) {
         let next = ConnectionContext(
             chatID: chatID,
+            stream: stream,
             supabaseURL: supabaseURL,
             anonKey: anonKey,
             authToken: authToken
@@ -107,7 +122,7 @@ public final class ChatRealtimeManager {
               let context else { return }
 
         let message: [String: Any] = [
-            "topic": topic(for: context.chatID),
+            "topic": topic(for: context),
             "event": "broadcast",
             "payload": [
                 "type": "broadcast",
@@ -157,14 +172,7 @@ public final class ChatRealtimeManager {
             "config": [
                 "broadcast": ["ack": false, "self": false],
                 "presence": ["key": ""],
-                "postgres_changes": [
-                    [
-                        "event": "*",
-                        "schema": "public",
-                        "table": "messages",
-                        "filter": "chat_id=eq.\(context.chatID)"
-                    ]
-                ]
+                "postgres_changes": [changeFilter(for: context)]
             ]
         ]
         if let token = context.authToken, !token.isEmpty {
@@ -172,7 +180,7 @@ public final class ChatRealtimeManager {
         }
 
         let join: [String: Any] = [
-            "topic": topic(for: context.chatID),
+            "topic": topic(for: context),
             "event": "phx_join",
             "payload": payload,
             "ref": "join-\(UUID().uuidString)"
@@ -180,8 +188,23 @@ public final class ChatRealtimeManager {
         sendJSON(join, task: task)
     }
 
-    private func topic(for chatID: String) -> String {
-        "realtime:chat:\(chatID)"
+    private func topic(for context: ConnectionContext) -> String {
+        switch context.stream {
+        case .chat: "realtime:chat:\(context.chatID)"
+        case .hub: "realtime:hub:\(context.chatID)"
+        case .inbox: "realtime:inbox:\(context.chatID)"
+        }
+    }
+
+    private func changeFilter(for context: ConnectionContext) -> [String: Any] {
+        switch context.stream {
+        case .chat:
+            ["event": "*", "schema": "public", "table": "messages", "filter": "chat_id=eq.\(context.chatID)"]
+        case .hub:
+            ["event": "*", "schema": "public", "table": "hub_messages", "filter": "hub_id=eq.\(context.chatID)"]
+        case .inbox:
+            ["event": "INSERT", "schema": "public", "table": "messages"]
+        }
     }
 
     private func listen(task: URLSessionWebSocketTask) {
@@ -392,7 +415,20 @@ public final class ChatRealtimeManager {
     }
 
     private func parseRecord(_ record: [String: Any]) -> RealtimeMessagePayload {
-        RealtimeMessagePayload(
+        if context?.stream == .hub {
+            let created = JSONFields.date(record["created_at"]) ?? .now
+            return RealtimeMessagePayload(
+                id: record["id"] as? String ?? UUID().uuidString,
+                chatID: record["hub_id"] as? String ?? context?.chatID ?? "",
+                senderID: record["user_id"] as? String ?? "",
+                content: record["body"] as? String ?? "",
+                messageType: record["message_type"] as? String ?? "text",
+                timeCreated: Int64(created.timeIntervalSince1970 * 1000),
+                metadata: JSONFields.dictionary(record["metadata"]),
+                isEdited: JSONFields.string(record["edited_at"]) != nil
+            )
+        }
+        return RealtimeMessagePayload(
             id: record["id"] as? String ?? UUID().uuidString,
             chatID: record["chat_id"] as? String ?? context?.chatID ?? "",
             senderID: record["user_id"] as? String ?? "",

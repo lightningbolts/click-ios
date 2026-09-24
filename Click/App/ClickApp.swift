@@ -26,12 +26,12 @@ struct ClickApp: App {
                 // in-place upgrade instead of silently falling back to the simulator/system theme.
                 .preferredColorScheme(environment.settings.darkModeEnabled ? .dark : .light)
                 .task {
-                    if CommandLine.arguments.contains("-preview-profile-basics") {
+                    if DebugLaunch.has("-preview-profile-basics") {
                         environment.session.requireProfileBasics(userId: "usr_preview_99")
-                    } else if CommandLine.arguments.contains("-preview-shell")
-                        || CommandLine.arguments.contains("-preview-home")
-                        || CommandLine.arguments.contains("-preview-clicks")
-                        || CommandLine.arguments.contains("-preview-profile") {
+                    } else if DebugLaunch.has("-preview-shell")
+                        || DebugLaunch.has("-preview-home")
+                        || DebugLaunch.has("-preview-clicks")
+                        || DebugLaunch.has("-preview-profile") {
                         environment.session.signIn(
                             snapshot: SessionSnapshot(
                                 userId: "usr_preview_active",
@@ -39,7 +39,7 @@ struct ClickApp: App {
                                 refreshToken: "mock_refresh"
                             )
                         )
-                    } else if CommandLine.arguments.contains(where: { $0.hasPrefix("-preview-onboarding") }) {
+                    } else if DebugLaunch.hasPrefix("-preview-onboarding") {
                         environment.session.signIn(
                             snapshot: SessionSnapshot(
                                 userId: "usr_preview_onboarding",
@@ -47,8 +47,8 @@ struct ClickApp: App {
                                 refreshToken: "mock_refresh"
                             )
                         )
-                    } else if CommandLine.arguments.contains("-preview-signup")
-                        || CommandLine.arguments.contains("-preview-signin") {
+                    } else if DebugLaunch.has("-preview-signup")
+                        || DebugLaunch.has("-preview-signin") {
                         await environment.session.signOut()
                     } else {
                         await environment.bootstrap()

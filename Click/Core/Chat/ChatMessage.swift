@@ -51,6 +51,14 @@ public struct ChatMessageItem: Identifiable, Hashable, Sendable {
     public var replyToSenderName: String?
     public var reactions: [ReactionSummary]
     public var isEdited: Bool
+    /// Image, voice note, or file carried by this message.
+    public var media: MessageMedia?
+    /// Decrypted local copy (outgoing optimistic media, or after a download).
+    public var localMediaURL: URL?
+    /// A shared event/beacon card (`message_type: beacon`).
+    public var beacon: SharedBeacon?
+
+    public var isMedia: Bool { media != nil }
 
     public init(
         id: String,
@@ -68,8 +76,14 @@ public struct ChatMessageItem: Identifiable, Hashable, Sendable {
         replyToSnippet: String? = nil,
         replyToSenderName: String? = nil,
         reactions: [ReactionSummary] = [],
-        isEdited: Bool = false
+        isEdited: Bool = false,
+        media: MessageMedia? = nil,
+        localMediaURL: URL? = nil,
+        beacon: SharedBeacon? = nil
     ) {
+        self.beacon = beacon
+        self.media = media
+        self.localMediaURL = localMediaURL
         self.id = id
         self.chatID = chatID
         self.senderID = senderID
@@ -93,16 +107,30 @@ public struct ChatMessageItem: Identifiable, Hashable, Sendable {
     }
 }
 
+/// The supported conversation kinds (spec §31.1). Common UI is shared; transport, encryption,
+/// and access rules differ per kind and are owned by `ChatRepository`.
+public enum ConversationKind: Hashable, Sendable {
+    case direct
+    case group(groupID: String)
+    case hub(hubID: String)
+}
+
 public struct ConversationIdentity: Hashable, Sendable {
     /// Canonical chat UUID after the repository resolves the route. May begin as a connection ID.
+    /// For hubs this is the hub ID (hub v2 envelopes bind to it).
     public var chatID: String
     public let connectionID: String?
+    /// Direct chats only; empty for groups and hubs.
     public let peerUserID: String
+    /// The peer's name for direct chats, otherwise the group or hub name.
     public let peerDisplayName: String
     public let peerHandle: String
     public let peerAvatarURL: String?
     public var isOnline: Bool
     public var lastActiveText: String
+    public let kind: ConversationKind
+    /// Group members (including the viewer). Hub participants are loaded with the timeline.
+    public var participantUserIDs: [String]
 
     public init(
         chatID: String,
@@ -112,7 +140,9 @@ public struct ConversationIdentity: Hashable, Sendable {
         peerHandle: String = "",
         peerAvatarURL: String? = nil,
         isOnline: Bool = false,
-        lastActiveText: String = ""
+        lastActiveText: String = "",
+        kind: ConversationKind = .direct,
+        participantUserIDs: [String] = []
     ) {
         self.chatID = chatID
         self.connectionID = connectionID
@@ -122,7 +152,24 @@ public struct ConversationIdentity: Hashable, Sendable {
         self.peerAvatarURL = peerAvatarURL
         self.isOnline = isOnline
         self.lastActiveText = lastActiveText
+        self.kind = kind
+        self.participantUserIDs = participantUserIDs
     }
+
+    public var isDirect: Bool { kind == .direct }
+
+    public var groupID: String? {
+        if case .group(let id) = kind { return id }
+        return nil
+    }
+
+    public var hubID: String? {
+        if case .hub(let id) = kind { return id }
+        return nil
+    }
+
+    /// Hubs have no read/delivery receipts (spec §62).
+    public var supportsReceipts: Bool { hubID == nil }
 
     public var initials: String {
         let parts = peerDisplayName.split(separator: " ").filter { !$0.isEmpty }
@@ -132,5 +179,36 @@ public struct ConversationIdentity: Hashable, Sendable {
             return String(first.prefix(2)).uppercased()
         }
         return "?"
+    }
+}
+
+/// Card data for a shared beacon/event (KMP `toBeaconChatMetadata`). The card metadata is
+/// plaintext by design (public beacon fields only).
+public struct SharedBeacon: Hashable, Sendable {
+    public let beaconID: String
+    public let kind: BeaconKind
+    public let title: String
+    public let scheduleLabel: String?
+    public let locationName: String?
+    public let imageURL: String?
+    public let start: Date?
+
+    public var isEvent: Bool { kind == .event }
+
+    static func parse(messageType: String, metadata: [String: Any]?, content: String) -> SharedBeacon? {
+        guard let meta = metadata,
+              let id = JSONFields.string(meta, "beacon_id", "beaconId"),
+              messageType.lowercased() == "beacon" || !id.isEmpty else { return nil }
+        let title = JSONFields.string(meta["title"])
+            ?? content.replacingOccurrences(of: "Beacon:", with: "").trimmingCharacters(in: .whitespaces)
+        return SharedBeacon(
+            beaconID: id,
+            kind: BeaconKind(raw: JSONFields.string(meta, "beacon_type", "beaconType")),
+            title: title.isEmpty ? "Beacon" : title,
+            scheduleLabel: JSONFields.string(meta, "schedule_label", "scheduleLabel"),
+            locationName: JSONFields.string(meta, "location_name", "locationName"),
+            imageURL: JSONFields.string(meta, "album_art_url", "image_url", "cover_url"),
+            start: JSONFields.date(meta["event_start_at"])
+        )
     }
 }

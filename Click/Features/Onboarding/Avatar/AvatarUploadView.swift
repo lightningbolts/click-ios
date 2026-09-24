@@ -13,13 +13,23 @@ public struct AvatarUploadView: View {
     @State private var showCamera: Bool = false
     @State private var cameraPermissionDenied: Bool = false
 
+    let title: String
+    let subtitle: String
+    let skipTitle: String
     let onUpload: (Data) async throws -> Void
     let onSkip: () -> Void
 
+    /// The Me root reuses this editor with its own copy; onboarding keeps the defaults.
     public init(
+        title: String = "Add a photo",
+        subtitle: String = "A real face goes a long way — but you can skip and add it later from Settings.",
+        skipTitle: String = "Skip for now",
         onUpload: @escaping (Data) async throws -> Void,
         onSkip: @escaping () -> Void
     ) {
+        self.title = title
+        self.subtitle = subtitle
+        self.skipTitle = skipTitle
         self.onUpload = onUpload
         self.onSkip = onSkip
     }
@@ -30,10 +40,7 @@ public struct AvatarUploadView: View {
 
     public var body: some View {
         VStack(spacing: 0) {
-            OnboardingHeaderView(
-                title: "Add a photo",
-                subtitle: "A real face goes a long way — but you can skip and add it later from Settings."
-            )
+            OnboardingHeaderView(title: title, subtitle: subtitle)
 
             ScrollView {
                 VStack(spacing: ClickSpacing.lg) {
@@ -128,7 +135,7 @@ public struct AvatarUploadView: View {
                             ClickHaptics.selection()
                             onSkip()
                         }) {
-                            Text("Skip for now")
+                            Text(skipTitle)
                                 .font(ClickTypography.bodyEmphasized)
                                 .foregroundStyle(ClickColors.textSecondary)
                                 .padding(.vertical, ClickSpacing.sm)

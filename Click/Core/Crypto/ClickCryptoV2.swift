@@ -372,6 +372,163 @@ public enum ClickCryptoV2 {
         return digest.map { String(format: "%02x", $0) }.joined()
     }
 
+    // MARK: - Media (KMP `MessageCryptoV2.encryptMedia` / `authorizeMedia` / `decryptMedia`)
+
+    public struct MediaMetadata: Sendable, Equatable, Hashable {
+        public let chatId: String
+        public let epoch: Int
+        public let senderDeviceId: String
+        public let clientMessageId: String
+        public let mediaCiphertextSha256: String
+
+        public init(chatId: String, epoch: Int, senderDeviceId: String, clientMessageId: String, mediaCiphertextSha256: String) {
+            self.chatId = chatId
+            self.epoch = epoch
+            self.senderDeviceId = senderDeviceId
+            self.clientMessageId = clientMessageId
+            self.mediaCiphertextSha256 = mediaCiphertextSha256
+        }
+
+        var message: MessageMetadata {
+            MessageMetadata(chatId: chatId, epoch: epoch, senderDeviceId: senderDeviceId, clientMessageId: clientMessageId)
+        }
+    }
+
+    public struct EncryptedMedia: Sendable {
+        /// `nonce[12] || ciphertext+tag` — the exact bytes uploaded.
+        public let uploadedBytes: Data
+        public let mediaCiphertextSha256: String
+        public let authorizationEnvelope: String
+    }
+
+    static let mediaAuthorizationPlaintext = "click-e2ee-v2-media-authorization"
+
+    /// Encrypts media and authorizes the exact uploaded bytes with a `type=media` envelope.
+    /// `metadata.mediaCiphertextSha256` is ignored on input and computed here.
+    public static func encryptMedia(
+        metadata: MediaMetadata,
+        epochKey: Data,
+        plaintext: Data,
+        replayGuard: ReplayGuard? = nil
+    ) throws -> EncryptedMedia {
+        try validateMessageMetadata(metadata.message)
+        guard epochKey.count == epochKeyBytes else { throw V2Error.invalidEpochKeyLength }
+        let nonce = try randomBytes(nonceBytes)
+        let sealed = try AES.GCM.seal(
+            plaintext,
+            using: SymmetricKey(data: epochKey),
+            nonce: AES.GCM.Nonce(data: nonce),
+            authenticating: canonicalMediaPayloadMetadata(metadata.message)
+        )
+        let uploaded = nonce + sealed.ciphertext + sealed.tag
+        let digest = Data(SHA256.hash(data: uploaded)).base64EncodedString()
+        let checked = MediaMetadata(
+            chatId: metadata.chatId,
+            epoch: metadata.epoch,
+            senderDeviceId: metadata.senderDeviceId,
+            clientMessageId: metadata.clientMessageId,
+            mediaCiphertextSha256: digest
+        )
+        let authorization = try authorizeMedia(metadata: checked, epochKey: epochKey, replayGuard: replayGuard)
+        let nonceB64 = nonce.base64EncodedString()
+        try replayGuard?.reserve(nonce: nonceB64, envelopeIdentity: mediaPayloadIdentity(checked, nonce: nonceB64))
+        return EncryptedMedia(uploadedBytes: uploaded, mediaCiphertextSha256: digest, authorizationEnvelope: authorization)
+    }
+
+    /// Verifies the digest, then decrypts and authenticates `nonce || ciphertext+tag`.
+    public static func decryptMedia(
+        metadata: MediaMetadata,
+        epochKey: Data,
+        uploadedBytes: Data,
+        replayGuard: ReplayGuard? = nil
+    ) throws -> Data {
+        try validateMediaMetadata(metadata)
+        guard epochKey.count == epochKeyBytes else { throw V2Error.invalidEpochKeyLength }
+        let bytes = Data(uploadedBytes)
+        guard bytes.count >= nonceBytes + gcmTagBytes,
+              let expected = Data(base64Encoded: metadata.mediaCiphertextSha256) else {
+            throw V2Error.malformedEnvelope
+        }
+        guard constantTimeEquals(expected, Data(SHA256.hash(data: bytes))) else { throw V2Error.metadataMismatch }
+        let nonce = bytes.prefix(nonceBytes)
+        let body = bytes.dropFirst(nonceBytes)
+        let box = try AES.GCM.SealedBox(
+            nonce: AES.GCM.Nonce(data: nonce),
+            ciphertext: body.dropLast(gcmTagBytes),
+            tag: body.suffix(gcmTagBytes)
+        )
+        let plain: Data
+        do {
+            plain = try AES.GCM.open(box, using: SymmetricKey(data: epochKey), authenticating: canonicalMediaPayloadMetadata(metadata.message))
+        } catch {
+            throw V2Error.authenticationFailed
+        }
+        let nonceB64 = Data(nonce).base64EncodedString()
+        try replayGuard?.reserve(nonce: nonceB64, envelopeIdentity: mediaPayloadIdentity(metadata, nonce: nonceB64))
+        return plain
+    }
+
+    /// The opaque authorization envelope `/api/chat/media` and `/api/chat/attachments` require.
+    public static func authorizeMedia(metadata: MediaMetadata, epochKey: Data, replayGuard: ReplayGuard? = nil) throws -> String {
+        try validateMediaMetadata(metadata)
+        guard epochKey.count == epochKeyBytes else { throw V2Error.invalidEpochKeyLength }
+        let nonce = try randomBytes(nonceBytes)
+        let sealed = try AES.GCM.seal(
+            Data(mediaAuthorizationPlaintext.utf8),
+            using: SymmetricKey(data: epochKey),
+            nonce: AES.GCM.Nonce(data: nonce),
+            authenticating: canonicalMediaAuthorizationMetadata(metadata)
+        )
+        let nonceB64 = nonce.base64EncodedString()
+        try replayGuard?.reserve(nonce: nonceB64, envelopeIdentity: mediaAuthorizationIdentity(metadata, nonce: nonceB64))
+        let envelope: [String: Any] = [
+            "v": cryptoVersion,
+            "type": "media",
+            "chatId": metadata.chatId,
+            "epoch": metadata.epoch,
+            "senderDeviceId": metadata.senderDeviceId,
+            "cryptoVersion": cryptoVersion,
+            "clientMessageId": metadata.clientMessageId,
+            "mediaCiphertextSha256": metadata.mediaCiphertextSha256,
+            "nonce": nonceB64,
+            "ciphertext": (sealed.ciphertext + sealed.tag).base64EncodedString()
+        ]
+        return prefix + (try JSONSerialization.data(withJSONObject: envelope)).base64EncodedString()
+    }
+
+    static func canonicalMediaPayloadMetadata(_ value: MessageMetadata) -> Data {
+        Data("{\"chatId\":\"\(value.chatId)\",\"epoch\":\(value.epoch),\"senderDeviceId\":\"\(value.senderDeviceId)\",\"cryptoVersion\":2,\"clientMessageId\":\"\(value.clientMessageId)\",\"purpose\":\"media-payload\"}".utf8)
+    }
+
+    static func canonicalMediaAuthorizationMetadata(_ value: MediaMetadata) -> Data {
+        Data("{\"chatId\":\"\(value.chatId)\",\"epoch\":\(value.epoch),\"senderDeviceId\":\"\(value.senderDeviceId)\",\"cryptoVersion\":2,\"clientMessageId\":\"\(value.clientMessageId)\",\"mediaCiphertextSha256\":\"\(value.mediaCiphertextSha256)\",\"purpose\":\"media-authorization\"}".utf8)
+    }
+
+    private static func mediaPayloadIdentity(_ value: MediaMetadata, nonce: String) -> String {
+        "media-payload|\(value.chatId)|\(value.epoch)|\(value.senderDeviceId)|\(value.clientMessageId)|\(nonce)"
+    }
+
+    private static func mediaAuthorizationIdentity(_ value: MediaMetadata, nonce: String) -> String {
+        "media-authorization|\(value.chatId)|\(value.epoch)|\(value.senderDeviceId)|\(value.clientMessageId)|\(nonce)"
+    }
+
+    private static func validateMediaMetadata(_ value: MediaMetadata) throws {
+        try validateMessageMetadata(value.message)
+        guard Data(base64Encoded: value.mediaCiphertextSha256)?.count == 32 else { throw V2Error.malformedEnvelope }
+    }
+
+    private static func randomBytes(_ count: Int) throws -> Data {
+        var bytes = Data(count: count)
+        let status = bytes.withUnsafeMutableBytes { SecRandomCopyBytes(kSecRandomDefault, count, $0.baseAddress!) }
+        guard status == errSecSuccess else { throw V2Error.randomGenerationFailed }
+        return bytes
+    }
+
+    private static func constantTimeEquals(_ lhs: Data, _ rhs: Data) -> Bool {
+        guard lhs.count == rhs.count else { return false }
+        return zip(lhs, rhs).reduce(0) { $0 | ($1.0 ^ $1.1) } == 0
+    }
+
     // MARK: - Internal Canonical Serialization
 
     public static func canonicalMessageMetadata(_ value: MessageMetadata) -> Data {

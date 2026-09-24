@@ -10,6 +10,14 @@ public struct MessageBubbleView: View {
     let onDelete: (ChatMessageItem) -> Void
     let onToggleReaction: (ChatMessageItem, String) -> Void
     let onRetrySend: ((ChatMessageItem) -> Void)?
+    /// Group and hub timelines label incoming runs with the sender's name.
+    let showsSenderName: Bool
+    /// Hubs have no delivery/read receipts; only pending/failed state is shown.
+    let showsReceipts: Bool
+    /// Decrypted-media provider and opener; nil renders media as an unavailable label.
+    let mediaLoader: ((ChatMessageItem) async throws -> URL)?
+    let onOpenMedia: ((URL, MessageMedia.Kind) -> Void)?
+    let onOpenBeacon: ((SharedBeacon) -> Void)?
 
     @State private var dragOffset: CGFloat = 0
     @State private var dragIntent: DragIntent = .undecided
@@ -30,8 +38,18 @@ public struct MessageBubbleView: View {
         onEdit: @escaping (ChatMessageItem) -> Void,
         onDelete: @escaping (ChatMessageItem) -> Void,
         onToggleReaction: @escaping (ChatMessageItem, String) -> Void,
-        onRetrySend: ((ChatMessageItem) -> Void)? = nil
+        onRetrySend: ((ChatMessageItem) -> Void)? = nil,
+        showsSenderName: Bool = false,
+        showsReceipts: Bool = true,
+        mediaLoader: ((ChatMessageItem) async throws -> URL)? = nil,
+        onOpenMedia: ((URL, MessageMedia.Kind) -> Void)? = nil,
+        onOpenBeacon: ((SharedBeacon) -> Void)? = nil
     ) {
+        self.onOpenBeacon = onOpenBeacon
+        self.mediaLoader = mediaLoader
+        self.onOpenMedia = onOpenMedia
+        self.showsSenderName = showsSenderName
+        self.showsReceipts = showsReceipts
         self.message = message
         self.onReply = onReply
         self.onEdit = onEdit
@@ -47,10 +65,19 @@ public struct MessageBubbleView: View {
             }
 
             VStack(alignment: message.isOutgoing ? .trailing : .leading, spacing: 3) {
-                bubbleContainer
+                if showsSenderName, !message.isOutgoing {
+                    Text(message.senderName)
+                        .font(ClickTypography.metadata)
+                        .foregroundStyle(ClickColors.textSecondary)
+                        .lineLimit(1)
+                        .padding(.leading, 12)
+                        .padding(.top, 6)
+                }
+                content
                     .frame(maxWidth: 320, alignment: message.isOutgoing ? .trailing : .leading)
                     .offset(x: dragOffset)
-                    .simultaneousGesture(replyGesture)
+                    // A voice note's seek slider must win over swipe-to-reply (spec §37.6).
+                    .simultaneousGesture(replyGesture, including: message.media?.kind == .audio ? .subviews : .all)
                     .contextMenu {
                         Section {
                             ForEach(quickEmojis, id: \.self) { emoji in
@@ -70,18 +97,22 @@ public struct MessageBubbleView: View {
                             Label("Reply", systemImage: "arrowshape.turn.up.left")
                         }
 
-                        Button {
-                            UIPasteboard.general.string = message.content
-                            ClickHaptics.success()
-                        } label: {
-                            Label("Copy", systemImage: "doc.on.doc")
+                        if !message.isMedia {
+                            Button {
+                                UIPasteboard.general.string = message.content
+                                ClickHaptics.success()
+                            } label: {
+                                Label("Copy", systemImage: "doc.on.doc")
+                            }
                         }
 
                         if message.isOutgoing {
-                            Button {
-                                onEdit(message)
-                            } label: {
-                                Label("Edit", systemImage: "pencil")
+                            if !message.isMedia {
+                                Button {
+                                    onEdit(message)
+                                } label: {
+                                    Label("Edit", systemImage: "pencil")
+                                }
                             }
 
                             Button(role: .destructive) {
@@ -105,91 +136,124 @@ public struct MessageBubbleView: View {
         .padding(.vertical, 1.5)
     }
 
+    @ViewBuilder
+    private var content: some View {
+        if let beacon = message.beacon {
+            BeaconMessageCard(beacon: beacon, time: message.formattedTime, isOutgoing: message.isOutgoing) {
+                onOpenBeacon?(beacon)
+            }
+        } else if let media = message.media, let mediaLoader {
+            VStack(alignment: message.isOutgoing ? .trailing : .leading, spacing: 4) {
+                if let snippet = message.replyToSnippet, !snippet.isEmpty {
+                    replyQuote(snippet: snippet)
+                        .padding(.horizontal, 10)
+                        .padding(.vertical, 6)
+                        .background(
+                            message.isOutgoing ? ClickColors.messageOutgoing : ClickColors.messageIncoming,
+                            in: RoundedRectangle(cornerRadius: 12, style: .continuous)
+                        )
+                        .frame(maxWidth: 240)
+                }
+                MessageMediaContent(
+                    message: message,
+                    media: media,
+                    load: { try await mediaLoader(message) },
+                    onOpen: { url in onOpenMedia?(url, media.kind) }
+                )
+                HStack(spacing: 4) {
+                    Text(message.formattedTime).monospacedDigit()
+                    if message.isOutgoing, showsReceipts || [.pending, .sending, .failed].contains(message.deliveryStatus) {
+                        statusIcon
+                    }
+                }
+                .font(ClickTypography.caption)
+                .foregroundStyle(ClickColors.textSecondary)
+            }
+        } else {
+            bubbleContainer
+        }
+    }
+
     private var bubbleContainer: some View {
-        VStack(
-            alignment: message.isOutgoing ? .trailing : .leading,
-            spacing: 4
-        ) {
+        VStack(alignment: .leading, spacing: 5) {
             if let snippet = message.replyToSnippet, !snippet.isEmpty {
                 replyQuote(snippet: snippet)
             }
 
-            Text(message.content)
+            // The bubble hugs its text: the timestamp sits in space reserved at the end of the
+            // last line (an invisible copy), so short messages get short bubbles.
+            (Text(message.content)
+                + Text(verbatim: "\u{2003}" + timePlaceholder).font(ClickTypography.caption).foregroundColor(.clear))
                 .font(ClickTypography.body)
-                .foregroundStyle(
-                    message.isOutgoing
-                        ? ClickColors.messageOutgoingForeground
-                        : ClickColors.messageIncomingForeground
-                )
+                .foregroundStyle(foreground)
                 .fixedSize(horizontal: false, vertical: true)
                 .textSelection(.disabled)
-                .frame(maxWidth: .infinity, alignment: .leading)
-
-            HStack(spacing: 4) {
-                if message.isEdited {
-                    Text("edited")
+                .overlay(alignment: .bottomTrailing) {
+                    metaRow.offset(y: 3)
                 }
-
-                Text(message.formattedTime)
-                    .monospacedDigit()
-
-                if message.isOutgoing {
-                    statusIcon
-                }
-            }
-            .font(ClickTypography.caption)
-            .foregroundStyle(
-                message.isOutgoing
-                    ? ClickColors.messageOutgoingForeground.opacity(0.72)
-                    : ClickColors.textSecondary
-            )
-            .frame(maxWidth: .infinity, alignment: .trailing)
         }
         .padding(.horizontal, 12)
-        .padding(.top, message.replyToSnippet == nil ? 8 : 7)
-        .padding(.bottom, 7)
+        .padding(.top, 8)
+        .padding(.bottom, 8)
         .background {
-            RoundedRectangle(cornerRadius: ClickRadius.messageBubble, style: .continuous)
-                .fill(
-                    message.isOutgoing
-                        ? ClickColors.messageOutgoing
-                        : ClickColors.messageIncoming
-                )
+            UnevenRoundedRectangle(
+                topLeadingRadius: ClickRadius.messageBubble,
+                bottomLeadingRadius: message.isOutgoing ? ClickRadius.messageBubble : 6,
+                bottomTrailingRadius: message.isOutgoing ? 6 : ClickRadius.messageBubble,
+                topTrailingRadius: ClickRadius.messageBubble,
+                style: .continuous
+            )
+            .fill(message.isOutgoing ? ClickColors.messageOutgoing : ClickColors.messageIncoming)
         }
         .contentShape(RoundedRectangle(cornerRadius: ClickRadius.messageBubble, style: .continuous))
     }
 
-    private func replyQuote(snippet: String) -> some View {
-        HStack(alignment: .top, spacing: 7) {
-            RoundedRectangle(cornerRadius: 2)
-                .fill(
-                    message.isOutgoing
-                        ? ClickColors.messageOutgoingForeground.opacity(0.75)
-                        : ClickColors.accentForeground
-                )
-                .frame(width: 3)
+    private var foreground: Color {
+        message.isOutgoing ? ClickColors.messageOutgoingForeground : ClickColors.messageIncomingForeground
+    }
 
+    private var showsStatus: Bool {
+        message.isOutgoing && (showsReceipts || [.pending, .sending, .failed].contains(message.deliveryStatus))
+    }
+
+    /// Same characters as the visible meta row, used only to reserve its width.
+    private var timePlaceholder: String {
+        (message.isEdited ? "edited " : "") + message.formattedTime + (showsStatus ? " ✓✓" : "")
+    }
+
+    private var metaRow: some View {
+        HStack(spacing: 3) {
+            if message.isEdited { Text("edited") }
+            Text(message.formattedTime).monospacedDigit()
+            if showsStatus { statusIcon }
+        }
+        .font(ClickTypography.caption)
+        .foregroundStyle(message.isOutgoing ? ClickColors.messageOutgoingForeground.opacity(0.72) : ClickColors.textSecondary)
+    }
+
+    private func replyQuote(snippet: String) -> some View {
+        HStack(alignment: .top, spacing: 8) {
+            RoundedRectangle(cornerRadius: 2)
+                .fill(message.isOutgoing ? ClickColors.messageOutgoingForeground.opacity(0.85) : ClickColors.accentForeground)
+                .frame(width: 3)
             VStack(alignment: .leading, spacing: 1) {
                 Text(message.replyToSenderName ?? "Reply")
-                    .font(ClickTypography.metadata)
-                    .foregroundStyle(
-                        message.isOutgoing
-                            ? ClickColors.messageOutgoingForeground.opacity(0.9)
-                            : ClickColors.accentForeground
-                    )
-
+                    .font(ClickTypography.supportingEmphasized)
+                    .foregroundStyle(message.isOutgoing ? ClickColors.messageOutgoingForeground : ClickColors.accentForeground)
                 Text(snippet)
                     .font(ClickTypography.supporting)
-                    .foregroundStyle(
-                        message.isOutgoing
-                            ? ClickColors.messageOutgoingForeground.opacity(0.74)
-                            : ClickColors.textSecondary
-                    )
+                    .foregroundStyle(message.isOutgoing ? ClickColors.messageOutgoingForeground.opacity(0.78) : ClickColors.textSecondary)
                     .lineLimit(2)
             }
+            .padding(.vertical, 6)
+            .padding(.trailing, 10)
         }
-        .padding(.bottom, 2)
-        .frame(maxWidth: .infinity, alignment: .leading)
+        .fixedSize(horizontal: false, vertical: true)
+        .background(
+            (message.isOutgoing ? Color.white.opacity(0.14) : ClickColors.fillSubtle),
+            in: RoundedRectangle(cornerRadius: 10, style: .continuous)
+        )
+        .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
     }
 
     private var reactionsStrip: some View {
@@ -277,22 +341,18 @@ public struct MessageBubbleView: View {
     private var statusIcon: some View {
         switch message.deliveryStatus {
         case .pending, .sending:
-            ProgressView()
-                .controlSize(.mini)
-                .tint(ClickColors.messageOutgoingForeground.opacity(0.8))
+            Image(systemName: "clock")
+                .font(.system(size: 10, weight: .semibold))
 
         case .sent:
             Image(systemName: "checkmark")
                 .font(.system(size: 10, weight: .bold))
 
         case .delivered:
-            Image(systemName: "checkmark.circle")
-                .font(.system(size: 10, weight: .semibold))
+            doubleCheck
 
         case .read:
-            Image(systemName: "checkmark.circle.fill")
-                .font(.system(size: 10, weight: .semibold))
-                .foregroundStyle(Color(hex: "#7DD3FC"))
+            doubleCheck.foregroundStyle(Color(hex: "#7DD3FC"))
 
         case .failed:
             Button {
@@ -306,5 +366,67 @@ public struct MessageBubbleView: View {
             .buttonStyle(.plain)
             .accessibilityLabel("Message failed. Tap to retry.")
         }
+    }
+
+    private var doubleCheck: some View {
+        HStack(spacing: -5) {
+            Image(systemName: "checkmark")
+            Image(systemName: "checkmark")
+        }
+        .font(.system(size: 10, weight: .bold))
+    }
+}
+
+/// A shared event/beacon as a card (prototype "Sunset Run Club"), not as "Beacon: …" text.
+private struct BeaconMessageCard: View {
+    let beacon: SharedBeacon
+    let time: String
+    let isOutgoing: Bool
+    let onOpen: () -> Void
+
+    var body: some View {
+        Button(action: onOpen) {
+            VStack(alignment: .leading, spacing: 0) {
+                EventVisual(seed: beacon.beaconID, imageURL: beacon.imageURL, symbol: beacon.kind.systemImage, cornerRadius: 14)
+                    .frame(height: 120)
+                    .padding(6)
+                VStack(alignment: .leading, spacing: 3) {
+                    Text(beacon.title)
+                        .font(ClickTypography.bodyEmphasized)
+                        .foregroundStyle(ClickColors.textPrimary)
+                        .lineLimit(2)
+                    if let detail {
+                        Text(detail)
+                            .font(ClickTypography.supporting)
+                            .foregroundStyle(ClickColors.textSecondary)
+                            .lineLimit(2)
+                    }
+                    HStack {
+                        Text(beacon.isEvent ? "View event" : "View \(beacon.kind.label.lowercased())")
+                            .font(ClickTypography.supportingEmphasized)
+                            .foregroundStyle(ClickColors.accentForeground)
+                        Spacer()
+                        Text(time)
+                            .font(ClickTypography.caption)
+                            .foregroundStyle(ClickColors.textSecondary)
+                            .monospacedDigit()
+                    }
+                    .padding(.top, 4)
+                }
+                .padding(.horizontal, 12)
+                .padding(.bottom, 10)
+                .padding(.top, 4)
+            }
+            .frame(width: 260)
+            .background(ClickColors.messageIncoming, in: RoundedRectangle(cornerRadius: ClickRadius.messageBubble, style: .continuous))
+        }
+        .buttonStyle(.plain)
+        .accessibilityLabel("\(beacon.title). \(detail ?? ""). Opens details.")
+    }
+
+    private var detail: String? {
+        let parts = [beacon.scheduleLabel ?? beacon.start.map { $0.formatted(.dateTime.weekday(.abbreviated).hour().minute()) },
+                     beacon.locationName].compactMap { $0 }
+        return parts.isEmpty ? nil : parts.joined(separator: " · ")
     }
 }

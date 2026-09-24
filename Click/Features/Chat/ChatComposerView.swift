@@ -11,8 +11,12 @@ public struct ChatComposerView: View {
     let onCancelEdit: () -> Void
     let onSend: () -> Void
     let onTypingChanged: (Bool) -> Void
+    /// Nil hides attachments and voice notes (hub chats).
+    let onDraft: ((MediaDraft) -> Void)?
+    let onAttachmentError: (String) -> Void
 
     @FocusState private var isFocused: Bool
+    @State private var recorder = VoiceNoteRecorder()
     private let characterLimit = 1000
 
     public init(
@@ -24,8 +28,12 @@ public struct ChatComposerView: View {
         onCancelReply: @escaping () -> Void,
         onCancelEdit: @escaping () -> Void,
         onSend: @escaping () -> Void,
-        onTypingChanged: @escaping (Bool) -> Void = { _ in }
+        onTypingChanged: @escaping (Bool) -> Void = { _ in },
+        onDraft: ((MediaDraft) -> Void)? = nil,
+        onAttachmentError: @escaping (String) -> Void = { _ in }
     ) {
+        self.onDraft = onDraft
+        self.onAttachmentError = onAttachmentError
         self._text = text
         self.placeholder = placeholder
         self.replyTarget = replyTarget
@@ -66,7 +74,22 @@ public struct ChatComposerView: View {
                 .transition(.move(edge: .bottom).combined(with: .opacity))
             }
 
+            if case .recording(let startedAt) = recorder.state {
+                VoiceRecordingBar(
+                    startedAt: startedAt,
+                    onCancel: { recorder.cancel() },
+                    onSend: {
+                        if let draft = recorder.finish() { onDraft?(draft) }
+                        else { onAttachmentError("That voice note was too short.") }
+                    }
+                )
+                .padding(.horizontal, 12)
+                .padding(.vertical, 8)
+            } else {
             HStack(alignment: .bottom, spacing: 8) {
+                if let onDraft, editTarget == nil {
+                    ComposerAttachmentButton(onDraft: onDraft, onError: onAttachmentError)
+                }
                 TextField(
                     editTarget == nil ? placeholder : "Edit message…",
                     text: $text,
@@ -114,6 +137,25 @@ public struct ChatComposerView: View {
                         .monospacedDigit()
                 }
 
+                if onDraft != nil, editTarget == nil, !canSend {
+                    Button {
+                        Task {
+                            await recorder.start()
+                            if recorder.state == .denied {
+                                onAttachmentError("Allow microphone access in Settings to record voice notes.")
+                            }
+                        }
+                    } label: {
+                        Image(systemName: "mic.fill")
+                            .font(.system(size: 17, weight: .semibold))
+                            .foregroundStyle(ClickColors.textSecondary)
+                            .frame(width: 40, height: 40)
+                            .background(ClickColors.fillStrong)
+                            .clipShape(Circle())
+                    }
+                    .buttonStyle(.plain)
+                    .accessibilityLabel("Record voice note")
+                } else {
                 Button {
                     guard canSend else { return }
                     ClickHaptics.impact(.light)
@@ -133,10 +175,13 @@ public struct ChatComposerView: View {
                 .buttonStyle(.plain)
                 .disabled(!canSend)
                 .accessibilityLabel(editTarget == nil ? "Send message" : "Save edit")
+                }
             }
             .padding(.horizontal, 12)
             .padding(.vertical, 8)
+            }
         }
+        .onDisappear { recorder.cancel() }
         .background(ClickColors.surface)
         .overlay(alignment: .top) {
             Rectangle()

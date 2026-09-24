@@ -24,21 +24,12 @@ struct ChatConversationTests {
             chatID
         }
 
-        func fetchMessages(
-            chatID: String,
-            connectionID: String?,
-            peerUserID: String,
-            currentUserID: String,
-            cursor: Int64?,
-            limit: Int
-        ) async throws -> [ChatMessageItem] {
+        func fetchMessages(conversation: ConversationIdentity, currentUserID: String, cursor: Int64?, limit: Int) async throws -> [ChatMessageItem] {
             messagesToReturn
         }
 
         func sendMessage(
-            chatID: String,
-            connectionID: String?,
-            peerUserID: String,
+            conversation: ConversationIdentity,
             currentUserID: String,
             currentUserName: String,
             content: String,
@@ -49,7 +40,7 @@ struct ChatConversationTests {
         ) async throws -> ChatMessageItem {
             let item = ChatMessageItem(
                 id: clientMessageID,
-                chatID: chatID,
+                chatID: conversation.chatID,
                 senderID: currentUserID,
                 senderName: currentUserName,
                 content: content,
@@ -63,23 +54,17 @@ struct ChatConversationTests {
             return item
         }
 
-        func editMessage(
-            message: ChatMessageItem,
-            connectionID: String?,
-            peerUserID: String,
-            currentUserID: String,
-            newContent: String
-        ) async throws {
+        func editMessage(message: ChatMessageItem, conversation: ConversationIdentity, currentUserID: String, newContent: String) async throws {
             if failEdit { throw MockError.forced }
             editedIDs[message.id] = newContent
         }
 
-        func deleteMessage(messageID: String) async throws {
+        func deleteMessage(messageID: String, conversation: ConversationIdentity) async throws {
             if failDelete { throw MockError.forced }
             deletedIDs.append(messageID)
         }
 
-        func setReaction(messageID: String, reactionType: String, adding: Bool) async throws {
+        func setReaction(messageID: String, reactionType: String, adding: Bool, conversation: ConversationIdentity) async throws {
             if failReaction { throw MockError.forced }
             reactionWrites.append((messageID, reactionType, adding))
         }
@@ -94,18 +79,12 @@ struct ChatConversationTests {
 
         func registerDevice() async throws {}
 
-        func decodeRealtimeMessage(
-            _ payload: RealtimeMessagePayload,
-            connectionID: String?,
-            peerUserID: String,
-            peerDisplayName: String,
-            currentUserID: String
-        ) async throws -> ChatMessageItem {
+        func decodeRealtimeMessage(_ payload: RealtimeMessagePayload, conversation: ConversationIdentity, currentUserID: String) async throws -> ChatMessageItem {
             ChatMessageItem(
                 id: payload.id,
                 chatID: payload.chatID,
                 senderID: payload.senderID,
-                senderName: payload.senderID == currentUserID ? "You" : peerDisplayName,
+                senderName: payload.senderID == currentUserID ? "You" : conversation.peerDisplayName,
                 content: payload.content,
                 createdAt: Date(timeIntervalSince1970: Double(payload.timeCreated) / 1000.0),
                 deliveryStatus: .delivered,

@@ -26,7 +26,12 @@ struct ShellNavigationTests {
             let router = AppRouter()
             router.resolveRoute(route)
             #expect(router.selectedTab == tab)
-            #expect(router[path: tab] == [route])
+            if route.presentsAsSheet {
+                #expect(router[path: tab].isEmpty)
+                #expect(router.presentedSheet?.route == route)
+            } else {
+                #expect(router[path: tab] == [route])
+            }
         }
     }
 
@@ -37,7 +42,9 @@ struct ShellNavigationTests {
         router.navigate(to: .savedEvents)
         router.navigate(to: .event(beaconID: "bcn_saved"))
 
-        #expect(router.settingsPath == [.savedEvents, .event(beaconID: "bcn_saved")])
+        #expect(router.settingsPath == [.savedEvents])
+        // Event detail is a sheet over the current tab, not a push.
+        #expect(router.presentedSheet?.route == .event(beaconID: "bcn_saved"))
         #expect(router.mapPath.isEmpty)
         #expect(router.homePath.isEmpty)
     }

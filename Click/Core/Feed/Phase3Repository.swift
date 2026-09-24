@@ -1,37 +1,10 @@
 import Foundation
 
-public struct ProfileTimelineEntry: Codable, Equatable, Identifiable, Sendable {
-    public let id: String
-    public let body: String
-    public let authorName: String?
-    public let createdAt: Date?
-    public let visibility: String
-
-    public init(id: String, body: String, authorName: String?, createdAt: Date?, visibility: String) {
-        self.id = id
-        self.body = body
-        self.authorName = authorName
-        self.createdAt = createdAt
-        self.visibility = visibility
-    }
-}
-
-public struct Phase3ProfileData: Codable, Equatable, Sendable {
-    public let profile: UserProfileSnapshot
-    public let timeline: [ProfileTimelineEntry]
-
-    public init(profile: UserProfileSnapshot, timeline: [ProfileTimelineEntry]) {
-        self.profile = profile
-        self.timeline = timeline
-    }
-}
-
 public actor Phase3Repository {
     private let api: ClickAPIClient
     private let defaults: UserDefaults
     private let decoder = JSONDecoder()
     private let encoder = JSONEncoder()
-    private var profileMemoryCache: [String: ProfilePayload] = [:]
 
     private let supabaseURL: URL?
     private let supabaseAnonKey: String
@@ -48,61 +21,8 @@ public actor Phase3Repository {
         self.supabaseAnonKey = supabaseAnonKey
     }
 
-    public func cachedHome(for userID: String) -> HomeFeedSnapshot? {
-        cached(HomeFeedSnapshot.self, key: "phase3.home.\(userID)")
-    }
-
     public func cachedClicks(for userID: String) -> ClicksSnapshot? {
         cached(ClicksSnapshot.self, key: "phase3.clicks.\(userID)")
-    }
-
-    public func cachedProfile(for userID: String) -> Phase3ProfileData? {
-        cached(Phase3ProfileData.self, key: "phase3.profile.\(userID)")
-    }
-
-    public func refreshHome(for userID: String) async throws -> HomeFeedSnapshot {
-        async let profileTask = fetchProfile(userID: userID, connectionID: nil)
-        async let clicksTask = refreshClicks(for: userID)
-        async let recapTask = fetchRecap()
-
-        let (profilePayload, clicks, recap) = try await (profileTask, clicksTask, recapTask)
-        let recent = clicks.connections.prefix(4).map {
-            RecentConnectionSummary(
-                id: $0.id,
-                userID: $0.userID,
-                connectionID: $0.connectionID,
-                displayName: $0.displayName,
-                handle: $0.handle,
-                avatarUrl: $0.avatarUrl,
-                initials: $0.initials,
-                encounterLocation: $0.encounterLocation,
-                lastActiveRelative: $0.lastActiveRelative,
-                isOnline: $0.isOnline,
-                presenceKnown: $0.presenceKnown
-            )
-        }
-
-        let intents = profilePayload.availabilityIntents.map {
-            AvailabilityIntent(id: $0.id, emoji: $0.emoji, label: $0.label, isSelected: true)
-        }
-
-        let encounterCount = clicks.connections.reduce(0) { $0 + $1.encounterCount }
-        let snapshot = HomeFeedSnapshot(
-            greetingName: profilePayload.firstName,
-            greetingSubtitle: recap.subtitle,
-            intents: intents,
-            featuredEvent: nil,
-            nearbyBeacons: [],
-            recentConnections: Array(recent),
-            stats: HomeStats(
-                totalClicks: clicks.connections.count,
-                totalEncounters: encounterCount,
-                totalCircles: clicks.connections.filter { $0.segment == .circles }.count
-            ),
-            recap: recap.activity
-        )
-        store(snapshot, key: "phase3.home.\(userID)")
-        return snapshot
     }
 
     /// Builds the Clicks inbox in three requests regardless of inbox size: the connections
@@ -123,9 +43,10 @@ public actor Phase3Repository {
             ?? root["connections"] as? [[String: Any]]
             ?? []
         let archivedRows = root["archived"] as? [[String: Any]] ?? []
+        let mapRows = root["map"] as? [[String: Any]] ?? []
         let coreIDs = Set(Self.stringArray(root["core"]))
 
-        let peerIDs = Array(Set((activeRows + archivedRows).compactMap {
+        let peerIDs = Array(Set((activeRows + archivedRows + mapRows).compactMap {
             Self.peerID(in: $0, currentUserID: userID)
         }))
 
@@ -149,7 +70,8 @@ public actor Phase3Repository {
         let snapshot = ClicksSnapshot(
             connections: items(activeRows, archived: false),
             archivedConnections: items(archivedRows, archived: true),
-            groups: []
+            groups: [],
+            mapPins: Self.mapPins(rows: mapRows, currentUserID: userID, identities: identities, coreIDs: coreIDs)
         )
         store(snapshot, key: "phase3.clicks.\(userID)")
         return snapshot
@@ -331,98 +253,87 @@ public actor Phase3Repository {
         return items.sorted { ($0.lastActivityAt ?? .distantPast) > ($1.lastActivityAt ?? .distantPast) }
     }
 
+    /// Canonical 1:1 connection pins, collapsing duplicate edges to the same peer (KMP
+    /// `visibleMapConnections`). Memory Map does not hide non-core pins.
+    nonisolated static func mapPins(
+        rows: [[String: Any]],
+        currentUserID: String,
+        identities: [String: InboxIdentity],
+        coreIDs: Set<String>
+    ) -> [ConnectionPin] {
+        var byPeer: [String: (pin: ConnectionPin, created: Date)] = [:]
+        for row in rows {
+            guard
+                let connectionID = string(row["id"]),
+                let userIDs = row["user_ids"] as? [String], userIDs.count == 2,
+                let peerID = userIDs.first(where: { $0 != currentUserID }),
+                let coordinate = pinCoordinate(row)
+            else { continue }
+            let encounters = (row["connection_encounters"] as? [[String: Any]] ?? [])
+                .sorted { (timestamp($0["encountered_at"]) ?? .distantFuture) < (timestamp($1["encountered_at"]) ?? .distantFuture) }
+            let name = identities[peerID]?.name ?? "Click user"
+            let pin = ConnectionPin(
+                connectionID: connectionID,
+                userID: peerID,
+                displayName: name,
+                avatarURL: identities[peerID]?.avatarURL,
+                latitude: coordinate.latitude,
+                longitude: coordinate.longitude,
+                locationName: string(encounters.first?["location_name"]) ?? string(row["semantic_location"]),
+                isCore: coreIDs.contains(connectionID)
+            )
+            let created = timestamp(row["created"]) ?? .distantPast
+            // Keep the oldest edge for a peer so the first-meet pin never moves.
+            if let existing = byPeer[peerID], existing.created <= created { continue }
+            byPeer[peerID] = (pin, created)
+        }
+        return byPeer.values.map(\.pin).sorted { $0.userID < $1.userID }
+    }
+
+    /// Mirrors click-web `connectionMapPinGeo`: `geo_location`, then origin encounter GPS,
+    /// then latest encounter GPS; (0, 0) is treated as missing.
+    nonisolated static func pinCoordinate(_ row: [String: Any]) -> (latitude: Double, longitude: Double)? {
+        func valid(_ lat: Double?, _ lon: Double?) -> (Double, Double)? {
+            guard let lat, let lon, lat.isFinite, lon.isFinite, !(lat == 0 && lon == 0),
+                  (-90...90).contains(lat), (-180...180).contains(lon) else { return nil }
+            return (lat, lon)
+        }
+        if let geo = JSONFields.dictionary(row["geo_location"]),
+           let found = valid(JSONFields.double(geo["lat"] ?? geo["latitude"]),
+                             JSONFields.double(geo["lon"] ?? geo["longitude"] ?? geo["lng"])) {
+            return found
+        }
+        let encounters = (row["connection_encounters"] as? [[String: Any]] ?? [])
+            .sorted { (timestamp($0["encountered_at"]) ?? .distantFuture) < (timestamp($1["encountered_at"]) ?? .distantFuture) }
+        for encounter in [encounters.first, encounters.last].compactMap({ $0 }) {
+            if let found = valid(JSONFields.double(encounter["gps_lat"]), JSONFields.double(encounter["gps_lon"])) {
+                return found
+            }
+        }
+        return nil
+    }
+
     private nonisolated static func peerID(in row: [String: Any], currentUserID: String) -> String? {
         (row["user_ids"] as? [String])?.first { $0 != currentUserID }
     }
 
-    public func refreshProfile(userID: String, connectionID: String? = nil) async throws -> Phase3ProfileData {
-        async let profileTask = fetchProfile(userID: userID, connectionID: connectionID)
-        async let timelineTask = fetchTimeline(userID: userID)
-        let (payload, timeline) = try await (profileTask, timelineTask)
-
-        let profile = UserProfileSnapshot(
-            userId: userID,
-            displayName: payload.displayName,
-            handle: payload.handle,
-            avatarUrl: payload.avatarURL,
-            initials: payload.initials,
-            bio: "",
-            interests: payload.tags,
-            personalityTraits: payload.personalityTags,
-            totalClicks: 0,
-            totalEncounters: 0,
-            totalCircles: 0,
-            memberSince: ""
-        )
-
-        let data = Phase3ProfileData(profile: profile, timeline: timeline)
-        store(data, key: "phase3.profile.\(userID)")
-        return data
-    }
-
-    public func refreshSelfProfile(userID: String) async throws -> Phase3ProfileData {
-        async let baseTask = refreshProfile(userID: userID)
-        async let clicksTask = refreshClicks(for: userID)
-        let (base, clicks) = try await (baseTask, clicksTask)
-
-        let profile = UserProfileSnapshot(
-            userId: base.profile.userId,
-            displayName: base.profile.displayName,
-            handle: base.profile.handle,
-            avatarUrl: base.profile.avatarUrl,
-            initials: base.profile.initials,
-            bio: base.profile.bio,
-            interests: base.profile.interests,
-            personalityTraits: base.profile.personalityTraits,
-            totalClicks: clicks.connections.count,
-            totalEncounters: clicks.connections.reduce(0) { $0 + $1.encounterCount },
-            totalCircles: clicks.cliques.count,
-            memberSince: base.profile.memberSince
-        )
-
-        let data = Phase3ProfileData(profile: profile, timeline: base.timeline)
-        store(data, key: "phase3.profile.\(userID)")
-        return data
-    }
-
-    public func searchConnections(userID: String, query: String) async throws -> [ConnectionItem] {
-        let snapshot: ClicksSnapshot
-        if let cached = cachedClicks(for: userID) {
-            snapshot = cached
-        } else {
-            snapshot = try await refreshClicks(for: userID)
-        }
-        return snapshot.filtered(by: .all, query: query)
+    /// Lightweight self identity (name + avatar) without the timeline or inbox requests that a
+    /// full profile refresh performs.
+    public func identity(userID: String) async throws -> (firstName: String, displayName: String, avatarURL: String?) {
+        let payload = try await fetchProfile(userID: userID, connectionID: nil)
+        let first = payload.firstName.isEmpty
+            ? payload.displayName.split(separator: " ").first.map(String.init) ?? ""
+            : payload.firstName
+        return (first, payload.displayName, payload.avatarURL)
     }
 
     private struct ProfilePayload: Sendable {
-        struct Intent: Sendable {
-            let id: String
-            let label: String
-            let emoji: String
-        }
-
         let firstName: String
         let displayName: String
-        let handle: String
         let avatarURL: String?
-        let initials: String
-        let tags: [String]
-        let personalityTags: [String]
-        let availabilityIntents: [Intent]
-    }
-
-    private struct RecapPayload: Sendable {
-        let subtitle: String
-        let activity: HomeActivityRecap
     }
 
     private func fetchProfile(userID: String, connectionID: String?) async throws -> ProfilePayload {
-        let cacheKey = "\(userID)|\(connectionID ?? "")"
-        if let cached = profileMemoryCache[cacheKey] {
-            return cached
-        }
-
         var query: [URLQueryItem] = []
         if let connectionID, !connectionID.isEmpty {
             query.append(URLQueryItem(name: "connectionId", value: connectionID))
@@ -443,84 +354,7 @@ public actor Phase3Repository {
         let displayName = directName?.trimmingCharacters(in: .whitespacesAndNewlines).nonEmpty
             ?? [first, last].filter { !$0.isEmpty }.joined(separator: " ").nonEmpty
             ?? "Click user"
-        let email = Self.string(user["email"]) ?? ""
-        let handle = email.split(separator: "@").first.map { "@\($0)" } ?? ""
-        let tags = Self.stringArray(root["tags"])
-        let personality = Self.stringArray(root["personality_tags"])
-        let rawIntents = root["availabilityIntents"] as? [[String: Any]] ?? []
-        let intents = rawIntents.compactMap { row -> ProfilePayload.Intent? in
-            guard let id = Self.string(row["id"]) else { return nil }
-            let label = Self.string(row["intent_tag"]) ?? Self.string(row["timeframe"]) ?? "Available"
-            return .init(id: id, label: label, emoji: Self.emoji(for: label))
-        }
-
-        let payload = ProfilePayload(
-            firstName: first,
-            displayName: displayName,
-            handle: handle,
-            avatarURL: Self.string(user["image"]),
-            initials: Self.initials(from: displayName),
-            tags: tags,
-            personalityTags: personality,
-            availabilityIntents: intents
-        )
-        profileMemoryCache[cacheKey] = payload
-        return payload
-    }
-
-    private func fetchTimeline(userID: String) async throws -> [ProfileTimelineEntry] {
-        let request = APIRequest(
-            path: "/api/profile/timeline",
-            method: .get,
-            queryItems: [
-                URLQueryItem(name: "target_type", value: "user"),
-                URLQueryItem(name: "target_id", value: userID)
-            ],
-            requiresAuth: true
-        )
-        let (data, _) = try await api.executeRaw(request)
-        let root = try Self.jsonObject(data)
-        let rows = root["journal_entries"] as? [[String: Any]] ?? []
-        return rows.compactMap { row in
-            guard let id = Self.string(row["id"]), let body = Self.string(row["body"]) else { return nil }
-            return ProfileTimelineEntry(
-                id: id,
-                body: body,
-                authorName: Self.string(row["author_name"]),
-                createdAt: Self.timestamp(row["created_at"]),
-                visibility: Self.string(row["visibility"]) ?? "private"
-            )
-        }
-    }
-
-    private func fetchRecap() async throws -> RecapPayload {
-        let request = APIRequest(
-            path: "/api/me/recap",
-            method: .get,
-            queryItems: [URLQueryItem(name: "window", value: "week")],
-            requiresAuth: true
-        )
-        let (data, _) = try await api.executeRaw(request)
-        let root = try Self.jsonObject(data)
-        let recap = root["recap"] as? [String: Any] ?? [:]
-        let connections = Self.int(recap["connections_formed"]) ?? 0
-        let messages = (Self.int(recap["messages_sent"]) ?? 0) + (Self.int(recap["messages_received"]) ?? 0)
-        let activity = HomeActivityRecap(
-            connectionsFormed: connections,
-            messagesSent: Self.int(recap["messages_sent"]) ?? 0,
-            messagesReceived: Self.int(recap["messages_received"]) ?? 0,
-            beaconsCreated: Self.int(recap["beacons_created"]) ?? 0,
-            eventsRSVPed: Self.int(recap["events_rsvped"]) ?? 0,
-            eventsCheckedIn: Self.int(recap["events_checked_in"]) ?? 0,
-            eventsSaved: Self.int(recap["events_saved"]) ?? 0
-        )
-        if connections == 0 && messages == 0 {
-            return RecapPayload(subtitle: "Ready to connect today?", activity: activity)
-        }
-        var parts: [String] = []
-        if connections > 0 { parts.append("\(connections) new Click\(connections == 1 ? "" : "s") this week") }
-        if messages > 0 { parts.append("\(messages) messages this week") }
-        return RecapPayload(subtitle: parts.joined(separator: " · "), activity: activity)
+        return ProfilePayload(firstName: first, displayName: displayName, avatarURL: Self.string(user["image"]))
     }
 
     private func cached<T: Codable>(_ type: T.Type, key: String) -> T? {

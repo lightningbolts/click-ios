@@ -86,14 +86,19 @@ public struct ConnectionItem: Codable, Equatable, Identifiable, Sendable {
     }
 
     /// Returns a copy with inbox-local state changed (optimistic updates).
-    public func with(unreadCount: Int? = nil, isCore: Bool? = nil) -> ConnectionItem {
+    public func with(
+        unreadCount: Int? = nil,
+        isCore: Bool? = nil,
+        lastMessage: InboxLastMessage? = nil,
+        lastActivityAt: Date? = nil
+    ) -> ConnectionItem {
         ConnectionItem(
             id: id, userID: userID, connectionID: connectionID, displayName: displayName,
             handle: handle, avatarUrl: avatarUrl, initials: initials, isOnline: isOnline,
             presenceKnown: presenceKnown, lastActiveRelative: lastActiveRelative,
             encounterLocation: encounterLocation, mutualTags: mutualTags,
             encounterCount: encounterCount, segment: segment, lastMessagePreview: lastMessagePreview,
-            chatID: chatID, lastMessage: lastMessage, lastActivityAt: lastActivityAt,
+            chatID: chatID, lastMessage: lastMessage ?? self.lastMessage, lastActivityAt: lastActivityAt ?? self.lastActivityAt,
             sayHiDeadline: sayHiDeadline, unreadCount: unreadCount ?? self.unreadCount,
             isCore: isCore ?? self.isCore
         )
@@ -109,8 +114,11 @@ public struct InboxLastMessage: Codable, Equatable, Sendable {
     public let isOutgoing: Bool
     public let isRead: Bool
     public let isDisposable: Bool
+    /// Group rows prefix incoming previews with the sender ("Lena: …").
+    public var senderName: String? = nil
 
-    public init(content: String, messageType: String, isOutgoing: Bool, isRead: Bool, isDisposable: Bool = false) {
+    public init(content: String, messageType: String, isOutgoing: Bool, isRead: Bool, isDisposable: Bool = false, senderName: String? = nil) {
+        self.senderName = senderName
         self.content = content
         self.messageType = messageType
         self.isOutgoing = isOutgoing
@@ -120,32 +128,84 @@ public struct InboxLastMessage: Codable, Equatable, Sendable {
 }
 
 
+/// A verified group (clique) in the inbox. `id` is the group ID; `chatID` its chat.
+/// Newer fields are optional so snapshots cached by earlier builds still decode.
 public struct CliqueItem: Codable, Equatable, Identifiable, Sendable {
     public let id: String
     public let chatID: String
     public let name: String
     public let memberCount: Int
     public let lastActiveRelative: String
+    public let createdBy: String?
+    public let avatarURL: String?
+    private let memberList: [GroupMember]?
+    public let lastActivityAt: Date?
+    public let lastMessage: InboxLastMessage?
+    private let unread: Int?
 
     public init(
         id: String,
         chatID: String,
         name: String,
         memberCount: Int,
-        lastActiveRelative: String = ""
+        lastActiveRelative: String = "",
+        createdBy: String? = nil,
+        avatarURL: String? = nil,
+        members: [GroupMember] = [],
+        lastActivityAt: Date? = nil,
+        lastMessage: InboxLastMessage? = nil,
+        unreadCount: Int = 0
     ) {
         self.id = id
         self.chatID = chatID
         self.name = name
         self.memberCount = memberCount
         self.lastActiveRelative = lastActiveRelative
+        self.createdBy = createdBy
+        self.avatarURL = avatarURL
+        self.memberList = members
+        self.lastActivityAt = lastActivityAt
+        self.lastMessage = lastMessage
+        self.unread = unreadCount
     }
+
+    public var members: [GroupMember] { memberList ?? [] }
+    public var unreadCount: Int { unread ?? 0 }
 
     public var initials: String {
         let words = name.split(separator: " ")
         let value = words.prefix(2).compactMap(\.first).map(String.init).joined()
-        return value.isEmpty ? "C" : value.uppercased()
+        return value.isEmpty ? "G" : value.uppercased()
     }
+
+    public var chatRoute: GroupChatRoute {
+        GroupChatRoute(chatID: chatID, groupID: id, name: name, avatarURL: avatarURL, memberUserIDs: members.map(\.userID))
+    }
+
+    public func with(unreadCount: Int, lastMessage: InboxLastMessage? = nil, lastActivityAt: Date? = nil) -> CliqueItem {
+        CliqueItem(
+            id: id, chatID: chatID, name: name, memberCount: memberCount, lastActiveRelative: lastActiveRelative,
+            createdBy: createdBy, avatarURL: avatarURL, members: members,
+            lastActivityAt: lastActivityAt ?? self.lastActivityAt,
+            lastMessage: lastMessage ?? self.lastMessage, unreadCount: unreadCount
+        )
+    }
+}
+
+/// One map pin per peer (spec §50): stored `geo_location`, else the first-meet (origin)
+/// encounter GPS — never the latest encounter, so reconnects do not move or duplicate pins.
+public struct ConnectionPin: Codable, Equatable, Identifiable, Sendable {
+    public let connectionID: String
+    public let userID: String
+    public let displayName: String
+    public let avatarURL: String?
+    public let latitude: Double
+    public let longitude: Double
+    public let locationName: String?
+    public let isCore: Bool
+
+    public var id: String { userID }
+    public var initials: String { Phase3Repository.initials(from: displayName) }
 }
 
 /// Snapshot representation of the Clicks tab.
@@ -153,19 +213,24 @@ public struct ClicksSnapshot: Codable, Equatable, Sendable {
     public let connections: [ConnectionItem]
     public let archivedConnections: [ConnectionItem]?
     public let groups: [CliqueItem]?
+    /// Map pins from the same dashboard bundle (`map`: every non-hidden connection).
+    public let mapPins: [ConnectionPin]?
 
     public init(
         connections: [ConnectionItem],
         archivedConnections: [ConnectionItem]? = nil,
-        groups: [CliqueItem]? = nil
+        groups: [CliqueItem]? = nil,
+        mapPins: [ConnectionPin]? = nil
     ) {
         self.connections = connections
         self.archivedConnections = archivedConnections
         self.groups = groups
+        self.mapPins = mapPins
     }
 
     public var archived: [ConnectionItem] { archivedConnections ?? [] }
     public var cliques: [CliqueItem] { groups ?? [] }
+    public var pins: [ConnectionPin] { mapPins ?? [] }
 
     public func filtered(by segment: ConnectionSegment, query: String = "") -> [ConnectionItem] {
         let cleanQuery = query.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()

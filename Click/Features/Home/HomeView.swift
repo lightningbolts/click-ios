@@ -1,633 +1,584 @@
 import SwiftUI
 
-/// Home keeps the cross-platform Click information hierarchy while using native SwiftUI
-/// scrolling, sheets, toolbars, refresh, and navigation.
+/// Home: a linear social feed (spec §20.2, prototype hierarchy).
+///
+/// 1. greeting + search · 2. "I'm down for…" · 3. one social opportunity · 4. recent people ·
+/// 5. recap · 6. saved & upcoming · 7. nearby discovery · 8. insights.
+///
+/// The scaffold never waits on a request: each module renders its own cached / loading /
+/// empty / error state from `HomeFeedModel`, and recent people/insights come from the
+/// shell-owned inbox model.
 public struct HomeView: View {
     @Environment(AppEnvironment.self) private var env
-    @State private var snapshot: HomeFeedSnapshot?
-    @State private var refreshError: String?
+    @Environment(ConversationListModel.self) private var conversations
+    @State private var model = HomeFeedModel()
     @State private var isSearching = false
     @State private var isEditingAvailability = false
-    @State private var recapWindow: RecapWindow = .week
-    @State private var displayedRecap: HomeActivityRecap?
     @State private var showsCompactTitle = false
 
-    public init(initialSnapshot: HomeFeedSnapshot? = nil) {
-        self._snapshot = State(initialValue: initialSnapshot)
-        self._displayedRecap = State(initialValue: initialSnapshot?.recap)
-    }
+    public init() {}
 
     public var body: some View {
-        Group {
-            if let snapshot {
-                ScrollView {
-                    LazyVStack(alignment: .leading, spacing: 28) {
-                        if refreshError != nil {
-                            offlineNotice
+        let opportunity = model.opportunity(connections: conversations.active)
+
+        ScrollView {
+            LazyVStack(alignment: .leading, spacing: 30) {
+                header
+                availabilitySection
+                if let opportunity {
+                    HomeOpportunitySection(
+                        opportunity: opportunity,
+                        person: person(for: opportunity),
+                        onOpenEvent: { openEvent($0) },
+                        onShowOnMap: { env.router.showOnMap(.beacon($0)) },
+                        onMessage: { message($0) },
+                        onResolveNudge: { nudge, action in
+                            Task { await model.resolveNudge(nudge, action: action) }
                         }
-
-                        greeting(snapshot)
-
-                        HomeSearchPill { isSearching = true }
-
-                        availabilitySection(snapshot.intents)
-
-                        recapSection(displayedRecap ?? snapshot.recap ?? .init())
-
-                        if let event = snapshot.featuredEvent {
-                            sectionHeader("Saved events")
-                            FeaturedEventCard(event: event) {
-                                env.router.selectedTab = .map
-                                env.router.mapPath.append(.event(beaconID: event.id))
-                            }
-                        }
-
-                        if !snapshot.nearbyBeacons.isEmpty {
-                            nearbySection(snapshot.nearbyBeacons)
-                        }
-
-                        if !snapshot.recentConnections.isEmpty {
-                            recentSection(snapshot.recentConnections)
-                        }
-
-                        statsSection(snapshot.stats)
-                    }
-                    .padding(.horizontal, 18)
-                    .padding(.top, 8)
-                    .padding(.bottom, 34)
+                    )
+                    .transition(.opacity)
                 }
-                .refreshable { await refresh() }
-                // The greeting is Home's expanded title; the compact native title appears only
-                // once it scrolls under the navigation bar.
-                .onScrollGeometryChange(for: Bool.self) { geometry in
-                    geometry.contentOffset.y + geometry.contentInsets.top > 56
-                } action: { _, isScrolledPastGreeting in
-                    showsCompactTitle = isScrolledPastGreeting
-                }
-            } else {
-                loadingState
+                recentPeopleSection(promoted: opportunity)
+                recapSection
+                savedSection(promotedID: promotedEventID(opportunity))
+                nearbySection
+                insightsSection
             }
+            .padding(.horizontal, ClickSpacing.screenGutter)
+            .padding(.top, 4)
+            .padding(.bottom, 32)
+            .animation(ClickMotion.subtleFade, value: opportunity?.id)
         }
         .background(ClickColors.background.ignoresSafeArea())
+        .refreshable {
+            async let feed: Void = model.refresh()
+            async let inbox: Void = conversations.refresh()
+            _ = await (feed, inbox)
+        }
+        .onScrollGeometryChange(for: Bool.self) { geometry in
+            geometry.contentOffset.y + geometry.contentInsets.top > 48
+        } action: { _, scrolledPastGreeting in
+            showsCompactTitle = scrolledPastGreeting
+        }
         .navigationTitle("Home")
         .navigationBarTitleDisplayMode(.inline)
         .toolbar {
             ToolbarItem(placement: .principal) {
                 Text("Home")
                     .font(.headline)
-                    .opacity(showsCompactTitle || snapshot == nil ? 1 : 0)
+                    .opacity(showsCompactTitle ? 1 : 0)
                     .animation(ClickMotion.subtleFade, value: showsCompactTitle)
                     .accessibilityAddTraits(.isHeader)
             }
             ToolbarItem(placement: .topBarLeading) {
-                Menu {
+                RootMenu {
                     Button("Refresh", systemImage: "arrow.clockwise") {
-                        Task { await refresh() }
+                        Task { await model.refresh() }
                     }
-                    Button("Settings", systemImage: "gearshape.fill") {
-                        env.router.selectedTab = .settings
-                    }
+                }
+            }
+            ToolbarItem(placement: .topBarTrailing) {
+                Button {
+                    isSearching = true
                 } label: {
-                    Label("Home menu", systemImage: "ellipsis")
+                    Label("Search", systemImage: "magnifyingglass")
                 }
             }
         }
-        .task { await bootstrap() }
+        .task {
+            model.attach(env)
+            await model.loadIfNeeded()
+        }
         .sheet(isPresented: $isSearching) {
-            HomeSearchSheetView()
+            GlobalSearchView()
         }
         .sheet(isPresented: $isEditingAvailability) {
-            AvailabilityIntentsSheet {
-                Task { await refresh() }
+            AvailabilitySheet {
+                Task { await model.reloadIntents() }
             }
-        }
-        .onChange(of: recapWindow) { _, newValue in
-            Task { await loadRecap(window: newValue) }
         }
     }
 
-    private func greeting(_ snapshot: HomeFeedSnapshot) -> some View {
-        VStack(alignment: .leading, spacing: 5) {
-            Text(HomeFeedSnapshot.timeBasedSalutation(for: snapshot.greetingName))
+    // MARK: - 1. Greeting + search
+
+    private var header: some View {
+        VStack(alignment: .leading, spacing: 4) {
+            Text(HomeGreeting.salutation(for: model.firstName))
                 .font(ClickTypography.largeTitle)
-                .tracking(-0.55)
                 .foregroundStyle(ClickColors.textPrimary)
                 .fixedSize(horizontal: false, vertical: true)
-
-            Text(snapshot.greetingSubtitle)
-                .font(ClickTypography.body)
-                .foregroundStyle(ClickColors.textSecondary)
-        }
-        .frame(maxWidth: .infinity, alignment: .leading)
-    }
-
-    private func availabilitySection(_ intents: [AvailabilityIntent]) -> some View {
-        VStack(alignment: .leading, spacing: 11) {
-            sectionHeader("I'm down for…")
-
-            if !intents.isEmpty {
-                ScrollView(.horizontal) {
-                    HStack(spacing: 8) {
-                        ForEach(intents) { intent in
-                            AvailabilityIntentPill(intent: intent)
-                        }
-                    }
-                }
-                .scrollIndicators(.hidden)
-            }
+                .accessibilityAddTraits(.isHeader)
+            Text("Ready to connect today?")
+                .font(ClickTypography.supporting)
+                .foregroundStyle(ClickColors.textTertiary)
 
             Button {
                 ClickHaptics.selection()
-                isEditingAvailability = true
+                isSearching = true
             } label: {
-                Label(
-                    intents.isEmpty ? "Set what you're down for" : "Manage what you're down for",
-                    systemImage: "plus"
-                )
-            }
-            .buttonStyle(.clickPrimary)
-        }
-    }
-
-    private func recapSection(_ recap: HomeActivityRecap) -> some View {
-        VStack(alignment: .leading, spacing: 14) {
-            sectionHeader("Your recap")
-
-            HStack(spacing: 10) {
-                recapWindowButton(.day)
-                recapWindowButton(.week)
-                Spacer()
-            }
-
-            VStack(spacing: 0) {
-                recapRow("Connections formed", value: recap.connectionsFormed)
-                recapRow("Messages sent", value: recap.messagesSent, emphasized: true)
-                recapRow("Messages received", value: recap.messagesReceived)
-                recapRow("Beacons created", value: recap.beaconsCreated)
-                recapRow("Events RSVP'd", value: recap.eventsRSVPed)
-                recapRow("Check-ins", value: recap.eventsCheckedIn)
-                recapRow("Events saved", value: recap.eventsSaved)
-            }
-            .padding(.vertical, 8)
-            .groupedSurface()
-        }
-    }
-
-    private func recapWindowButton(_ value: RecapWindow) -> some View {
-        Button {
-            recapWindow = value
-            ClickHaptics.selection()
-        } label: {
-            Text(value == .day ? "Day" : "Week")
-                .font(ClickTypography.supportingEmphasized)
-                .foregroundStyle(recapWindow == value ? ClickColors.accentForeground : ClickColors.textPrimary)
-                .padding(.horizontal, 18)
-                .frame(minWidth: 92, minHeight: ClickMetrics.chipHeight)
-                .background(recapWindow == value ? ClickColors.selectionTint : ClickColors.fillSubtle, in: Capsule())
-                .frame(minHeight: ClickMetrics.minimumHitTarget)
-                .contentShape(Rectangle())
-        }
-        .buttonStyle(.plain)
-    }
-
-    private func recapRow(_ title: String, value: Int, emphasized: Bool = false) -> some View {
-        HStack {
-            Text(title)
-                .font(emphasized ? ClickTypography.bodyEmphasized : ClickTypography.body)
-                .foregroundStyle(emphasized ? ClickColors.textPrimary : ClickColors.textSecondary)
-            Spacer()
-            Text("\(value)")
-                .font(emphasized ? ClickTypography.bodyEmphasized : ClickTypography.body)
-                .foregroundStyle(emphasized ? ClickColors.textPrimary : ClickColors.textSecondary)
-                .monospacedDigit()
-        }
-        .padding(.horizontal, 16)
-        .frame(height: 44)
-    }
-
-    private func nearbySection(_ beacons: [ExploreBeaconItem]) -> some View {
-        VStack(alignment: .leading, spacing: 11) {
-            HStack {
-                sectionHeader("Explore Nearby")
-                Spacer()
-                Button("Map") { env.router.selectedTab = .map }
-                    .font(ClickTypography.metadata)
-            }
-
-            VStack(spacing: 0) {
-                ForEach(beacons) { beacon in
-                    ExploreBeaconTile(beacon: beacon) {
-                        env.router.selectedTab = .map
-                        env.router.mapPath.append(.beacon(beaconID: beacon.id))
-                    }
-                    if beacon.id != beacons.last?.id {
-                        Divider().padding(.leading, 58)
-                    }
+                HStack(spacing: 8) {
+                    Image(systemName: "magnifyingglass")
+                    Text("Search people, places, events")
+                        .lineLimit(1)
+                    Spacer(minLength: 0)
                 }
+                .font(ClickTypography.body)
+                .foregroundStyle(ClickColors.textTertiary)
+                .padding(.horizontal, 14)
+                .frame(minHeight: ClickMetrics.searchMinHeight)
+                .background(ClickColors.fillSubtle, in: Capsule())
+                .contentShape(Capsule())
             }
-            .groupedSurface()
+            .buttonStyle(.plain)
+            .padding(.top, 12)
+            .accessibilityLabel("Search people, places, events")
+
+            if model.isShowingOfflineData {
+                OfflineNotice("Offline — showing saved data") {
+                    Task { await model.refresh() }
+                }
+                .padding(.top, 8)
+            }
         }
+        .padding(.horizontal, 4)
     }
 
-    private func recentSection(_ connections: [RecentConnectionSummary]) -> some View {
-        VStack(alignment: .leading, spacing: 11) {
-            HStack {
-                sectionHeader("Recent Connections")
-                Spacer()
-                Button("See all") {
-                    env.router.selectedTab = .connections
-                }
-                .font(ClickTypography.metadata)
-            }
+    // MARK: - 2. Availability
 
+    private var availabilitySection: some View {
+        VStack(alignment: .leading, spacing: 7) {
+            HomeCaption("I'm down for…")
             VStack(spacing: 0) {
-                ForEach(connections) { connection in
-                    RecentConnectionRowItem(connection: connection) {
-                        guard !connection.userID.isEmpty else { return }
-                        env.router.selectedTab = .connections
-                        env.router.connectionsPath.append(
-                            .userProfile(
-                                userID: connection.userID,
-                                connectionID: connection.connectionID.nonEmpty
-                            )
-                        )
-                    }
-                    if connection.id != connections.last?.id {
-                        Divider().padding(.leading, 62)
-                    }
-                }
-            }
-            .groupedSurface()
-        }
-    }
-
-    private func statsSection(_ stats: HomeStats) -> some View {
-        VStack(alignment: .leading, spacing: 11) {
-            sectionHeader("Your Stats")
-            HStack(spacing: 0) {
-                HomeStatCard(title: "Clicks", value: stats.totalClicks, iconName: "person.2.fill")
-                Divider().frame(height: 38)
-                HomeStatCard(title: "Encounters", value: stats.totalEncounters, iconName: "mappin")
-                Divider().frame(height: 38)
-                HomeStatCard(title: "Circles", value: stats.totalCircles, iconName: "circle.grid.3x3.fill")
-            }
-            .padding(.vertical, 14)
-            .groupedSurface()
-        }
-    }
-
-    private func sectionHeader(_ title: String) -> some View {
-        Text(title)
-            .font(ClickTypography.supportingEmphasized)
-            .foregroundStyle(ClickColors.textPrimary)
-    }
-
-    private var loadingState: some View {
-        VStack(spacing: 10) {
-            ProgressView().tint(ClickColors.accentForeground)
-            Text("Loading Home…")
-                .font(ClickTypography.supporting)
-                .foregroundStyle(ClickColors.textSecondary)
-        }
-        .frame(maxWidth: .infinity, maxHeight: .infinity)
-    }
-
-    private var offlineNotice: some View {
-        OfflineNotice("Offline — showing saved data") {
-            Task { await refresh() }
-        }
-    }
-
-    @MainActor
-    private func bootstrap() async {
-        guard snapshot == nil,
-              let userID = env.session.currentSession?.userId else { return }
-
-        if let cached = await env.phase3.cachedHome(for: userID) {
-            snapshot = cached
-            displayedRecap = cached.recap
-        }
-        await refresh()
-    }
-
-    @MainActor
-    private func refresh() async {
-        guard let userID = env.session.currentSession?.userId else { return }
-
-        do {
-            let fresh = try await env.phase3.refreshHome(for: userID)
-            snapshot = fresh
-            if recapWindow == .week {
-                displayedRecap = fresh.recap
-            }
-            refreshError = nil
-        } catch {
-            refreshError = error.localizedDescription
-        }
-    }
-
-    @MainActor
-    private func loadRecap(window: RecapWindow) async {
-        do {
-            let request = APIRequest(
-                path: "/api/me/recap",
-                method: .get,
-                queryItems: [URLQueryItem(name: "window", value: window.rawValue)],
-                requiresAuth: true
-            )
-            let (data, _) = try await env.api.executeRaw(request)
-            guard
-                let root = try JSONSerialization.jsonObject(with: data) as? [String: Any],
-                let row = root["recap"] as? [String: Any]
-            else { throw APIError.decoding }
-
-            displayedRecap = HomeActivityRecap(
-                connectionsFormed: Self.int(row["connections_formed"]),
-                messagesSent: Self.int(row["messages_sent"]),
-                messagesReceived: Self.int(row["messages_received"]),
-                beaconsCreated: Self.int(row["beacons_created"]),
-                eventsRSVPed: Self.int(row["events_rsvped"]),
-                eventsCheckedIn: Self.int(row["events_checked_in"]),
-                eventsSaved: Self.int(row["events_saved"])
-            )
-        } catch {
-            refreshError = error.localizedDescription
-        }
-    }
-
-    private static func int(_ value: Any?) -> Int {
-        if let value = value as? Int { return value }
-        if let value = value as? NSNumber { return value.intValue }
-        if let value = value as? String { return Int(value) ?? 0 }
-        return 0
-    }
-}
-
-private enum RecapWindow: String {
-    case day
-    case week
-}
-
-private struct AvailabilityIntentsSheet: View {
-    @Environment(AppEnvironment.self) private var env
-    @Environment(\.dismiss) private var dismiss
-    let onChanged: () -> Void
-
-    @State private var intents: [AvailabilityRow] = []
-    @State private var tag = ""
-    @State private var duration: DurationPreset = .fourHours
-    @State private var isLoading = true
-    @State private var isSaving = false
-    @State private var errorMessage: String?
-
-    var body: some View {
-        NavigationStack {
-            Form {
-                if !intents.isEmpty {
-                    Section("Active now") {
-                        ForEach(intents) { intent in
-                            HStack {
+                if let intents = model.intents.value {
+                    ForEach(intents) { intent in
+                        Button { isEditingAvailability = true } label: {
+                            HomeRow(inset: 60) {
+                                Circle()
+                                    .fill(ClickColors.online)
+                                    .frame(width: 12, height: 12)
+                                    .frame(width: 28)
+                            } content: {
                                 Text(intent.tag)
-                                Spacer()
-                                Text(intent.timeframe)
-                                    .font(ClickTypography.metadata)
-                                    .foregroundStyle(ClickColors.textSecondary)
-                            }
-                            .swipeActions {
-                                Button(role: .destructive) {
-                                    Task { await remove(intent) }
-                                } label: {
-                                    Label("Remove", systemImage: "trash")
-                                }
+                                    .font(ClickTypography.body)
+                                    .foregroundStyle(ClickColors.textPrimary)
+                                    .lineLimit(1)
+                                Text("Visible to your Clicks · \(AvailabilityFormatting.until(intent).lowercased())")
+                                    .font(ClickTypography.supporting)
+                                    .foregroundStyle(ClickColors.textTertiary)
+                                    .lineLimit(1)
                             }
                         }
+                        .buttonStyle(.plain)
+                        HomeDivider(inset: 60)
                     }
+                } else if model.intents.isPending {
+                    HomeRow(inset: 60) {
+                        ProgressView().frame(width: 28)
+                    } content: {
+                        Text("Loading your plans…")
+                            .font(ClickTypography.body)
+                            .foregroundStyle(ClickColors.textTertiary)
+                    }
+                    HomeDivider(inset: 60)
+                } else if model.intents.errorMessage != nil {
+                    HomeRetryRow(message: "Couldn't load your plans.") {
+                        Task { await model.reloadIntents() }
+                    }
+                    HomeDivider(inset: 60)
                 }
 
-                Section("Add intent") {
-                    TextField("Coffee, study session…", text: $tag)
-                        .textInputAutocapitalization(.sentences)
-                        .onChange(of: tag) { _, value in
-                            if value.count > 25 { tag = String(value.prefix(25)) }
-                        }
-
-                    Picker("Duration", selection: $duration) {
-                        ForEach(DurationPreset.allCases) { preset in
-                            Text(preset.label).tag(preset)
-                        }
+                Button {
+                    ClickHaptics.selection()
+                    isEditingAvailability = true
+                } label: {
+                    HomeRow(inset: 60) {
+                        Image(systemName: "plus.circle.fill")
+                            .font(.system(size: 20))
+                            .frame(width: 28)
+                    } content: {
+                        Text((model.intents.value ?? []).isEmpty ? "Share what you're down for" : "Add or change plans")
+                            .font(ClickTypography.body)
                     }
-
-                    Button {
-                        Task { await addIntent() }
-                    } label: {
-                        if isSaving {
-                            ProgressView()
-                        } else {
-                            Label("Share availability", systemImage: "plus")
-                        }
-                    }
-                    .disabled(tag.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || isSaving)
+                    .foregroundStyle(ClickColors.accentForeground)
                 }
-
-                if let errorMessage {
-                    Section {
-                        Text(errorMessage)
-                            .foregroundStyle(ClickColors.destructive)
-                    }
-                }
+                .buttonStyle(.plain)
             }
-            .navigationTitle("I'm down for…")
-            .navigationBarTitleDisplayMode(.inline)
-            .toolbar {
-                ToolbarItem(placement: .topBarTrailing) {
-                    Button("Done") { dismiss() }
+            .groupedSurface()
+        }
+    }
+
+    // MARK: - 4. Recent people
+
+    @ViewBuilder
+    private func recentPeopleSection(promoted: HomeOpportunity?) -> some View {
+        let recent = Array(
+            conversations.active
+                .sorted { ($0.lastActivityAt ?? .distantPast) > ($1.lastActivityAt ?? .distantPast) }
+                .prefix(10)
+        )
+        // A second nudge (one not already promoted above) sits under the strip, never twice.
+        let secondaryNudge = model.visibleNudges.first { nudge in
+            if case .nudge(let promotedNudge) = promoted { return nudge.id != promotedNudge.id }
+            return true
+        }
+
+        if !recent.isEmpty || conversations.snapshot == nil {
+            VStack(alignment: .leading, spacing: 12) {
+                HStack(alignment: .firstTextBaseline) {
+                    Text("Recent connections")
+                        .font(ClickTypography.sectionTitle)
+                        .foregroundStyle(ClickColors.textPrimary)
+                    Spacer()
+                    Button("See all") { env.router.selectTab(.connections) }
+                        .font(ClickTypography.body)
+                        .foregroundStyle(ClickColors.textTertiary)
                 }
-            }
-            .task { await load() }
-        }
-        .tint(ClickColors.accentForeground)
-        .presentationDetents([.medium, .large])
-    }
+                .padding(.horizontal, 18)
 
-    @MainActor
-    private func load() async {
-        isLoading = true
-        defer { isLoading = false }
-        do {
-            let request = APIRequest(path: "/api/user/availability-intents", method: .get, requiresAuth: true)
-            let (data, _) = try await env.api.executeRaw(request)
-            guard
-                let root = try JSONSerialization.jsonObject(with: data) as? [String: Any],
-                let rows = root["intents"] as? [[String: Any]]
-            else { throw APIError.decoding }
-
-            intents = rows.compactMap {
-                guard let id = $0["id"] as? String else { return nil }
-                let tag = ($0["intent_tag"] as? String) ?? "Available"
-                let timeframe = ($0["timeframe"] as? String) ?? ""
-                return AvailabilityRow(id: id, tag: tag, timeframe: timeframe)
-            }
-            errorMessage = nil
-        } catch {
-            errorMessage = error.localizedDescription
-        }
-    }
-
-    @MainActor
-    private func addIntent() async {
-        let clean = tag.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !clean.isEmpty else { return }
-        isSaving = true
-        defer { isSaving = false }
-
-        do {
-            let body = try JSONSerialization.data(withJSONObject: [
-                "intent_tag": clean,
-                "durationMs": duration.milliseconds
-            ])
-            let request = APIRequest(
-                path: "/api/user/availability-intents",
-                method: .post,
-                body: body,
-                requiresAuth: true
-            )
-            _ = try await env.api.executeRaw(request)
-            tag = ""
-            await load()
-            onChanged()
-        } catch {
-            errorMessage = error.localizedDescription
-        }
-    }
-
-    @MainActor
-    private func remove(_ row: AvailabilityRow) async {
-        do {
-            let request = APIRequest(
-                path: "/api/user/availability-intents",
-                method: .delete,
-                queryItems: [URLQueryItem(name: "id", value: row.id)],
-                requiresAuth: true
-            )
-            _ = try await env.api.executeRaw(request)
-            intents.removeAll { $0.id == row.id }
-            onChanged()
-        } catch {
-            errorMessage = error.localizedDescription
-        }
-    }
-}
-
-private struct AvailabilityRow: Identifiable {
-    let id: String
-    let tag: String
-    let timeframe: String
-}
-
-private enum DurationPreset: CaseIterable, Identifiable {
-    case oneHour
-    case fourHours
-    case today
-
-    var id: String { label }
-
-    var label: String {
-        switch self {
-        case .oneHour: return "1 hour"
-        case .fourHours: return "4 hours"
-        case .today: return "Today"
-        }
-    }
-
-    var milliseconds: Int {
-        switch self {
-        case .oneHour: return 3_600_000
-        case .fourHours: return 14_400_000
-        case .today: return 43_200_000
-        }
-    }
-}
-
-private struct HomeSearchSheetView: View {
-    @Environment(AppEnvironment.self) private var env
-    @Environment(\.dismiss) private var dismiss
-    @State private var query = ""
-    @State private var results: [ConnectionItem] = []
-
-    var body: some View {
-        NavigationStack {
-            Group {
-                if query.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
-                    ContentUnavailableView {
-                        Label("Search Click", systemImage: "magnifyingglass")
-                    } description: {
-                        Text("Find people by name, handle, place, or interest.")
+                if recent.isEmpty {
+                    HStack(spacing: 14) {
+                        ForEach(0..<4, id: \.self) { _ in
+                            VStack(spacing: 6) {
+                                Circle().fill(ClickColors.fillSubtle).frame(width: 64, height: 64)
+                                Capsule().fill(ClickColors.fillSubtle).frame(width: 44, height: 10)
+                            }
+                        }
                     }
-                } else if results.isEmpty {
-                    ContentUnavailableView.search(text: query)
+                    .padding(.horizontal, 18)
+                    .accessibilityLabel("Loading recent connections")
                 } else {
-                    List(results) { connection in
-                        Button {
-                            dismiss()
-                            env.router.selectedTab = .connections
-                            env.router.connectionsPath.append(
-                                .userProfile(
-                                    userID: connection.userID,
-                                    connectionID: connection.connectionID.nonEmpty
-                                )
-                            )
-                        } label: {
-                            HStack(spacing: 12) {
-                                AvatarView(
-                                    imageURL: connection.avatarUrl,
-                                    seed: connection.userID,
-                                    initials: connection.initials,
-                                    size: ClickMetrics.Avatar.row
-                                )
-
-                                VStack(alignment: .leading, spacing: 2) {
-                                    Text(connection.displayName)
-                                        .font(ClickTypography.body)
-                                        .foregroundStyle(ClickColors.textPrimary)
-                                    if !connection.handle.isEmpty {
-                                        Text(connection.handle)
+                    ScrollView(.horizontal) {
+                        LazyHStack(alignment: .top, spacing: 14) {
+                            ForEach(recent) { item in
+                                Button { openProfile(item) } label: {
+                                    VStack(spacing: 4) {
+                                        AvatarView(
+                                            imageURL: item.avatarUrl,
+                                            seed: item.userID,
+                                            initials: item.initials,
+                                            size: 64,
+                                            presence: AvatarView.Presence(isOnline: item.isOnline, known: item.presenceKnown)
+                                        )
+                                        Text(HomeFeedModel.firstName(item.displayName) ?? item.displayName)
                                             .font(ClickTypography.supporting)
-                                            .foregroundStyle(ClickColors.textSecondary)
+                                            .foregroundStyle(ClickColors.textPrimary)
+                                            .lineLimit(1)
+                                        if !item.lastActiveRelative.isEmpty {
+                                            Text(item.lastActiveRelative)
+                                                .font(ClickTypography.caption)
+                                                .foregroundStyle(ClickColors.textTertiary)
+                                                .lineLimit(1)
+                                        }
+                                    }
+                                    .frame(width: 72)
+                                }
+                                .buttonStyle(.plain)
+                                .accessibilityLabel("\(item.displayName), \(item.lastActiveRelative)")
+                            }
+                        }
+                        .padding(.horizontal, 18)
+                    }
+                    .scrollIndicators(.hidden)
+                }
+
+                if let secondaryNudge {
+                    HomeDivider(inset: 18).padding(.trailing, 18)
+                    HomeNudgeRow(
+                        nudge: secondaryNudge,
+                        person: conversationItem(connectionID: secondaryNudge.connectionID),
+                        onMessage: { message(secondaryNudge) },
+                        onDismiss: { Task { await model.resolveNudge(secondaryNudge, action: .dismiss) } }
+                    )
+                    .padding(.horizontal, 18)
+                }
+            }
+            .padding(.vertical, 18)
+            .groupedSurface()
+        }
+    }
+
+    // MARK: - 5. Recap
+
+    private var recapSection: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            HStack(alignment: .firstTextBaseline) {
+                HomeSectionTitle("Your recap")
+                Spacer()
+                Picker("Recap window", selection: Binding(
+                    get: { model.recapWindow },
+                    set: { window in Task { await model.selectRecapWindow(window) } }
+                )) {
+                    Text("Day").tag(ActivityRecap.Window.day)
+                    Text("Week").tag(ActivityRecap.Window.week)
+                }
+                .pickerStyle(.segmented)
+                .frame(width: 132)
+            }
+            .padding(.horizontal, 4)
+
+            let state = model.recap
+            VStack(spacing: 0) {
+                if let recap = state.value {
+                    if recap.isEmpty {
+                        HomeEmptyRow(
+                            text: "No activity this \(recap.window.rawValue) yet.",
+                            actionTitle: "Make your first Click"
+                        ) {
+                            env.router.selectTab(.addClick)
+                        }
+                    } else {
+                        ForEach(recapRows(recap), id: \.label) { row in
+                            HStack {
+                                Text(row.label)
+                                    .font(ClickTypography.body)
+                                    .foregroundStyle(ClickColors.textSecondary)
+                                Spacer()
+                                Text(row.value, format: .number)
+                                    .font(ClickTypography.bodyEmphasized)
+                                    .foregroundStyle(ClickColors.textPrimary)
+                                    .monospacedDigit()
+                            }
+                            .padding(.horizontal, 18)
+                            .frame(minHeight: 48)
+                            .accessibilityElement(children: .combine)
+                            if row.label != recapRows(recap).last?.label {
+                                HomeDivider(inset: 18)
+                            }
+                        }
+                    }
+                } else if state.isPending {
+                    HomeLoadingRow()
+                } else {
+                    // Never a zero recap when the request failed (spec §20.3).
+                    HomeRetryRow(message: "Couldn't load your recap.") {
+                        Task { await model.selectRecapWindow(model.recapWindow) }
+                    }
+                }
+            }
+            .groupedSurface()
+
+            if state.isStale {
+                Text("Showing your last saved recap.")
+                    .font(ClickTypography.metadata)
+                    .foregroundStyle(ClickColors.textTertiary)
+                    .padding(.horizontal, 20)
+            }
+        }
+    }
+
+    private func recapRows(_ recap: ActivityRecap) -> [(label: String, value: Int)] {
+        [
+            ("New Clicks", recap.connectionsFormed),
+            ("Messages sent", recap.messagesSent),
+            ("Messages received", recap.messagesReceived),
+            ("Events RSVP'd", recap.eventsRSVPed),
+            ("Check-ins", recap.eventsCheckedIn),
+            ("Events saved", recap.eventsSaved),
+            ("Beacons dropped", recap.beaconsCreated)
+        ].filter { $0.1 > 0 }
+    }
+
+    // MARK: - 6. Saved & upcoming
+
+    @ViewBuilder
+    private func savedSection(promotedID: String?) -> some View {
+        let upcoming = model.upcomingSaved(excluding: promotedID)
+        VStack(alignment: .leading, spacing: 10) {
+            HStack(alignment: .firstTextBaseline) {
+                HomeSectionTitle("Saved & upcoming")
+                Spacer()
+                Button("All saved") { env.router.navigate(to: .savedEvents) }
+                    .font(ClickTypography.body)
+                    .foregroundStyle(ClickColors.accentForeground)
+            }
+            .padding(.horizontal, 4)
+
+            VStack(spacing: 0) {
+                if model.savedEvents.value != nil {
+                    if upcoming.isEmpty {
+                        HomeEmptyRow(
+                            text: "Bookmark events to keep them here.",
+                            actionTitle: "Explore the map"
+                        ) {
+                            env.router.showOnMap(.layer(.events))
+                        }
+                    } else {
+                        ForEach(upcoming.prefix(3)) { event in
+                            Button { openEvent(event.beaconID) } label: {
+                                SavedEventRow(event: event)
+                            }
+                            .buttonStyle(.plain)
+                            if event.id != upcoming.prefix(3).last?.id {
+                                HomeDivider(inset: 82)
+                            }
+                        }
+                    }
+                } else if model.savedEvents.isPending {
+                    HomeLoadingRow()
+                } else {
+                    HomeRetryRow(message: "Couldn't load saved events.") {
+                        Task { await model.refresh() }
+                    }
+                }
+            }
+            .groupedSurface()
+        }
+    }
+
+    // MARK: - 7. Nearby discovery
+
+    private var nearbySection: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            HStack(alignment: .firstTextBaseline) {
+                HomeSectionTitle("Explore nearby")
+                Spacer()
+                Button("Open Map") { env.router.showOnMap() }
+                    .font(ClickTypography.body)
+                    .foregroundStyle(ClickColors.accentForeground)
+            }
+            .padding(.horizontal, 4)
+
+            switch model.discovery.phase {
+            case .unavailable(let reason):
+                VStack(spacing: 0) {
+                    HomeEmptyRow(text: reason, actionTitle: "Open Map") {
+                        env.router.showOnMap()
+                    }
+                }
+                .groupedSurface()
+            default:
+                if let discovery = model.discovery.value {
+                    let counts = discovery.kindCounts()
+                    if counts.isEmpty && discovery.hubs.isEmpty {
+                        VStack(spacing: 0) {
+                            HomeEmptyRow(text: "Nothing live near you right now.", actionTitle: "Drop a beacon") {
+                                env.router.showOnMap()
+                            }
+                        }
+                        .groupedSurface()
+                    } else {
+                        ScrollView(.horizontal) {
+                            HStack(spacing: 8) {
+                                ForEach(counts, id: \.kind) { entry in
+                                    DiscoveryChip(title: entry.kind.pluralLabel, count: entry.count) {
+                                        env.router.showOnMap(.layer(MapLayer(kind: entry.kind)))
+                                    }
+                                }
+                                if !discovery.hubs.isEmpty {
+                                    DiscoveryChip(title: "Hubs", count: discovery.hubs.count) {
+                                        env.router.showOnMap(.layer(.hubs))
                                     }
                                 }
                             }
+                            .padding(.horizontal, 4)
+                        }
+                        .scrollIndicators(.hidden)
+                        Text("Counts reflect what's live within about 5 km right now.")
+                            .font(ClickTypography.metadata)
+                            .foregroundStyle(ClickColors.textTertiary)
+                            .padding(.horizontal, 4)
+                    }
+                } else if model.discovery.isPending {
+                    VStack(spacing: 0) { HomeLoadingRow() }.groupedSurface()
+                } else {
+                    VStack(spacing: 0) {
+                        HomeRetryRow(message: "Couldn't load what's nearby.") {
+                            Task { await model.refresh() }
                         }
                     }
-                    .listStyle(.plain)
+                    .groupedSurface()
                 }
-            }
-            .background(ClickColors.background.ignoresSafeArea())
-            .navigationTitle("Search")
-            .navigationBarTitleDisplayMode(.inline)
-            .searchable(text: $query, prompt: "People, places, events")
-            .toolbar {
-                ToolbarItem(placement: .topBarTrailing) {
-                    Button("Done") { dismiss() }
-                }
-            }
-            .task(id: query) {
-                let clean = query.trimmingCharacters(in: .whitespacesAndNewlines)
-                guard !clean.isEmpty,
-                      let userID = env.session.currentSession?.userId else {
-                    results = []
-                    return
-                }
-                try? await Task.sleep(for: .milliseconds(150))
-                guard !Task.isCancelled else { return }
-                results = (try? await env.phase3.searchConnections(userID: userID, query: clean)) ?? []
             }
         }
-        .tint(ClickColors.accentForeground)
+    }
+
+    // MARK: - 8. Insights
+
+    @ViewBuilder
+    private var insightsSection: some View {
+        // Derived only from a loaded inbox; an unloaded inbox never becomes zero stats.
+        if let snapshot = conversations.snapshot {
+            let all = snapshot.connections + snapshot.archived
+            VStack(alignment: .leading, spacing: 10) {
+                HomeSectionTitle("Insights")
+                    .padding(.horizontal, 4)
+                HStack(spacing: 10) {
+                    InsightTile(value: all.count, label: all.count == 1 ? "Click" : "Clicks")
+                    InsightTile(value: all.reduce(0) { $0 + $1.encounterCount }, label: "Encounters")
+                    InsightTile(value: snapshot.connections.filter(\.isCore).count, label: "Core")
+                }
+            }
+        }
+    }
+
+    // MARK: - Routing
+
+    private func promotedEventID(_ opportunity: HomeOpportunity?) -> String? {
+        if case .event(let event) = opportunity { return event.id }
+        return nil
+    }
+
+    private func person(for opportunity: HomeOpportunity) -> ConnectionItem? {
+        switch opportunity {
+        case .event: nil
+        case .nudge(let nudge): conversationItem(connectionID: nudge.connectionID)
+        case .sayHi(let item, _): item
+        }
+    }
+
+    private func conversationItem(connectionID: String?) -> ConnectionItem? {
+        guard let connectionID else { return nil }
+        return (conversations.active + conversations.archived).first { $0.connectionID == connectionID }
+    }
+
+    private func openEvent(_ beaconID: String) {
+        ClickHaptics.selection()
+        env.router.navigate(to: .event(beaconID: beaconID))
+    }
+
+    private func openProfile(_ item: ConnectionItem) {
+        guard !item.userID.isEmpty else { return }
+        ClickHaptics.selection()
+        env.router.navigate(to: .userProfile(userID: item.userID, connectionID: item.connectionID.isEmpty ? nil : item.connectionID))
+    }
+
+    private func message(_ target: HomeMessageTarget) {
+        switch target {
+        case .connection(let item):
+            openChat(item)
+        case .nudge(let nudge):
+            Task { await model.resolveNudge(nudge, action: .acted) }
+            if let item = conversationItem(connectionID: nudge.connectionID) {
+                openChat(item)
+            } else {
+                env.router.selectTab(.connections)
+            }
+        }
+    }
+
+    private func message(_ nudge: InboxNudge) {
+        message(.nudge(nudge))
+    }
+
+    private func openChat(_ item: ConnectionItem) {
+        guard !item.userID.isEmpty else { return }
+        ClickHaptics.selection()
+        conversations.markOpened(item)
+        env.router.navigate(to: .chat(DirectChatRoute(
+            chatID: item.chatID,
+            connectionID: item.connectionID,
+            peerUserID: item.userID,
+            peerDisplayName: item.displayName,
+            peerHandle: item.handle,
+            peerAvatarURL: item.avatarUrl,
+            isOnline: item.isOnline,
+            lastActiveText: item.lastActiveRelative
+        )))
     }
 }
 
-private extension String {
-    var nonEmpty: String? { isEmpty ? nil : self }
+/// What a Home "Message / Say hi" action targets.
+enum HomeMessageTarget {
+    case connection(ConnectionItem)
+    case nudge(InboxNudge)
 }
-
-

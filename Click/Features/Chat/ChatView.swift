@@ -1,6 +1,6 @@
 import SwiftUI
 
-/// Native direct-chat destination.
+/// Native conversation destination for direct chats, verified groups, and hubs.
 ///
 /// Navigation chrome, interactive back progress, keyboard, and tab-bar visibility are owned by
 /// SwiftUI rather than a second custom navigation hierarchy.
@@ -8,6 +8,21 @@ public struct ChatView: View {
     @Environment(AppEnvironment.self) private var env
     @State private var model: ConversationModel
     @State private var isNearBottom = true
+    @State private var screenWidth: CGFloat = 390
+    @State private var viewerURL: ViewerURL?
+    @State private var safetyAction: SafetyAction?
+    @State private var notice: String?
+
+    private enum SafetyAction: Identifiable {
+        case report, block
+        var id: Self { self }
+    }
+    @State private var quickLookURL: URL?
+
+    private struct ViewerURL: Identifiable {
+        let url: URL
+        var id: URL { url }
+    }
 
     public init(model: ConversationModel) {
         self._model = State(initialValue: model)
@@ -30,11 +45,12 @@ public struct ChatView: View {
                     timeline(proxy: proxy)
                 }
             }
-            .background(ClickColors.chatBackground.ignoresSafeArea())
+            .background { ChatBackground(seed: model.identity.connectionID ?? model.identity.chatID) }
+            .onGeometryChange(for: CGFloat.self) { $0.size.width } action: { screenWidth = $0 }
             .safeAreaInset(edge: .bottom, spacing: 0) {
                 ChatComposerView(
                     text: $model.composerText,
-                    placeholder: "Message \(model.identity.peerDisplayName)…",
+                    placeholder: composerPlaceholder,
                     replyTarget: model.replyTarget,
                     editTarget: model.editTarget,
                     isSending: model.isSending,
@@ -56,7 +72,9 @@ public struct ChatView: View {
                     },
                     onTypingChanged: { hasText in
                         model.noteTypingActivity(hasText: hasText)
-                    }
+                    },
+                    onDraft: model.supportsMedia ? { draft in Task { await model.sendMedia(draft) } } : nil,
+                    onAttachmentError: { message in model.operationError = message }
                 )
             }
             .overlay(alignment: .top) {
@@ -70,9 +88,39 @@ public struct ChatView: View {
             .navigationBarTitleDisplayMode(.inline)
             .toolbar(.hidden, for: .tabBar)
             .toolbar {
+                // Identity cluster sits right after the back button, leading-aligned (prototype
+                // chat header). The principal slot keeps it free of per-item glass chrome.
                 ToolbarItem(placement: .principal) {
+                    // The principal slot sizes to content (centered); an explicit width that
+                    // spans back-button to menu keeps the cluster leading-aligned.
                     conversationTitle
+                        .frame(width: max(120, screenWidth - 132), alignment: .leading)
                 }
+                if model.identity.hubID == nil {
+                    ToolbarItem(placement: .topBarTrailing) {
+                        conversationMenu
+                    }
+                }
+            }
+            .confirmationDialog(
+                safetyAction == .block ? "Block \(model.identity.peerDisplayName)?" : "Report this conversation?",
+                isPresented: Binding(get: { safetyAction != nil }, set: { if !$0 { safetyAction = nil } }),
+                titleVisibility: .visible
+            ) {
+                if safetyAction == .block {
+                    Button("Block", role: .destructive) { Task { await block() } }
+                } else {
+                    Button("Report", role: .destructive) { Task { await report() } }
+                }
+            } message: {
+                Text(safetyAction == .block
+                     ? "They won't be able to message you or see you on Click."
+                     : "Click's safety team will review this conversation.")
+            }
+            .alert("Chat", isPresented: Binding(get: { notice != nil }, set: { if !$0 { notice = nil } })) {
+                Button("OK", role: .cancel) {}
+            } message: {
+                Text(notice ?? "")
             }
             .toolbarBackground(ClickColors.chatBackground, for: .navigationBar)
             .toolbarBackground(.visible, for: .navigationBar)
@@ -83,8 +131,16 @@ public struct ChatView: View {
                     authToken: env.session.currentSession?.jwt
                 )
             }
+            .fullScreenCover(item: $viewerURL) { item in
+                MediaViewer(url: item.url)
+            }
+            .quickLookPreview($quickLookURL)
             .onDisappear {
+                if env.activeChatID == model.identity.chatID { env.activeChatID = nil }
                 model.onDisappear()
+            }
+            .onChange(of: model.identity.chatID, initial: true) { _, chatID in
+                env.activeChatID = chatID
             }
             .onChange(of: model.phase) { _, newPhase in
                 guard newPhase == .loaded else { return }
@@ -139,6 +195,15 @@ public struct ChatView: View {
                         },
                         onRetrySend: { target in
                             Task { await model.retrySend(item: target) }
+                        },
+                        showsSenderName: !model.identity.isDirect && startsSenderRun(at: index),
+                        showsReceipts: model.identity.supportsReceipts,
+                        mediaLoader: { message in try await model.mediaURL(for: message) },
+                        onOpenMedia: { url, kind in
+                            if kind == .image { viewerURL = ViewerURL(url: url) } else { quickLookURL = url }
+                        },
+                        onOpenBeacon: { beacon in
+                            env.router.navigate(to: beacon.isEvent ? .event(beaconID: beacon.beaconID) : .beacon(beaconID: beacon.beaconID))
                         }
                     )
                     .id(item.id)
@@ -157,6 +222,7 @@ public struct ChatView: View {
             .padding(.bottom, 8)
         }
         .scrollDismissesKeyboard(.interactively)
+        .defaultScrollAnchor(.bottom)
         .onScrollGeometryChange(for: Bool.self) { geometry in
             geometry.visibleRect.maxY >= geometry.contentSize.height - 90
         } action: { _, nearBottom in
@@ -164,21 +230,85 @@ public struct ChatView: View {
         }
     }
 
+    @ViewBuilder
+    private var conversationMenu: some View {
+        Menu {
+            switch model.identity.kind {
+            case .direct:
+                Button("View profile", systemImage: "person.crop.circle") {
+                    env.router.navigate(to: .userProfile(userID: model.identity.peerUserID, connectionID: model.identity.connectionID))
+                }
+                if model.identity.connectionID != nil {
+                    Section {
+                        Button("Report", systemImage: "exclamationmark.bubble") { safetyAction = .report }
+                        Button("Block", systemImage: "hand.raised", role: .destructive) { safetyAction = .block }
+                    }
+                }
+            case .group:
+                Button("Group info", systemImage: "info.circle") {
+                    env.router.navigate(to: .groupProfile(chatID: model.identity.chatID))
+                }
+            case .hub:
+                EmptyView()
+            }
+        } label: {
+            Label("Conversation options", systemImage: "ellipsis")
+        }
+    }
+
+    private func report() async {
+        guard let connectionID = model.identity.connectionID else { return }
+        do {
+            try await env.profiles.report(connectionID: connectionID, reason: "Reported from chat")
+            notice = "Thanks. Click's safety team will review it."
+        } catch {
+            notice = "Couldn't send the report. \(error.userFacingMessage)"
+        }
+    }
+
+    private func block() async {
+        do {
+            try await env.profiles.block(userID: model.identity.peerUserID)
+            env.router.resetCurrentTabPath()
+        } catch {
+            notice = "Couldn't block. \(error.userFacingMessage)"
+        }
+    }
+
+    private var composerPlaceholder: String {
+        switch model.identity.kind {
+        case .direct, .group: "Message \(model.identity.peerDisplayName)…"
+        case .hub: "Message everyone here…"
+        }
+    }
+
+    private func startsSenderRun(at index: Int) -> Bool {
+        guard model.items.indices.contains(index) else { return false }
+        guard index > 0 else { return true }
+        let previous = model.items[index - 1]
+        let current = model.items[index]
+        return previous.senderID != current.senderID
+            || !Calendar.current.isDate(previous.createdAt, inSameDayAs: current.createdAt)
+    }
+
     private var conversationTitle: some View {
         Button {
-            guard !model.identity.peerUserID.isEmpty else { return }
-            ClickHaptics.selection()
-            env.router.navigate(to:
-                .userProfile(
-                    userID: model.identity.peerUserID,
-                    connectionID: model.identity.connectionID
-                )
-            )
+            switch model.identity.kind {
+            case .direct:
+                guard !model.identity.peerUserID.isEmpty else { return }
+                ClickHaptics.selection()
+                env.router.navigate(to: .userProfile(userID: model.identity.peerUserID, connectionID: model.identity.connectionID))
+            case .group:
+                ClickHaptics.selection()
+                env.router.navigate(to: .groupProfile(chatID: model.identity.chatID))
+            case .hub:
+                break
+            }
         } label: {
             HStack(spacing: 8) {
                 AvatarView(
                     imageURL: model.identity.peerAvatarURL,
-                    seed: model.identity.peerUserID,
+                    seed: model.identity.isDirect ? model.identity.peerUserID : model.identity.chatID,
                     initials: model.identity.initials,
                     size: ClickMetrics.Avatar.navigation
                 )
@@ -194,7 +324,7 @@ public struct ChatView: View {
                         .foregroundStyle(
                             model.isPeerTyping
                                 ? ClickColors.accentForeground
-                                : ClickColors.textSecondary
+                                : (model.identity.isOnline && model.identity.isDirect ? ClickColors.online : ClickColors.textSecondary)
                         )
                         .lineLimit(1)
                         .animation(.none, value: statusText)
@@ -208,10 +338,19 @@ public struct ChatView: View {
 
     private var statusText: String {
         if model.isPeerTyping {
-            return "typing…"
+            return model.identity.isDirect ? "typing…" : "Someone is typing…"
+        }
+        switch model.identity.kind {
+        case .group:
+            let count = model.identity.participantUserIDs.count
+            return count > 0 ? "\(count) members" : "Group"
+        case .hub:
+            return "Hub chat"
+        case .direct:
+            break
         }
         if model.identity.isOnline {
-            return "Active now"
+            return "Online"
         }
         if !model.identity.lastActiveText.isEmpty {
             return model.identity.lastActiveText
