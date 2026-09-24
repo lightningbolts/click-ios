@@ -6,11 +6,14 @@ struct RootMenu<Extra: View>: View {
     @Environment(AppEnvironment.self) private var env
     /// Floating glass circle (Map) instead of a toolbar item.
     var floating = false
+    /// Roots with their own focused actions (Map) can omit the account shortcuts.
+    var includesAccountItems = true
     @ViewBuilder var extra: () -> Extra
 
     var body: some View {
         Menu {
             extra()
+            if includesAccountItems {
             Section {
                 Button("Saved events", systemImage: "bookmark") { env.router.navigate(to: .savedEvents) }
                 Button("My QR code", systemImage: "qrcode") { env.router.navigate(to: .myQR) }
@@ -21,6 +24,7 @@ struct RootMenu<Extra: View>: View {
                 Link(destination: URL(string: "https://joinclick.co")!) {
                     Label("Open web dashboard", systemImage: "safari")
                 }
+            }
             }
         } label: {
             if floating {

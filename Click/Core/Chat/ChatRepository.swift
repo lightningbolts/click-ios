@@ -55,6 +55,9 @@ public protocol ChatRepositoryProtocol: Sendable {
         clientMessageID: String
     ) async throws -> ChatMessageItem
 
+    /// Shares an event/beacon card (plaintext card fields only; the server allows it in v2 chats).
+    func sendBeacon(conversation: ConversationIdentity, currentUserID: String, currentUserName: String, beacon: MapBeacon, clientMessageID: String) async throws -> ChatMessageItem
+
     /// Returns a decrypted local file for a media message, downloading at most once (spec §37.3).
     func loadMedia(for message: ChatMessageItem, conversation: ConversationIdentity, currentUserID: String) async throws -> URL
 }
@@ -72,6 +75,10 @@ public extension ChatRepositoryProtocol {
     }
 
     func loadMedia(for message: ChatMessageItem, conversation: ConversationIdentity, currentUserID: String) async throws -> URL {
+        throw ChatRepositoryError.mediaUnsupported
+    }
+
+    func sendBeacon(conversation: ConversationIdentity, currentUserID: String, currentUserName: String, beacon: MapBeacon, clientMessageID: String) async throws -> ChatMessageItem {
         throw ChatRepositoryError.mediaUnsupported
     }
 }
@@ -1085,6 +1092,11 @@ public actor ChatRepository: ChatRepositoryProtocol {
         case .image, .audio:
             metadata["original_mime_type"] = draft.mimeType
             metadata["is_encrypted_media"] = true
+            if draft.isClickDrop {
+                // KMP Click Drop: reveal is always 24 hours after send.
+                metadata["disposable_roll"] = true
+                metadata["collaboration_ttl"] = ISO8601DateFormatter().string(from: Date().addingTimeInterval(86_400))
+            }
             if let duration = draft.durationSeconds { metadata["duration_seconds"] = duration }
         case .file:
             if let path = metadata["media_path"] as? String ?? AttachmentEnvelope.decode(content)?.path {
@@ -1136,6 +1148,52 @@ public actor ChatRepository: ChatRepositoryProtocol {
             media: media,
             localMediaURL: local
         )
+    }
+
+    public func sendBeacon(conversation: ConversationIdentity, currentUserID: String, currentUserName: String, beacon: MapBeacon, clientMessageID: String) async throws -> ChatMessageItem {
+        guard conversation.hubID == nil else { throw ChatRepositoryError.mediaUnsupported }
+        let chatID = try await canonicalChatID(conversation)
+        let metadata = Self.beaconMetadata(beacon, clientMessageID: clientMessageID)
+        let content = "Beacon: \(beacon.title)"
+        var post: [String: Any] = [
+            "chat_id": chatID, "content": content, "message_type": "beacon", "metadata": metadata,
+            "local_sent_at": Int64(Date().timeIntervalSince1970 * 1000)
+        ]
+        if conversation.isDirect, let connectionID = conversation.connectionID, !connectionID.isEmpty {
+            post["connection_id"] = connectionID
+        }
+        let (data, _) = try await apiClient.executeRaw(APIRequest(
+            path: "/api/chat/messages", method: .post, body: try JSONSerialization.data(withJSONObject: post)
+        ))
+        let root = try JSONFields.object(data)
+        let row = JSONFields.dictionary(root["message"]) ?? root
+        guard let id = JSONFields.string(row["id"]) else { throw ChatRepositoryError.invalidServerPayload }
+        return ChatMessageItem(
+            id: id, chatID: chatID, senderID: currentUserID, senderName: currentUserName, content: content,
+            messageType: .beacon, createdAt: .now, deliveryStatus: .sent, isOutgoing: true,
+            beacon: SharedBeacon.parse(messageType: "beacon", metadata: metadata, content: content)
+        )
+    }
+
+    /// Mirrors KMP `MapBeacon.toBeaconChatMetadata`.
+    static func beaconMetadata(_ beacon: MapBeacon, clientMessageID: String) -> [String: Any] {
+        var meta: [String: Any] = [
+            "beacon_id": beacon.id, "beacon_type": beacon.rawType, "title": beacon.title,
+            "lat": beacon.latitude, "lng": beacon.longitude,
+            "share_url": "https://joinclick.co/e/\(beacon.id)", "client_message_id": clientMessageID
+        ]
+        if let description = beacon.description, description != beacon.title { meta["description"] = description }
+        if let schedule = beacon.schedule {
+            meta["schedule_label"] = EventFormatting.when(schedule)
+            meta["event_start_at"] = Int64(schedule.start.timeIntervalSince1970 * 1000)
+            meta["event_end_at"] = Int64(schedule.end.timeIntervalSince1970 * 1000)
+        }
+        if let image = beacon.imageURL { meta["album_art_url"] = image }
+        if let place = beacon.formattedAddress ?? beacon.locationName, place.lowercased() != "current location" {
+            meta["location_name"] = beacon.locationName ?? place
+        }
+        if let expires = beacon.expiresAt { meta["expires_at"] = Int64(expires.timeIntervalSince1970 * 1000) }
+        return meta
     }
 
     public func loadMedia(for message: ChatMessageItem, conversation: ConversationIdentity, currentUserID: String) async throws -> URL {

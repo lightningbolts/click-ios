@@ -18,6 +18,7 @@ public struct ChatView: View {
         var id: Self { self }
     }
     @State private var quickLookURL: URL?
+    @State private var sharingBeacon = false
 
     private struct ViewerURL: Identifiable {
         let url: URL
@@ -48,34 +49,7 @@ public struct ChatView: View {
             .background { ChatBackground(seed: model.identity.connectionID ?? model.identity.chatID) }
             .onGeometryChange(for: CGFloat.self) { $0.size.width } action: { screenWidth = $0 }
             .safeAreaInset(edge: .bottom, spacing: 0) {
-                ChatComposerView(
-                    text: $model.composerText,
-                    placeholder: composerPlaceholder,
-                    replyTarget: model.replyTarget,
-                    editTarget: model.editTarget,
-                    isSending: model.isSending,
-                    onCancelReply: {
-                        withAnimation(ClickMotion.selection) {
-                            model.replyTarget = nil
-                        }
-                    },
-                    onCancelEdit: {
-                        withAnimation(ClickMotion.selection) {
-                            model.editTarget = nil
-                            model.composerText = ""
-                        }
-                    },
-                    onSend: {
-                        Task {
-                            await model.sendOrUpdateMessage()
-                        }
-                    },
-                    onTypingChanged: { hasText in
-                        model.noteTypingActivity(hasText: hasText)
-                    },
-                    onDraft: model.supportsMedia ? { draft in Task { await model.sendMedia(draft) } } : nil,
-                    onAttachmentError: { message in model.operationError = message }
-                )
+                composer
             }
             .overlay(alignment: .top) {
                 if let error = model.operationError, !model.items.isEmpty {
@@ -102,28 +76,6 @@ public struct ChatView: View {
                     }
                 }
             }
-            .confirmationDialog(
-                safetyAction == .block ? "Block \(model.identity.peerDisplayName)?" : "Report this conversation?",
-                isPresented: Binding(get: { safetyAction != nil }, set: { if !$0 { safetyAction = nil } }),
-                titleVisibility: .visible
-            ) {
-                if safetyAction == .block {
-                    Button("Block", role: .destructive) { Task { await block() } }
-                } else {
-                    Button("Report", role: .destructive) { Task { await report() } }
-                }
-            } message: {
-                Text(safetyAction == .block
-                     ? "They won't be able to message you or see you on Click."
-                     : "Click's safety team will review this conversation.")
-            }
-            .alert("Chat", isPresented: Binding(get: { notice != nil }, set: { if !$0 { notice = nil } })) {
-                Button("OK", role: .cancel) {}
-            } message: {
-                Text(notice ?? "")
-            }
-            .toolbarBackground(ClickColors.chatBackground, for: .navigationBar)
-            .toolbarBackground(.visible, for: .navigationBar)
             .task {
                 await model.onAppear(
                     supabaseURL: AppConfig.shared.supabaseURL,
@@ -135,6 +87,9 @@ public struct ChatView: View {
                 MediaViewer(url: item.url)
             }
             .quickLookPreview($quickLookURL)
+            .sheet(isPresented: $sharingBeacon) {
+                BeaconSharePicker { beacon in Task { await model.sendBeacon(beacon) } }
+            }
             .onDisappear {
                 if env.activeChatID == model.identity.chatID { env.activeChatID = nil }
                 model.onDisappear()
@@ -167,6 +122,14 @@ public struct ChatView: View {
     private func timeline(proxy: ScrollViewProxy) -> some View {
         ScrollView {
             LazyVStack(spacing: 2) {
+                // Reaching the top loads the previous page (spec §31.3).
+                if model.hasMoreHistory, model.identity.hubID == nil, !model.items.isEmpty {
+                    ProgressView()
+                        .frame(maxWidth: .infinity)
+                        .padding(.vertical, 8)
+                        .opacity(model.isLoadingOlder ? 1 : 0.4)
+                        .onAppear { Task { await model.loadOlder() } }
+                }
                 ForEach(Array(model.items.enumerated()), id: \.element.id) { index, item in
                     if shouldShowDateHeader(at: index) {
                         dateHeader(item.createdAt)
@@ -227,6 +190,59 @@ public struct ChatView: View {
             geometry.visibleRect.maxY >= geometry.contentSize.height - 90
         } action: { _, nearBottom in
             isNearBottom = nearBottom
+        }
+    }
+
+    private var composer: some View {
+        ChatComposerView(
+            text: $model.composerText,
+            placeholder: composerPlaceholder,
+            replyTarget: model.replyTarget,
+            editTarget: model.editTarget,
+            isSending: model.isSending,
+            onCancelReply: {
+                withAnimation(ClickMotion.selection) {
+                    model.replyTarget = nil
+                }
+            },
+            onCancelEdit: {
+                withAnimation(ClickMotion.selection) {
+                    model.editTarget = nil
+                    model.composerText = ""
+                }
+            },
+            onSend: {
+                Task {
+                    await model.sendOrUpdateMessage()
+                }
+            },
+            onTypingChanged: { hasText in
+                model.noteTypingActivity(hasText: hasText)
+            },
+            onDraft: model.supportsMedia ? { draft in Task { await model.sendMedia(draft) } } : nil,
+            onAttachmentError: { message in model.operationError = message },
+            onShareBeacon: model.supportsMedia ? { sharingBeacon = true } : nil
+        )
+        // Dialogs hang off the composer so the main body stays type-checkable.
+        .confirmationDialog(
+            safetyAction == .block ? "Block \(model.identity.peerDisplayName)?" : "Report this conversation?",
+            isPresented: Binding(get: { safetyAction != nil }, set: { if !$0 { safetyAction = nil } }),
+            titleVisibility: .visible
+        ) {
+            if safetyAction == .block {
+                Button("Block", role: .destructive) { Task { await block() } }
+            } else {
+                Button("Report", role: .destructive) { Task { await report() } }
+            }
+        } message: {
+            Text(safetyAction == .block
+                 ? "They won't be able to message you or see you on Click."
+                 : "Click's safety team will review this conversation.")
+        }
+        .alert("Chat", isPresented: Binding(get: { notice != nil }, set: { if !$0 { notice = nil } })) {
+            Button("OK", role: .cancel) {}
+        } message: {
+            Text(notice ?? "")
         }
     }
 

@@ -78,3 +78,57 @@ struct ChatRevisionTests {
         }
     }
 }
+
+@Suite("Round 3 behaviors")
+struct Round3Tests {
+    private func person(_ id: String, daysQuiet: Double, core: Bool = false) -> ConnectionItem {
+        ConnectionItem(id: id, userID: "u-\(id)", connectionID: id, displayName: id, handle: "", initials: "X",
+                       isOnline: false, lastActiveRelative: "", encounterLocation: "Café",
+                       lastActivityAt: Date().addingTimeInterval(-daysQuiet * 86_400), isCore: core)
+    }
+
+    @Test("Reconnect picks the quietest Click past 14 days, Core first, and respects snooze")
+    func reconnectPick() {
+        UserDefaults.standard.removeObject(forKey: "home.reconnect.snoozed")
+        let picks = [person("recent", daysQuiet: 2), person("quiet", daysQuiet: 40), person("core", daysQuiet: 20, core: true)]
+        #expect(ReconnectSuggestion.pick(from: picks)?.id == "core")
+        ReconnectSuggestion.snooze(picks[2])
+        #expect(ReconnectSuggestion.pick(from: picks)?.id == "quiet")
+        #expect(ReconnectSuggestion.pick(from: [person("recent", daysQuiet: 2)]) == nil)
+        UserDefaults.standard.removeObject(forKey: "home.reconnect.snoozed")
+    }
+
+    @Test("People here ranks by shared interests plus mutuals, high to low")
+    func bestMatch() {
+        func attendee(_ id: String, interests: Int, mutuals: Int, rel: DirectoryAttendee.Relationship = .stranger) -> DirectoryAttendee {
+            DirectoryAttendee(userID: id, name: id, avatarURL: nil, sharedInterests: Array(repeating: "x", count: interests),
+                              relationship: rel, mutualNames: [], mutualCount: mutuals, signedUpAt: nil)
+        }
+        let ranked = EventDirectoryView.bestMatch([attendee("a", interests: 1, mutuals: 0), attendee("b", interests: 2, mutuals: 3),
+                                                   attendee("c", interests: 0, mutuals: 1)])
+        #expect(ranked.map(\.userID) == ["b", "a", "c"])
+        #expect(EventDirectoryView.details(attendee("d", interests: 2, mutuals: 1)).count == 2)
+    }
+
+    @Test("Shared beacon metadata mirrors KMP and parses back into a card")
+    func beaconShare() throws {
+        let beacon = try #require(MapBeacon.decode(["id": "b9", "beacon_type": "event", "lat": 1.0, "lng": 2.0,
+                                                    "metadata": ["title": "Hack Night", "location_name": "Allen Center"]]))
+        let meta = ChatRepository.beaconMetadata(beacon, clientMessageID: "c1")
+        #expect(meta["beacon_id"] as? String == "b9")
+        #expect(meta["share_url"] as? String == "https://joinclick.co/e/b9")
+        let card = SharedBeacon.parse(messageType: "beacon", metadata: meta, content: "Beacon: Hack Night")
+        #expect(card?.title == "Hack Night")
+        #expect(card?.locationName == "Allen Center")
+    }
+
+    @Test("Click Drops stay locked until 24 h after sending")
+    func clickDropLock() {
+        let locked = MessageMedia.parse(messageType: "image", metadata: [
+            "media_url": "https://x/storage/v1/object/sign/chat-attachments/c/u/1.jpg?t=1", "disposable_roll": true,
+            "collaboration_ttl": ISO8601DateFormatter().string(from: Date().addingTimeInterval(3_600))
+        ], decryptedContent: " ", chatID: "c")
+        #expect(locked?.isLocked() == true)
+        #expect(locked?.isLocked(now: Date().addingTimeInterval(7_200)) == false)
+    }
+}

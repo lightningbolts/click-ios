@@ -24,6 +24,13 @@ public struct MessageMedia: Hashable, Sendable {
     public let fileKey: String?
     public let plaintextSha256: String?
     public let isDisposable: Bool
+    /// Click Drop reveal time (`collaboration_ttl`); the photo stays pixelated until then.
+    public var revealAt: Date? = nil
+
+    public func isLocked(now: Date = .now) -> Bool {
+        guard isDisposable else { return false }
+        return (revealAt ?? .distantFuture) > now
+    }
 
     public var displayName: String {
         if let fileName, !fileName.isEmpty { return fileName }
@@ -83,7 +90,8 @@ public struct MessageMedia: Hashable, Sendable {
                 v2: v2,
                 fileKey: nil,
                 plaintextSha256: nil,
-                isDisposable: JSONFields.bool(meta["disposable_roll"]) ?? false
+                isDisposable: JSONFields.bool(meta["disposable_roll"]) ?? false,
+                revealAt: JSONFields.date(meta["collaboration_ttl"])
             )
         case "file", "document":
             let descriptor = AttachmentEnvelope.decode(decryptedContent)
@@ -203,6 +211,8 @@ public struct MediaDraft: Sendable {
     public let mimeType: String
     public let fileName: String?
     public let durationSeconds: Int?
+    /// A Click Drop photo: revealed to everyone 24 hours after it is taken.
+    public var isClickDrop = false
 
     public init(kind: MessageMedia.Kind, data: Data, mimeType: String, fileName: String? = nil, durationSeconds: Int? = nil) {
         self.kind = kind

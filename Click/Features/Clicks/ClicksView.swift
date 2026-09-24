@@ -217,7 +217,8 @@ public struct ClicksView: View {
                         group: group,
                         preview: model.previewText(for: group),
                         avatarMembers: group.avatarMembers(excluding: env.session.currentSession?.userId),
-                        onOpen: { openGroup(group) }
+                        onOpen: { openGroup(group) },
+                        onProfile: { env.router.navigate(to: .groupProfile(chatID: group.chatID)) }
                     )
                     .listRowBackground(Color.clear)
                     .contextMenu {
@@ -457,6 +458,7 @@ private struct ConversationRow: View {
             .accessibilityLabel(accessibilityText)
         }
         .padding(.vertical, 10)
+        .frame(minHeight: InboxRowMetrics.minHeight)
         .alignmentGuide(.listRowSeparatorLeading) { dimensions in
             dimensions[.leading] + ClickMetrics.Avatar.conversation + 12
         }
@@ -549,6 +551,7 @@ private struct HubInboxRow: View {
                 }
             }
             .padding(.vertical, 10)
+            .frame(minHeight: InboxRowMetrics.minHeight)
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
@@ -583,10 +586,11 @@ private struct GroupInboxRow: View {
     let preview: String
     let avatarMembers: [GroupMember]
     let onOpen: () -> Void
+    var onProfile: () -> Void = {}
 
     var body: some View {
-        Button(action: onOpen) {
-            HStack(spacing: 12) {
+        HStack(spacing: 12) {
+            Button(action: onProfile) {
                 GroupAvatarView(
                     avatarURL: group.avatarURL,
                     seed: group.chatID,
@@ -594,7 +598,11 @@ private struct GroupInboxRow: View {
                     members: avatarMembers,
                     size: ClickMetrics.Avatar.conversation
                 )
+            }
+            .buttonStyle(.plain)
+            .accessibilityLabel("\(group.name) group info")
 
+            Button(action: onOpen) {
                 VStack(alignment: .leading, spacing: 3) {
                     HStack(alignment: .firstTextBaseline, spacing: 5) {
                         Text(group.name)
@@ -626,13 +634,14 @@ private struct GroupInboxRow: View {
                         }
                     }
                 }
+                .contentShape(Rectangle())
             }
-            .padding(.vertical, 10)
-            .contentShape(Rectangle())
+            .buttonStyle(.plain)
+            .accessibilityElement(children: .combine)
+            .accessibilityLabel(accessibilityText)
         }
-        .buttonStyle(.plain)
-        .accessibilityElement(children: .combine)
-        .accessibilityLabel(accessibilityText)
+        .padding(.vertical, 10)
+        .frame(minHeight: InboxRowMetrics.minHeight)
         .alignmentGuide(.listRowSeparatorLeading) { dimensions in
             dimensions[.leading] + ClickMetrics.Avatar.conversation + 12
         }
@@ -644,4 +653,9 @@ private struct GroupInboxRow: View {
         parts.append(preview)
         return parts.joined(separator: ", ")
     }
+}
+
+/// Direct, group, and hub rows share one height so the inbox reads as one list.
+private enum InboxRowMetrics {
+    static let minHeight: CGFloat = ClickMetrics.Avatar.conversation + 30
 }

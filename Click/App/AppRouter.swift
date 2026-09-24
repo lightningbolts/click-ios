@@ -152,6 +152,8 @@ public enum SettingsRoute: Hashable, Sendable {
 /// What the Map root should bring into view when it is opened from elsewhere.
 public enum MapFocus: Hashable, Sendable {
     case beacon(String)
+    /// Centers the map on a beacon without selecting it (no detail reopens).
+    case place(String)
     case hub(String)
     case layer(MapLayer)
 }

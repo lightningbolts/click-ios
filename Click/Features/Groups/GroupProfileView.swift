@@ -60,7 +60,9 @@ struct GroupProfileView: View {
             headerSection(group)
             rotationSection(group)
             membersSection(group, isCreator: isCreator)
+            Section("Common interests") { GroupCommonInterests(members: group.members) }
             sharedSection
+            Section("Journal") { GroupJournalSection(chatID: group.chatID) }
             manageSection(group, isCreator: isCreator)
         }
         .listStyle(.insetGrouped)
@@ -168,9 +170,17 @@ struct GroupProfileView: View {
 
     private var sharedSection: some View {
         Section("Shared") {
-            sharedRow("Media", systemImage: "photo.on.rectangle", items: tabs.value?.media)
-            sharedRow("Files", systemImage: "doc", items: tabs.value?.files)
-            sharedRow("Events & beacons", systemImage: "mappin.and.ellipse", items: tabs.value?.beacons)
+            if let group {
+                NavigationLink { GroupSharedView(group: group, kind: .media) } label: {
+                    sharedRow("Media", systemImage: "photo.on.rectangle", items: tabs.value?.media)
+                }
+                NavigationLink { GroupSharedView(group: group, kind: .files) } label: {
+                    sharedRow("Files", systemImage: "doc", items: tabs.value?.files)
+                }
+                NavigationLink { GroupSharedView(group: group, kind: .beacons) } label: {
+                    sharedRow("Events & beacons", systemImage: "mappin.and.ellipse", items: tabs.value?.beacons)
+                }
+            }
             if let error = tabs.errorMessage, tabs.value == nil {
                 Button("Couldn't load shared content. Retry") { Task { await loadTabs() } }
                     .font(ClickTypography.supporting)

@@ -16,6 +16,10 @@ public final class ConversationModel {
     public private(set) var phase: LoadPhase = .initial
     public private(set) var items: [ChatMessageItem] = []
     public private(set) var isSending = false
+    /// Older history paging (`cursor` = oldest `time_created`).
+    public private(set) var isLoadingOlder = false
+    public private(set) var hasMoreHistory = true
+    private static let pageSize = 50
     public var composerText = ""
     public var replyTarget: ChatMessageItem?
     public var editTarget: ChatMessageItem?
@@ -104,7 +108,10 @@ public final class ConversationModel {
     private func mergeFetched(_ fetched: [ChatMessageItem]) -> [ChatMessageItem] {
         let fetchedIDs = Set(fetched.map(\.id))
         let pending = items.filter { ($0.deliveryStatus == .sending || $0.deliveryStatus == .failed) && !fetchedIDs.contains($0.id) }
-        return (fetched + pending).sorted { $0.createdAt < $1.createdAt }
+        // Older pages already loaded stay put when the latest page refreshes.
+        let oldestFetched = fetched.map(\.createdAt).min() ?? .distantFuture
+        let older = items.filter { $0.createdAt < oldestFetched && !fetchedIDs.contains($0.id) && $0.deliveryStatus != .sending && $0.deliveryStatus != .failed }
+        return (older + fetched + pending).sorted { $0.createdAt < $1.createdAt }
     }
 
     private func saveToCache() {
@@ -138,8 +145,9 @@ public final class ConversationModel {
                 conversation: identity,
                 currentUserID: currentUserID,
                 cursor: nil,
-                limit: 50
+                limit: Self.pageSize
             )
+            hasMoreHistory = fetched.count >= Self.pageSize
             items = mergeFetched(fetched)
             resolveReplyQuotes()
             phase = .loaded
@@ -264,6 +272,46 @@ public final class ConversationModel {
     // MARK: - Media (spec §37)
 
     public var supportsMedia: Bool { identity.hubID == nil }
+
+    /// Loads the page before the oldest loaded message; keeps the visual anchor (the view
+    /// prepends without jumping because rows keep stable IDs).
+    public func loadOlder() async {
+        guard hasMoreHistory, !isLoadingOlder, identity.hubID == nil, let oldest = items.first(where: { $0.deliveryStatus != .sending && $0.deliveryStatus != .failed }) else { return }
+        isLoadingOlder = true
+        defer { isLoadingOlder = false }
+        do {
+            let older = try await chatRepository.fetchMessages(
+                conversation: identity,
+                currentUserID: currentUserID,
+                cursor: Int64(oldest.createdAt.timeIntervalSince1970 * 1000),
+                limit: Self.pageSize
+            )
+            let known = Set(items.map(\.id))
+            let fresh = older.filter { !known.contains($0.id) }
+            hasMoreHistory = older.count >= Self.pageSize
+            guard !fresh.isEmpty else { return }
+            items = (fresh + items).sorted { $0.createdAt < $1.createdAt }
+            resolveReplyQuotes()
+        } catch {
+            operationError = error.localizedDescription
+        }
+    }
+
+    /// Shares an event/beacon card into this conversation.
+    public func sendBeacon(_ beacon: MapBeacon) async {
+        beginSend()
+        defer { endSend() }
+        do {
+            let sent = try await chatRepository.sendBeacon(
+                conversation: identity, currentUserID: currentUserID, currentUserName: currentUserName,
+                beacon: beacon, clientMessageID: UUID().uuidString.lowercased()
+            )
+            if !items.contains(where: { $0.id == sent.id }) { items.append(sent) }
+            operationError = nil
+        } catch {
+            operationError = error.localizedDescription
+        }
+    }
 
     /// Sends an image, voice note, or file with an optimistic local bubble.
     public func sendMedia(_ draft: MediaDraft) async {

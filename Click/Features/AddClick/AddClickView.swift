@@ -67,6 +67,7 @@ public struct AddClickView: View {
                 }
             }
         }
+        .task { QRCodeStore.shared.prefetch(api: env.api) }
         .sheet(item: $sheet) { item in
             switch item {
             case .newGroup: NewGroupSheet()
@@ -196,8 +197,9 @@ public struct AddClickView: View {
 struct MyClickCodeView: View {
     @Environment(AppEnvironment.self) private var env
     @Environment(\.scenePhase) private var scenePhase
-    @State private var qrPayload: String?
-    @State private var expiresAt: Date?
+    @State private var qrPayload: String? = QRCodeStore.shared.valid?.payload
+    @State private var expiresAt: Date? = QRCodeStore.shared.valid?.expiresAt
+    @State private var qrImage: UIImage? = QRCodeStore.shared.valid?.image
     @State private var errorMessage: String?
     @State private var refreshTask: Task<Void, Never>?
     @State private var identity: SelfProfile?
@@ -290,7 +292,7 @@ struct MyClickCodeView: View {
             RoundedRectangle(cornerRadius: ClickRadius.prominent, style: .continuous)
                 .fill(.white)
                 .frame(width: 272, height: 272)
-            if showsCode, let qrPayload, let image = QRImageRenderer.image(for: qrPayload) {
+            if showsCode, qrPayload != nil, let image = qrImage {
                 Image(uiImage: image)
                     .interpolation(.none)
                     .resizable()
@@ -303,12 +305,18 @@ struct MyClickCodeView: View {
         }
     }
 
-    /// Fetches a code, then sleeps until shortly before it expires; failures retry quickly.
+    /// Shows a still-valid prefetched code immediately, then refreshes shortly before expiry;
+    /// failures retry quickly.
     private func startRefreshLoop() {
         refreshTask?.cancel()
         refreshTask = Task {
             while !Task.isCancelled {
-                let succeeded = await refreshCode()
+                let succeeded: Bool
+                if let valid = QRCodeStore.shared.valid, valid.expiresAt.timeIntervalSinceNow > 15, qrPayload == valid.payload {
+                    succeeded = true
+                } else {
+                    succeeded = await refreshCode()
+                }
                 let wait = succeeded
                     ? max(5, (expiresAt ?? .now).timeIntervalSinceNow - 10)
                     : 5
@@ -319,19 +327,65 @@ struct MyClickCodeView: View {
 
     private func refreshCode() async -> Bool {
         do {
-            let (data, _) = try await env.api.executeRaw(APIRequest(path: "/api/qr", method: .get))
-            guard
-                let payload = JSONFields.dictionary(try JSONFields.object(data)["data"]),
-                let value = JSONFields.string(payload["qrPayload"])
-            else { throw APIError.decoding }
-            qrPayload = value
-            expiresAt = JSONFields.date(payload["expiresAt"]) ?? Date().addingTimeInterval(90)
+            let code = try await QRCodeStore.shared.fresh(api: env.api)
+            qrPayload = code.payload
+            expiresAt = code.expiresAt
+            qrImage = code.image
             errorMessage = nil
             return true
         } catch {
             errorMessage = "Couldn't get a fresh code. \(error.userFacingMessage)"
             return false
         }
+    }
+}
+
+/// The current single-use QR token, fetched ahead of time (Add Click prefetches it) and
+/// rendered once per token instead of on every countdown tick.
+@MainActor
+final class QRCodeStore {
+    static let shared = QRCodeStore()
+
+    struct Code {
+        let payload: String
+        let expiresAt: Date
+        let image: UIImage?
+    }
+
+    private var current: Code?
+    private var inFlight: Task<Code, Error>?
+
+    /// A code that has not expired yet (the view hides it the moment it does).
+    var valid: Code? {
+        guard let current, current.expiresAt > .now else { return nil }
+        return current
+    }
+
+    func prefetch(api: ClickAPIClient) {
+        guard (valid?.expiresAt.timeIntervalSinceNow ?? 0) < 30 else { return }
+        Task { _ = try? await fresh(api: api) }
+    }
+
+    func fresh(api: ClickAPIClient) async throws -> Code {
+        if let inFlight { return try await inFlight.value }
+        let task = Task { () throws -> Code in
+            let (data, _) = try await api.executeRaw(APIRequest(path: "/api/qr", method: .get))
+            guard
+                let payload = JSONFields.dictionary(try JSONFields.object(data)["data"]),
+                let value = JSONFields.string(payload["qrPayload"])
+            else { throw APIError.decoding }
+            let expiry = JSONFields.date(payload["expiresAt"]) ?? Date().addingTimeInterval(90)
+            return Code(payload: value, expiresAt: expiry, image: QRImageRenderer.image(for: value))
+        }
+        inFlight = task
+        defer { inFlight = nil }
+        let code = try await task.value
+        current = code
+        return code
+    }
+
+    func clear() {
+        current = nil
     }
 }
 

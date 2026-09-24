@@ -194,7 +194,14 @@ final class ConversationListModel {
 
     /// Refreshes hub previews; hubs the server reports gone or inaccessible are dropped.
     private func refreshHubs(_ environment: AppEnvironment, userID: String) async {
-        let current = await environment.joinedHubs.hubs(userID: userID)
+        var current = await environment.joinedHubs.hubs(userID: userID)
+        // Add readable hubs this device hasn't opened yet (joined elsewhere / earlier).
+        let activity = await environment.hubs.discoverHubActivity()
+        for (hubID, date) in activity where !current.contains(where: { $0.hubID == hubID }) {
+            guard let info = try? await environment.hubs.hub(id: hubID) else { continue }
+            current.append(JoinedHub(hubID: info.id, name: info.name, category: info.category,
+                                     eventBeaconID: info.eventBeaconID, joinedAt: date, lastActivityAt: date))
+        }
         guard !current.isEmpty else { return }
         var updated: [JoinedHub] = []
         await withTaskGroup(of: (JoinedHub, HubRepository.LatestResult?).self) { group in

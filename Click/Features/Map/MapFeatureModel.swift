@@ -285,6 +285,19 @@ final class MapFeatureModel {
             if let hub = discovery.value?.hubs.first(where: { $0.id == id }) {
                 select(.hub(id), at: hub.coordinate)
             }
+        case .place(let id):
+            let known = (discovery.value?.beacons ?? []).first(where: { $0.id == id })
+            let beacon: MapBeacon? = if let known { known } else { try? await environment?.beacons.beacon(id: id).beacon }
+            guard let beacon else { return }
+            if known == nil {
+                focusedBeacons.removeAll { $0.id == id }
+                focusedBeacons.append(beacon)
+            }
+            layers.insert(MapLayer(kind: beacon.kind))
+            sheetDetent = .lip
+            withAnimation {
+                camera = .region(MKCoordinateRegion(center: beacon.coordinate, latitudinalMeters: 1200, longitudinalMeters: 1200))
+            }
         case .beacon(let id):
             if let beacon = (discovery.value?.beacons ?? []).first(where: { $0.id == id }) {
                 select(.beacon(id), at: beacon.coordinate)

@@ -144,9 +144,15 @@ public struct EventVisual: View {
         let visual = CardVisual(seed: seed)
         ZStack {
             if let image {
-                Image(uiImage: image)
-                    .resizable()
-                    .scaledToFill()
+                // Overlay on a size-neutral base: an aspect-filled image must never grow the
+                // visual beyond its frame (it overlapped neighboring chat cards).
+                Color.clear
+                    .overlay {
+                        Image(uiImage: image)
+                            .resizable()
+                            .scaledToFill()
+                    }
+                    .clipped()
             } else {
                 LinearGradient(
                     colors: visual.gradient.map(Color.init(hex:)),

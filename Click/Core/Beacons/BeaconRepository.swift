@@ -127,4 +127,26 @@ public actor BeaconRepository {
         }
         return (beacon, JSONFields.bool(root["expired"]) ?? false)
     }
+
+    /// `POST /api/beacons`. The server validates kind, schedule, music links, and listing policy.
+    public func create(body: [String: Any]) async throws -> MapBeacon {
+        do {
+            let (data, _) = try await api.executeRaw(APIRequest(
+                path: "/api/beacons", method: .post, body: try JSONSerialization.data(withJSONObject: body)
+            ))
+            guard let row = JSONFields.dictionary(try JSONFields.object(data)["beacon"]), let beacon = MapBeacon.decode(row) else {
+                throw APIError.decoding
+            }
+            return beacon
+        } catch APIError.validation(_, let message?) {
+            // Show the server's reason ("Event start must be in the future.") rather than a generic error.
+            let reason = (try? JSONFields.object(Data(message.utf8))).flatMap { JSONFields.string($0["error"]) } ?? message
+            throw BeaconCreateError(message: reason)
+        }
+    }
+}
+
+public struct BeaconCreateError: LocalizedError, Sendable {
+    public let message: String
+    public var errorDescription: String? { message }
 }

@@ -50,6 +50,14 @@ public struct Encounter: Codable, Equatable, Identifiable, Sendable {
     public var temperatureCelsius: Double? = nil
     public var weatherCondition: String? = nil
     public var relativeAltitudeMeters: Double? = nil
+    public var neighbourhood: String? = nil
+    public var city: String? = nil
+    public var noiseDecibels: Double? = nil
+    public var barometricElevationMeters: Double? = nil
+    public var lux: Double? = nil
+    public var motionVariance: Double? = nil
+    public var windKph: Double? = nil
+    public var windDirectionDegrees: Double? = nil
 
     /// Venue name, else the first component of the stored label (never a full address).
     public var placeName: String? {
@@ -73,7 +81,15 @@ public struct Encounter: Codable, Equatable, Identifiable, Sendable {
             venue: semantic.flatMap { JSONFields.string($0["name"]) },
             temperatureCelsius: weather.flatMap { JSONFields.double($0["temperatureCelsius"]) },
             weatherCondition: weather.flatMap { JSONFields.string($0["condition"]) },
-            relativeAltitudeMeters: JSONFields.double(row["relative_altitude_m"])
+            relativeAltitudeMeters: JSONFields.double(row["relative_altitude_m"]),
+            neighbourhood: semantic.flatMap { JSONFields.dictionary($0["address"]) }.flatMap { JSONFields.string($0, "neighbourhood", "neighborhood", "suburb") },
+            city: semantic.flatMap { JSONFields.dictionary($0["address"]) }.flatMap { JSONFields.string($0, "city", "town", "village") },
+            noiseDecibels: JSONFields.double(row["exact_noise_level_db"]),
+            barometricElevationMeters: JSONFields.double(row["exact_barometric_elevation_m"]),
+            lux: JSONFields.double(row["lux_level"]),
+            motionVariance: JSONFields.double(row["motion_variance"]),
+            windKph: weather.flatMap { JSONFields.double($0["windSpeedKph"]) },
+            windDirectionDegrees: weather.flatMap { JSONFields.double($0["windDirectionDegrees"]) }
         )
     }
 }
@@ -185,11 +201,12 @@ public actor ProfileRepository {
 
     // MARK: - Journal
 
-    public func journal(targetUserID: String) async throws -> [JournalEntry] {
+    /// Journal notes on a person (`user`) or a group chat (`chat`).
+    public func journal(targetUserID: String, targetType: String = "user") async throws -> [JournalEntry] {
         let (data, _) = try await api.executeRaw(APIRequest(
             path: "/api/profile/timeline",
             method: .get,
-            queryItems: [URLQueryItem(name: "target_type", value: "user"), URLQueryItem(name: "target_id", value: targetUserID)]
+            queryItems: [URLQueryItem(name: "target_type", value: targetType), URLQueryItem(name: "target_id", value: targetUserID)]
         ))
         let root = try JSONFields.object(data)
         guard root["journal_entries"] != nil else { throw APIError.decoding }
@@ -197,9 +214,9 @@ public actor ProfileRepository {
             .sorted { ($0.createdAt ?? .distantPast) > ($1.createdAt ?? .distantPast) }
     }
 
-    public func addJournal(targetUserID: String, body: String, visibility: JournalEntry.Visibility) async throws {
+    public func addJournal(targetUserID: String, body: String, visibility: JournalEntry.Visibility, targetType: String = "user") async throws {
         let payload = try JSONSerialization.data(withJSONObject: [
-            "target_type": "user", "target_id": targetUserID, "body": body, "visibility": visibility.rawValue
+            "target_type": targetType, "target_id": targetUserID, "body": body, "visibility": visibility.rawValue
         ])
         _ = try await api.executeRaw(APIRequest(path: "/api/profile/timeline", method: .post, body: payload))
     }
@@ -275,6 +292,35 @@ enum EncounterLabels {
         }
         var seen = Set<String>()
         return chips.filter { seen.insert($0.lowercased()).inserted }
+    }
+
+    /// Detail rows (KMP ProfileConnectionMoment): place, weather, sound, floor, light, motion.
+    static func details(for encounter: Encounter, locale: Locale = .current) -> [(symbol: String, text: String)] {
+        var rows: [(String, String)] = []
+        let area = [encounter.neighbourhood, encounter.city].compactMap { $0 }.joined(separator: ", ")
+        if !area.isEmpty, area != encounter.placeName { rows.append(("mappin", area)) }
+        rows.append(("clock", encounter.date.formatted(.dateTime.weekday(.abbreviated).month(.abbreviated).day().year().hour().minute())))
+        if var weather = weather(encounter, locale: locale) {
+            if let wind = encounter.windKph, wind > 0 {
+                let dirs = ["N", "NE", "E", "SE", "S", "SW", "W", "NW"]
+                let dir = encounter.windDirectionDegrees.map { " " + dirs[Int((($0.truncatingRemainder(dividingBy: 360)) + 22.5) / 45) % 8] } ?? ""
+                weather += " · \(Int(wind.rounded())) km/h\(dir)"
+            }
+            rows.append(("cloud.sun", weather))
+        }
+        let noise = [encounter.noiseLevel.flatMap(noise), encounter.noiseDecibels.map { "\(Int($0.rounded())) dB" }].compactMap { $0 }
+        if !noise.isEmpty { rows.append(("waveform", noise.joined(separator: " · "))) }
+        let floor = [encounter.elevation.flatMap(elevation), encounter.relativeAltitudeMeters.map { String(format: "%+d m relative", Int($0.rounded())) }]
+            .compactMap { $0 }
+        if !floor.isEmpty { rows.append(("building.2", floor.joined(separator: " · "))) }
+        if let lux = encounter.lux, lux >= 0 {
+            let feel = lux < 50 ? "Dim" : lux < 1000 ? "Indoor light" : "Bright daylight"
+            rows.append(("sun.max", "\(feel) · \(Int(lux.rounded())) lx"))
+        }
+        if let motion = encounter.motionVariance, motion >= 0 {
+            rows.append(("figure.walk", motion < 0.05 ? "Standing still" : motion < 0.5 ? "Moving a little" : "On the move"))
+        }
+        return rows
     }
 
     static func tag(_ raw: String) -> String {

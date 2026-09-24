@@ -18,6 +18,7 @@ public struct ProfileView: View {
     @State private var notice: String?
     @State private var showsCompactTitle = false
     @State private var viewerURL: ProfileViewerURL?
+    @State private var takingDrop = false
     @State private var quickLookURL: URL?
 
     public init(userID: String, connectionID: String? = nil) {
@@ -156,32 +157,70 @@ public struct ProfileView: View {
     // MARK: - Actions
 
     private var actions: some View {
-        VStack(spacing: 10) {
-            Button {
-                openChat()
-            } label: {
-                Label("Message", systemImage: "message.fill")
-            }
-            .buttonStyle(.clickPrimary)
-            .disabled(model.connectionID == nil)
-
-            if model.connectionID != nil {
-                Button {
-                    Task { await sendNudge() }
-                } label: {
-                    if isWorking {
-                        ProgressView()
-                    } else {
-                        Label("Nudge", systemImage: "hand.wave")
+        VStack(spacing: 8) {
+            HStack(spacing: 10) {
+                actionTile("Message", systemImage: "message") { openChat() }
+                    .disabled(model.connectionID == nil)
+                if model.connectionID != nil {
+                    actionTile("Nudge", systemImage: "hand.wave", busy: isWorking) { Task { await sendNudge() } }
+                        .disabled(isWorking)
+                    if let item = inboxItem {
+                        actionTile("Core", systemImage: item.isCore ? "star.fill" : "star", tint: item.isCore ? ClickColors.accentForeground : nil) {
+                            Task { await conversations.setCore(item, isCore: !item.isCore) }
+                        }
+                        .accessibilityLabel(item.isCore ? "Remove from Core" : "Add to Core")
                     }
+                    actionTile("Click Drop", systemImage: "hourglass") { takingDrop = true }
+                        .disabled(!UIImagePickerController.isSourceTypeAvailable(.camera))
                 }
-                .buttonStyle(.clickSecondary)
-                .disabled(isWorking)
-            } else {
+            }
+            if model.connectionID == nil {
                 Text("You can message people after you Click in person.")
                     .font(ClickTypography.metadata)
                     .foregroundStyle(ClickColors.textTertiary)
             }
+        }
+        .fullScreenCover(isPresented: $takingDrop) {
+            CameraCapture { image in
+                takingDrop = false
+                if let image { Task { await sendClickDrop(image) } }
+            }
+            .ignoresSafeArea()
+        }
+    }
+
+    private func actionTile(_ title: String, systemImage: String, tint: Color? = nil, busy: Bool = false, action: @escaping () -> Void) -> some View {
+        Button(action: action) {
+            VStack(spacing: 8) {
+                ZStack {
+                    if busy { ProgressView() } else { Image(systemName: systemImage).font(.system(size: 20)) }
+                }
+                .frame(height: 24)
+                Text(title).font(ClickTypography.supporting).lineLimit(1).minimumScaleFactor(0.8)
+            }
+            .foregroundStyle(tint ?? ClickColors.textPrimary)
+            .frame(maxWidth: .infinity, minHeight: 76)
+            .background(ClickColors.surface, in: RoundedRectangle(cornerRadius: 20, style: .continuous))
+        }
+        .buttonStyle(.plain)
+    }
+
+    /// Click Drop from the profile: sent into the direct chat, revealed 24 h later.
+    private func sendClickDrop(_ image: UIImage) async {
+        guard let connectionID = model.connectionID, let userID = env.session.currentSession?.userId,
+              let data = image.jpegData(compressionQuality: 0.9), var draft = await MediaDraftBuilder.image(from: data) else { return }
+        draft.isClickDrop = true
+        let conversation = ConversationIdentity(
+            chatID: inboxItem?.chatID ?? connectionID, connectionID: connectionID,
+            peerUserID: model.userID, peerDisplayName: model.profile.value?.displayName ?? "Click user"
+        )
+        do {
+            _ = try await env.chat.sendMedia(conversation: conversation, currentUserID: userID, currentUserName: "You",
+                                             draft: draft, replyToID: nil, clientMessageID: UUID().uuidString.lowercased())
+            notice = "Click Drop sent. It develops in 24 hours."
+            ClickHaptics.success()
+        } catch {
+            notice = "Couldn't send the Click Drop. \(error.userFacingMessage)"
         }
     }
 
@@ -199,7 +238,12 @@ public struct ProfileView: View {
                         .font(ClickTypography.supporting)
                         .foregroundStyle(ClickColors.textTertiary)
                 }
-                TagFlow(tags: shared.isEmpty ? Array(profile.interests.prefix(8)) : shared, highlighted: !shared.isEmpty)
+                // Every interest they have: shared ones first and highlighted, the rest outlined.
+                let others = profile.interests.filter { tag in !shared.contains { $0.caseInsensitiveCompare(tag) == .orderedSame } }
+                FlowLayout(spacing: 7) {
+                    ForEach(shared, id: \.self) { InterestChip(text: $0, shared: true) }
+                    ForEach(others, id: \.self) { InterestChip(text: $0, shared: false) }
+                }
                 if !profile.personality.isEmpty {
                     Divider().padding(.vertical, 4)
                     Text("Personality")
@@ -538,7 +582,7 @@ public struct ProfileView: View {
 }
 
 private enum ProfileTab: String, CaseIterable, Identifiable {
-    case timeline, media, links, files, beacons
+    case timeline, beacons, media, links, files
     var id: String { rawValue }
     var title: String { rawValue.capitalized }
 }
@@ -637,6 +681,7 @@ private struct TimelineRow: View {
                 TagFlow(tags: chips, highlighted: false, compact: true)
                     .padding(.top, 4)
             }
+            EncounterDetailList(encounter: encounter)
         case .journal(let entry):
             Text(entry.visibility == .private ? "Note to self" : "Shared note")
                 .font(ClickTypography.bodyEmphasized)
@@ -671,13 +716,58 @@ private struct TimelineRow: View {
     }
 }
 
+private struct InterestChip: View {
+    let text: String
+    let shared: Bool
+
+    var body: some View {
+        Text(text)
+            .font(ClickTypography.supporting)
+            .foregroundStyle(shared ? ClickColors.accentForeground : ClickColors.textSecondary)
+            .padding(.horizontal, 12)
+            .frame(minHeight: 32)
+            .background(shared ? ClickColors.selectionTint : .clear, in: Capsule())
+            .overlay(Capsule().stroke(shared ? .clear : ClickColors.separator, lineWidth: 1))
+    }
+}
+
+/// Expandable environmental detail for one encounter (KMP connection moment).
+private struct EncounterDetailList: View {
+    let encounter: Encounter
+    @State private var expanded = false
+
+    var body: some View {
+        let rows = EncounterLabels.details(for: encounter)
+        if rows.count > 1 {
+            VStack(alignment: .leading, spacing: 6) {
+                Button {
+                    withAnimation(ClickMotion.selection) { expanded.toggle() }
+                } label: {
+                    Label(expanded ? "Hide details" : "Details", systemImage: expanded ? "chevron.up" : "chevron.down")
+                        .font(ClickTypography.metadataEmphasized)
+                        .foregroundStyle(ClickColors.accentForeground)
+                }
+                .buttonStyle(.plain)
+                if expanded {
+                    ForEach(rows, id: \.text) { row in
+                        Label(row.text, systemImage: row.symbol)
+                            .font(ClickTypography.supporting)
+                            .foregroundStyle(ClickColors.textSecondary)
+                    }
+                }
+            }
+            .padding(.top, 6)
+        }
+    }
+}
+
 struct ProfileViewerURL: Identifiable {
     let url: URL
     var id: URL { url }
 }
 
 /// A square, decrypted photo thumbnail in the profile Media grid.
-private struct ProfileMediaThumbnail: View {
+struct ProfileMediaThumbnail: View {
     let item: ChatMessageItem
     let load: () async throws -> URL
     let onOpen: (URL) -> Void

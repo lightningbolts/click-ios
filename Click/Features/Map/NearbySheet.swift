@@ -22,7 +22,7 @@ struct NearbySheet: View {
         switch detent {
         case .lip: lipHeight
         case .medium: max(lipHeight, available * 0.46)
-        case .expanded: max(lipHeight, available - 64)
+        case .expanded: max(lipHeight, available - 8)
         }
     }
 

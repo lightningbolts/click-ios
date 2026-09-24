@@ -14,6 +14,7 @@ public struct HomeView: View {
     @State private var model = HomeFeedModel()
     @State private var isSearching = false
     @State private var isEditingAvailability = false
+    @State private var reconnectTick = 0
     @State private var showsCompactTitle = false
 
     public init() {}
@@ -281,7 +282,17 @@ public struct HomeView: View {
                     .scrollIndicators(.hidden)
                 }
 
-                if let secondaryNudge {
+                if secondaryNudge == nil, let suggestion = ReconnectSuggestion.pick(from: conversations.active) {
+                    HomeDivider(inset: 18).padding(.trailing, 18)
+                    ReconnectCard(
+                        person: suggestion,
+                        onSayHi: { openChat(suggestion) },
+                        onProfile: { openProfile(suggestion) },
+                        onNotNow: { ReconnectSuggestion.snooze(suggestion) ; reconnectTick += 1 }
+                    )
+                    .id(reconnectTick)
+                    .padding(.horizontal, 18)
+                } else if let secondaryNudge {
                     HomeDivider(inset: 18).padding(.trailing, 18)
                     HomeNudgeRow(
                         nudge: secondaryNudge,

@@ -21,6 +21,8 @@ struct BeaconDetailView: View {
     @State private var showingDirectory = false
     @State private var confirmCancelRSVP = false
     @State private var confirmDelete = false
+    @State private var people = ModuleState<EventDirectory>()
+    @State private var sharingToChat = false
 
     var body: some View {
         Group {
@@ -40,9 +42,8 @@ struct BeaconDetailView: View {
                 ProgressView().frame(maxWidth: .infinity, maxHeight: .infinity)
             }
         }
-        .navigationTitle(beacon.value?.kind.label ?? "Details")
-        .navigationBarTitleDisplayMode(.inline)
-        .toolbarBackground(.hidden, for: .navigationBar)
+        .navigationTitle(beacon.value?.title ?? "")
+        .toolbar(.hidden, for: .navigationBar)
         .task { if beacon.value == nil { await load() } }
         .alert("Event", isPresented: Binding(get: { notice != nil }, set: { if !$0 { notice = nil } })) {
             Button("OK", role: .cancel) {}
@@ -58,9 +59,10 @@ struct BeaconDetailView: View {
             VStack(alignment: .leading, spacing: 0) {
                 // Full-bleed hero (prototype event sheet); uploaded image overrides the pattern.
                 EventVisual(seed: beacon.id, imageURL: beacon.imageURL, symbol: beacon.kind.systemImage, cornerRadius: 0)
-                    .frame(height: 220)
+                    .frame(height: 250)
                     .frame(maxWidth: .infinity)
                     .clipped()
+                    .overlay(alignment: .topTrailing) { headerButtons(beacon).padding(14) }
 
                 VStack(alignment: .leading, spacing: 18) {
                     pills(beacon)
@@ -87,6 +89,8 @@ struct BeaconDetailView: View {
 
                     infoCard(beacon)
 
+                    if beacon.isEvent { peoplePreview }
+
                     if let description = beacon.description, !description.isEmpty {
                         VStack(alignment: .leading, spacing: 8) {
                             Text("About")
@@ -110,16 +114,13 @@ struct BeaconDetailView: View {
                 .padding(.bottom, 32)
             }
         }
+        .ignoresSafeArea(edges: .top)
         .background(ClickColors.surface)
         .navigationDestination(isPresented: $showingDirectory) {
-            EventDirectoryView(beaconID: beacon.id)
+            EventDirectoryView(beaconID: beacon.id, preloaded: people.value)
         }
-        .toolbar {
-            ToolbarItem(placement: .topBarTrailing) {
-                ShareLink(item: URL(string: "https://joinclick.co/e/\(beacon.id)")!, subject: Text(beacon.title)) {
-                    Label("Share", systemImage: "square.and.arrow.up")
-                }
-            }
+        .sheet(isPresented: $sharingToChat) {
+            ShareToChatSheet(beacon: beacon)
         }
         .confirmationDialog("Cancel your RSVP?", isPresented: $confirmCancelRSVP, titleVisibility: .visible) {
             Button(rsvp.value?.isGoing == true ? "Cancel RSVP" : "Withdraw request", role: .destructive) {
@@ -204,10 +205,43 @@ struct BeaconDetailView: View {
         .accessibilityHint(isActive ? "Double-tap to cancel" : "")
     }
 
-    /// Event chat · Check in · Save · Directions — equal-width labelled icon actions.
+    /// Save · Share · Close float over the hero (prototype event sheet header).
+    private func headerButtons(_ beacon: MapBeacon) -> some View {
+        let saved = engagement.value?.bookmarked == true
+        return HStack(spacing: 10) {
+            if beacon.isEvent {
+                Button { Task { await toggleBookmark(beacon) } } label: {
+                    Image(systemName: saved ? "bookmark.fill" : "bookmark")
+                        .headerCircle(tint: saved ? ClickColors.accentForeground : .white)
+                }
+                .disabled(engagement.value == nil || bookmarkPending)
+                .accessibilityLabel(saved ? "Remove from saved" : "Save event")
+            }
+            Menu {
+                Button("Copy link", systemImage: "link") {
+                    UIPasteboard.general.string = "https://joinclick.co/e/\(beacon.id)"
+                    ClickHaptics.success()
+                }
+                Button("Share to chat", systemImage: "bubble.left") { sharingToChat = true }
+                Button("View on Map", systemImage: "map") { env.router.showOnMap(.place(beacon.id)) }
+                ShareLink(item: URL(string: "https://joinclick.co/e/\(beacon.id)")!, subject: Text(beacon.title)) {
+                    Label("More…", systemImage: "square.and.arrow.up")
+                }
+            } label: {
+                Image(systemName: "square.and.arrow.up").headerCircle(tint: .white)
+            }
+            .accessibilityLabel("Share")
+            Button { dismiss() } label: {
+                Image(systemName: "xmark").headerCircle(tint: .white)
+            }
+            .accessibilityLabel("Close")
+        }
+        .buttonStyle(.plain)
+    }
+
+    /// Event chat · Check in · Directions — equal-width labelled icon actions.
     private func eventActionRow(_ beacon: MapBeacon) -> some View {
         let checkedIn = engagement.value?.checkedIn == true
-        let saved = engagement.value?.bookmarked == true
         let canCheckIn = !isExpired && (rsvp.value?.isGoing == true || beacon.schedule?.isLive() == true || checkedIn)
         return HStack(spacing: 0) {
             iconAction("Event chat", systemImage: "bubble.left") {
@@ -219,10 +253,6 @@ struct BeaconDetailView: View {
             }
             .disabled(!canCheckIn || engagement.value == nil || checkInPending)
             .opacity(canCheckIn ? 1 : 0.45)
-            iconAction(saved ? "Saved" : "Save", systemImage: saved ? "bookmark.fill" : "bookmark", busy: bookmarkPending) {
-                Task { await toggleBookmark(beacon) }
-            }
-            .disabled(engagement.value == nil || bookmarkPending)
             iconAction("Directions", systemImage: "location.north.line") { openDirections(beacon) }
         }
     }
@@ -255,7 +285,7 @@ struct BeaconDetailView: View {
                 Divider().padding(.leading, 56)
             }
             Button {
-                env.router.showOnMap(.beacon(beacon.id))
+                env.router.showOnMap(.place(beacon.id))
             } label: {
                 infoRow(
                     systemImage: "mappin.and.ellipse",
@@ -329,6 +359,57 @@ struct BeaconDetailView: View {
         return parts.isEmpty ? "See who's going" : parts.joined(separator: " · ")
     }
 
+    // MARK: - People here
+
+    @ViewBuilder
+    private var peoplePreview: some View {
+        let others = (people.value?.attendees ?? []).filter { $0.relationship != .self }
+        if !others.isEmpty {
+            let ranked = EventDirectoryView.bestMatch(others)
+            let mutuals = others.filter { $0.relationship == .connection || $0.relationship == .mutual }.count
+            VStack(alignment: .leading, spacing: 12) {
+                Button { showingDirectory = true } label: {
+                    HStack(alignment: .firstTextBaseline) {
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text("People here")
+                                .font(ClickTypography.sectionTitle)
+                                .foregroundStyle(ClickColors.textPrimary)
+                            Text([mutuals > 0 ? "\(mutuals) mutual\(mutuals == 1 ? "" : "s")" : nil, "\(rsvp.value?.count ?? others.count) going"]
+                                .compactMap { $0 }.joined(separator: " · "))
+                                .font(ClickTypography.supporting)
+                                .foregroundStyle(ClickColors.textSecondary)
+                        }
+                        Spacer()
+                        Text("See all")
+                            .font(ClickTypography.supporting)
+                            .foregroundStyle(ClickColors.textSecondary)
+                        Image(systemName: "chevron.right")
+                            .font(.footnote.weight(.semibold))
+                            .foregroundStyle(ClickColors.textTertiary)
+                    }
+                }
+                .buttonStyle(.plain)
+                ScrollView(.horizontal, showsIndicators: false) {
+                    HStack(spacing: 16) {
+                        ForEach(ranked.prefix(10)) { person in
+                            NavigationLink(value: AppRoute.userProfile(userID: person.userID, connectionID: nil)) {
+                                VStack(spacing: 6) {
+                                    AvatarView(imageURL: person.avatarURL, seed: person.userID, initials: person.initials, size: 60)
+                                    Text(person.name.split(separator: " ").first.map(String.init) ?? person.name)
+                                        .font(ClickTypography.supporting)
+                                        .foregroundStyle(ClickColors.textPrimary)
+                                        .lineLimit(1)
+                                }
+                                .frame(width: 66)
+                            }
+                            .buttonStyle(.plain)
+                        }
+                    }
+                }
+            }
+        }
+    }
+
     // MARK: - Other beacon actions
 
     @ViewBuilder
@@ -338,7 +419,7 @@ struct BeaconDetailView: View {
                 iconAction("Open music", systemImage: "music.note") { UIApplication.shared.open(url) }
             }
             iconAction("Directions", systemImage: "location.north.line") { openDirections(beacon) }
-            iconAction("Map", systemImage: "map") { env.router.showOnMap(.beacon(beacon.id)) }
+            iconAction("Map", systemImage: "map") { env.router.showOnMap(.place(beacon.id)) }
         }
     }
 
@@ -368,8 +449,10 @@ struct BeaconDetailView: View {
         engagement.begin()
         async let rsvpTask = env.events.rsvpState(beaconID: beaconID)
         async let engagementTask = env.events.engagement(beaconID: beaconID)
+        async let peopleTask = env.events.directory(beaconID: beaconID)
         do { rsvp.succeed(try await rsvpTask) } catch { rsvp.fail(error.userFacingMessage) }
         do { engagement.succeed(try await engagementTask) } catch { engagement.fail(error.userFacingMessage) }
+        do { people.succeed(try await peopleTask) } catch { people.fail(error.userFacingMessage) }
     }
 
     private func setRSVP(_ beacon: MapBeacon) async {
@@ -463,13 +546,27 @@ struct BeaconDetailView: View {
     }
 }
 
-/// Event people directory (spec §57): A–Z, Interests, Mutuals; the server decides fields.
+private extension Image {
+    /// 44 pt glass circle used for controls floating over the hero image.
+    func headerCircle(tint: Color) -> some View {
+        self.font(.system(size: 16, weight: .semibold))
+            .foregroundStyle(tint)
+            .frame(width: 44, height: 44)
+            .background(.ultraThinMaterial, in: Circle())
+            .environment(\.colorScheme, .dark)
+    }
+}
+
+/// Event people directory (spec §57). Default order is best match — shared interests plus
+/// mutual connections, high to low — with A–Z, Interests, and Mutuals views. The server
+/// decides which fields a viewer receives.
 struct EventDirectoryView: View {
     @Environment(AppEnvironment.self) private var env
-    @Environment(\.dismiss) private var dismiss
     let beaconID: String
+    var preloaded: EventDirectory?
 
     enum Sort: String, CaseIterable, Identifiable {
+        case best = "Best match"
         case name = "A–Z"
         case interests = "Interests"
         case mutuals = "Mutuals"
@@ -477,7 +574,20 @@ struct EventDirectoryView: View {
     }
 
     @State private var directory = ModuleState<EventDirectory>()
-    @State private var sort: Sort = .name
+    @State private var sort: Sort = .best
+
+    /// Shared interests + mutual connections (a direct Click counts as a strong mutual).
+    nonisolated static func score(_ person: DirectoryAttendee) -> Int {
+        person.sharedInterests.count + person.mutualCount + (person.relationship == .connection ? 3 : 0)
+    }
+
+    nonisolated static func bestMatch(_ people: [DirectoryAttendee]) -> [DirectoryAttendee] {
+        people.sorted { (score($0), $1.name) > (score($1), $0.name) }
+    }
+
+    private var everyone: [DirectoryAttendee] {
+        (directory.value?.attendees ?? []).filter { $0.relationship != .self }
+    }
 
     var body: some View {
         ScrollViewReader { proxy in
@@ -487,22 +597,16 @@ struct EventDirectoryView: View {
                 }
                 .pickerStyle(.segmented)
                 .listRowBackground(Color.clear)
+                .listRowInsets(EdgeInsets(top: 4, leading: 0, bottom: 4, trailing: 0))
                 .id("top")
 
-                if let value = directory.value {
-                    let people = value.attendees.filter { $0.relationship != .self }
-                    if people.isEmpty {
-                        Text("No one else has RSVP'd yet.")
-                            .foregroundStyle(ClickColors.textSecondary)
-                    } else if sort == .mutuals, value.mutualsUnlocked {
-                        let known = people.filter { $0.relationship == .connection || $0.relationship == .mutual }
-                            .sorted { $0.mutualCount > $1.mutualCount }
-                        if !known.isEmpty {
-                            Section("Mutuals here") { rows(known) }
-                        }
-                        Section("Everyone") { rows(people.filter { !known.contains($0) }.sorted { $0.name < $1.name }) }
+                if directory.value != nil {
+                    if everyone.isEmpty {
+                        Text("No one else has RSVP'd yet.").foregroundStyle(ClickColors.textSecondary)
                     } else {
-                        Section { rows(sorted(people)) }
+                        ForEach(sections, id: \.title) { section in
+                            Section(section.title) { rows(section.people) }
+                        }
                     }
                 } else if let error = directory.errorMessage {
                     Button("Couldn't load people. Retry") { Task { await load() } }
@@ -511,50 +615,100 @@ struct EventDirectoryView: View {
                     ProgressView().frame(maxWidth: .infinity)
                 }
             }
+            .listStyle(.insetGrouped)
             .onChange(of: sort) { _, _ in withAnimation { proxy.scrollTo("top", anchor: .top) } }
         }
-        .navigationTitle("People")
+        .navigationTitle("People here")
         .navigationBarTitleDisplayMode(.inline)
-        .task { await load() }
+        .toolbar {
+            ToolbarItem(placement: .principal) {
+                VStack(spacing: 0) {
+                    Text("People here").font(.headline)
+                    Text("\(everyone.count) going").font(ClickTypography.caption).foregroundStyle(ClickColors.textSecondary)
+                }
+            }
+        }
+        .task {
+            if let preloaded, directory.value == nil { directory.succeed(preloaded) }
+            await load()
+        }
     }
 
-    private func sorted(_ people: [DirectoryAttendee]) -> [DirectoryAttendee] {
+    private var sections: [(title: String, people: [DirectoryAttendee])] {
+        let byName = everyone.sorted { $0.name.localizedCaseInsensitiveCompare($1.name) == .orderedAscending }
         switch sort {
-        case .name, .mutuals: people.sorted { $0.name.localizedCaseInsensitiveCompare($1.name) == .orderedAscending }
-        case .interests: people.sorted { ($0.sharedInterests.count, $1.name) > ($1.sharedInterests.count, $0.name) }
+        case .best:
+            return [("Best matches for you", Self.bestMatch(everyone))]
+        case .name:
+            return [("Everyone · A–Z", byName)]
+        case .interests:
+            let sharing = everyone.filter { !$0.sharedInterests.isEmpty }
+                .sorted { ($0.sharedInterests.count, $1.name) > ($1.sharedInterests.count, $0.name) }
+            let others = byName.filter { $0.sharedInterests.isEmpty }
+            return [("Shares your interests", sharing), ("Others", others)].filter { !$0.people.isEmpty }
+        case .mutuals:
+            let known = everyone.filter { $0.relationship == .connection || $0.relationship == .mutual || $0.mutualCount > 0 }
+                .sorted { ($0.mutualCount + ($0.relationship == .connection ? 100 : 0), $1.name) > ($1.mutualCount + ($1.relationship == .connection ? 100 : 0), $0.name) }
+            let others = byName.filter { person in !known.contains(where: { $0.id == person.id }) }
+            return [("Mutuals here · \(known.count)", known), ("Everyone", others)].filter { !$0.people.isEmpty }
         }
     }
 
     private func rows(_ people: [DirectoryAttendee]) -> some View {
         ForEach(people) { person in
-            // Pushes inside the event sheet's own stack (contract 3), not onto the tab.
             NavigationLink(value: AppRoute.userProfile(userID: person.userID, connectionID: nil)) {
                 HStack(spacing: 12) {
-                    AvatarView(imageURL: person.avatarURL, seed: person.userID, initials: person.initials, size: 40)
-                    VStack(alignment: .leading, spacing: 2) {
-                        Text(person.name).foregroundStyle(ClickColors.textPrimary)
-                        if let detail = detail(person) {
-                            Text(detail)
-                                .font(ClickTypography.metadata)
+                    AvatarView(imageURL: person.avatarURL, seed: person.userID, initials: person.initials, size: 48)
+                    VStack(alignment: .leading, spacing: 3) {
+                        Text(person.name)
+                            .font(ClickTypography.bodyEmphasized)
+                            .foregroundStyle(ClickColors.textPrimary)
+                        ForEach(Self.details(person), id: \.self) { line in
+                            Text(line)
+                                .font(ClickTypography.supporting)
                                 .foregroundStyle(ClickColors.textSecondary)
-                                .lineLimit(1)
+                                .lineLimit(2)
                         }
                     }
+                    Spacer(minLength: 8)
+                    if let badge = Self.badge(person) {
+                        Text(badge)
+                            .font(ClickTypography.metadataEmphasized)
+                            .foregroundStyle(ClickColors.accentForeground)
+                            .padding(.horizontal, 10)
+                            .padding(.vertical, 5)
+                            .background(ClickColors.selectionTint, in: Capsule())
+                    }
                 }
+                .padding(.vertical, 4)
             }
-            .buttonStyle(.plain)
         }
     }
 
-    private func detail(_ person: DirectoryAttendee) -> String? {
+    nonisolated static func badge(_ person: DirectoryAttendee) -> String? {
         switch person.relationship {
-        case .connection: return "Your Click"
-        case .mutual:
-            let names = person.mutualNames.prefix(2).joined(separator: ", ")
-            return names.isEmpty ? "\(person.mutualCount) mutual" : "Via \(names)"
-        default:
-            return person.sharedInterests.isEmpty ? nil : "\(person.sharedInterests.count) shared interests"
+        case .connection: "Your Click"
+        case .mutual: "Mutual"
+        default: nil
         }
+    }
+
+    /// Everything the server shared, most useful first: mutual friends, shared interests, RSVP time.
+    nonisolated static func details(_ person: DirectoryAttendee) -> [String] {
+        var lines: [String] = []
+        if person.mutualCount > 0 {
+            let names = person.mutualNames.prefix(2).joined(separator: ", ")
+            let count = "\(person.mutualCount) friend\(person.mutualCount == 1 ? "" : "s") in common"
+            lines.append(names.isEmpty ? count : "\(count) · \(names)")
+        }
+        if !person.sharedInterests.isEmpty {
+            lines.append("Into " + person.sharedInterests.prefix(3).joined(separator: ", ")
+                         + (person.sharedInterests.count > 3 ? " +\(person.sharedInterests.count - 3)" : ""))
+        }
+        if lines.isEmpty {
+            lines.append(person.signedUpAt.map { "Going · RSVP'd \($0.formatted(.relative(presentation: .named)))" } ?? "Going")
+        }
+        return lines
     }
 
     private func load() async {
@@ -563,6 +717,84 @@ struct EventDirectoryView: View {
             directory.succeed(try await env.events.directory(beaconID: beaconID))
         } catch {
             directory.fail(error.userFacingMessage)
+        }
+    }
+}
+
+/// "Share to chat": pick a Click or group, then send the event card (plaintext card fields).
+struct ShareToChatSheet: View {
+    @Environment(AppEnvironment.self) private var env
+    @Environment(ConversationListModel.self) private var conversations
+    @Environment(\.dismiss) private var dismiss
+    let beacon: MapBeacon
+
+    @State private var query = ""
+    @State private var sending: String?
+    @State private var error: String?
+
+    var body: some View {
+        NavigationStack {
+            List {
+                let people = conversations.active.filter { query.isEmpty || $0.displayName.localizedCaseInsensitiveContains(query) }
+                let groups = conversations.groups.filter { query.isEmpty || $0.name.localizedCaseInsensitiveContains(query) }
+                if !people.isEmpty {
+                    Section("Clicks") {
+                        ForEach(people) { item in
+                            row(title: item.displayName, id: item.id,
+                                avatar: AnyView(AvatarView(imageURL: item.avatarUrl, seed: item.userID, initials: item.initials, size: 40))) {
+                                ConversationIdentity(chatID: item.chatID ?? item.connectionID, connectionID: item.connectionID,
+                                                     peerUserID: item.userID, peerDisplayName: item.displayName)
+                            }
+                        }
+                    }
+                }
+                if !groups.isEmpty {
+                    Section("Groups") {
+                        ForEach(groups) { group in
+                            row(title: group.name, id: group.id,
+                                avatar: AnyView(GroupAvatarView(avatarURL: group.avatarURL, seed: group.chatID, initials: group.initials,
+                                                                members: group.members, size: 40))) {
+                                group.chatRoute.conversationIdentity
+                            }
+                        }
+                    }
+                }
+            }
+            .searchable(text: $query)
+            .navigationTitle("Share to chat")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar { ToolbarItem(placement: .cancellationAction) { Button("Cancel") { dismiss() } } }
+            .alert("Couldn't share", isPresented: Binding(get: { error != nil }, set: { if !$0 { error = nil } })) {
+                Button("OK", role: .cancel) {}
+            } message: { Text(error ?? "") }
+        }
+    }
+
+    private func row(title: String, id: String, avatar: AnyView, identity: @escaping () -> ConversationIdentity) -> some View {
+        Button {
+            Task { await send(to: identity(), id: id) }
+        } label: {
+            HStack(spacing: 12) {
+                avatar
+                Text(title).foregroundStyle(ClickColors.textPrimary)
+                Spacer()
+                if sending == id { ProgressView() }
+            }
+        }
+        .disabled(sending != nil)
+    }
+
+    private func send(to identity: ConversationIdentity, id: String) async {
+        guard let userID = env.session.currentSession?.userId else { return }
+        sending = id
+        defer { sending = nil }
+        do {
+            _ = try await env.chat.sendBeacon(conversation: identity, currentUserID: userID, currentUserName: "You",
+                                              beacon: beacon, clientMessageID: UUID().uuidString.lowercased())
+            ClickHaptics.success()
+            dismiss()
+        } catch {
+            self.error = error.userFacingMessage
         }
     }
 }

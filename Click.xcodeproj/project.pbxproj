@@ -91,6 +91,7 @@
 		99792F8C19DC5B5E730BAB56 /* GlobalSearchTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = D96864E512FF90DCA0D3AF9E /* GlobalSearchTests.swift */; };
 		9A7DDCDDC70230ABCE0DBEC9 /* OnboardingHeaderView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2363F153118BAC82700FA97A /* OnboardingHeaderView.swift */; };
 		9B5130FF9140BEAE3CCDE585 /* SavedEventsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8A25B36F7B43CDA3235FEFDD /* SavedEventsView.swift */; };
+		9FFE49B750AFD7B106E7F990 /* CreateBeaconSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1704BBFEC1035AD1234E1B8D /* CreateBeaconSheet.swift */; };
 		A30461AB84F2BAE2A8A57572 /* EventEngagementRepository.swift in Sources */ = {isa = PBXBuildFile; fileRef = AC24CFA0E6E02114CAA8699B /* EventEngagementRepository.swift */; };
 		A6368ED8BCD618DA44245AF9 /* BeaconDetailView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8449BE5D6B21017344E55E9E /* BeaconDetailView.swift */; };
 		A938B09C80F37F6A460D5BB6 /* PriorConnectionsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 83C5FC83E94C4D0DD1DBBF1D /* PriorConnectionsView.swift */; };
@@ -98,6 +99,7 @@
 		AD564C7175B656013446DF7B /* BLEProximityService.swift in Sources */ = {isa = PBXBuildFile; fileRef = C6233093B7CC58508DF4534E /* BLEProximityService.swift */; };
 		B12D7E2CA0F7D433B947DA57 /* Spacing.swift in Sources */ = {isa = PBXBuildFile; fileRef = DE44FFADBC4622D64A3A704E /* Spacing.swift */; };
 		B157719AA85CC74638A6B2F4 /* Typography.swift in Sources */ = {isa = PBXBuildFile; fileRef = 115558E16D558D82B19CEDFD /* Typography.swift */; };
+		B1E8ABA06875F5286942FDA9 /* GroupSharedContent.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1C333634F9CA36EC7340B6CD /* GroupSharedContent.swift */; };
 		B283DB1A8D0D2A02389A7695 /* OnboardingCoordinator.swift in Sources */ = {isa = PBXBuildFile; fileRef = A03E2C3998EE2E05F0385B8E /* OnboardingCoordinator.swift */; };
 		B30376B06453E817B1E34C1B /* EventVisual.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7706CFCC8974CFECA09912F7 /* EventVisual.swift */; };
 		B5689784AF03093872031780 /* CacheStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = 003194C59DD7C08710C713C1 /* CacheStore.swift */; };
@@ -211,9 +213,11 @@
 		1129F5B0BDFF83F9CE1A6759 /* EventDetailTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = EventDetailTests.swift; sourceTree = "<group>"; };
 		115558E16D558D82B19CEDFD /* Typography.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Typography.swift; sourceTree = "<group>"; };
 		14D92B168AB77244D3727B0F /* HubSheets.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HubSheets.swift; sourceTree = "<group>"; };
+		1704BBFEC1035AD1234E1B8D /* CreateBeaconSheet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CreateBeaconSheet.swift; sourceTree = "<group>"; };
 		175C5664D9E4177BB13BB80B /* AvatarView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AvatarView.swift; sourceTree = "<group>"; };
 		17FB03068E701F0CD7FE556B /* JournalEditor.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = JournalEditor.swift; sourceTree = "<group>"; };
 		1AFAFEA28942252B4C8C3065 /* ClickLogo.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ClickLogo.swift; sourceTree = "<group>"; };
+		1C333634F9CA36EC7340B6CD /* GroupSharedContent.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GroupSharedContent.swift; sourceTree = "<group>"; };
 		1C9CE28A98189AEC8BC639BD /* ChatRepository.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ChatRepository.swift; sourceTree = "<group>"; };
 		1CD6B7EAD7CCC02356A0BB25 /* Manrope-Bold.ttf */ = {isa = PBXFileReference; lastKnownFileType = file; path = "Manrope-Bold.ttf"; sourceTree = "<group>"; };
 		20EC856E20FF0D26024AD575 /* ChatKindsTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ChatKindsTests.swift; sourceTree = "<group>"; };
@@ -408,6 +412,7 @@
 			isa = PBXGroup;
 			children = (
 				5887556DE388CBF75CF2F477 /* GroupProfileView.swift */,
+				1C333634F9CA36EC7340B6CD /* GroupSharedContent.swift */,
 				F0F6A8ABE38606F8786A7AE9 /* NewGroupSheet.swift */,
 			);
 			path = Groups;
@@ -462,6 +467,7 @@
 			isa = PBXGroup;
 			children = (
 				E976EF8A656006D5B73FFD10 /* ClickMapView.swift */,
+				1704BBFEC1035AD1234E1B8D /* CreateBeaconSheet.swift */,
 				7878BF7DD3F7FE11ED9C8866 /* MapFeatureModel.swift */,
 				2F6FDA1F3405FC4A76528E82 /* NearbySheet.swift */,
 			);
@@ -1100,6 +1106,7 @@
 				5C1D1F2D08A908C936D43701 /* ConversationListModel.swift in Sources */,
 				E57BD1A4E46637EA2ED8E2C9 /* ConversationModel.swift in Sources */,
 				8A9F4D30BB33AF8EA16ADF1B /* ConversationTimelineCache.swift in Sources */,
+				9FFE49B750AFD7B106E7F990 /* CreateBeaconSheet.swift in Sources */,
 				E8C81D7F00C0A4745CB45C91 /* DebugLaunch.swift in Sources */,
 				D3646E36CA545C20E2D35A93 /* DeviceIdentityVault.swift in Sources */,
 				A30461AB84F2BAE2A8A57572 /* EventEngagementRepository.swift in Sources */,
@@ -1110,6 +1117,7 @@
 				4B24696C76DA27D9F45A29E6 /* GroupAvatarView.swift in Sources */,
 				C3963FF6783D0509A84F407F /* GroupProfileView.swift in Sources */,
 				5D126A60DFB2CA03EE19DF9F /* GroupRepository.swift in Sources */,
+				B1E8ABA06875F5286942FDA9 /* GroupSharedContent.swift in Sources */,
 				8D75F15C30FE0E789CC024BD /* GroupedSurface.swift in Sources */,
 				081AA9386D6FCC4DC3B03DA0 /* Haptics.swift in Sources */,
 				BBA0C506BD5F9CA0033D890F /* HomeComponents.swift in Sources */,

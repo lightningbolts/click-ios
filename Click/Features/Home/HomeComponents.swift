@@ -371,3 +371,80 @@ struct InsightTile: View {
         .accessibilityElement(children: .combine)
     }
 }
+
+/// Local "reconnect" pick when the server has no reconnect nudge: the Click you haven't talked
+/// with the longest (14+ days), Core first. "Not now" hides that person for a week.
+enum ReconnectSuggestion {
+    private static let key = "home.reconnect.snoozed"
+    static let quietDays: Double = 14
+
+    static func pick(from connections: [ConnectionItem], now: Date = .now) -> ConnectionItem? {
+        let snoozed = UserDefaults.standard.dictionary(forKey: key) as? [String: Double] ?? [:]
+        return connections
+            .filter { item in
+                guard let last = item.lastActivityAt, now.timeIntervalSince(last) > quietDays * 86_400 else { return false }
+                if let until = snoozed[item.userID], until > now.timeIntervalSince1970 { return false }
+                return true
+            }
+            .sorted { ($0.isCore ? 0 : 1, $0.lastActivityAt ?? .distantPast) < ($1.isCore ? 0 : 1, $1.lastActivityAt ?? .distantPast) }
+            .first
+    }
+
+    static func snooze(_ item: ConnectionItem, days: Double = 7) {
+        var snoozed = UserDefaults.standard.dictionary(forKey: key) as? [String: Double] ?? [:]
+        snoozed[item.userID] = Date().addingTimeInterval(days * 86_400).timeIntervalSince1970
+        UserDefaults.standard.set(snoozed, forKey: key)
+    }
+}
+
+/// "Reconnect with Marcus" — identity on top, context on its own line, actions on their own
+/// row so nothing wraps awkwardly beside the buttons.
+struct ReconnectCard: View {
+    let person: ConnectionItem
+    let onSayHi: () -> Void
+    let onProfile: () -> Void
+    let onNotNow: () -> Void
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            Button(action: onProfile) {
+                HStack(spacing: 12) {
+                    AvatarView(imageURL: person.avatarUrl, seed: person.userID, initials: person.initials, size: 48)
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text("Reconnect with \(HomeFeedModel.firstName(person.displayName) ?? person.displayName)")
+                            .font(ClickTypography.bodyEmphasized)
+                            .foregroundStyle(ClickColors.textPrimary)
+                        Text(context)
+                            .font(ClickTypography.supporting)
+                            .foregroundStyle(ClickColors.textSecondary)
+                            .lineLimit(2)
+                    }
+                    Spacer(minLength: 0)
+                }
+            }
+            .buttonStyle(.plain)
+            HStack(spacing: 10) {
+                Button(action: onSayHi) {
+                    Label("Say hi", systemImage: "hand.wave")
+                        .font(ClickTypography.supportingEmphasized)
+                        .frame(maxWidth: .infinity, minHeight: 40)
+                        .foregroundStyle(ClickColors.accentForeground)
+                        .background(ClickColors.selectionTint, in: Capsule())
+                }
+                Button(action: onNotNow) {
+                    Text("Not now")
+                        .font(ClickTypography.supporting)
+                        .frame(maxWidth: .infinity, minHeight: 40)
+                        .foregroundStyle(ClickColors.textSecondary)
+                        .background(ClickColors.fillSubtle, in: Capsule())
+                }
+            }
+            .buttonStyle(.plain)
+        }
+    }
+
+    private var context: String {
+        let last = person.lastActivityAt.map { "Last talked \($0.formatted(.dateTime.month(.abbreviated).day()))" }
+        return [last, person.encounterLocation.nonEmptyTrimmed.map { "met at \($0)" }].compactMap { $0 }.joined(separator: " · ")
+    }
+}

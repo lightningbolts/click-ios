@@ -98,6 +98,29 @@ public actor HubRepository {
         _ = try await api.executeRaw(APIRequest(path: "/api/hub/\(hubID)", method: .delete))
     }
 
+    /// Hubs the viewer can read (RLS `auth_uid_in_hub` on `hub_messages`) with their newest
+    /// activity — finds hubs joined on other devices or before this build remembered them.
+    public func discoverHubActivity() async -> [String: Date] {
+        guard let supabaseURL, !supabaseAnonKey.isEmpty,
+              let (data, _) = try? await api.executeRaw(APIRequest(
+                baseURL: supabaseURL,
+                path: "/rest/v1/hub_messages",
+                queryItems: [
+                    URLQueryItem(name: "select", value: "hub_id,created_at"),
+                    URLQueryItem(name: "order", value: "created_at.desc"),
+                    URLQueryItem(name: "limit", value: "500")
+                ],
+                headers: ["apikey": supabaseAnonKey]
+              )),
+              let rows = try? JSONSerialization.jsonObject(with: data) as? [[String: Any]] else { return [:] }
+        var latest: [String: Date] = [:]
+        for row in rows {
+            guard let id = JSONFields.string(row["hub_id"]), latest[id] == nil else { continue }
+            latest[id] = JSONFields.date(row["created_at"]) ?? .distantPast
+        }
+        return latest
+    }
+
     public enum LatestResult: Sendable {
         case message(text: String, senderName: String?, date: Date?)
         case empty

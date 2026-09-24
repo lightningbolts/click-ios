@@ -14,6 +14,7 @@ public struct ChatComposerView: View {
     /// Nil hides attachments and voice notes (hub chats).
     let onDraft: ((MediaDraft) -> Void)?
     let onAttachmentError: (String) -> Void
+    let onShareBeacon: (() -> Void)?
 
     @FocusState private var isFocused: Bool
     @State private var recorder = VoiceNoteRecorder()
@@ -30,8 +31,10 @@ public struct ChatComposerView: View {
         onSend: @escaping () -> Void,
         onTypingChanged: @escaping (Bool) -> Void = { _ in },
         onDraft: ((MediaDraft) -> Void)? = nil,
-        onAttachmentError: @escaping (String) -> Void = { _ in }
+        onAttachmentError: @escaping (String) -> Void = { _ in },
+        onShareBeacon: (() -> Void)? = nil
     ) {
+        self.onShareBeacon = onShareBeacon
         self.onDraft = onDraft
         self.onAttachmentError = onAttachmentError
         self._text = text
@@ -88,7 +91,12 @@ public struct ChatComposerView: View {
             } else {
             HStack(alignment: .bottom, spacing: 8) {
                 if let onDraft, editTarget == nil {
-                    ComposerAttachmentButton(onDraft: onDraft, onError: onAttachmentError)
+                    ComposerAttachmentButton(
+                        onDraft: onDraft,
+                        onError: onAttachmentError,
+                        onVoice: { Task { await startRecording() } },
+                        onShareBeacon: onShareBeacon
+                    )
                 }
                 TextField(
                     editTarget == nil ? placeholder : "Edit message…",
@@ -101,7 +109,7 @@ public struct ChatComposerView: View {
                 .foregroundStyle(ClickColors.textPrimary)
                 .padding(.horizontal, 14)
                 .padding(.vertical, 10)
-                .background(ClickColors.surfaceElevated)
+                .background(.regularMaterial)
                 .clipShape(RoundedRectangle(cornerRadius: ClickRadius.messageBubble, style: .continuous))
                 .overlay {
                     RoundedRectangle(cornerRadius: ClickRadius.messageBubble, style: .continuous)
@@ -139,12 +147,7 @@ public struct ChatComposerView: View {
 
                 if onDraft != nil, editTarget == nil, !canSend {
                     Button {
-                        Task {
-                            await recorder.start()
-                            if recorder.state == .denied {
-                                onAttachmentError("Allow microphone access in Settings to record voice notes.")
-                            }
-                        }
+                        Task { await startRecording() }
                     } label: {
                         Image(systemName: "mic.fill")
                             .font(.system(size: 17, weight: .semibold))
@@ -182,12 +185,6 @@ public struct ChatComposerView: View {
             }
         }
         .onDisappear { recorder.cancel() }
-        .background(ClickColors.surface)
-        .overlay(alignment: .top) {
-            Rectangle()
-                .fill(ClickColors.separator)
-                .frame(height: 0.5)
-        }
         .animation(ClickMotion.selection, value: replyTarget?.id)
         .animation(ClickMotion.selection, value: editTarget?.id)
     }
@@ -201,7 +198,7 @@ public struct ChatComposerView: View {
         HStack(spacing: 10) {
             RoundedRectangle(cornerRadius: 2)
                 .fill(ClickColors.accentForeground)
-                .frame(width: 3)
+                .frame(width: 3, height: 36)
 
             Image(systemName: icon)
                 .font(.system(size: 13, weight: .semibold))
@@ -234,9 +231,18 @@ public struct ChatComposerView: View {
             }
             .buttonStyle(.plain)
         }
-        .padding(.horizontal, 14)
-        .padding(.top, 8)
-        .padding(.bottom, 4)
-        .background(ClickColors.surface)
+        .padding(.horizontal, 12)
+        .padding(.vertical, 8)
+        .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
+        .padding(.horizontal, 12)
+        .padding(.top, 6)
+        .fixedSize(horizontal: false, vertical: true)
+    }
+
+    private func startRecording() async {
+        await recorder.start()
+        if recorder.state == .denied {
+            onAttachmentError("Allow microphone access in Settings to record voice notes.")
+        }
     }
 }

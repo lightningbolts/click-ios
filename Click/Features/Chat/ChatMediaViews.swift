@@ -1,3 +1,4 @@
+import CoreImage
 import AVFoundation
 import PhotosUI
 import QuickLook
@@ -235,20 +236,55 @@ private struct ChatImageView: View {
     @State private var url: URL?
     @State private var failed = false
 
+    private var lockedUntil: Date? {
+        guard let media = message.media, media.isLocked() else { return nil }
+        return media.revealAt ?? .distantFuture
+    }
+
+    static func pixelated(_ image: UIImage) -> UIImage? {
+        guard let input = CIImage(image: image) else { return nil }
+        let filter = CIFilter(name: "CIPixellate")
+        filter?.setValue(input, forKey: kCIInputImageKey)
+        filter?.setValue(max(image.size.width, image.size.height) / 12, forKey: kCIInputScaleKey)
+        guard let output = filter?.outputImage?.cropped(to: input.extent),
+              let cg = CIContext().createCGImage(output, from: input.extent) else { return nil }
+        return UIImage(cgImage: cg)
+    }
+
     /// Reserved box until the image decodes, so the timeline doesn't jump (spec §37.4).
     private let placeholderSize = CGSize(width: 240, height: 200)
 
     var body: some View {
         Group {
             if let image, let url {
-                Button { onOpen(url) } label: {
-                    Image(uiImage: image)
+                if let revealAt = lockedUntil {
+                    // Click Drop: heavily pixelated for everyone until 24 h after it was taken.
+                    Image(uiImage: Self.pixelated(image) ?? image)
                         .resizable()
+                        .interpolation(.none)
                         .aspectRatio(image.size, contentMode: .fit)
                         .frame(maxWidth: 240, maxHeight: 320)
+                        .overlay {
+                            VStack(spacing: 4) {
+                                Image(systemName: "hourglass")
+                                Text("Click Drop · develops \(revealAt.formatted(.relative(presentation: .named)))")
+                                    .font(ClickTypography.metadataEmphasized)
+                            }
+                            .foregroundStyle(.white)
+                            .padding(10)
+                            .background(.black.opacity(0.45), in: Capsule())
+                        }
+                        .accessibilityLabel("Click Drop photo, develops \(revealAt.formatted(.relative(presentation: .named)))")
+                } else {
+                    Button { onOpen(url) } label: {
+                        Image(uiImage: image)
+                            .resizable()
+                            .aspectRatio(image.size, contentMode: .fit)
+                            .frame(maxWidth: 240, maxHeight: 320)
+                    }
+                    .buttonStyle(.plain)
+                    .accessibilityLabel("Photo. Opens full screen.")
                 }
-                .buttonStyle(.plain)
-                .accessibilityLabel("Photo. Opens full screen.")
             } else if failed {
                 Button {
                     failed = false
@@ -325,22 +361,18 @@ private struct ChatAudioView: View {
             .accessibilityLabel(isActive && player.isPlaying ? "Pause voice note" : "Play voice note")
 
             VStack(alignment: .leading, spacing: 2) {
-                // The slider's own drag gesture wins over the row's swipe-to-reply.
-                Slider(
-                    value: Binding(
-                        get: { scrub ?? (total > 0 ? elapsed / total : 0) },
-                        set: { scrub = $0 }
-                    ),
-                    in: 0...1
-                ) { editing in
-                    if !editing, let value = scrub {
+                // A custom scrubber: the knob follows the finger 1:1 and its drag has priority
+                // over swipe-to-reply and the timeline scroll.
+                AudioScrubber(
+                    progress: scrub ?? (total > 0 ? elapsed / total : 0),
+                    tint: foreground,
+                    isEnabled: isActive,
+                    onScrub: { scrub = $0 },
+                    onCommit: { value in
                         if isActive { player.seek(to: value) }
                         scrub = nil
                     }
-                }
-                .tint(foreground)
-                .disabled(!isActive)
-
+                )
                 Text(errorText ?? timeLabel)
                     .font(ClickTypography.caption)
                     .monospacedDigit()
@@ -524,18 +556,40 @@ struct MediaViewer: View {
 
 // MARK: - Composer attachment controls
 
-/// Photo, file, and voice-note entry points for the composer (direct and group chats).
+/// Composer "+" menu: photo, camera, Click Drop, file, voice message, and event/beacon share.
 struct ComposerAttachmentButton: View {
     let onDraft: (MediaDraft) -> Void
     let onError: (String) -> Void
+    var onVoice: (() -> Void)?
+    var onShareBeacon: (() -> Void)?
+
+    private enum Camera: Identifiable {
+        case photo, clickDrop
+        var id: Self { self }
+    }
 
     @State private var showingPhotos = false
     @State private var showingFiles = false
+    @State private var camera: Camera?
     @State private var photoItem: PhotosPickerItem?
+
+    private var hasCamera: Bool { UIImagePickerController.isSourceTypeAvailable(.camera) }
 
     var body: some View {
         Menu {
+            if hasCamera {
+                Button("Take Photo", systemImage: "camera") { camera = .photo }
+            }
             Button("Photo Library", systemImage: "photo.on.rectangle") { showingPhotos = true }
+            Button("Click Drop", systemImage: "hourglass") {
+                if hasCamera { camera = .clickDrop } else { onError("Click Drops need a camera.") }
+            }
+            if let onVoice {
+                Button("Voice Message", systemImage: "mic") { onVoice() }
+            }
+            if let onShareBeacon {
+                Button("Share Event or Beacon", systemImage: "mappin.and.ellipse") { onShareBeacon() }
+            }
             Button("File", systemImage: "doc") { showingFiles = true }
         } label: {
             Image(systemName: "plus")
@@ -546,16 +600,24 @@ struct ComposerAttachmentButton: View {
         .accessibilityLabel("Attach")
         .photosPicker(isPresented: $showingPhotos, selection: $photoItem, matching: .images)
         .fileImporter(isPresented: $showingFiles, allowedContentTypes: Self.fileTypes) { result in
-            switch result {
-            case .success(let url):
-                do {
-                    onDraft(try MediaDraftBuilder.file(at: url))
-                } catch {
-                    onError("Couldn't read that file.")
-                }
-            case .failure:
-                break
+            if case .success(let url) = result {
+                do { onDraft(try MediaDraftBuilder.file(at: url)) } catch { onError("Couldn't read that file.") }
             }
+        }
+        .fullScreenCover(item: $camera) { mode in
+            CameraCapture { image in
+                camera = nil
+                guard let image, let data = image.jpegData(compressionQuality: 0.9) else { return }
+                Task {
+                    guard var draft = await MediaDraftBuilder.image(from: data) else {
+                        onError("Couldn't prepare that photo.")
+                        return
+                    }
+                    draft.isClickDrop = mode == .clickDrop
+                    onDraft(draft)
+                }
+            }
+            .ignoresSafeArea()
         }
         .onChange(of: photoItem) { _, item in
             guard let item else { return }
@@ -574,6 +636,140 @@ struct ComposerAttachmentButton: View {
     /// Only types the server accepts for chat attachments.
     private static let fileTypes: [UTType] = [.pdf, .plainText, .commaSeparatedText, .zip, .png, .jpeg, .quickTimeMovie, .mpeg4Movie]
         + [UTType("org.openxmlformats.wordprocessingml.document")].compactMap { $0 }
+}
+
+/// System camera capture (photo only).
+struct CameraCapture: UIViewControllerRepresentable {
+    let onFinish: (UIImage?) -> Void
+
+    func makeUIViewController(context: Context) -> UIImagePickerController {
+        let picker = UIImagePickerController()
+        picker.sourceType = .camera
+        picker.delegate = context.coordinator
+        return picker
+    }
+
+    func updateUIViewController(_ controller: UIImagePickerController, context: Context) {}
+
+    func makeCoordinator() -> Coordinator { Coordinator(onFinish: onFinish) }
+
+    final class Coordinator: NSObject, UIImagePickerControllerDelegate, UINavigationControllerDelegate {
+        let onFinish: (UIImage?) -> Void
+        init(onFinish: @escaping (UIImage?) -> Void) { self.onFinish = onFinish }
+
+        func imagePickerController(_ picker: UIImagePickerController, didFinishPickingMediaWithInfo info: [UIImagePickerController.InfoKey: Any]) {
+            onFinish(info[.originalImage] as? UIImage)
+        }
+
+        func imagePickerControllerDidCancel(_ picker: UIImagePickerController) {
+            onFinish(nil)
+        }
+    }
+}
+
+/// Seek bar whose knob tracks the finger exactly.
+struct AudioScrubber: View {
+    let progress: Double
+    let tint: Color
+    let isEnabled: Bool
+    let onScrub: (Double) -> Void
+    let onCommit: (Double) -> Void
+
+    var body: some View {
+        GeometryReader { proxy in
+            let width = max(proxy.size.width, 1)
+            let clamped = min(max(progress, 0), 1)
+            ZStack(alignment: .leading) {
+                Capsule().fill(tint.opacity(0.25)).frame(height: 4)
+                Capsule().fill(tint).frame(width: width * clamped, height: 4)
+                Circle().fill(tint).frame(width: 14, height: 14)
+                    .offset(x: width * clamped - 7)
+            }
+            .frame(maxHeight: .infinity)
+            .contentShape(Rectangle())
+            .highPriorityGesture(
+                DragGesture(minimumDistance: 0)
+                    .onChanged { value in
+                        guard isEnabled else { return }
+                        onScrub(min(max(value.location.x / width, 0), 1))
+                    }
+                    .onEnded { value in
+                        guard isEnabled else { return }
+                        onCommit(min(max(value.location.x / width, 0), 1))
+                    },
+                including: isEnabled ? .all : .none
+            )
+        }
+        .frame(height: 22)
+        .opacity(isEnabled ? 1 : 0.6)
+        .accessibilityElement()
+        .accessibilityLabel("Playback position")
+        .accessibilityValue("\(Int(progress * 100)) percent")
+        .accessibilityAdjustableAction { direction in
+            let step = direction == .increment ? 0.1 : -0.1
+            onCommit(min(max(progress + step, 0), 1))
+        }
+    }
+}
+
+/// Picks a cached nearby beacon or saved event to share as a card.
+struct BeaconSharePicker: View {
+    @Environment(AppEnvironment.self) private var env
+    @Environment(\.dismiss) private var dismiss
+    let onPick: (MapBeacon) -> Void
+
+    @State private var beacons: [MapBeacon] = []
+    @State private var loaded = false
+
+    var body: some View {
+        NavigationStack {
+            List(beacons) { beacon in
+                Button {
+                    onPick(beacon)
+                    dismiss()
+                } label: {
+                    HStack(spacing: 12) {
+                        EventVisual(seed: beacon.id, imageURL: beacon.imageURL, symbol: beacon.kind.systemImage)
+                            .frame(width: 44, height: 44)
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text(beacon.title).foregroundStyle(ClickColors.textPrimary).lineLimit(1)
+                            Text([beacon.kind.label, beacon.schedule.map { EventFormatting.when($0) }, beacon.locationName]
+                                .compactMap { $0 }.joined(separator: " · "))
+                                .font(ClickTypography.supporting)
+                                .foregroundStyle(ClickColors.textSecondary)
+                                .lineLimit(1)
+                        }
+                    }
+                }
+                .buttonStyle(.plain)
+            }
+            .overlay {
+                if loaded, beacons.isEmpty {
+                    ContentUnavailableView("Nothing to share yet", systemImage: "mappin.slash",
+                                           description: Text("Events and beacons near you or saved by you show up here."))
+                } else if !loaded {
+                    ProgressView()
+                }
+            }
+            .navigationTitle("Share Event or Beacon")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar { ToolbarItem(placement: .cancellationAction) { Button("Cancel") { dismiss() } } }
+            .task { await load() }
+        }
+        .presentationDetents([.medium, .large])
+    }
+
+    private func load() async {
+        defer { loaded = true }
+        guard let userID = env.session.currentSession?.userId else { return }
+        var result = (await env.beacons.cachedDiscovery(userID: userID))?.beacons.filter { $0.isActive() } ?? []
+        // Saved events are resolved to full beacons so the card carries real fields.
+        let saved = (try? await env.beacons.bookmarks(userID: userID)) ?? []
+        for event in saved.prefix(10) where event.isAvailable && !result.contains(where: { $0.id == event.beaconID }) {
+            if let full = try? await env.beacons.beacon(id: event.beaconID).beacon { result.append(full) }
+        }
+        beacons = result.sorted { ($0.isEvent ? 0 : 1, $0.title) < ($1.isEvent ? 0 : 1, $1.title) }
+    }
 }
 
 /// Recording strip shown in place of the text field while a voice note records.
