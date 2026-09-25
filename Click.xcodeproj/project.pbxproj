@@ -74,6 +74,7 @@
 		5B7B2613D4B9042F81200881 /* MeTabAvatarModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9E1DF371E97CE2C8CBF99560 /* MeTabAvatarModel.swift */; };
 		5C1D1F2D08A908C936D43701 /* ConversationListModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = B2CF3C0CEF71E64672F79F3E /* ConversationListModel.swift */; };
 		5D126A60DFB2CA03EE19DF9F /* GroupRepository.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4CEBB1A141A8A2E6040D2122 /* GroupRepository.swift */; };
+		5D9054E6B1AB171F564850EF /* SelfDataStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = EEFED58F5E81E796610F3FC7 /* SelfDataStore.swift */; };
 		5EAF68E2372DE07743841C1E /* RootGateView.swift in Sources */ = {isa = PBXBuildFile; fileRef = DA0BA02DE0FE06FB525A130A /* RootGateView.swift */; };
 		6116461327D4FF1806AC2945 /* HubMediaTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2CCD86C374B9F8179E86EDE2 /* HubMediaTests.swift */; };
 		619B213920BF476FE52ECC38 /* GlassCircle.swift in Sources */ = {isa = PBXBuildFile; fileRef = C0EEFAB074A9D2D9EB6AA5B9 /* GlassCircle.swift */; };
@@ -436,6 +437,7 @@
 		E6948B635825154782DB64D8 /* LegacyKMPStateMigrator.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LegacyKMPStateMigrator.swift; sourceTree = "<group>"; };
 		E976EF8A656006D5B73FFD10 /* ClickMapView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ClickMapView.swift; sourceTree = "<group>"; };
 		ED9FF6290770C75EBD921B16 /* ProfileView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ProfileView.swift; sourceTree = "<group>"; };
+		EEFED58F5E81E796610F3FC7 /* SelfDataStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SelfDataStore.swift; sourceTree = "<group>"; };
 		F0F6A8ABE38606F8786A7AE9 /* NewGroupSheet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NewGroupSheet.swift; sourceTree = "<group>"; };
 		F23B8F9BB56FEA60442B3E78 /* PeerProfileModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PeerProfileModel.swift; sourceTree = "<group>"; };
 		F4A7259C78F05583D7D2BF35 /* ImagePipeline.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ImagePipeline.swift; sourceTree = "<group>"; };
@@ -851,6 +853,7 @@
 			isa = PBXGroup;
 			children = (
 				2C12F5C06BB5F4AD618B53D7 /* MeRepository.swift */,
+				EEFED58F5E81E796610F3FC7 /* SelfDataStore.swift */,
 			);
 			path = Me;
 			sourceTree = "<group>";
@@ -1410,6 +1413,7 @@
 				E197A818076E9D0C8B49A2A2 /* RootMenu.swift in Sources */,
 				9B5130FF9140BEAE3CCDE585 /* SavedEventsView.swift in Sources */,
 				1A9DBCEA76FD1F94E4F92DFE /* SearchLaunchField.swift in Sources */,
+				5D9054E6B1AB171F564850EF /* SelfDataStore.swift in Sources */,
 				81D284E168DA086F93011B91 /* SessionController.swift in Sources */,
 				7FEFF204089EB2AA4C53F687 /* SettingsPages.swift in Sources */,
 				E1A32FEA2DD05DDE9CC3991B /* SettingsStore.swift in Sources */,

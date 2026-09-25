@@ -165,7 +165,7 @@ public struct SharedItem: Codable, Equatable, Identifiable, Sendable {
     }
 }
 
-public struct SharedTabs: Equatable, Sendable {
+public struct SharedTabs: Equatable, Sendable, Codable {
     public let chatID: String
     public let media: [SharedItem]
     public let files: [SharedItem]

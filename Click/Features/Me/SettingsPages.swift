@@ -52,7 +52,7 @@ struct AlertsSettingsView: View {
                         .disabled(pendingKey != nil)
                     }
                 } else if preferences.isPending {
-                    HStack { Spacer(); ProgressView(); Spacer() }
+                    ClickLoadingView(size: 26, fillsSpace: false)
                 } else {
                     Button("Couldn't load your notification settings. Retry") {
                         Task { await load() }
@@ -149,7 +149,7 @@ struct PrivacySettingsView: View {
                     toggle("Memory Map", "Use your Click locations for your personal map and Remember Me.", \.memoryMap, value)
                     toggle("Business insights", "Include anonymized, aggregated visits in venue insights. Never identifies you.", \.businessInsights, value)
                 } else if privacy.isPending {
-                    HStack { Spacer(); ProgressView(); Spacer() }
+                    ClickLoadingView(size: 26, fillsSpace: false)
                 } else {
                     Button("Couldn't load your location settings. Retry") { Task { await load() } }
                 }
@@ -307,7 +307,7 @@ struct BlockedUsersView: View {
                     }
                 }
             } else if blocked.isPending {
-                HStack { Spacer(); ProgressView(); Spacer() }
+                ClickLoadingView(size: 26, fillsSpace: false)
             } else {
                 Button("Couldn't load blocked people. Retry") { Task { await load() } }
             }
@@ -478,6 +478,7 @@ struct InterestsSettingsView: View {
 
     private func persist(_ updated: SelfProfile) async {
         await CacheStore.shared.save(updated, key: "self-profile", userID: updated.userID)
+        env.selfData.apply(profile: updated)
     }
 }
 
@@ -498,6 +499,7 @@ struct PersonalitySettingsView: View {
                 ) { traits in
                     try await env.onboardingRepository.savePersonality(userId: current.userID, traits: traits)
                     await CacheStore.shared.save(current.with(personality: traits), key: "self-profile", userID: current.userID)
+                    env.selfData.apply(profile: current.with(personality: traits))
                     dismiss()
                 }
             } else {
@@ -514,13 +516,11 @@ struct PersonalitySettingsView: View {
 enum SelfProfileLoader {
     @MainActor
     static func load(into state: Binding<ModuleState<SelfProfile>>, env: AppEnvironment) async {
-        guard let userID = env.session.currentSession?.userId else { return }
-        state.wrappedValue.begin()
-        do {
-            state.wrappedValue.succeed(try await env.me.selfProfile(userID: userID))
-        } catch {
-            state.wrappedValue.fail(error)
-        }
+        // The editor opens instantly on the shared copy, then confirms it against the server
+        // (an editor must never save over newer server data).
+        if let shown = env.selfData.profile.value { state.wrappedValue.seed(shown) }
+        await env.selfData.loadProfile(force: true)
+        state.wrappedValue = env.selfData.profile
     }
 }
 
@@ -538,7 +538,7 @@ struct SelfProfileLoadingView: View {
                 Button("Try Again") { Task { await retry() } }
             }
         } else {
-            ProgressView()
+            ClickLoadingView()
         }
     }
 }
@@ -669,7 +669,10 @@ struct EditProfileView: View {
         defer { removingPhoto = false }
         do {
             try await env.me.removeAvatar(userID: userID)
-            if let refreshed = try? await env.me.selfProfile(userID: userID) { profile.succeed(refreshed) }
+            if let refreshed = try? await env.me.selfProfile(userID: userID) {
+                profile.succeed(refreshed)
+                env.selfData.apply(profile: refreshed)
+            }
             ClickHaptics.success()
         } catch {
             errorMessage = "Your photo wasn't removed. \(error.userFacingMessage)"
@@ -687,7 +690,9 @@ struct EditProfileView: View {
                 "last_name": lastName.trimmingCharacters(in: .whitespacesAndNewlines),
                 "bio": bio.trimmingCharacters(in: .whitespacesAndNewlines)
             ])
-            _ = try? await env.me.selfProfile(userID: userID)
+            if let refreshed = try? await env.me.selfProfile(userID: userID) {
+                env.selfData.apply(profile: refreshed)
+            }
             ClickHaptics.success()
             dismiss()
         } catch {

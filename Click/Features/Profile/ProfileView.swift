@@ -418,7 +418,7 @@ public struct ProfileView: View {
                     Button("Couldn't load shared content. Retry") { Task { await model.loadTabs() } }
                         .font(ClickTypography.supporting).padding(20)
                 default:
-                    ProgressView().padding(20)
+                    ClickLoadingView(size: 28, fillsSpace: false).padding(8)
                 }
             }
         }
@@ -526,7 +526,7 @@ public struct ProfileView: View {
                     }
                     .font(ClickTypography.supporting).padding(20)
                 } else {
-                    ProgressView().padding(20).frame(maxWidth: .infinity)
+                    ClickLoadingView(size: 28, fillsSpace: false).padding(8)
                 }
             }
             .groupedSurface()

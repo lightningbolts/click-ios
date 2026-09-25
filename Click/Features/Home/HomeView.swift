@@ -11,6 +11,8 @@ import SwiftUI
 public struct HomeView: View {
     @Environment(AppEnvironment.self) private var env
     @Environment(ConversationListModel.self) private var conversations
+    @Environment(\.scenePhase) private var scenePhase
+    @State private var backgroundedAt: Date?
     @State private var model = HomeFeedModel()
     @State private var isEditingAvailability = false
     @State private var reconnectTick = 0
@@ -101,6 +103,14 @@ public struct HomeView: View {
         // Re-asks when the viewer's plans or their Clicks change.
         .task(id: [model.intents.value?.map(\.id).joined() ?? "", String(conversations.active.count)]) {
             await model.loadOverlaps(peerIDs: conversations.active.map(\.userID).filter { !$0.isEmpty })
+        }
+        // Returning after a while refreshes quietly (cached modules stay on screen).
+        .onChange(of: scenePhase) { _, phase in
+            if phase == .background { backgroundedAt = .now }
+            if phase == .active, let since = backgroundedAt, Date().timeIntervalSince(since) > 60 {
+                backgroundedAt = nil
+                Task { await model.refresh() }
+            }
         }
         .sheet(isPresented: $isEditingAvailability) {
             AvailabilitySheet {

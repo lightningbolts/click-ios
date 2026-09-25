@@ -220,7 +220,7 @@ public struct ClicksView: View {
                     .listRowSeparator(.hidden)
                     .listRowBackground(Color.clear)
                 } else {
-                    ProgressView().frame(maxWidth: .infinity).listRowBackground(Color.clear)
+                    ClickLoadingView(size: 26, fillsSpace: false).listRowBackground(Color.clear)
                 }
             }
             ForEach(GroupsTabRow.merge(groups: groups, hubs: hubs)) { row in
@@ -322,8 +322,7 @@ public struct ClicksView: View {
                     .tint(ClickColors.primaryActionFill)
             }
         } else {
-            ProgressView()
-                .tint(ClickColors.accentForeground)
+            ClickLoadingView()
         }
     }
 

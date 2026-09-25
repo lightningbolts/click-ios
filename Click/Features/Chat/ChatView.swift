@@ -271,7 +271,7 @@ public struct ChatView: View {
         .overlay(alignment: .top) {
             // Only when the reader has genuinely reached the start while a page is loading.
             if model.isLoadingOlder, model.items.count < 8 {
-                ProgressView().padding(.top, 12)
+                ClickLoadingView(size: 24, fillsSpace: false).padding(.top, 4)
             }
         }
         .dropDestination(for: Data.self) { payloads, _ in
@@ -745,15 +745,7 @@ public struct ChatView: View {
     }
 
     private var loadingState: some View {
-        VStack(spacing: 10) {
-            ProgressView()
-                .tint(ClickColors.accentForeground)
-
-            Text("Loading conversation…")
-                .font(ClickTypography.supporting)
-                .foregroundStyle(ClickColors.textSecondary)
-        }
-        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        ClickLoadingView("Loading conversation…")
     }
 
     private func failureState(message: String) -> some View {

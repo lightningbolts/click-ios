@@ -7,18 +7,23 @@ public struct ClickLoadingView: View {
     private let caption: String?
     private let size: CGFloat
     private let fillsSpace: Bool
+    private let appearDelay: Duration
 
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @State private var pulsing = false
+    /// Loads that finish quickly (cached data, local reads) never flash a loader.
+    @State private var isShown = false
 
     /// - Parameters:
     ///   - caption: optional line under the mark ("Opening hub…").
     ///   - size: mark size; 44 for screens, ~28 for sections.
     ///   - fillsSpace: centers in all available space (screens) vs. a compact row (sections).
-    public init(_ caption: String? = nil, size: CGFloat = 44, fillsSpace: Bool = true) {
+    ///   - appearDelay: how long to wait before showing anything (space is still reserved).
+    public init(_ caption: String? = nil, size: CGFloat = 44, fillsSpace: Bool = true, appearDelay: Duration = .milliseconds(200)) {
         self.caption = caption
         self.size = size
         self.fillsSpace = fillsSpace
+        self.appearDelay = appearDelay
     }
 
     public var body: some View {
@@ -35,7 +40,13 @@ public struct ClickLoadingView: View {
         }
         .frame(maxWidth: .infinity, maxHeight: fillsSpace ? .infinity : nil)
         .padding(.vertical, fillsSpace ? 0 : 12)
-        .onAppear { pulsing = true }
+        .opacity(isShown ? 1 : 0)
+        .task {
+            try? await Task.sleep(for: appearDelay)
+            guard !Task.isCancelled else { return }
+            withAnimation(.easeOut(duration: 0.2)) { isShown = true }
+            pulsing = true
+        }
         .accessibilityElement(children: .ignore)
         .accessibilityLabel(caption ?? "Loading")
         .accessibilityAddTraits(.updatesFrequently)

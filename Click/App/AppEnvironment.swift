@@ -28,6 +28,8 @@ public final class AppEnvironment {
     public let friction: FrictionTelemetry
     public let joinedHubs = JoinedHubStore()
     public let timelineCache = ConversationTimelineCache()
+    /// The user's own profile, plans and saved events, shared by every screen that shows them.
+    let selfData = SelfDataStore()
     public let network: NetworkMonitor
     /// Optimistic sends and uploads that outlive the chat screen.
     public let pendingSends = PendingSendStore()
@@ -199,6 +201,7 @@ public final class AppEnvironment {
         session.onSignOut = { [weak self] in
             await self?.clearSessionCaches()
         }
+        selfData.attach(self)
         session.onPostAuthResolved = { [weak self] in
             self?.handlePostAuthResolved()
         }

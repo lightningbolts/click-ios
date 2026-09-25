@@ -47,7 +47,7 @@ struct SavedEventsView: View {
                         Button("Try Again") { Task { await load() } }
                     }
                 } else {
-                    ProgressView()
+                    ClickLoadingView()
                 }
             }
         }

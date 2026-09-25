@@ -113,7 +113,10 @@ extension Transport {
     /// For screen refreshes: one quiet retry after a short pause before a failure is surfaced
     /// ("Couldn't refresh · Retry"). Covers the dropped connection or brief path flap right after
     /// returning from background. Cancellation, auth and client errors are never retried.
-    static func refreshing<T: Sendable>(_ operation: () async throws -> T) async throws -> T {
+    static func refreshing<T: Sendable>(
+        isolation: isolated (any Actor)? = #isolation,
+        _ operation: () async throws -> T
+    ) async throws -> T {
         do {
             return try await operation()
         } catch {

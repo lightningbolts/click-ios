@@ -188,7 +188,7 @@ struct NearbyListView: View {
                     .font(ClickTypography.supportingEmphasized)
                     .padding(.top, 4)
             } else if model.discovery.value == nil {
-                ProgressView()
+                ClickLoadingView(size: 30, fillsSpace: false)
             } else {
                 Text(model.filter == .people ? "No one from your network on the map yet" : "Nothing nearby")
                     .font(ClickTypography.bodyEmphasized)

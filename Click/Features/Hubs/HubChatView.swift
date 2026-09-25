@@ -29,8 +29,7 @@ struct HubChatView: View {
         Group {
             switch phase {
             case .loading:
-                ProgressView("Opening \(fallbackTitle ?? "hub")…")
-                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+                ClickLoadingView("Opening \(fallbackTitle ?? "hub")…")
                     .navigationTitle(fallbackTitle ?? "Hub")
                     .navigationBarTitleDisplayMode(.inline)
             case .failed(let message, let canRetry):
@@ -101,8 +100,18 @@ struct HubChatView: View {
         await load()
     }
 
+    /// Hub info from memory, else from disk (so the chat opens straight away after relaunch;
+    /// the server still re-checks access right after).
+    private func knownHub() -> HubInfo? {
+        if let cached = Self.hubCache[hubID] { return cached }
+        guard let userID = env.session.currentSession?.userId,
+              let stored = LocalStore.shared.load(HubInfo.self, key: "hub.info.\(hubID)", userID: userID)?.value else { return nil }
+        Self.hubCache[hubID] = stored
+        return stored
+    }
+
     private func load() async {
-        if let cached = Self.hubCache[hubID] {
+        if let cached = knownHub() {
             let identity = ConversationIdentity(
                 chatID: cached.id,
                 peerUserID: "",
@@ -118,6 +127,9 @@ struct HubChatView: View {
         do {
             let hub = try await resolveHub()
             Self.hubCache[hubID] = hub
+            if let userID = env.session.currentSession?.userId {
+                LocalStore.shared.save(hub, key: "hub.info.\(hubID)", userID: userID)
+            }
             let identity = ConversationIdentity(
                 chatID: hub.id,
                 peerUserID: "",
@@ -137,6 +149,9 @@ struct HubChatView: View {
         } catch {
             if let hubError = error as? HubChatError, hubError == .ended || hubError == .accessDenied {
                 Self.hubCache.removeValue(forKey: hubID)
+                if let userID = env.session.currentSession?.userId {
+                    LocalStore.shared.remove(key: "hub.info.\(hubID)", userID: userID)
+                }
                 await conversations.forgetHub(id: hubID)
                 phase = .failed(message(for: error), canRetry: false)
             } else if case .ready = phase {
@@ -217,8 +232,7 @@ struct EventChatView: View {
         Group {
             switch resolution {
             case nil:
-                ProgressView("Opening event chat…")
-                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+                ClickLoadingView("Opening event chat…")
             case .ready(let hubID, let title, _):
                 HubChatView(hubID: hubID, fallbackTitle: title)
             case .requiresRSVP:

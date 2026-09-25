@@ -213,6 +213,14 @@ public struct CliqueItem: Codable, Equatable, Identifiable, Sendable {
         GroupChatRoute(chatID: chatID, groupID: id, name: name, avatarURL: avatarURL, memberUserIDs: members.map(\.userID))
     }
 
+    public func with(name newName: String) -> CliqueItem {
+        CliqueItem(
+            id: id, chatID: chatID, name: newName, memberCount: memberCount, lastActiveRelative: lastActiveRelative,
+            createdBy: createdBy, avatarURL: avatarURL, members: members,
+            lastActivityAt: lastActivityAt, lastMessage: lastMessage, unreadCount: unreadCount
+        )
+    }
+
     public func with(unreadCount: Int, lastMessage: InboxLastMessage? = nil, lastActivityAt: Date? = nil) -> CliqueItem {
         CliqueItem(
             id: id, chatID: chatID, name: name, memberCount: memberCount, lastActiveRelative: lastActiveRelative,

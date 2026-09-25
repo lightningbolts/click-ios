@@ -66,7 +66,7 @@ struct HubInfoView: View {
                     } else if members.errorMessage != nil {
                         Button("Couldn't load members. Try again") { Task { await load() } }
                     } else {
-                        ProgressView()
+                        ClickLoadingView(size: 26, fillsSpace: false)
                     }
                 }
             }

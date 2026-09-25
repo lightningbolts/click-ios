@@ -404,7 +404,8 @@ final class ConversationListModel {
     func renameGroup(_ group: CliqueItem, to name: String) async throws {
         guard let environment else { return }
         try await environment.groups.rename(groupID: group.id, to: name)
-        await refresh()
+        // The server confirmed: show the new name everywhere now, no reload.
+        replaceGroup(group.with(name: name))
     }
 
     func leaveGroup(_ group: CliqueItem) async throws {

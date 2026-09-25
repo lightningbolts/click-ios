@@ -147,10 +147,22 @@ final class PeerProfileModel {
             tabs.markUnavailable("Shared content appears once you're connected.")
             return
         }
+        // Paint the stored tabs at once; refetch only when they're over two minutes old.
+        let viewerID = environment.session.currentSession?.userId ?? ""
+        let key = "profile.tabs.\(connectionID)"
+        if tabs.value == nil, let stored = LocalStore.shared.load(SharedTabs.self, key: key, userID: viewerID) {
+            tabs.seed(stored.value)
+            await loadMediaItems(stored.value)
+            if Date().timeIntervalSince(stored.savedAt) < 120 {
+                tabs.succeedKeepingValue()
+                return
+            }
+        }
         tabs.begin()
         do {
             let fresh = try await environment.profiles.sharedTabs(connectionID: connectionID)
             tabs.succeed(fresh)
+            LocalStore.shared.save(fresh, key: key, userID: viewerID)
             await loadMediaItems(fresh)
         } catch {
             tabs.fail(error)

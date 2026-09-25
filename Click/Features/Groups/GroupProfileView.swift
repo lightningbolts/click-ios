@@ -38,7 +38,7 @@ struct GroupProfileView: View {
                     description: Text(conversations.groupsError ?? "You're no longer a member of this group, or it was deleted.")
                 )
             } else {
-                ProgressView().frame(maxWidth: .infinity, maxHeight: .infinity)
+                ClickLoadingView()
             }
         }
         .navigationTitle("Group")

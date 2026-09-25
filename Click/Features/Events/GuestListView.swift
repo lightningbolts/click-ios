@@ -18,7 +18,7 @@ struct GuestListView: View {
                     LabeledContent("On Click", value: "\(value.matched)")
                     if value.teasers > 0 { LabeledContent("Invites ready", value: "\(value.teasers)") }
                 } else if status.isPending {
-                    ProgressView()
+                    ClickLoadingView(size: 26, fillsSpace: false)
                 } else {
                     Button("Couldn't load the guest list. Retry") { Task { await load() } }
                 }

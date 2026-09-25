@@ -32,7 +32,7 @@ struct PublicProfileView: View {
                     guidance
                         .padding(.top, 16)
                 } else if profile.isPending {
-                    ProgressView().padding(.top, 80)
+                    ClickLoadingView(fillsSpace: false).padding(.top, 60)
                 } else {
                     ContentUnavailableView {
                         Label("Couldn't load this profile", systemImage: "person.crop.circle.badge.exclamationmark")

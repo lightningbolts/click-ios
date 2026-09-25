@@ -81,3 +81,42 @@ struct TabBarTransitionFader: UIViewControllerRepresentable {
         }
     }
 }
+
+/// Keeps the edge swipe-back working on a pushed screen that hides the navigation bar (UIKit's
+/// default pop-gesture delegate refuses to begin when the bar is hidden). Scoped to this
+/// screen: the original delegate is restored when it disappears.
+struct SwipeBackEnabler: UIViewControllerRepresentable {
+    func makeUIViewController(context: Context) -> Controller { Controller() }
+    func updateUIViewController(_ controller: Controller, context: Context) {}
+
+    final class Controller: UIViewController, UIGestureRecognizerDelegate {
+        private weak var previousDelegate: UIGestureRecognizerDelegate?
+        private weak var navigation: UINavigationController?
+
+        override func loadView() {
+            view = UIView(frame: .zero)
+            view.isUserInteractionEnabled = false
+        }
+
+        override func viewDidAppear(_ animated: Bool) {
+            super.viewDidAppear(animated)
+            guard let navigation = parent?.navigationController ?? navigationController,
+                  let recognizer = navigation.interactivePopGestureRecognizer else { return }
+            self.navigation = navigation
+            if recognizer.delegate !== self { previousDelegate = recognizer.delegate }
+            recognizer.delegate = self
+            recognizer.isEnabled = true
+        }
+
+        override func viewWillDisappear(_ animated: Bool) {
+            super.viewWillDisappear(animated)
+            if let recognizer = navigation?.interactivePopGestureRecognizer, recognizer.delegate === self {
+                recognizer.delegate = previousDelegate
+            }
+        }
+
+        func gestureRecognizerShouldBegin(_ gestureRecognizer: UIGestureRecognizer) -> Bool {
+            (navigation?.viewControllers.count ?? 0) > 1 && navigation?.transitionCoordinator == nil
+        }
+    }
+}

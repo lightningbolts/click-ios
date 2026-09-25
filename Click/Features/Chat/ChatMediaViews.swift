@@ -285,6 +285,8 @@ private struct ChatImageView: View {
     let onOpen: (URL) -> Void
 
     @State private var image: UIImage?
+    /// The Click Drop's pixelated rendition, made once off the main actor (not per render).
+    @State private var pixelatedImage: UIImage?
     @State private var url: URL?
     @State private var failed = false
     /// Bumped when the reveal time passes so the Drop develops on screen.
@@ -296,13 +298,16 @@ private struct ChatImageView: View {
         return media.revealAt ?? .distantFuture
     }
 
-    static func pixelated(_ image: UIImage) -> UIImage? {
+    /// One Core Image context for every Drop (creating one per call is expensive).
+    private nonisolated(unsafe) static let ciContext = CIContext()
+
+    nonisolated static func pixelated(_ image: UIImage) -> UIImage? {
         guard let input = CIImage(image: image) else { return nil }
         let filter = CIFilter(name: "CIPixellate")
         filter?.setValue(input, forKey: kCIInputImageKey)
         filter?.setValue(max(image.size.width, image.size.height) / 12, forKey: kCIInputScaleKey)
         guard let output = filter?.outputImage?.cropped(to: input.extent),
-              let cg = CIContext().createCGImage(output, from: input.extent) else { return nil }
+              let cg = ciContext.createCGImage(output, from: input.extent) else { return nil }
         return UIImage(cgImage: cg)
     }
 
@@ -317,7 +322,7 @@ private struct ChatImageView: View {
             if let image, let url {
                 if let revealAt = lockedUntil {
                     // Click Drop: heavily pixelated for everyone until 24 h after it was taken.
-                    Image(uiImage: Self.pixelated(image) ?? image)
+                    Image(uiImage: pixelatedImage ?? image)
                         .resizable()
                         .interpolation(.none)
                         .aspectRatio(image.size, contentMode: .fit)
@@ -377,15 +382,18 @@ private struct ChatImageView: View {
         do {
             let fileURL = try await load()
             // A bubble-sized thumbnail, not the full 2048 px photo: faster and lighter to scroll.
-            let decoded = await Task.detached(priority: .userInitiated) { () -> UIImage? in
+            let isLocked = message.media?.isLocked() == true
+            let decoded = await Task.detached(priority: .userInitiated) { () -> (UIImage, UIImage?)? in
                 guard let image = UIImage(contentsOfFile: fileURL.path) else { return nil }
                 let scale = min(1, 720 / max(image.size.width, image.size.height))
-                return image.preparingThumbnail(of: CGSize(width: image.size.width * scale, height: image.size.height * scale)) ?? image
+                let thumbnail = image.preparingThumbnail(of: CGSize(width: image.size.width * scale, height: image.size.height * scale)) ?? image
+                return (thumbnail, isLocked ? Self.pixelated(thumbnail) : nil)
             }.value
             guard let decoded else { throw ChatRepositoryError.mediaUnavailable }
-            MediaAspectCache.remember(decoded.size, for: message)
+            MediaAspectCache.remember(decoded.0.size, for: message)
             url = fileURL
-            image = decoded
+            pixelatedImage = decoded.1
+            image = decoded.0
         } catch {
             failed = true
         }

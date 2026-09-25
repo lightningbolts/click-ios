@@ -42,7 +42,7 @@ struct BeaconDetailView: View {
                         .tint(ClickColors.primaryActionFill)
                 }
             } else {
-                ProgressView().frame(maxWidth: .infinity, maxHeight: .infinity)
+                ClickLoadingView()
             }
         }
         .navigationTitle(beacon.value?.title ?? "")
@@ -396,7 +396,27 @@ struct BeaconDetailView: View {
     @ViewBuilder
     private var peoplePreview: some View {
         let others = (people.value?.attendees ?? []).filter { $0.relationship != .self }
-        if !others.isEmpty {
+        if others.isEmpty, people.value == nil, (rsvp.value?.count ?? 1) > 0 {
+            // Holds the section's space while people load, so the rest of the page never
+            // jumps down when they arrive.
+            VStack(alignment: .leading, spacing: 12) {
+                Text("People here")
+                    .font(ClickTypography.sectionTitle)
+                    .foregroundStyle(ClickColors.textPrimary)
+                Text("Loading who's going").font(ClickTypography.supporting)
+                HStack(spacing: 16) {
+                    ForEach(0..<4, id: \.self) { _ in
+                        VStack(spacing: 6) {
+                            Circle().fill(ClickColors.fillSubtle).frame(width: 60, height: 60)
+                            Capsule().fill(ClickColors.fillSubtle).frame(width: 44, height: 10)
+                        }
+                        .frame(width: 66)
+                    }
+                }
+            }
+            .redacted(reason: .placeholder)
+            .accessibilityHidden(true)
+        } else if !others.isEmpty {
             let ranked = EventDirectoryView.bestMatch(others)
             let mutuals = others.filter { $0.relationship == .connection || $0.relationship == .mutual }.count
             VStack(alignment: .leading, spacing: 12) {
@@ -665,6 +685,7 @@ private extension Image {
 /// decides which fields a viewer receives.
 struct EventDirectoryView: View {
     @Environment(AppEnvironment.self) private var env
+    @Environment(\.dismiss) private var dismiss
     let beaconID: String
     var preloaded: EventDirectory?
 
@@ -721,26 +742,48 @@ struct EventDirectoryView: View {
                     Button("Couldn't load people. Retry") { Task { await load() } }
                         .accessibilityHint(error)
                 } else {
-                    ProgressView().frame(maxWidth: .infinity)
+                    ClickLoadingView(size: 28, fillsSpace: false)
                 }
             }
             .listStyle(.insetGrouped)
             .onChange(of: sort) { _, _ in withAnimation { proxy.scrollTo("top", anchor: .top) } }
         }
+        // The event sheet has no navigation bar; this screen doesn't either, so pushing it
+        // never toggles a bar mid-transition (which shifted the list down after it opened).
+        .toolbar(.hidden, for: .navigationBar)
+        .safeAreaInset(edge: .top, spacing: 0) { header }
+        .background { SwipeBackEnabler().frame(width: 0, height: 0) }
         .navigationTitle("People here")
-        .navigationBarTitleDisplayMode(.inline)
-        .toolbar {
-            ToolbarItem(placement: .principal) {
-                VStack(spacing: 0) {
-                    Text("People here").font(.headline)
-                    Text("\(everyone.count) going").font(ClickTypography.caption).foregroundStyle(ClickColors.textSecondary)
-                }
-            }
-        }
         .task {
             if let preloaded, directory.value == nil { directory.succeed(preloaded) }
             await load()
         }
+    }
+
+    private var header: some View {
+        HStack(spacing: 12) {
+            Button { dismiss() } label: {
+                Image(systemName: "chevron.left")
+                    .font(.system(size: 17, weight: .semibold))
+                    .foregroundStyle(ClickColors.textPrimary)
+                    .frame(width: 44, height: 44)
+                    .glassCircleBackground()
+            }
+            .buttonStyle(.plain)
+            .accessibilityLabel("Back")
+            VStack(alignment: .leading, spacing: 0) {
+                Text("People here").font(ClickTypography.bodyEmphasized)
+                Text(directory.value == nil ? " " : "\(everyone.count) going")
+                    .font(ClickTypography.caption)
+                    .foregroundStyle(ClickColors.textSecondary)
+                    .contentTransition(.numericText())
+            }
+            Spacer()
+        }
+        .padding(.horizontal, 16)
+        .padding(.vertical, 6)
+        .frame(height: 56)
+        .background(ClickColors.background)
     }
 
     private var sections: [(title: String, people: [DirectoryAttendee])] {
