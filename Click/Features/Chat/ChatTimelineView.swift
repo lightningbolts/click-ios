@@ -37,15 +37,6 @@ final class TimelineController {
         coordinator?.reconfigureVisible()
     }
 
-    /// Keeps the current viewport fixed across the next in-place row resize. Reactions use
-    /// this so adding a chip never makes the message jump upward while the chat is pinned.
-    func preservePositionOnNextContentChange() {
-        coordinator?.preservePositionOnNextContentChange()
-    }
-
-    func cancelPositionPreservation() {
-        coordinator?.cancelPositionPreservation()
-    }
 }
 
 /// The message timeline, on `UICollectionView` (like WhatsApp and Messages) rather than a
@@ -116,8 +107,6 @@ struct ChatTimelineView: UIViewRepresentable {
         private var pendingNearBottom: Bool?
         private var nearBottomReportScheduled = false
         private var lastNearTopRequest = Date.distantPast
-        private var shouldPreserveNextContentChange = false
-        private var suppressBottomPinOnce = false
 
         func attach(_ view: TimelineCollectionView, controller: TimelineController) {
             collectionView = view
@@ -165,21 +154,7 @@ struct ChatTimelineView: UIViewRepresentable {
 
             let prepended = Self.isPrepend(old: previousRows, new: rows)
             let wasAtBottom = collectionView.stickToBottom
-            let preserveContentPosition = shouldPreserveNextContentChange
-                && contentChanged
-                && !rowsChanged
-                && hasPositionedInitially
-
-            if preserveContentPosition {
-                shouldPreserveNextContentChange = false
-                let offset = collectionView.contentOffset
-                collectionView.isPreservingPosition = true
-                dataSource.apply(snapshot, animatingDifferences: false)
-                collectionView.layoutIfNeeded()
-                collectionView.contentOffset = offset
-                suppressBottomPinOnce = true
-                collectionView.isPreservingPosition = false
-            } else if prepended, hasPositionedInitially {
+            if prepended, hasPositionedInitially {
                 // Keep the reader's rows exactly in place while older history lands above.
                 let distanceFromBottom = collectionView.contentSize.height - collectionView.contentOffset.y
                 collectionView.isPreservingPosition = true
@@ -281,13 +256,6 @@ struct ChatTimelineView: UIViewRepresentable {
                 || Array(newCore.suffix(oldCore.count - 1)) == Array(oldCore.dropFirst())
         }
 
-        func preservePositionOnNextContentChange() {
-            shouldPreserveNextContentChange = true
-        }
-
-        func cancelPositionPreservation() {
-            shouldPreserveNextContentChange = false
-        }
 
         func reconfigureVisible() {
             guard let collectionView, let dataSource else { return }
@@ -335,10 +303,6 @@ struct ChatTimelineView: UIViewRepresentable {
         /// (bubbles resizing, composer growing, keyboard) and before the first reveal.
         private func afterLayout() {
             guard let collectionView, hasPositionedInitially, !collectionView.isPreservingPosition else { return }
-            if suppressBottomPinOnce {
-                suppressBottomPinOnce = false
-                return
-            }
             if collectionView.stickToBottom, !collectionView.isTracking, !collectionView.isDecelerating {
                 let target = bottomOffset(collectionView)
                 if abs(collectionView.contentOffset.y - target) > 0.5 {
