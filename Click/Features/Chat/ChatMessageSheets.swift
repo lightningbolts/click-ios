@@ -47,50 +47,194 @@ struct ChatSearchBar: View {
     }
 }
 
-/// "Who reacted": every reaction on a message with the people behind it.
+/// WhatsApp-style reaction details. Tapping a reaction chip opens this sheet; removing an
+/// existing reaction is an explicit action on the current user's row rather than the chip itself.
 struct ReactorsSheet: View {
     @Environment(AppEnvironment.self) private var env
+    @Environment(\.dismiss) private var dismiss
+
     let reactions: [ReactionSummary]
     let initial: String
     let currentUserID: String
+    let onRemoveOwnReaction: (String) -> Void
+    let onAddReaction: () -> Void
+
     @State private var people: [String: UserIdentity] = [:]
     @State private var selected: String
 
-    init(reactions: [ReactionSummary], initial: String, currentUserID: String) {
+    init(
+        reactions: [ReactionSummary],
+        initial: String,
+        currentUserID: String,
+        onRemoveOwnReaction: @escaping (String) -> Void,
+        onAddReaction: @escaping () -> Void
+    ) {
         self.reactions = reactions
         self.initial = initial
         self.currentUserID = currentUserID
+        self.onRemoveOwnReaction = onRemoveOwnReaction
+        self.onAddReaction = onAddReaction
         _selected = State(initialValue: initial)
     }
 
     var body: some View {
-        NavigationStack {
-            List {
-                if reactions.count > 1 {
-                    Picker("Reaction", selection: $selected) {
-                        ForEach(reactions) { Text("\($0.reactionType) \($0.count)").tag($0.reactionType) }
+        VStack(spacing: 0) {
+            Text(title)
+                .font(ClickTypography.title3)
+                .foregroundStyle(ClickColors.textPrimary)
+                .padding(.top, 8)
+                .padding(.bottom, 18)
+
+            reactionTabs
+                .padding(.horizontal, 16)
+                .padding(.bottom, 14)
+
+            Divider()
+                .overlay(ClickColors.separator)
+
+            ScrollView {
+                LazyVStack(spacing: 0) {
+                    ForEach(selectedUserIDs, id: \.self) { id in
+                        reactorRow(id)
                     }
-                    .pickerStyle(.segmented)
-                    .listRowBackground(Color.clear)
                 }
-                let ids = reactions.first { $0.reactionType == selected }?.userIDs ?? []
-                ForEach(ids, id: \.self) { id in
-                    HStack(spacing: 12) {
-                        AvatarView(imageURL: people[id]?.avatarURL, seed: id, initials: String((people[id]?.name ?? "?").prefix(1)), size: 32)
-                        Text(id == currentUserID ? "You" : people[id]?.name ?? "Click user")
-                            .foregroundStyle(ClickColors.textPrimary)
-                        Spacer()
-                        Text(selected)
+                .padding(.vertical, 6)
+            }
+        }
+        .background(ClickColors.surface)
+        .presentationDetents([.medium, .large])
+        .presentationDragIndicator(.visible)
+        .task {
+            let ids = Set(reactions.flatMap(\.userIDs))
+            people = await env.identities.resolve(Array(ids))
+        }
+    }
+
+    private var totalCount: Int {
+        reactions.reduce(0) { $0 + $1.count }
+    }
+
+    private var title: String {
+        "\(totalCount) \(totalCount == 1 ? "Reaction" : "Reactions")"
+    }
+
+    private var selectedReaction: ReactionSummary? {
+        reactions.first { $0.reactionType == selected }
+    }
+
+    private var selectedUserIDs: [String] {
+        guard let reaction = selectedReaction else { return [] }
+        var ids = reaction.userIDs
+        if reaction.userReacted, !currentUserID.isEmpty, !ids.contains(currentUserID) {
+            ids.insert(currentUserID, at: 0)
+        }
+        return ids
+    }
+
+    private var reactionTabs: some View {
+        ScrollView(.horizontal, showsIndicators: false) {
+            HStack(spacing: 10) {
+                Button {
+                    ClickHaptics.impact(.light)
+                    dismiss()
+                    DispatchQueue.main.async { onAddReaction() }
+                } label: {
+                    ZStack {
+                        Image(systemName: "face.smiling")
+                            .font(.system(size: 20, weight: .medium))
+                        Image(systemName: "plus.circle.fill")
+                            .font(.system(size: 10, weight: .bold))
+                            .offset(x: 10, y: -8)
                     }
+                    .foregroundStyle(ClickColors.textSecondary)
+                    .frame(width: 54, height: 38)
+                    .background(ClickColors.fillSubtle, in: Capsule())
+                    .overlay {
+                        Capsule().stroke(ClickColors.separator, lineWidth: ClickMetrics.strokeWidth)
+                    }
+                }
+                .buttonStyle(.plain)
+                .accessibilityLabel("Add reaction")
+
+                ForEach(reactions) { reaction in
+                    Button {
+                        withAnimation(ClickMotion.selection) {
+                            selected = reaction.reactionType
+                        }
+                    } label: {
+                        HStack(spacing: 7) {
+                            Text(reaction.reactionType)
+                                .font(.system(size: 20))
+                            Text("\(reaction.count)")
+                                .font(ClickTypography.supportingEmphasized)
+                                .monospacedDigit()
+                        }
+                        .foregroundStyle(ClickColors.textPrimary)
+                        .padding(.horizontal, 14)
+                        .frame(height: 38)
+                        .background(
+                            selected == reaction.reactionType
+                                ? ClickColors.selectionTint
+                                : ClickColors.fillSubtle,
+                            in: Capsule()
+                        )
+                        .overlay {
+                            Capsule().stroke(
+                                selected == reaction.reactionType
+                                    ? ClickColors.accentForeground.opacity(0.5)
+                                    : ClickColors.separator,
+                                lineWidth: ClickMetrics.strokeWidth
+                            )
+                        }
+                    }
+                    .buttonStyle(.plain)
                 }
             }
-            .navigationTitle("Reactions")
-            .navigationBarTitleDisplayMode(.inline)
         }
-        .presentationDetents([.medium, .large])
-        .task {
-            people = await env.identities.resolve(reactions.flatMap(\.userIDs))
+    }
+
+    @ViewBuilder
+    private func reactorRow(_ id: String) -> some View {
+        let isCurrentUser = id == currentUserID
+        Button {
+            guard isCurrentUser else { return }
+            ClickHaptics.impact(.light)
+            let reaction = selected
+            dismiss()
+            DispatchQueue.main.async { onRemoveOwnReaction(reaction) }
+        } label: {
+            HStack(spacing: 12) {
+                AvatarView(
+                    imageURL: people[id]?.avatarURL,
+                    seed: id,
+                    initials: String((people[id]?.name ?? "?").prefix(1)),
+                    size: 42
+                )
+
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(isCurrentUser ? "You" : people[id]?.name ?? "Click user")
+                        .font(ClickTypography.bodyEmphasized)
+                        .foregroundStyle(ClickColors.textPrimary)
+
+                    if isCurrentUser {
+                        Text("Tap to remove")
+                            .font(ClickTypography.supporting)
+                            .foregroundStyle(ClickColors.textSecondary)
+                    }
+                }
+
+                Spacer()
+
+                Text(selected)
+                    .font(.system(size: 24))
+            }
+            .padding(.horizontal, 18)
+            .padding(.vertical, 10)
+            .contentShape(Rectangle())
         }
+        .buttonStyle(.plain)
+        .disabled(!isCurrentUser)
+        .accessibilityHint(isCurrentUser ? "Removes your reaction" : "")
     }
 }
 
