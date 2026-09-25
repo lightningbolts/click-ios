@@ -3,6 +3,13 @@ import AVFoundation
 import PhotosUI
 import QuickLook
 import SwiftUI
+
+/// Core Image contexts are documented for reuse across render operations. Older SDK overlays
+/// do not mark `CIContext` as `Sendable`, while newer ones do, so keep the shared instance in
+/// an explicitly sendable immutable holder instead of relying on SDK-specific annotations.
+private final class SharedCIContext: @unchecked Sendable {
+    let value = CIContext()
+}
 import UniformTypeIdentifiers
 
 // MARK: - Audio playback (one shared player, spec §37.6)
@@ -299,7 +306,7 @@ private struct ChatImageView: View {
     }
 
     /// One Core Image context for every Drop (creating one per call is expensive).
-    private nonisolated static let ciContext = CIContext()
+    private nonisolated static let ciContext = SharedCIContext()
 
     nonisolated static func pixelated(_ image: UIImage) -> UIImage? {
         guard let input = CIImage(image: image) else { return nil }
@@ -307,7 +314,7 @@ private struct ChatImageView: View {
         filter?.setValue(input, forKey: kCIInputImageKey)
         filter?.setValue(max(image.size.width, image.size.height) / 12, forKey: kCIInputScaleKey)
         guard let output = filter?.outputImage?.cropped(to: input.extent),
-              let cg = ciContext.createCGImage(output, from: input.extent) else { return nil }
+              let cg = ciContext.value.createCGImage(output, from: input.extent) else { return nil }
         return UIImage(cgImage: cg)
     }
 
