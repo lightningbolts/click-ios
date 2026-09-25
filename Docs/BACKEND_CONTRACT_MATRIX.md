@@ -86,3 +86,9 @@ Authoritative ledger of backend HTTP endpoints, authorization requirements, and 
 | `/api/chat/messages` | DELETE `?messageId=` | Bearer JWT (owner) | Chat | Hard delete unchanged; also writes `message_tombstones` |
 | `/api/chat/messages` | GET `?chatId&aroundMessageId&limit` | Bearer JWT | Chat | Window around one message (target + ≤`limit` older + ≤40 newer, newest first); iOS search jump |
 | `/api/hub/messages` | GET `?hubId&aroundMessageId&limit` | Bearer JWT | Hub chat | Same around window for hubs; iOS search jump |
+| `/api/groups/{groupId}/avatar` | DELETE | Bearer JWT (member) | Groups | **New** (additive): clears `groups.avatar_url`, removes the stored object in that group's folder; 403 non-member, 429 inside the 60 s profile cooldown |
+| `/api/hub/{id}` | GET | Bearer JWT | Hub | Now also returns `radius_meters` (additive) |
+| `/api/hub/{id}` | PATCH `{name?, category?}` | Bearer JWT (creator) | Hub | Rename / change category |
+| `rpc/get_availability_overlaps` | POST `{p_peer_ids: uuid[]}` | Bearer JWT (Supabase) | Availability | `[{peer_id, has_overlap}]` for mutual connections |
+| `rpc/verified_clique_edges_exist` | POST `{p_member_ids: uuid[]}` | Bearer JWT (Supabase) | Groups | Bool: every pair has an active/kept 1:1 connection; caller must be in the set |
+

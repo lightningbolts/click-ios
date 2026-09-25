@@ -127,6 +127,15 @@ public actor GroupRepository {
         throw APIError.decoding
     }
 
+    /// True when every pair in `memberIDs` (which must include the caller) has an active 1:1
+    /// connection (`verified_clique_edges_exist`); deduplicated and sorted like the server.
+    public func cliqueExists(memberIDs: [String]) async throws -> Bool {
+        let members = Array(Set(memberIDs)).sorted()
+        guard members.count >= 2 else { return false }
+        let data = try await rpcData("verified_clique_edges_exist", ["p_member_ids": members])
+        return (try? JSONSerialization.jsonObject(with: data, options: .fragmentsAllowed)) as? Bool ?? false
+    }
+
     static func randomMasterKey() -> Data {
         var bytes = [UInt8](repeating: 0, count: ClickCryptoV1.groupMasterKeyBytes)
         _ = SecRandomCopyBytes(kSecRandomDefault, bytes.count, &bytes)
@@ -185,6 +194,11 @@ public actor GroupRepository {
         let (data, _) = try await api.executeRaw(APIRequest(path: "/api/groups/\(groupID)/avatar", method: .post, body: body))
         guard let url = JSONFields.string(try JSONFields.object(data)["image"]) else { throw APIError.decoding }
         return url
+    }
+
+    /// `DELETE /api/groups/{id}/avatar` (new, additive): any member; same cooldown as upload.
+    public func removeAvatar(groupID: String) async throws {
+        _ = try await api.executeRaw(APIRequest(path: "/api/groups/\(groupID)/avatar", method: .delete))
     }
 
     // MARK: - Private
@@ -276,12 +290,7 @@ public actor GroupRepository {
 
     private func rpcData(_ name: String, _ body: [String: Any]) async throws -> Data {
         guard let supabaseURL, !supabaseAnonKey.isEmpty else { throw APIError.invalidURL }
-        return try await api.executeRaw(APIRequest(
-            baseURL: supabaseURL,
-            path: "/rest/v1/rpc/\(name)",
-            method: .post,
-            headers: ["apikey": supabaseAnonKey],
-            body: try JSONSerialization.data(withJSONObject: body)
-        )).0
+        return try await api.executeRaw(.supabaseRPC(name, baseURL: supabaseURL, anonKey: supabaseAnonKey,
+                                                     body: try JSONSerialization.data(withJSONObject: body))).0
     }
 }

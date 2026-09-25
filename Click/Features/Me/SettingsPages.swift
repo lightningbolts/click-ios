@@ -283,6 +283,7 @@ struct PrivacySettingsView: View {
 /// People the user blocked (`GET /api/safety/block`), with Unblock. Names come from the shared
 /// identity cache; a failed load is shown as a failure, never as an empty list.
 struct BlockedUsersView: View {
+    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
     @Environment(AppEnvironment.self) private var env
 
     @State private var blocked = ModuleState<[BlockedUser]>()
@@ -319,7 +320,10 @@ struct BlockedUsersView: View {
 
     private func row(_ item: BlockedUser) -> some View {
         let identity = names[item.userID]
-        return HStack(spacing: 12) {
+        // Accessibility text sizes stack the Unblock button under the name instead of squeezing it.
+        let layout = dynamicTypeSize.isAccessibilitySize
+            ? AnyLayout(VStackLayout(alignment: .leading, spacing: 8)) : AnyLayout(HStackLayout(spacing: 12))
+        return layout {
             AvatarView(imageURL: identity?.avatarURL, seed: item.userID, initials: String((identity?.name ?? "?").prefix(1)), size: 36)
             VStack(alignment: .leading, spacing: 2) {
                 Text(identity?.name ?? "Click user")
@@ -334,6 +338,7 @@ struct BlockedUsersView: View {
             Button("Unblock") { Task { await unblock(item) } }
                 .buttonStyle(.bordered)
                 .disabled(unblocking.contains(item.userID))
+                .accessibilityLabel("Unblock \(identity?.name ?? "this person")")
         }
     }
 

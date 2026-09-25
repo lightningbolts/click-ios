@@ -7,8 +7,16 @@ public struct HubInfo: Equatable, Sendable {
     public let category: String?
     public let creatorID: String?
     public let eventBeaconID: String?
+    /// Geofence radius for community hubs (`radius_meters`; older servers omit it).
+    public var radiusMeters: Int? = nil
 
     public var isEventHub: Bool { eventBeaconID != nil }
+}
+
+/// Who belongs to a hub right now (`participant_ids`, `occupant_count` from the thread route).
+public struct HubMembers: Equatable, Sendable {
+    public let participantIDs: [String]
+    public let occupantCount: Int?
 }
 
 /// Bounded outcomes of the canonical event-chat resolver (spec §56.2.1).
@@ -44,8 +52,24 @@ public actor HubRepository {
             name: JSONFields.string(row["name"]) ?? "Hub",
             category: JSONFields.string(row["category"]),
             creatorID: JSONFields.string(row["creator_id"]),
-            eventBeaconID: JSONFields.string(row["event_beacon_id"])
+            eventBeaconID: JSONFields.string(row["event_beacon_id"]),
+            radiusMeters: JSONFields.int(row["radius_meters"])
         )
+    }
+
+    /// Participants and live occupancy, read from the hub thread route (one row of history).
+    public func members(hubID: String) async throws -> HubMembers {
+        let data: Data
+        do {
+            (data, _) = try await api.executeRaw(APIRequest(
+                path: "/api/hub/messages",
+                queryItems: [URLQueryItem(name: "hubId", value: hubID), URLQueryItem(name: "limit", value: "1")]
+            ))
+        } catch {
+            throw HubChatError.map(error)
+        }
+        let root = try JSONFields.object(data)
+        return HubMembers(participantIDs: JSONFields.stringArray(root["participant_ids"]), occupantCount: JSONFields.int(root["occupant_count"]))
     }
 
     /// Event hubs join through click-web (RSVP/check-in/host); standalone hubs through the
@@ -91,9 +115,13 @@ public actor HubRepository {
         _ = try await api.executeRaw(APIRequest(path: "/api/hub/\(hubID)/participants/me", method: .delete))
     }
 
-    public func rename(hubID: String, to name: String) async throws {
-        let body = try JSONSerialization.data(withJSONObject: ["name": name])
-        _ = try await api.executeRaw(APIRequest(path: "/api/hub/\(hubID)", method: .patch, body: body))
+    /// `PATCH /api/hub/{id}` (creator only): rename and/or change category.
+    public func update(hubID: String, name: String? = nil, category: String? = nil) async throws {
+        var fields: [String: String] = [:]
+        if let name { fields["name"] = name }
+        if let category { fields["category"] = category }
+        guard !fields.isEmpty else { return }
+        _ = try await api.executeRaw(APIRequest(path: "/api/hub/\(hubID)", method: .patch, body: try JSONSerialization.data(withJSONObject: fields)))
     }
 
     public func delete(hubID: String) async throws {

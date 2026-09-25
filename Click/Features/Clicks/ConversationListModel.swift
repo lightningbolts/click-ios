@@ -19,6 +19,8 @@ final class ConversationListModel {
     private var lastRefresh: Date?
     private var refreshTask: Task<Void, Never>?
     private let inboxRealtime = ChatRealtimeManager()
+    /// Group joins, leaves and removals refresh Groups without a pull (spec §9).
+    private let membershipRealtime = ChatRealtimeManager()
     private var pendingRefresh: Task<Void, Never>?
 
     /// Refreshing again within this interval (e.g. popping back from a chat) is skipped.
@@ -140,10 +142,21 @@ final class ConversationListModel {
             anonKey: AppConfig.shared.supabaseAnonKey,
             authToken: environment?.session.currentSession?.jwt
         )
+        membershipRealtime.onRowChanged = { [weak self] in
+            Task { @MainActor in self?.scheduleRefresh() }
+        }
+        membershipRealtime.subscribe(
+            to: userID,
+            stream: .groupMembers,
+            supabaseURL: url,
+            anonKey: AppConfig.shared.supabaseAnonKey,
+            authToken: environment?.session.currentSession?.jwt
+        )
     }
 
     func stopRealtime() {
         inboxRealtime.teardown()
+        membershipRealtime.teardown()
     }
 
     func applyInserted(_ payload: RealtimeMessagePayload, currentUserID: String? = nil) {

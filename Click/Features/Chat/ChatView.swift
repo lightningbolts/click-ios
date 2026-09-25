@@ -45,8 +45,14 @@ public struct ChatView: View {
         var id: URL { url }
     }
 
-    public init(model: ConversationModel) {
+    /// Hub-only extras: items for the options menu and the title tap (hub info).
+    private let hubMenu: AnyView?
+    private let onOpenHubInfo: (() -> Void)?
+
+    public init(model: ConversationModel, hubMenu: AnyView? = nil, onOpenHubInfo: (() -> Void)? = nil) {
         self._model = State(initialValue: model)
+        self.hubMenu = hubMenu
+        self.onOpenHubInfo = onOpenHubInfo
     }
 
     public var body: some View {
@@ -464,7 +470,7 @@ public struct ChatView: View {
                     }
                 }
             case .hub:
-                EmptyView()
+                hubMenu
             }
         } label: {
             Label("Conversation options", systemImage: "ellipsis")
@@ -582,7 +588,7 @@ public struct ChatView: View {
                 ClickHaptics.selection()
                 env.router.navigate(to: .groupProfile(chatID: model.identity.chatID))
             case .hub:
-                break
+                onOpenHubInfo?()
             }
         } label: {
             HStack(spacing: 8) {

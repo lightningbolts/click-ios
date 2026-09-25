@@ -292,12 +292,15 @@ public struct MeView: View {
 
     private var appearanceSection: some View {
         Section {
-            Toggle(isOn: Binding(
-                get: { env.settings.darkModeEnabled },
-                set: { env.settings.darkModeEnabled = $0 }
+            Picker(selection: Binding(
+                get: { env.settings.appearance },
+                set: { env.settings.appearance = $0 }
             )) {
-                SettingsRowLabel(title: "Dark mode", systemImage: "moon") { EmptyView() }
+                ForEach(SettingsStore.Appearance.allCases) { Text($0.label).tag($0) }
+            } label: {
+                SettingsRowLabel(title: "Appearance", systemImage: "circle.lefthalf.filled") { EmptyView() }
             }
+            .pickerStyle(.menu)
             Button {
                 openURL(AppConfig.shared.apiBaseURL)
             } label: {

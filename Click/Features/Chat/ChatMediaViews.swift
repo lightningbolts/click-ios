@@ -910,6 +910,11 @@ struct VoiceHoldStrip: View {
         .frame(minHeight: 40)
         .frame(maxWidth: .infinity, alignment: .leading)
         .background(.regularMaterial, in: RoundedRectangle(cornerRadius: ClickRadius.messageBubble, style: .continuous))
+        // One VoiceOver element: what's happening and how to finish, not five fragments.
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel("Recording voice message")
+        .accessibilityValue(slideProgress > 0.8 ? "Release to cancel" : lockProgress > 0.9 ? "Release to lock" : "Slide left to cancel, up to lock")
+        .accessibilityAddTraits(.updatesFrequently)
     }
 }
 
@@ -1046,7 +1051,7 @@ private struct StagedAttachmentChip: View {
                     .foregroundStyle(ClickColors.textSecondary)
             }
             .padding(.horizontal, 10)
-            .frame(height: 64)
+            .frame(minHeight: 64)
             .background(ClickColors.fillSubtle, in: RoundedRectangle(cornerRadius: 12, style: .continuous))
             .onDisappear { if isActive { player.stop() } }
         case .file:

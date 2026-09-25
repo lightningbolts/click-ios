@@ -11,6 +11,7 @@
 		02B49E1B236CECA73DE9449F /* MeSettingsTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 66CDD7B3970AD090C2755F16 /* MeSettingsTests.swift */; };
 		0303E291A9CBE5068AFE7A96 /* Manrope-ExtraBold.ttf in Resources */ = {isa = PBXBuildFile; fileRef = F8B2A1B9A3CEE977F49608DC /* Manrope-ExtraBold.ttf */; };
 		03B037B570CBC883E6BEB1A7 /* ProximityCodecTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7CB3BD1B60178FAB0356E7F1 /* ProximityCodecTests.swift */; };
+		0449142C62DEA7F84229FA32 /* HubInfoView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 09B254B0F4FB61FBD50BB520 /* HubInfoView.swift */; };
 		04FF41E8EFD8116421B309D1 /* AvatarUploadView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7932DD36D8B0EFAEF2B85379 /* AvatarUploadView.swift */; };
 		07E26E70DB1B5BEE2525D0AB /* ClicksView.swift in Sources */ = {isa = PBXBuildFile; fileRef = AAC9E2A2A2CF84BFD5B7C9B3 /* ClicksView.swift */; };
 		0807AC2E7C11A5B869C9A575 /* APIRequest.swift in Sources */ = {isa = PBXBuildFile; fileRef = 235AD70ADF109B4932E8BC15 /* APIRequest.swift */; };
@@ -29,6 +30,7 @@
 		18049CEC4F7138E5BEAACA4C /* InterestsTaxonomy.swift in Sources */ = {isa = PBXBuildFile; fileRef = DDF0ECE7A321253E36201A8D /* InterestsTaxonomy.swift */; };
 		1909840CBDCA26A5B05EB498 /* NearbySheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2F6FDA1F3405FC4A76528E82 /* NearbySheet.swift */; };
 		192EE920791AE2337FBE0F96 /* OfflineNotice.swift in Sources */ = {isa = PBXBuildFile; fileRef = 30988D99C421B40B486F5134 /* OfflineNotice.swift */; };
+		19888E74E00427F4E1A940FF /* CliqueEligibility.swift in Sources */ = {isa = PBXBuildFile; fileRef = C59D32E74CB27DBDDC2CDD86 /* CliqueEligibility.swift */; };
 		1A5711493067F5BC9BDF30F1 /* ShellNavigationTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 79D81340C370C0FD0A7086EB /* ShellNavigationTests.swift */; };
 		1B134B977C322761A9BE9F57 /* ClipApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = DA511983FBEDC6F47528DD28 /* ClipApp.swift */; };
 		1B4617C370DCCBFD2032386E /* MeRepository.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2C12F5C06BB5F4AD618B53D7 /* MeRepository.swift */; };
@@ -187,6 +189,7 @@
 		FE588087F4F5CDACF3F8288C /* JoinedHubStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = 43B915D15511AD49D780AE8B /* JoinedHubStore.swift */; };
 		FE73E5CDA34C6AAF260E376A /* ProximityCodec.swift in Sources */ = {isa = PBXBuildFile; fileRef = CEFB1BA8BE902D3D92C87CCD /* ProximityCodec.swift */; };
 		FEEF3EB93549BC0E8570F080 /* ClicksSnapshot.swift in Sources */ = {isa = PBXBuildFile; fileRef = C4BA259925DD4913607E5A68 /* ClicksSnapshot.swift */; };
+		FEF90A5A9FF3E2503A3054DE /* GroupsHubsSettingsTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 08AA20450324A4CA55FE6A68 /* GroupsHubsSettingsTests.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -246,7 +249,9 @@
 		05BFAB76DC5E32C164D4C1F8 /* GuestListView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GuestListView.swift; sourceTree = "<group>"; };
 		060946110A08603E44DA7EE0 /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist; path = Info.plist; sourceTree = "<group>"; };
 		06A226829E2A5C6E96399ECB /* ChatConversationTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ChatConversationTests.swift; sourceTree = "<group>"; };
+		08AA20450324A4CA55FE6A68 /* GroupsHubsSettingsTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GroupsHubsSettingsTests.swift; sourceTree = "<group>"; };
 		0984317C23132C065F522391 /* ChatRealtimeManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ChatRealtimeManager.swift; sourceTree = "<group>"; };
+		09B254B0F4FB61FBD50BB520 /* HubInfoView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HubInfoView.swift; sourceTree = "<group>"; };
 		09BDA2C2A494538273494E1E /* SettingsStoreTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SettingsStoreTests.swift; sourceTree = "<group>"; };
 		0F37F164483F60E35B52EF4F /* PostConnectView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PostConnectView.swift; sourceTree = "<group>"; };
 		1129F5B0BDFF83F9CE1A6759 /* EventDetailTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = EventDetailTests.swift; sourceTree = "<group>"; };
@@ -383,6 +388,7 @@
 		C2D7B43054D3829FDF8F8F3F /* ChatSendPipelineTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ChatSendPipelineTests.swift; sourceTree = "<group>"; };
 		C359DA574B092111354A9753 /* ConversationTimelineCache.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ConversationTimelineCache.swift; sourceTree = "<group>"; };
 		C4BA259925DD4913607E5A68 /* ClicksSnapshot.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ClicksSnapshot.swift; sourceTree = "<group>"; };
+		C59D32E74CB27DBDDC2CDD86 /* CliqueEligibility.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CliqueEligibility.swift; sourceTree = "<group>"; };
 		C617AC86021B01BE0BE320EA /* ClickDropTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ClickDropTests.swift; sourceTree = "<group>"; };
 		C6233093B7CC58508DF4534E /* BLEProximityService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BLEProximityService.swift; sourceTree = "<group>"; };
 		C8EA116736D43E0C9432BBF5 /* FlowLayout.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FlowLayout.swift; sourceTree = "<group>"; };
@@ -497,6 +503,7 @@
 		1F9E89B61E8C2958B05356CF /* Groups */ = {
 			isa = PBXGroup;
 			children = (
+				C59D32E74CB27DBDDC2CDD86 /* CliqueEligibility.swift */,
 				5887556DE388CBF75CF2F477 /* GroupProfileView.swift */,
 				1C333634F9CA36EC7340B6CD /* GroupSharedContent.swift */,
 				F0F6A8ABE38606F8786A7AE9 /* NewGroupSheet.swift */,
@@ -619,6 +626,7 @@
 			isa = PBXGroup;
 			children = (
 				625A527B98598B022044B468 /* HubChatView.swift */,
+				09B254B0F4FB61FBD50BB520 /* HubInfoView.swift */,
 				14D92B168AB77244D3727B0F /* HubSheets.swift */,
 			);
 			path = Hubs;
@@ -708,6 +716,7 @@
 				74BFF7B0D6FD295C17BDCAFD /* ClicksInboxTests.swift */,
 				1129F5B0BDFF83F9CE1A6759 /* EventDetailTests.swift */,
 				D96864E512FF90DCA0D3AF9E /* GlobalSearchTests.swift */,
+				08AA20450324A4CA55FE6A68 /* GroupsHubsSettingsTests.swift */,
 				F7E185BE4051D3D0888112E1 /* HomeFeedTests.swift */,
 				2CCD86C374B9F8179E86EDE2 /* HubMediaTests.swift */,
 				42726C3E89949B1741E4C897 /* InboxRowLayoutTests.swift */,
@@ -1274,6 +1283,7 @@
 				400758128DC990342F01CCF2 /* ClickMapView.swift in Sources */,
 				FEEF3EB93549BC0E8570F080 /* ClicksSnapshot.swift in Sources */,
 				07E26E70DB1B5BEE2525D0AB /* ClicksView.swift in Sources */,
+				19888E74E00427F4E1A940FF /* CliqueEligibility.swift in Sources */,
 				635A0005B6B6C6FDF9BF014B /* Colors.swift in Sources */,
 				6A5B040132D944C1C972AC6E /* ConnectionDebugLog.swift in Sources */,
 				589076A2B6B4BD6C55F5EF65 /* ConnectionFlowTelemetry.swift in Sources */,
@@ -1309,6 +1319,7 @@
 				4D7E0DB5A728A3859C52C4D7 /* HomeFeedModel.swift in Sources */,
 				8DD8D0AEB2396A470B9CBC66 /* HomeView.swift in Sources */,
 				6C0EEC07B4D7F060FD57461A /* HubChatView.swift in Sources */,
+				0449142C62DEA7F84229FA32 /* HubInfoView.swift in Sources */,
 				2AAB8767AF2F351ECD393C16 /* HubRepository.swift in Sources */,
 				1D63E327A07E5CFBD3D046CD /* HubSheets.swift in Sources */,
 				3D93E96D14294A38445C57BD /* Icebreakers.swift in Sources */,
@@ -1402,6 +1413,7 @@
 				78E23D9CF63E068FA3ADFF76 /* ClicksInboxTests.swift in Sources */,
 				E13CF95370E4E460DCD559FD /* EventDetailTests.swift in Sources */,
 				99792F8C19DC5B5E730BAB56 /* GlobalSearchTests.swift in Sources */,
+				FEF90A5A9FF3E2503A3054DE /* GroupsHubsSettingsTests.swift in Sources */,
 				BDB785940F57442D091078B6 /* HomeFeedTests.swift in Sources */,
 				6116461327D4FF1806AC2945 /* HubMediaTests.swift in Sources */,
 				98F61FE26FFFEEF3406D8342 /* InboxRowLayoutTests.swift in Sources */,

@@ -90,3 +90,32 @@ struct AppRouterTests {
 }
 
 
+
+@Suite("Notification tap routing")
+@MainActor
+struct NotificationTapRouteTests {
+    private func route(_ payload: [String: String]) -> ClickNotificationCoordinator.TapRoute {
+        ClickNotificationCoordinator.tapRoute(for: payload)
+    }
+
+    @Test("Chat messages and Click Drop reveals open the chat")
+    func chat() {
+        for type in ["chat_message", "new_message", "disposable_reveal"] {
+            #expect(route(["type": type, "chat_id": "c", "connection_id": "k", "sender_user_id": "u", "sender_name": "Lena"])
+                    == .chat(chatID: "c", connectionID: "k", senderUserID: "u", senderName: "Lena"))
+        }
+        #expect(route(["category": "new_message", "chatId": " c "]) == .chat(chatID: "c", connectionID: nil, senderUserID: nil, senderName: nil))
+    }
+
+    @Test("Events, hubs and profiles route by their IDs; missing IDs stay put")
+    func routes() {
+        #expect(route(["type": "event_reminder", "beacon_id": "b"]) == .route(.event(beaconID: "b")))
+        #expect(route(["type": "shared_upcoming_event", "event_id": "e"]) == .route(.event(beaconID: "e")))
+        #expect(route(["type": "event_teaser"]) == .none)
+        #expect(route(["type": "hub_message", "venue_id": "h"]) == .route(.hub(hubID: "h")))
+        #expect(route(["type": "reconnect_nudge", "user_id": "u", "connection_id": "k"]) == .route(.userProfile(userID: "u", connectionID: "k")))
+        #expect(route(["type": "archive_warning"]) == .connections)
+        #expect(route(["type": "availability_match"]) == .connections)
+        #expect(route(["type": "something_new"]) == .none)
+    }
+}

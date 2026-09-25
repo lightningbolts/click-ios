@@ -199,6 +199,11 @@ struct GroupProfileView: View {
                 PhotosPicker(selection: $photoItem, matching: .images) {
                     Label("Change Group Photo", systemImage: "camera")
                 }
+                if group.avatarURL != nil {
+                    Button("Remove Group Photo", systemImage: "trash") {
+                        Task { await removePhoto(group) }
+                    }
+                }
             }
             Button("Leave Group", systemImage: "rectangle.portrait.and.arrow.right", role: .destructive) {
                 confirmLeave = true
@@ -370,6 +375,17 @@ struct GroupProfileView: View {
         }
     }
 
+    private func removePhoto(_ group: CliqueItem) async {
+        isWorking = true
+        defer { isWorking = false }
+        do {
+            try await env.groups.removeAvatar(groupID: group.id)
+            await conversations.refresh()
+        } catch {
+            notice = "Couldn't remove the group photo. \(error.userFacingMessage)"
+        }
+    }
+
     private func uploadPhoto(_ item: PhotosPickerItem, group: CliqueItem) async {
         photoItem = nil
         isWorking = true
@@ -396,6 +412,9 @@ struct GroupMemberPickerSheet: View {
     /// Explanatory copy shown above the list.
     var explanation: String? = nil
     let onDone: (_ name: String, _ userIDs: [String]) -> Void
+    /// Why someone can't be added given the current selection (nil = eligible).
+    var ineligibleReason: (_ userID: String, _ selected: Set<String>) -> String? = { _, _ in nil }
+    var onSelectionChange: ((Set<String>) -> Void)?
 
     @State private var selected: Set<String> = []
     @State private var name = ""
@@ -410,6 +429,7 @@ struct GroupMemberPickerSheet: View {
                 }
                 Section {
                     ForEach(candidates) { item in
+                        let reason = ineligibleReason(item.userID, selected)
                         Button {
                             if selected.contains(item.userID) { selected.remove(item.userID) } else { selected.insert(item.userID) }
                             ClickHaptics.selection()
@@ -418,7 +438,11 @@ struct GroupMemberPickerSheet: View {
                                 AvatarView(imageURL: item.avatarUrl, seed: item.userID, initials: item.initials, size: 44)
                                 VStack(alignment: .leading, spacing: 2) {
                                     Text(item.displayName).foregroundStyle(ClickColors.textPrimary)
-                                    if let detail = Self.detail(item) {
+                                    if let reason {
+                                        Text(reason)
+                                            .font(ClickTypography.supporting)
+                                            .foregroundStyle(ClickColors.warning)
+                                    } else if let detail = Self.detail(item) {
                                         Text(detail)
                                             .font(ClickTypography.supporting)
                                             .foregroundStyle(ClickColors.textSecondary)
@@ -430,6 +454,8 @@ struct GroupMemberPickerSheet: View {
                             }
                         }
                         .buttonStyle(.plain)
+                        .disabled(reason != nil && !selected.contains(item.userID))
+                        .opacity(reason != nil && !selected.contains(item.userID) ? 0.55 : 1)
                     }
                 } header: {
                     if let explanation {
@@ -448,11 +474,12 @@ struct GroupMemberPickerSheet: View {
             }
             .navigationTitle(title)
             .navigationBarTitleDisplayMode(.inline)
+            .onChange(of: selected) { _, now in onSelectionChange?(now) }
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) { Button("Cancel") { dismiss() } }
                 ToolbarItem(placement: .confirmationAction) {
                     Button(actionTitle) { onDone(name, Array(selected)) }
-                        .disabled(selected.isEmpty)
+                        .disabled(selected.isEmpty || selected.contains { ineligibleReason($0, selected) != nil })
                 }
             }
         }

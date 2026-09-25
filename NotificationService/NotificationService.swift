@@ -47,7 +47,8 @@ public final class NotificationService: UNNotificationServiceExtension {
     // MARK: - Decryption Resolver
 
     private func resolveChatMessageBody(userInfo: [AnyHashable: Any], originalBody: String) -> String {
-        let fallback = "Open Click to view message"
+        // Same private copy the server uses for encrypted hub pushes (`notifyHubMessage.ts`).
+        let fallback = "Open Click to view it."
 
         let encrypted = (userInfo["encrypted_content"] as? String) ?? ""
         let connectionId = (userInfo["connection_id"] as? String) ?? ""
