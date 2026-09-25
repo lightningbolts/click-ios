@@ -11,36 +11,39 @@ struct AppRouteDestination: View {
     let route: AppRoute
 
     var body: some View {
-        switch route {
-        case .chat(let chat):
-            ChatView(model: env.conversationModel(for: chat.conversationIdentity))
-        case .publicProfile(let userID):
-            PublicProfileView(userID: userID)
-        case .userProfile(let userID, let connectionID):
-            ProfileView(userID: userID, connectionID: connectionID)
-        case .groupChat(let group):
-            ChatView(model: env.conversationModel(for: group.conversationIdentity))
-        case .groupProfile(let chatID):
-            GroupProfileView(chatID: chatID)
-        case .eventChat(let beaconID):
-            EventChatView(beaconID: beaconID)
-        case .event(let beaconID), .beacon(let beaconID):
-            BeaconDetailView(beaconID: beaconID)
-        case .hub(let hubID):
-            HubChatView(hubID: hubID)
-        case .myQR:
-            MyClickCodeView()
-        case .scanQR:
-            ScanClickCodeView()
-        case .tapConnect:
-            TapConnectView()
-        case .connectionInvocation(let invocation):
-            ConnectionInvocationView(invocation: invocation)
-        case .savedEvents:
-            SavedEventsView()
-        case .settings(let page):
-            SettingsPageView(page: page)
+        Group {
+            switch route {
+            case .chat(let chat):
+                ChatView(model: env.conversationModel(for: chat.conversationIdentity))
+            case .publicProfile(let userID):
+                PublicProfileView(userID: userID)
+            case .userProfile(let userID, let connectionID):
+                ProfileView(userID: userID, connectionID: connectionID)
+            case .groupChat(let group):
+                ChatView(model: env.conversationModel(for: group.conversationIdentity))
+            case .groupProfile(let chatID):
+                GroupProfileView(chatID: chatID)
+            case .eventChat(let beaconID):
+                EventChatView(beaconID: beaconID)
+            case .event(let beaconID), .beacon(let beaconID):
+                BeaconDetailView(beaconID: beaconID)
+            case .hub(let hubID):
+                HubChatView(hubID: hubID)
+            case .myQR:
+                MyClickCodeView()
+            case .scanQR:
+                ScanClickCodeView()
+            case .tapConnect:
+                TapConnectView()
+            case .connectionInvocation(let invocation):
+                ConnectionInvocationView(invocation: invocation)
+            case .savedEvents:
+                SavedEventsView()
+            case .settings(let page):
+                SettingsPageView(page: page)
+            }
         }
+        .toolbar(.hidden, for: .tabBar)
     }
 }
 

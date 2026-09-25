@@ -203,7 +203,14 @@ struct BeaconDetailView: View {
         case (_, .pending?): title = "Request sent"; symbol = "clock"
         case (_, .waitlisted?): title = "On the waitlist"; symbol = "list.bullet"
         case (_, .denied?): title = "Request declined"; symbol = nil
-        default: title = beacon.approvalRequired == true ? "Request to join" : "RSVP"; symbol = nil
+        default:
+            if rsvp.phase == .loading && state == nil {
+                title = ""
+                symbol = nil
+            } else {
+                title = beacon.approvalRequired == true ? "Request to join" : "RSVP"
+                symbol = nil
+            }
         }
         return Button {
             if isActive { confirmCancelRSVP = true } else { Task { await setRSVP(beacon) } }
@@ -485,6 +492,9 @@ struct BeaconDetailView: View {
     }
 
     private func loadEngagement() async {
+        if let cached = await env.events.cachedRSVP(beaconID: beaconID) { rsvp.seed(cached) }
+        if let cached = await env.events.cachedEngagement(beaconID: beaconID) { engagement.seed(cached) }
+        if let cached = await env.events.cachedDirectory(beaconID: beaconID) { people.seed(cached) }
         rsvp.begin()
         engagement.begin()
         async let rsvpTask = env.events.rsvpState(beaconID: beaconID)
@@ -658,6 +668,12 @@ struct EventDirectoryView: View {
     let beaconID: String
     var preloaded: EventDirectory?
 
+    init(beaconID: String, preloaded: EventDirectory? = nil) {
+        self.beaconID = beaconID
+        self.preloaded = preloaded
+        _directory = State(initialValue: ModuleState(value: preloaded, phase: preloaded != nil ? .loaded : .idle))
+    }
+
     enum Sort: String, CaseIterable, Identifiable {
         case best = "Best match"
         case name = "A–Z"
@@ -666,7 +682,7 @@ struct EventDirectoryView: View {
         var id: String { rawValue }
     }
 
-    @State private var directory = ModuleState<EventDirectory>()
+    @State private var directory: ModuleState<EventDirectory>
     @State private var sort: Sort = .best
 
     /// Shared interests + mutual connections (a direct Click counts as a strong mutual).

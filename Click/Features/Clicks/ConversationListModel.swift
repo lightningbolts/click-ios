@@ -90,6 +90,7 @@ final class ConversationListModel {
 
     private func performRefresh() async {
         guard let environment, let userID else { return }
+        refreshError = nil
         Task { await refreshHubs(environment, userID: userID) }
         async let clicksTask = environment.phase3.refreshClicks(for: userID)
         async let groupsTask = environment.groups.groups(userID: userID)

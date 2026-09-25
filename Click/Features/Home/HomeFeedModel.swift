@@ -136,7 +136,7 @@ final class HomeFeedModel {
     /// A module is showing cached data because its last refresh failed (not cancelled).
     /// Whether that reads as "Offline" is decided by `NetworkMonitor`, not by this flag.
     var hasRefreshFailure: Bool {
-        [intents.isStale, savedEvents.isStale, nudges.isStale, discovery.isStale, recap.isStale].contains(true)
+        intents.isStale || savedEvents.isStale
     }
 
     var hasCachedData: Bool {

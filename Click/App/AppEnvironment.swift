@@ -45,8 +45,25 @@ public final class AppEnvironment {
     private var conversationModels: [String: ConversationModel] = [:]
 
     public func conversationModel(for identity: ConversationIdentity) -> ConversationModel {
-        let key = identity.hubID ?? identity.connectionID ?? identity.chatID
-        if let existing = conversationModels[key] { return existing }
+        if let hubID = identity.hubID, let existing = conversationModels[hubID] {
+            return existing
+        }
+        if let connID = identity.connectionID, let existing = conversationModels[connID] {
+            return existing
+        }
+        if !identity.chatID.isEmpty, let existing = conversationModels[identity.chatID] {
+            return existing
+        }
+        if let existing = conversationModels.values.first(where: { model in
+            (identity.connectionID != nil && model.identity.connectionID == identity.connectionID)
+            || (!identity.chatID.isEmpty && model.identity.chatID == identity.chatID)
+            || (identity.hubID != nil && model.identity.hubID == identity.hubID)
+        }) {
+            if let connID = identity.connectionID { conversationModels[connID] = existing }
+            if !identity.chatID.isEmpty { conversationModels[identity.chatID] = existing }
+            return existing
+        }
+
         let model = ConversationModel(
             identity: identity,
             chatRepository: chat,
@@ -56,7 +73,9 @@ public final class AppEnvironment {
             pendingSends: pendingSends,
             identities: identities
         )
-        conversationModels[key] = model
+        if let connID = identity.connectionID { conversationModels[connID] = model }
+        if !identity.chatID.isEmpty { conversationModels[identity.chatID] = model }
+        if let hubID = identity.hubID { conversationModels[hubID] = model }
         return model
     }
 

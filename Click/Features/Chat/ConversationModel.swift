@@ -179,7 +179,13 @@ public final class ConversationModel {
 
     // MARK: - Data loading
 
-    public func loadMessages() async {
+    public private(set) var lastFetchDate: Date?
+
+    public func loadMessages(force: Bool = false) async {
+        if !force, phase == .loaded, !items.isEmpty, let lastFetch = lastFetchDate, Date().timeIntervalSince(lastFetch) < 300 {
+            return
+        }
+
         let hadItems = !items.isEmpty
         if !hadItems {
             phase = .loading
@@ -196,6 +202,7 @@ public final class ConversationModel {
             items = mergeFetched(fetched)
             resolveReplyQuotes()
             phase = .loaded
+            lastFetchDate = Date()
             saveToCache()
             operationError = nil
             if !hasCapturedUnread, identity.supportsReceipts {

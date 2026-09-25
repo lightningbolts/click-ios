@@ -106,7 +106,10 @@ extension Error {
     /// True for cancellations from SwiftUI `.task` teardown or URLSession, which are never failures.
     var isCancellation: Bool {
         if self is CancellationError { return true }
-        if (self as? APIError) == .cancelled { return true }
+        if let apiError = self as? APIError {
+            if case .cancelled = apiError { return true }
+            if case .server(-1, _, let message) = apiError, message?.localizedCaseInsensitiveContains("cancel") == true { return true }
+        }
         if let urlError = self as? URLError, urlError.code == .cancelled { return true }
         return false
     }

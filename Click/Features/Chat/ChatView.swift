@@ -219,28 +219,8 @@ public struct ChatView: View {
             .onChange(of: isNearBottom) { _, nearBottom in
                 if nearBottom { unseenCount = 0 }
             }
-            .overlay(alignment: .bottomTrailing) {
-                if !isNearBottom || model.isDetachedFromLatest, !model.items.isEmpty {
-                    jumpToLatestButton(proxy: proxy)
-                        .padding(.trailing, 16)
-                        .padding(.bottom, 12)
-                        .transition(.scale(scale: 0.8).combined(with: .opacity))
-                }
-            }
+            .toolbar(.hidden, for: .tabBar)
             .animation(ClickMotion.selection, value: isNearBottom)
-            .overlay(alignment: .bottom) {
-                if let toast {
-                    Text(toast)
-                        .font(ClickTypography.supportingEmphasized)
-                        .foregroundStyle(ClickColors.textPrimary)
-                        .padding(.horizontal, 14)
-                        .padding(.vertical, 9)
-                        .glassCircleBackground()
-                        .padding(.bottom, 12)
-                        .transition(.move(edge: .bottom).combined(with: .opacity))
-                        .accessibilityAddTraits(.isStaticText)
-                }
-            }
             .task(id: model.nextClickDropReveal?.date) {
                 // Local, in-chat only: the server's `disposable_reveal` push covers the background.
                 guard let next = model.nextClickDropReveal else { return }
@@ -364,6 +344,27 @@ public struct ChatView: View {
             geometry.visibleRect.maxY >= geometry.contentSize.height - 90
         } action: { _, nearBottom in
             isNearBottom = nearBottom
+        }
+        .overlay(alignment: .bottomTrailing) {
+            if !isNearBottom || model.isDetachedFromLatest, !model.items.isEmpty {
+                jumpToLatestButton(proxy: proxy)
+                    .padding(.trailing, 16)
+                    .padding(.bottom, 12)
+                    .transition(.scale(scale: 0.8).combined(with: .opacity))
+            }
+        }
+        .overlay(alignment: .bottom) {
+            if let toast {
+                Text(toast)
+                    .font(ClickTypography.supportingEmphasized)
+                    .foregroundStyle(ClickColors.textPrimary)
+                    .padding(.horizontal, 14)
+                    .padding(.vertical, 9)
+                    .glassCircleBackground()
+                    .padding(.bottom, 12)
+                    .transition(.move(edge: .bottom).combined(with: .opacity))
+                    .accessibilityAddTraits(.isStaticText)
+            }
         }
     }
 

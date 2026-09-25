@@ -44,7 +44,6 @@
 		2AB27C901147F125B30A3E71 /* ChatSendPipelineTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = C2D7B43054D3829FDF8F8F3F /* ChatSendPipelineTests.swift */; };
 		2AE58F26B4198628E285BCD4 /* ImagePipeline.swift in Sources */ = {isa = PBXBuildFile; fileRef = F4A7259C78F05583D7D2BF35 /* ImagePipeline.swift */; };
 		2BC0FD0FBF17D5EBD39AC88C /* ChatTargetPicker.swift in Sources */ = {isa = PBXBuildFile; fileRef = 79A26B08508E31DA4A4A7330 /* ChatTargetPicker.swift */; };
-		2EFF2526EFAF88CEC4F82A12 /* ClickTabBar.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0A2A626503C7A93F34652E14 /* ClickTabBar.swift */; };
 		306512AA3D989236575986CD /* PeerProfileModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = F23B8F9BB56FEA60442B3E78 /* PeerProfileModel.swift */; };
 		308E04AF2F255C5B30A99CD6 /* PhotoLibrarySaver.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9BA96073B0A2829E201BD915 /* PhotoLibrarySaver.swift */; };
 		3396C88A0F195A5E0253B73B /* UserProfileSnapshot.swift in Sources */ = {isa = PBXBuildFile; fileRef = C04BB0EDB80B1C58203CF1B1 /* UserProfileSnapshot.swift */; };
@@ -256,7 +255,6 @@
 		0984317C23132C065F522391 /* ChatRealtimeManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ChatRealtimeManager.swift; sourceTree = "<group>"; };
 		09B254B0F4FB61FBD50BB520 /* HubInfoView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HubInfoView.swift; sourceTree = "<group>"; };
 		09BDA2C2A494538273494E1E /* SettingsStoreTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SettingsStoreTests.swift; sourceTree = "<group>"; };
-		0A2A626503C7A93F34652E14 /* ClickTabBar.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ClickTabBar.swift; sourceTree = "<group>"; };
 		0F37F164483F60E35B52EF4F /* PostConnectView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PostConnectView.swift; sourceTree = "<group>"; };
 		1129F5B0BDFF83F9CE1A6759 /* EventDetailTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = EventDetailTests.swift; sourceTree = "<group>"; };
 		115558E16D558D82B19CEDFD /* Typography.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Typography.swift; sourceTree = "<group>"; };
@@ -524,7 +522,6 @@
 				FF26912F27B4E25BACF33C07 /* AppRouteDestination.swift */,
 				7D2D91C12835F0AF71AF14F9 /* AppRouter.swift */,
 				464D8F9F85AB107124A0DFC4 /* ClickApp.swift */,
-				0A2A626503C7A93F34652E14 /* ClickTabBar.swift */,
 				AFFF0C420D046C1E8CDC3E89 /* DebugLaunch.swift */,
 				9E1DF371E97CE2C8CBF99560 /* MeTabAvatarModel.swift */,
 				DA0BA02DE0FE06FB525A130A /* RootGateView.swift */,
@@ -1290,7 +1287,6 @@
 				8A07FC1B9619FAE67BD81910 /* ClickDropFilter.swift in Sources */,
 				77E16A225B4E34C27CD1EC85 /* ClickLogo.swift in Sources */,
 				400758128DC990342F01CCF2 /* ClickMapView.swift in Sources */,
-				2EFF2526EFAF88CEC4F82A12 /* ClickTabBar.swift in Sources */,
 				FEEF3EB93549BC0E8570F080 /* ClicksSnapshot.swift in Sources */,
 				07E26E70DB1B5BEE2525D0AB /* ClicksView.swift in Sources */,
 				19888E74E00427F4E1A940FF /* CliqueEligibility.swift in Sources */,

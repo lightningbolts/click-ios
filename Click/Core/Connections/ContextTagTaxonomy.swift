@@ -23,7 +23,8 @@ public enum ContextTagTaxonomy {
         ContextTag(id: "gym", label: "Gym / Workout", emoji: "💪"),
         ContextTag(id: "conference", label: "Conference", emoji: "🎤"),
         ContextTag(id: "outdoor", label: "Outdoors / Nature", emoji: "🌲"),
-        ContextTag(id: "dining", label: "Dining / Food", emoji: "🍽️")
+        ContextTag(id: "dining", label: "Dining / Food", emoji: "🍽️"),
+        ContextTag(id: "at_event", label: "At event", emoji: "📍")
     ]
 
     /// Server-written tag for a debounced reconnect (same place, same 12-hour block).

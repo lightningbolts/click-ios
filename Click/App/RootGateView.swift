@@ -137,21 +137,15 @@ public struct MainTabShellView: View {
             Tab("Home", systemImage: "house.fill", value: MainTab.home) {
                 NavigationStack(path: $r.homePath) {
                     HomeView()
-                        .safeAreaInset(edge: .bottom, spacing: 0) { ClickTabBar() }
                         .appRouteDestinations()
                 }
-                .tabFadeIn(.home)
-                .toolbar(.hidden, for: .tabBar)
             }
 
             Tab(value: MainTab.addClick) {
                 NavigationStack(path: $r.addClickPath) {
                     AddClickView()
-                        .safeAreaInset(edge: .bottom, spacing: 0) { ClickTabBar() }
                         .appRouteDestinations()
                 }
-                .tabFadeIn(.addClick)
-                .toolbar(.hidden, for: .tabBar)
             } label: {
                 // Always purple (original rendering), selected or not: it's the primary action.
                 Label {
@@ -164,32 +158,23 @@ public struct MainTabShellView: View {
             Tab("Clicks", systemImage: "person.2.fill", value: MainTab.connections) {
                 NavigationStack(path: $r.connectionsPath) {
                     ClicksView(model: conversations)
-                        .safeAreaInset(edge: .bottom, spacing: 0) { ClickTabBar() }
                         .appRouteDestinations()
                 }
-                .tabFadeIn(.connections)
-                .toolbar(.hidden, for: .tabBar)
             }
             .badge(conversations.unreadTotal)
 
             Tab("Map", systemImage: "location.fill", value: MainTab.map) {
                 NavigationStack(path: $r.mapPath) {
                     ClickMapView()
-                        .safeAreaInset(edge: .bottom, spacing: 0) { ClickTabBar() }
                         .appRouteDestinations()
                 }
-                .tabFadeIn(.map)
-                .toolbar(.hidden, for: .tabBar)
             }
 
             Tab(value: MainTab.settings) {
                 NavigationStack(path: $r.settingsPath) {
                     MeView()
-                        .safeAreaInset(edge: .bottom, spacing: 0) { ClickTabBar() }
                         .appRouteDestinations()
                 }
-                .tabFadeIn(.settings)
-                .toolbar(.hidden, for: .tabBar)
             } label: {
                 Label {
                     Text("Me")
@@ -280,26 +265,4 @@ private struct ClicksPreviewHost: View {
             ClicksView(model: model)
         }
     }
-}
-
-/// A quick fade when a tab becomes selected from the tab bar (not on first launch paint).
-private struct TabFadeIn: ViewModifier {
-    @Environment(AppEnvironment.self) private var env
-    let tab: MainTab
-    @State private var opacity = 1.0
-
-    func body(content: Content) -> some View {
-        content
-            .opacity(opacity)
-            .onChange(of: env.router.selectedTab) { old, new in
-                guard new == tab, old != tab else { return }
-                // Commit the hidden frame first, then animate in on the next run loop.
-                opacity = 0
-                DispatchQueue.main.async { withAnimation(.easeOut(duration: 0.18)) { opacity = 1 } }
-            }
-    }
-}
-
-private extension View {
-    func tabFadeIn(_ tab: MainTab) -> some View { modifier(TabFadeIn(tab: tab)) }
 }

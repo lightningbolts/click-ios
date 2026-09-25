@@ -223,6 +223,10 @@ public actor ClickAPIClient {
             }
         } catch let error as APIError {
             throw error
+        } catch is CancellationError {
+            throw APIError.cancelled
+        } catch let urlError as URLError where urlError.code == .cancelled {
+            throw APIError.cancelled
         } catch {
             throw APIError.server(status: -1, code: nil, message: error.localizedDescription)
         }
