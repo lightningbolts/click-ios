@@ -776,6 +776,15 @@ public final class ConversationModel {
         await loadMessages()
     }
 
+    /// The next locked Click Drop in this timeline to develop, and whether it's ours.
+    public var nextClickDropReveal: (date: Date, isOutgoing: Bool)? {
+        items.compactMap { item -> (Date, Bool)? in
+            guard let media = item.media, media.isLocked(), let revealAt = media.revealAt else { return nil }
+            return (revealAt, item.isOutgoing)
+        }
+        .min { $0.0 < $1.0 }
+    }
+
     // MARK: - Forward (spec §33)
 
     /// Messages that can be forwarded: live text and non-Click-Drop media.

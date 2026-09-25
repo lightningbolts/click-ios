@@ -1184,6 +1184,7 @@ public actor ChatRepository: ChatRepositoryProtocol {
                 // KMP Click Drop: reveal is always 24 hours after send.
                 metadata["disposable_roll"] = true
                 metadata["collaboration_ttl"] = ISO8601DateFormatter().string(from: Date().addingTimeInterval(86_400))
+                if let encounterID = draft.encounterID { metadata["encounter_id"] = encounterID }
             }
             if let duration = draft.durationSeconds { metadata["duration_seconds"] = duration }
             if draft.kind == .audio, let waveform = draft.waveform { metadata["waveform"] = VoiceWaveform.wire(waveform) }

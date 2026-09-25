@@ -35,6 +35,8 @@ public final class AppEnvironment {
     public let identities: IdentityCache
     /// The conversation currently on screen, so inbox realtime doesn't count it as unread.
     public var activeChatID: String?
+    /// The latest in-person Click Drop window (post-connect), so Drops sent in it carry the encounter.
+    public var clickDropSession: ClickDropSession?
     /// A message to scroll to when its conversation next opens (search deep links).
     public var pendingMessageFocus: MessageFocus?
 
@@ -266,5 +268,17 @@ public struct MessageFocus: Equatable, Sendable {
 
     public func matches(_ identity: ConversationIdentity) -> Bool {
         !conversationIDs.isDisjoint(with: [identity.chatID, identity.connectionID, identity.hubID].compactMap { $0 })
+    }
+}
+
+/// A post-connect collaboration window (`ProximityMatch.encounterID` / `collaborationEndsAt`).
+public struct ClickDropSession: Equatable, Sendable {
+    public let connectionID: String
+    public let encounterID: String
+    public let endsAt: Date
+
+    /// The encounter for Drops sent to `connectionID` while the window is open.
+    public func encounterID(for connectionID: String?, now: Date = .now) -> String? {
+        connectionID == self.connectionID && endsAt > now ? encounterID : nil
     }
 }

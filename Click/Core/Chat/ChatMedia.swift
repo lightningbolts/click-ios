@@ -219,6 +219,8 @@ public struct MediaDraft: Sendable {
     public var waveform: [Double]?
     /// A Click Drop photo: revealed to everyone 24 hours after it is taken.
     public var isClickDrop = false
+    /// The in-person encounter a Click Drop belongs to (`metadata.encounter_id`), when one is active.
+    public var encounterID: String?
 
     public init(kind: MessageMedia.Kind, data: Data, mimeType: String, fileName: String? = nil, durationSeconds: Int? = nil) {
         self.kind = kind

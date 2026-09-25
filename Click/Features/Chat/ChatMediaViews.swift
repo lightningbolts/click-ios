@@ -270,8 +270,11 @@ private struct ChatImageView: View {
     @State private var image: UIImage?
     @State private var url: URL?
     @State private var failed = false
+    /// Bumped when the reveal time passes so the Drop develops on screen.
+    @State private var developTick = 0
 
     private var lockedUntil: Date? {
+        _ = developTick
         guard let media = message.media, media.isLocked() else { return nil }
         return media.revealAt ?? .distantFuture
     }
@@ -310,6 +313,11 @@ private struct ChatImageView: View {
                             .background(.black.opacity(0.45), in: Capsule())
                         }
                         .accessibilityLabel("Click Drop photo, develops \(revealAt.formatted(.relative(presentation: .named)))")
+                        .task(id: revealAt) {
+                            try? await Task.sleep(for: .seconds(max(0, revealAt.timeIntervalSinceNow) + 0.5))
+                            guard !Task.isCancelled else { return }
+                            withAnimation(ClickMotion.reveal) { developTick += 1 }
+                        }
                 } else {
                     Button { onOpen(url) } label: {
                         Image(uiImage: image)
@@ -641,19 +649,11 @@ struct ComposerAttachmentButton: View {
             }
         }
         .fullScreenCover(item: $camera) { mode in
-            CameraCapture { image in
-                camera = nil
-                guard let image, let data = image.jpegData(compressionQuality: 0.9) else { return }
-                Task {
-                    guard var draft = await MediaDraftBuilder.image(from: data) else {
-                        onError("Couldn't prepare that photo.")
-                        return
-                    }
-                    draft.isClickDrop = mode == .clickDrop
-                    onDraft(draft)
-                }
+            if mode == .clickDrop {
+                ClickDropCameraView { draft in onDraft(draft) }
+            } else {
+                photoCamera
             }
-            .ignoresSafeArea()
         }
         .onChange(of: photoItems) { _, items in
             guard !items.isEmpty else { return }
@@ -670,6 +670,22 @@ struct ComposerAttachmentButton: View {
                 }
             }
         }
+    }
+
+    /// System camera for an ordinary photo (reviewed in the tray before sending).
+    private var photoCamera: some View {
+        CameraCapture { image in
+            camera = nil
+            guard let image, let data = image.jpegData(compressionQuality: 0.9) else { return }
+            Task {
+                guard let draft = await MediaDraftBuilder.image(from: data) else {
+                    onError("Couldn't prepare that photo.")
+                    return
+                }
+                onDraft(draft)
+            }
+        }
+        .ignoresSafeArea()
     }
 
     private func pasteImages() {

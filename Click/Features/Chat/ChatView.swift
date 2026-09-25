@@ -31,6 +31,8 @@ public struct ChatView: View {
     /// Index into the current matches (oldest first); nil until the reader steps.
     @State private var searchPosition: Int?
     @State private var highlightedID: String?
+    /// Short confirmation capsule ("Your Click Drop developed").
+    @State private var toast: String?
 
     private struct ReactorsTarget: Identifiable {
         let message: ChatMessageItem
@@ -181,6 +183,26 @@ public struct ChatView: View {
                 }
             }
             .animation(ClickMotion.selection, value: isNearBottom)
+            .overlay(alignment: .bottom) {
+                if let toast {
+                    Text(toast)
+                        .font(ClickTypography.supportingEmphasized)
+                        .foregroundStyle(ClickColors.textPrimary)
+                        .padding(.horizontal, 14)
+                        .padding(.vertical, 9)
+                        .glassCircleBackground()
+                        .padding(.bottom, 12)
+                        .transition(.move(edge: .bottom).combined(with: .opacity))
+                        .accessibilityAddTraits(.isStaticText)
+                }
+            }
+            .task(id: model.nextClickDropReveal?.date) {
+                // Local, in-chat only: the server's `disposable_reveal` push covers the background.
+                guard let next = model.nextClickDropReveal else { return }
+                try? await Task.sleep(for: .seconds(max(0, next.date.timeIntervalSinceNow) + 0.5))
+                guard !Task.isCancelled else { return }
+                await showToast(next.isOutgoing ? "Your Click Drop developed" : "A Click Drop developed")
+            }
             .onChange(of: model.isPeerTyping) { _, isTyping in
                 guard isTyping, isNearBottom else { return }
                 withAnimation(ClickMotion.selection) {
@@ -375,7 +397,13 @@ public struct ChatView: View {
             },
             onDraft: model.supportsMedia ? { draft in
                 // Click Drops go straight out from the camera; everything else is reviewed first.
-                if draft.isClickDrop { Task { await model.sendMedia(draft) } } else { model.stage(draft) }
+                if draft.isClickDrop {
+                    var drop = draft
+                    drop.encounterID = env.clickDropSession?.encounterID(for: model.identity.connectionID)
+                    Task { await model.sendMedia(drop) }
+                } else {
+                    model.stage(draft)
+                }
             } : nil,
             onAttachmentError: { message in model.operationError = message },
             onShareBeacon: model.supportsMedia ? { sharingBeacon = true } : nil,
@@ -504,6 +532,13 @@ public struct ChatView: View {
         withAnimation(ClickMotion.subtleFade) { if highlightedID == stableID { highlightedID = nil } }
     }
 
+    private func showToast(_ text: String) async {
+        withAnimation(ClickMotion.content) { toast = text }
+        UIAccessibility.post(notification: .announcement, argument: text)
+        try? await Task.sleep(for: .seconds(2.5))
+        withAnimation(ClickMotion.content) { if toast == text { toast = nil } }
+    }
+
     /// Images go to Photos; files and voice notes open the share sheet.
     private func saveOrShare(_ item: ChatMessageItem) async {
         do {
@@ -511,7 +546,7 @@ public struct ChatView: View {
             if item.media?.kind == .image {
                 try await PhotoLibrarySaver.saveImage(at: url)
                 ClickHaptics.success()
-                notice = "Saved to Photos."
+                await showToast("Saved to Photos")
             } else {
                 shareFile = ViewerURL(url: url)
             }

@@ -39,6 +39,13 @@ final class PostConnectModel {
     var isGroup: Bool { match.isGroup || match.peers.count > 1 }
     var primaryPeer: ProximityPeer? { match.peers.first }
 
+    /// The Click Drop window the server opened for this one-to-one encounter (spec §44.1).
+    var clickDropSession: ClickDropSession? {
+        guard !isGroup, let encounterID = match.encounterID, let endsAt = match.collaborationEndsAt,
+              let connectionID = primaryPeer?.connectionID ?? match.connectionID else { return nil }
+        return ClickDropSession(connectionID: connectionID, encounterID: encounterID, endsAt: endsAt)
+    }
+
     var title: String {
         if isGroup { return match.isNewConnection ? "Group created" : "Encounter saved" }
         if match.isReconnect { return "Reconnected" }
