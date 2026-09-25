@@ -111,6 +111,31 @@ public struct ConnectionItem: Codable, Equatable, Identifiable, Sendable {
     }
 }
 
+extension ConnectionItem {
+    /// Fills enrichment the latest refresh couldn't fetch (names/avatars or the inbox preview)
+    /// from the previously known row, so a transient failure never caches "Click user" rows
+    /// without chat IDs or unread counts.
+    func filling(from previous: ConnectionItem?, identityMissing: Bool, previewMissing: Bool) -> ConnectionItem {
+        guard let previous, identityMissing || previewMissing else { return self }
+        return ConnectionItem(
+            id: id, userID: userID, connectionID: connectionID,
+            displayName: identityMissing ? previous.displayName : displayName,
+            handle: handle,
+            avatarUrl: identityMissing ? previous.avatarUrl : avatarUrl,
+            initials: identityMissing ? previous.initials : initials,
+            isOnline: isOnline, presenceKnown: presenceKnown, lastActiveRelative: lastActiveRelative,
+            encounterLocation: encounterLocation, mutualTags: mutualTags, encounterCount: encounterCount,
+            segment: segment, lastMessagePreview: lastMessagePreview,
+            chatID: previewMissing ? (chatID ?? previous.chatID) : chatID,
+            lastMessage: previewMissing ? (lastMessage ?? previous.lastMessage) : lastMessage,
+            lastActivityAt: previewMissing ? max(lastActivityAt ?? .distantPast, previous.lastActivityAt ?? .distantPast) : lastActivityAt,
+            sayHiDeadline: sayHiDeadline,
+            unreadCount: previewMissing ? previous.unreadCount : unreadCount,
+            isCore: isCore, awaitsPriorResponse: awaitsPriorResponse
+        )
+    }
+}
+
 /// The newest message of a direct conversation, as returned by `get_inbox_previews`.
 /// `content` is the wire value — ciphertext for encrypted chats — so it is safe to cache;
 /// decrypted preview text is only ever held in memory.

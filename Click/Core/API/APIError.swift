@@ -108,3 +108,33 @@ enum Transport {
         }
     }
 }
+
+extension Transport {
+    /// For screen refreshes: one quiet retry after a short pause before a failure is surfaced
+    /// ("Couldn't refresh · Retry"). Covers the dropped connection or brief path flap right after
+    /// returning from background. Cancellation, auth and client errors are never retried.
+    static func refreshing<T: Sendable>(_ operation: () async throws -> T) async throws -> T {
+        do {
+            return try await operation()
+        } catch {
+            guard !error.isCancellation, shouldRetryRefresh(error) else { throw error }
+            ClickLog.net.info("refresh failed (\(String(describing: error), privacy: .public)); retrying once")
+            do {
+                try await Task.sleep(for: .milliseconds(1200))
+            } catch {
+                throw APIError.cancelled
+            }
+            return try await operation()
+        }
+    }
+
+    static func shouldRetryRefresh(_ error: any Error) -> Bool {
+        switch error as? APIError {
+        case .timeout, .decoding: true
+        case .server(let status, _, _): status == -1 || status < 0 || (500...599).contains(status)
+        case nil: !(error is DecodingError)
+        default: false
+        }
+    }
+}
+

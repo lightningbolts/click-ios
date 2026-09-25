@@ -208,8 +208,8 @@ public struct MainTabShellView: View {
             // Rebind with the current token on return; tear down while backgrounded.
             switch phase {
             case .active:
-                conversations.startRealtime()
-                Task { await conversations.refreshIfStale() }
+                Task { await conversations.resumeFromBackground() }
+                env.resumeLiveConversations()
                 env.flushTelemetry()
             case .background:
                 conversations.stopRealtime()

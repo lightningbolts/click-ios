@@ -54,6 +54,10 @@ public final class ConversationModel {
     private var typingActive = false
     private var typingStopTask: Task<Void, Never>?
     private var acknowledgedReceipts = Set<String>()
+    /// True between the chat screen's appear and disappear.
+    public private(set) var isVisible = false
+    /// Reports this user's own sends so the inbox row updates immediately (set by AppEnvironment).
+    var onLocalSend: ((_ chatID: String, _ messageID: String, _ content: String, _ messageType: String, _ date: Date) -> Void)?
 
     public init(
         identity: ConversationIdentity,
@@ -94,6 +98,7 @@ public final class ConversationModel {
     // MARK: - Lifecycle
 
     public func onAppear(supabaseURL: URL?, anonKey: String?, authToken: String?) async {
+        isVisible = true
         if isDetachedFromLatest {
             await returnToLatest()
         }
@@ -165,6 +170,7 @@ public final class ConversationModel {
     }
 
     public func onDisappear() {
+        isVisible = false
         saveToCache()
         pendingSends.detach(self, chatID: identity.chatID)
         typingStopTask?.cancel()
@@ -178,14 +184,31 @@ public final class ConversationModel {
         firstUnreadID = nil
     }
 
+    /// Foreground return while this chat is on screen: the socket may have died while
+    /// suspended, and anything sent meanwhile must be fetched.
+    public func resume() async {
+        guard isVisible else { return }
+        realtimeManager.ensureLive()
+        await loadMessages()
+    }
+
+    /// A message from the always-on inbox channel. Applied only while this chat's own channel
+    /// is down (otherwise it already delivered it); duplicates are ignored by ID either way.
+    public func receiveInboxInsert(_ payload: RealtimeMessagePayload) async {
+        guard isVisible, identity.hubID == nil, payload.chatID == identity.chatID,
+              realtimeManager.health != .connected,
+              !items.contains(where: { $0.id == payload.id }) else { return }
+        await ingestRealtime(payload, replacingExisting: false)
+    }
+
     // MARK: - Data loading
 
     public private(set) var lastFetchDate: Date?
 
+    /// Always fetches: a cached timeline is painted first and updated in place, so this never
+    /// shows a spinner once anything is on screen. (A time-based skip here left messages that
+    /// arrived while the chat was closed missing until it expired.)
     public func loadMessages(force: Bool = false) async {
-        if !force, phase == .loaded, !items.isEmpty, let lastFetch = lastFetchDate, Date().timeIntervalSince(lastFetch) < 300 {
-            return
-        }
 
         let hadItems = !items.isEmpty
         if !hadItems {
@@ -356,6 +379,7 @@ public final class ConversationModel {
                 )
             }
             store.finish(clientID: clientID, chatID: chatID, serverItem: server)
+            onLocalSend?(chatID, server.id, Self.quoteText(server), server.messageType.rawValue, server.createdAt)
             operationError = nil
         } catch {
             store.update(clientID: clientID, chatID: chatID) {
@@ -676,6 +700,9 @@ public final class ConversationModel {
     // MARK: - Realtime
 
     private func setupRealtimeCallbacks() {
+        realtimeManager.onRejoined = { [weak self] in
+            Task { await self?.loadMessages() }
+        }
         realtimeManager.onMessageInserted = { [weak self] payload in
             Task { @MainActor in
                 await self?.ingestRealtime(payload, replacingExisting: false)
@@ -810,21 +837,35 @@ public final class ConversationModel {
     /// target from the decrypted local copy (ciphertext never crosses chats), with a fresh client ID.
     public func forward(_ item: ChatMessageItem, to target: ConversationIdentity) async throws {
         let clientID = UUID().uuidString.lowercased()
+        let sent: ChatMessageItem
         if let media = item.media {
             let url = try await mediaURL(for: item)
             var draft = MediaDraft(kind: media.kind, data: try Data(contentsOf: url), mimeType: media.mimeType,
                                    fileName: media.fileName, durationSeconds: media.durationSeconds)
             draft.waveform = media.waveform
-            _ = try await chatRepository.sendMedia(conversation: target, currentUserID: currentUserID, currentUserName: currentUserName,
-                                                   draft: draft, replyToID: nil, clientMessageID: clientID)
+            sent = try await chatRepository.sendMedia(conversation: target, currentUserID: currentUserID, currentUserName: currentUserName,
+                                                      draft: draft, replyToID: nil, clientMessageID: clientID)
         } else {
-            _ = try await chatRepository.sendMessage(conversation: target, currentUserID: currentUserID, currentUserName: currentUserName,
-                                                     content: item.content, replyToID: nil, replyToSnippet: nil, replyToSenderName: nil,
-                                                     clientMessageID: clientID)
+            sent = try await chatRepository.sendMessage(conversation: target, currentUserID: currentUserID, currentUserName: currentUserName,
+                                                        content: item.content, replyToID: nil, replyToSnippet: nil, replyToSenderName: nil,
+                                                        clientMessageID: clientID)
         }
+        onLocalSend?(sent.chatID.isEmpty ? target.chatID : sent.chatID, sent.id, Self.quoteText(sent), sent.messageType.rawValue, sent.createdAt)
+        onForwarded?(target, sent)
     }
 
-    private func ingestRealtime(
+    /// Lets the environment append a forwarded message to the target chat's live model.
+    var onForwarded: ((ConversationIdentity, ChatMessageItem) -> Void)?
+
+    /// Adds a message sent from elsewhere in the app (a forward) to this open timeline.
+    func appendExternal(_ item: ChatMessageItem) {
+        guard !items.contains(where: { $0.id == item.id }) else { return }
+        items.append(item)
+        items.sort { $0.createdAt < $1.createdAt }
+        saveToCache()
+    }
+
+    fileprivate func ingestRealtime(
         _ payload: RealtimeMessagePayload,
         replacingExisting: Bool
     ) async {

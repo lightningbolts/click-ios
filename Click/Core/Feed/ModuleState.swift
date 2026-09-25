@@ -48,9 +48,20 @@ public struct ModuleState<Value: Equatable & Sendable>: Equatable, Sendable {
 
     /// Records a thrown error. Cancellation (navigation, view teardown) is not a failure: the
     /// previous phase is restored and nothing is shown as stale.
-    public mutating func fail(_ error: any Error) {
+    public mutating func fail(_ error: any Error, source: StaticString = #fileID, line: UInt = #line) {
+        if !error.isCancellation {
+            // Every "Couldn't refresh" banner has a matching log line (Release builds too).
+            ClickLog.net.error("module load failed at \(source, privacy: .public):\(line): \(String(describing: error), privacy: .public)")
+        }
         if error.isCancellation {
-            if phase == .loading { phase = phaseBeforeLoading }
+            // A cancelled retry must not bring back an old failure (and its banner).
+            if phase == .loading {
+                if case .failed = phaseBeforeLoading {
+                    phase = value == nil ? .idle : .loaded
+                } else {
+                    phase = phaseBeforeLoading
+                }
+            }
             return
         }
         fail(error.userFacingMessage)

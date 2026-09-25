@@ -74,6 +74,7 @@
 		5EAF68E2372DE07743841C1E /* RootGateView.swift in Sources */ = {isa = PBXBuildFile; fileRef = DA0BA02DE0FE06FB525A130A /* RootGateView.swift */; };
 		6116461327D4FF1806AC2945 /* HubMediaTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2CCD86C374B9F8179E86EDE2 /* HubMediaTests.swift */; };
 		619B213920BF476FE52ECC38 /* GlassCircle.swift in Sources */ = {isa = PBXBuildFile; fileRef = C0EEFAB074A9D2D9EB6AA5B9 /* GlassCircle.swift */; };
+		61EE65603B29E4220E02CBA5 /* ClickLog.swift in Sources */ = {isa = PBXBuildFile; fileRef = F63751F6535F913F9900FA93 /* ClickLog.swift */; };
 		625357C7B3AC7DD95115FC6B /* ChatMessage.swift in Sources */ = {isa = PBXBuildFile; fileRef = BEC22CD1ECDF9E342ACCC942 /* ChatMessage.swift */; };
 		632401178D9A54865EF78E3D /* Phase3Repository.swift in Sources */ = {isa = PBXBuildFile; fileRef = 78C43D61D08B8E0F50B37997 /* Phase3Repository.swift */; };
 		635A0005B6B6C6FDF9BF014B /* Colors.swift in Sources */ = {isa = PBXBuildFile; fileRef = 51597966A20F5807BFB28499 /* Colors.swift */; };
@@ -428,6 +429,7 @@
 		F0F6A8ABE38606F8786A7AE9 /* NewGroupSheet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NewGroupSheet.swift; sourceTree = "<group>"; };
 		F23B8F9BB56FEA60442B3E78 /* PeerProfileModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PeerProfileModel.swift; sourceTree = "<group>"; };
 		F4A7259C78F05583D7D2BF35 /* ImagePipeline.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ImagePipeline.swift; sourceTree = "<group>"; };
+		F63751F6535F913F9900FA93 /* ClickLog.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ClickLog.swift; sourceTree = "<group>"; };
 		F7C2A0E83548CF65E326CC1E /* ClickAPIClient.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ClickAPIClient.swift; sourceTree = "<group>"; };
 		F7E185BE4051D3D0888112E1 /* HomeFeedTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HomeFeedTests.swift; sourceTree = "<group>"; };
 		F8AF88527EA315B8FEEC3769 /* ClickClip.app */ = {isa = PBXFileReference; includeInIndex = 0; lastKnownFileType = wrapper.application; path = ClickClip.app; sourceTree = BUILT_PRODUCTS_DIR; };
@@ -485,6 +487,7 @@
 		10C8355FCD30BD44F6D4F814 /* Telemetry */ = {
 			isa = PBXGroup;
 			children = (
+				F63751F6535F913F9900FA93 /* ClickLog.swift */,
 				FD5B79848C6B2337EA8CD816 /* ConnectionFlowTelemetry.swift */,
 				3A9C809281EFE78177559CBF /* FrictionTelemetry.swift */,
 				A90BEC0659B6560183DE5269 /* TelemetryQueue.swift */,
@@ -1292,6 +1295,7 @@
 				772DB2063A845310BCE94CBA /* ClickCryptoV2.swift in Sources */,
 				972C13760ACEC9B165E723CF /* ClickDropCameraView.swift in Sources */,
 				8A07FC1B9619FAE67BD81910 /* ClickDropFilter.swift in Sources */,
+				61EE65603B29E4220E02CBA5 /* ClickLog.swift in Sources */,
 				77E16A225B4E34C27CD1EC85 /* ClickLogo.swift in Sources */,
 				400758128DC990342F01CCF2 /* ClickMapView.swift in Sources */,
 				FEEF3EB93549BC0E8570F080 /* ClicksSnapshot.swift in Sources */,

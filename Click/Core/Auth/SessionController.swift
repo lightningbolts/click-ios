@@ -67,6 +67,29 @@ public final class SessionController: SessionControlling {
             #if DEBUG
             if oldValue != state { print("[auth] \(Self.label(oldValue)) → \(Self.label(state))") }
             #endif
+            sessionTokenMayHaveChanged()
+        }
+    }
+
+    /// The token realtime sockets were last told about, and the timer that refreshes ahead of
+    /// expiry so long-lived sockets never outlive their JWT (Supabase closes the channel then).
+    private var announcedJWT: String?
+    private var proactiveRefreshTask: Task<Void, Never>?
+
+    private func sessionTokenMayHaveChanged() {
+        let session = currentSession
+        guard session?.jwt != announcedJWT else { return }
+        announcedJWT = session?.jwt
+        proactiveRefreshTask?.cancel()
+        proactiveRefreshTask = nil
+        guard let session, !session.jwt.isEmpty else { return }
+        ChatRealtimeManager.accessTokenDidChange(session.jwt)
+        guard let expiresAt = session.expiresAt else { return }
+        let delay = max(5, expiresAt.timeIntervalSinceNow - 120)
+        proactiveRefreshTask = Task { [weak self] in
+            try? await Task.sleep(for: .seconds(delay))
+            guard !Task.isCancelled, let self, self.currentSession?.jwt == session.jwt else { return }
+            _ = try? await self.refreshSession()
         }
     }
 

@@ -51,6 +51,7 @@ final class ConversationListModel {
     /// Connects the model to app services. Called by the shell before the first `load()`.
     func attach(_ environment: AppEnvironment) {
         self.environment = environment
+        environment.inbox = self
     }
 
     /// Paints the cached inbox immediately, then refreshes.
@@ -92,8 +93,8 @@ final class ConversationListModel {
         guard let environment, let userID else { return }
         refreshError = nil
         Task { await refreshHubs(environment, userID: userID) }
-        async let clicksTask = environment.phase3.refreshClicks(for: userID)
-        async let groupsTask = environment.groups.groups(userID: userID)
+        async let clicksTask = Transport.refreshing { try await environment.phase3.refreshClicks(for: userID) }
+        async let groupsTask = Transport.refreshing { try await environment.groups.groups(userID: userID) }
         let groups: [CliqueItem]?
         do {
             groups = try await groupsTask
@@ -117,7 +118,10 @@ final class ConversationListModel {
             lastRefresh = Date()
             await decryptPreviews(for: merged)
         } catch {
-            if !error.isCancellation { refreshError = error.userFacingMessage }
+            if !error.isCancellation {
+                ClickLog.net.error("inbox refresh failed: \(String(describing: error), privacy: .public)")
+                refreshError = error.userFacingMessage
+            }
             if let groups, let current = snapshot {
                 snapshot = ClicksSnapshot(connections: current.connections, archivedConnections: current.archived, groups: groups, mapPins: current.mapPins)
             }
@@ -134,7 +138,15 @@ final class ConversationListModel {
         guard refreshesAutomatically, let userID, !AppConfig.shared.supabaseAnonKey.isEmpty else { return }
         let url = AppConfig.shared.supabaseURL
         inboxRealtime.onMessageInserted = { [weak self] payload in
-            Task { @MainActor in self?.applyInserted(payload) }
+            Task { @MainActor in
+                self?.applyInserted(payload)
+                // Open chats stay live even while their own channel is reconnecting.
+                self?.environment?.forwardInboxInsert(payload)
+            }
+        }
+        // Events sent while the socket was down were missed: catch up.
+        inboxRealtime.onRejoined = { [weak self] in
+            Task { await self?.refresh() }
         }
         inboxRealtime.subscribe(
             to: userID,
@@ -160,7 +172,31 @@ final class ConversationListModel {
         membershipRealtime.teardown()
     }
 
-    func applyInserted(_ payload: RealtimeMessagePayload, currentUserID: String? = nil) {
+    /// Foreground return: pooled connections and sockets are usually dead after suspension.
+    /// Rebuilds them with a fresh token, then catches up on anything missed.
+    func resumeFromBackground() async {
+        guard refreshesAutomatically else { return }
+        ClickAPIClient.resetConnectionPools()
+        if inboxRealtime.health == .idle {
+            startRealtime()
+        } else {
+            inboxRealtime.ensureLive()
+            membershipRealtime.ensureLive()
+        }
+        await refresh()
+    }
+
+    /// A message this user just sent (or forwarded) moves its row to the top with the new
+    /// preview immediately, instead of waiting for the realtime echo or a refresh.
+    func applyLocalSend(chatID: String, messageID: String, content: String, messageType: String, date: Date) {
+        guard let userID else { return }
+        applyInserted(RealtimeMessagePayload(
+            id: messageID, chatID: chatID, senderID: userID, content: content,
+            messageType: messageType, timeCreated: Int64(date.timeIntervalSince1970 * 1000)
+        ), currentUserID: userID, refreshIfUnknown: false)
+    }
+
+    func applyInserted(_ payload: RealtimeMessagePayload, currentUserID: String? = nil, refreshIfUnknown: Bool = true) {
         guard let snapshot, let userID = currentUserID ?? userID else { return }
         let isOutgoing = payload.senderID == userID
         let isOpen = environment?.activeChatID == payload.chatID
@@ -187,7 +223,7 @@ final class ConversationListModel {
             let group = groups.remove(at: index)
             groups.insert(group.with(unreadCount: group.unreadCount + bump, lastMessage: message, lastActivityAt: date), at: 0)
         } else {
-            scheduleRefresh()
+            if refreshIfUnknown { scheduleRefresh() }
             return
         }
         let updated = ClicksSnapshot(connections: connections, archivedConnections: archived, groups: groups, mapPins: snapshot.mapPins)

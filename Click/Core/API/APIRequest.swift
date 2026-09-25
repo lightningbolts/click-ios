@@ -81,7 +81,9 @@ extension APIRequest {
 
 extension APIRequest {
     /// A Supabase PostgREST RPC (`POST /rest/v1/rpc/{name}`) with the client's bearer token.
-    public static func supabaseRPC(_ name: String, baseURL: URL, anonKey: String, body: Data) -> APIRequest {
-        APIRequest(baseURL: baseURL, path: "/rest/v1/rpc/\(name)", method: .post, headers: ["apikey": anonKey], body: body)
+    /// `readOnly` RPCs (the default: every current one is a query) are retried after a dropped
+    /// connection like a GET; the -1005 right after returning from background is common.
+    public static func supabaseRPC(_ name: String, baseURL: URL, anonKey: String, body: Data, readOnly: Bool = true) -> APIRequest {
+        APIRequest(baseURL: baseURL, path: "/rest/v1/rpc/\(name)", method: .post, headers: ["apikey": anonKey], body: body, idempotent: readOnly)
     }
 }

@@ -256,7 +256,7 @@ public actor SupabaseAuthService {
         let payload = ["refresh_token": refreshToken]
         request.httpBody = try JSONSerialization.data(withJSONObject: payload)
 
-        let authResponse = try await execute(request)
+        let authResponse = try await execute(request, retryDroppedConnection: true)
         guard let token = authResponse.accessToken,
               let refresh = authResponse.refreshToken,
               let user = authResponse.user else {
@@ -283,7 +283,10 @@ public actor SupabaseAuthService {
         _ = try? await session.data(for: request)
     }
 
-    private func execute(_ request: URLRequest) async throws -> SupabaseAuthResponse {
+    /// `retryDroppedConnection`: the token refresh may be retried after a timeout or a dropped
+    /// connection. Supabase accepts a just-rotated refresh token again within its reuse
+    /// interval and returns the same session, so a retry never burns the session.
+    private func execute(_ request: URLRequest, retryDroppedConnection: Bool = false) async throws -> SupabaseAuthResponse {
         guard !anonKey.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
             throw APIError.server(
                 status: -1,
@@ -298,17 +301,22 @@ public actor SupabaseAuthService {
         do {
             // Auth calls are not idempotent (refresh tokens rotate), so only connection failures
             // that never reached Supabase are retried.
-            (data, response) = try await Transport.withRetry(idempotent: false) {
+            (data, response) = try await Transport.withRetry(idempotent: retryDroppedConnection) {
                 try await session.data(for: request)
             }
         } catch let error as APIError {
+            ClickLog.auth.error("auth \(request.url?.path ?? "", privacy: .public) transport failed: \(String(describing: error), privacy: .public)")
             throw error
         } catch {
+            ClickLog.auth.error("auth \(request.url?.path ?? "", privacy: .public) failed: \(error.localizedDescription, privacy: .public)")
             throw APIError.server(status: -1, code: nil, message: error.localizedDescription)
         }
 
         guard let httpResponse = response as? HTTPURLResponse else {
             throw APIError.server(status: -1, code: nil, message: "Invalid network response")
+        }
+        if !(200...299).contains(httpResponse.statusCode) {
+            ClickLog.auth.error("auth \(request.url?.path ?? "", privacy: .public) HTTP \(httpResponse.statusCode)")
         }
 
         guard (200...299).contains(httpResponse.statusCode) else {

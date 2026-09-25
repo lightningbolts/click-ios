@@ -73,10 +73,38 @@ public final class AppEnvironment {
             pendingSends: pendingSends,
             identities: identities
         )
+        model.onLocalSend = { [weak self] chatID, messageID, content, type, date in
+            self?.inbox?.applyLocalSend(chatID: chatID, messageID: messageID, content: content, messageType: type, date: date)
+        }
+        model.onForwarded = { [weak self] target, sent in
+            self?.liveModel(chatID: sent.chatID.isEmpty ? target.chatID : sent.chatID)?.appendExternal(sent)
+        }
         if let connID = identity.connectionID { conversationModels[connID] = model }
         if !identity.chatID.isEmpty { conversationModels[identity.chatID] = model }
         if let hubID = identity.hubID { conversationModels[hubID] = model }
         return model
+    }
+
+    /// The Clicks inbox model owned by the shell (weak: the shell owns it).
+    weak var inbox: ConversationListModel?
+
+    private func liveModel(chatID: String) -> ConversationModel? {
+        conversationModels[chatID] ?? conversationModels.values.first { $0.identity.chatID == chatID }
+    }
+
+    /// The inbox channel saw a new message: an open chat whose own channel is down applies it.
+    func forwardInboxInsert(_ payload: RealtimeMessagePayload) {
+        guard let model = liveModel(chatID: payload.chatID), model.isVisible else { return }
+        Task { await model.receiveInboxInsert(payload) }
+    }
+
+    /// Foreground return: the chat on screen (if any) re-checks its socket and catches up.
+    func resumeLiveConversations() {
+        // Models are stored under several keys (chat, connection, hub): resume each once.
+        var seen = Set<ObjectIdentifier>()
+        for model in conversationModels.values where model.isVisible && seen.insert(ObjectIdentifier(model)).inserted {
+            Task { await model.resume() }
+        }
     }
 
     public init(
@@ -96,6 +124,11 @@ public final class AppEnvironment {
         self.permissions = permissions
         self.avatarService = avatarService
         self.location = location
+
+        // Every realtime (re)join asks for a fresh token instead of reusing a captured one.
+        ChatRealtimeManager.tokenProvider = { [weak session] in
+            await session?.validAccessToken()
+        }
 
         let resolvedAPI = api ?? ClickAPIClient(
             baseURL: AppConfig.shared.apiBaseURL,
