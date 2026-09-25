@@ -10,9 +10,13 @@ enum BeaconFormRules {
     static let maxCategories = 3
     static let maxCategoryLength = 24
     static let maxImageBytes = 2_000_000
-    static let musicHosts = ["open.spotify.com", "spotify.link", "music.apple.com", "youtube.com", "www.youtube.com",
-                             "music.youtube.com", "youtu.be", "soundcloud.com", "on.soundcloud.com", "tidal.com",
-                             "listen.tidal.com", "deezer.com", "www.deezer.com", "bandcamp.com"]
+    /// Server limits (`POST /api/beacons`): title 80, non-event description 500.
+    static let maxTitleLength = 80
+    static let maxBeaconDescription = 500
+    /// Exactly the server's allowlist (`isAllowedMusicShareUrl`): anything else is rejected
+    /// on post, so the form must not accept it.
+    static let musicHosts = ["open.spotify.com", "spotify.link", "music.apple.com", "itunes.apple.com",
+                             "youtube.com", "www.youtube.com", "music.youtube.com", "youtu.be"]
 
     /// A cleaned custom category, or nil when empty/too long/duplicate.
     nonisolated static func customCategory(_ raw: String, existing: Set<String>) -> String? {
@@ -25,9 +29,9 @@ enum BeaconFormRules {
     /// Soundtrack links must be http(s) links to a known music service.
     nonisolated static func isMusicLink(_ raw: String) -> Bool {
         guard let url = URL(string: raw.trimmingCharacters(in: .whitespacesAndNewlines)),
-              let scheme = url.scheme?.lowercased(), scheme == "https" || scheme == "http",
+              url.scheme?.lowercased() == "https",
               let host = url.host?.lowercased() else { return false }
-        return musicHosts.contains { host == $0 || host.hasSuffix("." + $0) }
+        return musicHosts.contains { host == $0 || ($0 != "youtube.com" && host.hasSuffix("." + $0)) }
     }
 
     /// JPEG under the server's 2 MB cap, downscaled off the main actor.

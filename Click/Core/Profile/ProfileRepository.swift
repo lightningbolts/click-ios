@@ -173,6 +173,36 @@ public struct SharedTabs: Equatable, Sendable, Codable {
     /// Raw message rows (JSON arrays) so media/files can be decrypted like chat messages.
     public var mediaRows: Data = Data("[]".utf8)
     public var fileRows: Data = Data("[]".utf8)
+    /// More attachments exist before the oldest one here (nil from older servers).
+    public var hasMore: Bool? = nil
+
+    /// The oldest attachment time here: the cursor for the next page.
+    public var oldestAttachment: Date? {
+        (media + files).compactMap(\.createdAt).min()
+    }
+
+    /// Appends an older page (dedup by ID); rows are merged as JSON arrays.
+    public func appending(_ page: SharedTabs) -> SharedTabs {
+        let knownIDs = Set((media + files).map(\.id))
+        func mergeRows(_ a: Data, _ b: Data) -> Data {
+            let first = (try? JSONSerialization.jsonObject(with: a)) as? [[String: Any]] ?? []
+            let known = Set(first.compactMap { JSONFields.string($0["id"]) })
+            let second = ((try? JSONSerialization.jsonObject(with: b)) as? [[String: Any]] ?? [])
+                .filter { JSONFields.string($0["id"]).map { !known.contains($0) } ?? false }
+            return (try? JSONSerialization.data(withJSONObject: first + second)) ?? a
+        }
+        var merged = SharedTabs(
+            chatID: chatID,
+            media: media + page.media.filter { !knownIDs.contains($0.id) },
+            files: files + page.files.filter { !knownIDs.contains($0.id) },
+            beacons: beacons,
+            mediaRows: mergeRows(mediaRows, page.mediaRows),
+            fileRows: mergeRows(fileRows, page.fileRows)
+        )
+        let added = (page.media + page.files).contains { !knownIDs.contains($0.id) }
+        merged.hasMore = (page.hasMore ?? false) && added
+        return merged
+    }
 }
 
 /// Canonical person-profile reads and relationship actions (spec §47, §66).
@@ -261,10 +291,15 @@ public actor ProfileRepository {
     // MARK: - Shared content tabs
 
     /// `GET /api/connections/{id}/tabs` — also accepts a group chat ID via `chatId`.
-    public func sharedTabs(connectionID: String? = nil, chatID: String? = nil) async throws -> SharedTabs {
+    /// Pages of `limit` attachments, newest first; `before` (ms cursor) fetches older pages.
+    public static let sharedPageSize = 60
+
+    public func sharedTabs(connectionID: String? = nil, chatID: String? = nil, before: Date? = nil,
+                           limit: Int = ProfileRepository.sharedPageSize) async throws -> SharedTabs {
         let pathID = connectionID ?? chatID ?? ""
-        var query = [URLQueryItem(name: "limit", value: "300")]
+        var query = [URLQueryItem(name: "limit", value: String(limit))]
         if let chatID { query.append(URLQueryItem(name: "chatId", value: chatID)) }
+        if let before { query.append(URLQueryItem(name: "before", value: String(Int64(before.timeIntervalSince1970 * 1000)))) }
         let (data, _) = try await api.executeRaw(APIRequest(path: "/api/connections/\(pathID)/tabs", method: .get, queryItems: query))
         let root = try JSONFields.object(data)
         func items(_ key: String) -> [SharedItem] {
@@ -280,7 +315,8 @@ public actor ProfileRepository {
             files: items("files"),
             beacons: items("beacons"),
             mediaRows: raw("media"),
-            fileRows: raw("files")
+            fileRows: raw("files"),
+            hasMore: JSONFields.bool(root["hasMore"])
         )
     }
 

@@ -137,3 +137,55 @@ struct SearchRoutingTests {
         #expect(results.hits.map(\.messageID) == ["m"])
     }
 }
+
+@Suite("Soundtracks and shared media")
+struct SoundtrackTests {
+    @Test("Links match the server's allowlist exactly")
+    func allowlist() {
+        #expect(BeaconFormRules.isMusicLink("https://music.youtube.com/watch?v=abc"))
+        #expect(BeaconFormRules.isMusicLink("https://music.apple.com/us/album/x/1?i=2"))
+        #expect(!BeaconFormRules.isMusicLink("https://soundcloud.com/a/b"))
+        #expect(!BeaconFormRules.isMusicLink("http://open.spotify.com/track/1"))
+        #expect(!BeaconFormRules.isMusicLink("https://m.youtube.com/watch?v=1"))
+    }
+
+    @Test("Album art is upscaled; only Apple previews are trusted")
+    func artworkAndPreview() {
+        #expect(SoundtrackResolver.artwork("https://is1-ssl.mzstatic.com/a/b.jpg/100x100bb.jpg") == "https://is1-ssl.mzstatic.com/a/b.jpg/600x600bb.jpg")
+        #expect(SoundtrackResolver.isTrustedPreview("https://audio-ssl.itunes.apple.com/x.m4a"))
+        #expect(!SoundtrackResolver.isTrustedPreview("https://evil.example.com/x.m4a"))
+        #expect(!SoundtrackResolver.isTrustedPreview("http://audio-ssl.itunes.apple.com/x.m4a"))
+    }
+
+    @Test("Beacons parse preview and art; an uploaded photo still wins the banner")
+    func beaconParse() {
+        let row: [String: Any] = ["id": "b", "lat": 1.0, "lng": 2.0, "beacon_type": "soundtrack", "metadata": [
+            "track_name": "Song", "artist_name": "Artist",
+            "preview_url": "https://audio-ssl.itunes.apple.com/p.m4a",
+            "album_art_url": "https://is1-ssl.mzstatic.com/x/100x100bb.jpg"]]
+        let beacon = MapBeacon.decode(row)
+        #expect(beacon?.title == "Song — Artist")
+        #expect(beacon?.previewURL == "https://audio-ssl.itunes.apple.com/p.m4a")
+        #expect(beacon?.imageURL == "https://is1-ssl.mzstatic.com/x/600x600bb.jpg")
+    }
+
+    @Test("Older shared-media pages append without duplicates and stop when exhausted")
+    func pagingMerge() {
+        func item(_ id: String, _ t: Double) -> SharedItem {
+            SharedItem(id: id, chatID: "c", senderID: "s", messageType: "image", createdAt: Date(timeIntervalSince1970: t), beaconID: nil, beaconTitle: nil)
+        }
+        var first = SharedTabs(chatID: "c", media: [item("a", 3), item("b", 2)], files: [], beacons: [],
+                               mediaRows: Data(#"[{"id":"a"},{"id":"b"}]"#.utf8))
+        first.hasMore = true
+        var page = SharedTabs(chatID: "c", media: [item("b", 2), item("c", 1)], files: [], beacons: [],
+                              mediaRows: Data(#"[{"id":"b"},{"id":"c"}]"#.utf8))
+        page.hasMore = true
+        let merged = first.appending(page)
+        #expect(merged.media.map(\.id) == ["a", "b", "c"])
+        #expect(merged.oldestAttachment == Date(timeIntervalSince1970: 1))
+        #expect(merged.hasMore == true)
+        let rows = (try? JSONSerialization.jsonObject(with: merged.mediaRows)) as? [[String: Any]]
+        #expect(rows?.count == 3)
+        #expect(merged.appending(page).hasMore == false)   // nothing new: stop paging
+    }
+}

@@ -128,6 +128,10 @@ public struct MapBeacon: Codable, Identifiable, Hashable, Sendable {
     public var approvalRequired: Bool? = nil
     public var capacity: Int? = nil
     public var visibility: String? = nil
+    /// Soundtrack: iTunes 30 s preview and track name (server/device enrichment).
+    public var previewURL: String? = nil
+    public var trackName: String? = nil
+    public var albumArtURL: String? = nil
 
     public var coordinate: CLLocationCoordinate2D {
         CLLocationCoordinate2D(latitude: latitude, longitude: longitude)
@@ -172,7 +176,10 @@ public struct MapBeacon: Codable, Identifiable, Hashable, Sendable {
             description: JSONFields.string(meta, "description", "text", "message", "body"),
             locationName: JSONFields.string(meta, "location_name", "place_name", "venue_name"),
             formattedAddress: JSONFields.string(meta, "formatted_address", "address", "display_address"),
-            imageURL: JSONFields.string(meta, "image_url", "cover_url", "album_art_url", "artworkUrl100", "artwork_url"),
+            // An uploaded photo wins; otherwise a soundtrack shows its album art (upscaled from
+            // iTunes' 100 px thumbnail so the hero isn't blurry).
+            imageURL: JSONFields.string(meta, "image_url", "cover_url")
+                ?? SoundtrackResolver.artwork(JSONFields.string(meta, "album_art_url", "artworkUrl100", "artwork_url")),
             schedule: EventSchedule(
                 start: JSONFields.date(meta["event_start_at"] ?? meta["eventStartAt"]),
                 end: JSONFields.date(meta["event_end_at"] ?? meta["eventEndAt"])
@@ -190,7 +197,10 @@ public struct MapBeacon: Codable, Identifiable, Hashable, Sendable {
             }(),
             approvalRequired: JSONFields.bool(row["approval_required"] ?? meta["approval_required"] ?? meta["approvalRequired"]),
             capacity: JSONFields.int(row["event_capacity"] ?? meta["event_capacity"] ?? meta["eventCapacity"]),
-            visibility: JSONFields.string(row["event_visibility"]) ?? JSONFields.string(meta, "event_visibility", "eventVisibility")
+            visibility: JSONFields.string(row["event_visibility"]) ?? JSONFields.string(meta, "event_visibility", "eventVisibility"),
+            previewURL: JSONFields.string(meta, "preview_url", "previewUrl").flatMap { SoundtrackResolver.isTrustedPreview($0) ? $0 : nil },
+            trackName: JSONFields.string(meta, "track_name", "track_title"),
+            albumArtURL: SoundtrackResolver.artwork(JSONFields.string(meta, "album_art_url", "artworkUrl100", "artwork_url"))
         )
     }
 

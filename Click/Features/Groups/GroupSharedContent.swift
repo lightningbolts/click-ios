@@ -21,6 +21,8 @@ struct GroupSharedView: View {
     @State private var mediaURLs: [String: URL] = [:]
     @State private var viewerURL: ProfileViewerURL?
     @State private var quickLookURL: URL?
+    @State private var tabs: SharedTabs?
+    @State private var isLoadingMore = false
 
     var body: some View {
         ScrollView {
@@ -54,9 +56,11 @@ struct GroupSharedView: View {
                     empty
                 } else if kind == .media {
                     let photos = items.filter { $0.media?.kind == .image }
+                    let prefetchFrom = Set(photos.suffix(12).map(\.id))
                     LazyVGrid(columns: Array(repeating: GridItem(.flexible(), spacing: 3), count: 3), spacing: 3) {
                         ForEach(photos) { item in
                             ProfileMediaThumbnail(item: item, load: { try await url(for: item) }) { viewerURL = ProfileViewerURL(url: $0) }
+                                .onAppear { if prefetchFrom.contains(item.id) { Task { await loadMore() } } }
                         }
                     }
                     ForEach(items.filter { $0.media?.kind == .audio }) { item in
@@ -65,9 +69,12 @@ struct GroupSharedView: View {
                         }
                     }
                 } else {
-                    ForEach(items) { item in
-                        if let media = item.media {
-                            MessageMediaContent(message: item, media: media, load: { try await url(for: item) }) { quickLookURL = $0 }
+                    LazyVStack(spacing: 12) {
+                        ForEach(items) { item in
+                            if let media = item.media {
+                                MessageMediaContent(message: item, media: media, load: { try await url(for: item) }) { quickLookURL = $0 }
+                                    .onAppear { if item.id == items.last?.id { Task { await loadMore() } } }
+                            }
                         }
                     }
                 }
@@ -98,6 +105,7 @@ struct GroupSharedView: View {
         guard let userID = env.session.currentSession?.userId else { return }
         do {
             let tabs = try await env.profiles.sharedTabs(chatID: group.chatID)
+            self.tabs = tabs
             beacons = tabs.beacons
             let rows = kind == .files ? tabs.fileRows : tabs.mediaRows
             items = await env.chat.items(fromRows: rows, conversation: group.chatRoute.conversationIdentity, currentUserID: userID)
@@ -106,6 +114,22 @@ struct GroupSharedView: View {
         } catch {
             self.error = error.userFacingMessage
         }
+    }
+}
+
+extension GroupSharedView {
+    /// Next (older) page, appended as the grid nears its end.
+    fileprivate func loadMore() async {
+        guard !isLoadingMore, let current = tabs, current.hasMore == true, let cursor = current.oldestAttachment,
+              let userID = env.session.currentSession?.userId else { return }
+        isLoadingMore = true
+        defer { isLoadingMore = false }
+        guard let page = try? await env.profiles.sharedTabs(chatID: group.chatID, before: cursor) else { return }
+        tabs = current.appending(page)
+        let known = Set(items.map(\.id))
+        let rows = kind == .files ? page.fileRows : page.mediaRows
+        items += await env.chat.items(fromRows: rows, conversation: group.chatRoute.conversationIdentity, currentUserID: userID)
+            .filter { $0.media != nil && !known.contains($0.id) }
     }
 }
 

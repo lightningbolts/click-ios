@@ -207,6 +207,27 @@ final class PeerProfileModel {
         )
     }
 
+    /// Fetches the next (older) page of shared media/files and appends it; called as the grid
+    /// nears its end, so the user never waits at the bottom.
+    private(set) var isLoadingMoreMedia = false
+
+    func loadMoreMedia() async {
+        guard !isLoadingMoreMedia, let environment, let connectionID, let current = tabs.value,
+              current.hasMore == true, let cursor = current.oldestAttachment,
+              let conversation, let viewerID = environment.session.currentSession?.userId else { return }
+        isLoadingMoreMedia = true
+        defer { isLoadingMoreMedia = false }
+        guard let page = try? await environment.profiles.sharedTabs(connectionID: connectionID, before: cursor) else { return }
+        let merged = current.appending(page)
+        tabs.succeed(merged)
+        LocalStore.shared.save(merged, key: "profile.tabs.\(connectionID)", userID: viewerID)
+        let known = Set((mediaItems + fileItems).map(\.id))
+        mediaItems += await environment.chat.items(fromRows: page.mediaRows, conversation: conversation, currentUserID: viewerID)
+            .filter { $0.media != nil && !known.contains($0.id) }
+        fileItems += await environment.chat.items(fromRows: page.fileRows, conversation: conversation, currentUserID: viewerID)
+            .filter { $0.media != nil && !known.contains($0.id) }
+    }
+
     private func loadMediaItems(_ tabs: SharedTabs) async {
         guard let environment, let conversation, let viewerID = environment.session.currentSession?.userId else { return }
         mediaItems = await environment.chat.items(fromRows: tabs.mediaRows, conversation: conversation, currentUserID: viewerID)

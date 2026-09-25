@@ -19,6 +19,8 @@ struct BeaconDetailView: View {
     @State private var checkInPending = false
     @State private var notice: String?
     @State private var showingDirectory = false
+    /// Album art resolved on device for a soundtrack the server couldn't enrich.
+    @State private var resolvedArtwork: String?
     @State private var confirmCancelRSVP = false
     @State private var confirmDelete = false
     @State private var people = ModuleState<EventDirectory>()
@@ -45,6 +47,7 @@ struct BeaconDetailView: View {
                 ClickLoadingView()
             }
         }
+        .onDisappear { SoundtrackPreviewPlayer.shared.stop() }
         .navigationTitle(beacon.value?.title ?? "")
         .toolbar(.hidden, for: .navigationBar)
         .task { if beacon.value == nil { await load() } }
@@ -62,7 +65,8 @@ struct BeaconDetailView: View {
         ScrollView {
             VStack(alignment: .leading, spacing: 0) {
                 // Full-bleed hero (prototype event sheet); uploaded image overrides the pattern.
-                EventVisual(seed: beacon.id, imageURL: beacon.imageURL, symbol: beacon.kind.systemImage, cornerRadius: 0)
+                EventVisual(seed: beacon.id, imageURL: beacon.imageURL ?? resolvedArtwork, symbol: beacon.kind.systemImage, cornerRadius: 0)
+                    .id(beacon.imageURL ?? resolvedArtwork)
                     .frame(height: 250)
                     .frame(maxWidth: .infinity)
                     .clipped()
@@ -89,6 +93,12 @@ struct BeaconDetailView: View {
                         eventActionRow(beacon)
                     } else {
                         beaconActions(beacon)
+                    }
+
+                    if beacon.kind == .soundtrack {
+                        SoundtrackBeaconSection(beacon: beacon) { art in
+                            withAnimation(ClickMotion.subtleFade) { resolvedArtwork = art }
+                        }
                     }
 
                     infoCard(beacon)
@@ -722,13 +732,10 @@ struct EventDirectoryView: View {
     var body: some View {
         ScrollViewReader { proxy in
             List {
-                Picker("Sort", selection: $sort) {
-                    ForEach(Sort.allCases) { Text($0.rawValue).tag($0) }
-                }
-                .pickerStyle(.segmented)
-                .listRowBackground(Color.clear)
-                .listRowInsets(EdgeInsets(top: 4, leading: 0, bottom: 4, trailing: 0))
-                .id("top")
+                Color.clear.frame(height: 0)
+                    .listRowBackground(Color.clear)
+                    .listRowInsets(EdgeInsets())
+                    .id("top")
 
                 if directory.value != nil {
                     if everyone.isEmpty {
@@ -746,6 +753,12 @@ struct EventDirectoryView: View {
                 }
             }
             .listStyle(.insetGrouped)
+            .listSectionSpacing(.compact)
+            .contentMargins(.top, 4, for: .scrollContent)
+            // Opaque like the event sheet it's pushed from (the sheet's glass showed through
+            // at the medium height while the header stayed solid).
+            .scrollContentBackground(.hidden)
+            .background(ClickColors.surface.ignoresSafeArea())
             .onChange(of: sort) { _, _ in withAnimation { proxy.scrollTo("top", anchor: .top) } }
         }
         // The event sheet has no navigation bar; this screen doesn't either, so pushing it
@@ -760,30 +773,37 @@ struct EventDirectoryView: View {
         }
     }
 
+    /// Title and sort control, pinned above the list.
     private var header: some View {
-        HStack(spacing: 12) {
-            Button { dismiss() } label: {
-                Image(systemName: "chevron.left")
-                    .font(.system(size: 17, weight: .semibold))
-                    .foregroundStyle(ClickColors.textPrimary)
-                    .frame(width: 44, height: 44)
-                    .glassCircleBackground()
+        VStack(spacing: 10) {
+            HStack(spacing: 12) {
+                Button { dismiss() } label: {
+                    Image(systemName: "chevron.left")
+                        .font(.system(size: 17, weight: .semibold))
+                        .foregroundStyle(ClickColors.textPrimary)
+                        .frame(width: 44, height: 44)
+                        .glassCircleBackground()
+                }
+                .buttonStyle(.plain)
+                .accessibilityLabel("Back")
+                VStack(alignment: .leading, spacing: 0) {
+                    Text("People here").font(ClickTypography.bodyEmphasized)
+                    Text(directory.value == nil ? " " : "\(everyone.count) going")
+                        .font(ClickTypography.caption)
+                        .foregroundStyle(ClickColors.textSecondary)
+                        .contentTransition(.numericText())
+                }
+                Spacer()
             }
-            .buttonStyle(.plain)
-            .accessibilityLabel("Back")
-            VStack(alignment: .leading, spacing: 0) {
-                Text("People here").font(ClickTypography.bodyEmphasized)
-                Text(directory.value == nil ? " " : "\(everyone.count) going")
-                    .font(ClickTypography.caption)
-                    .foregroundStyle(ClickColors.textSecondary)
-                    .contentTransition(.numericText())
+            Picker("Sort", selection: $sort) {
+                ForEach(Sort.allCases) { Text($0.rawValue).tag($0) }
             }
-            Spacer()
+            .pickerStyle(.segmented)
         }
         .padding(.horizontal, 16)
-        .padding(.vertical, 6)
-        .frame(height: 56)
-        .background(ClickColors.background)
+        .padding(.top, 12)
+        .padding(.bottom, 8)
+        .background(ClickColors.surface)
     }
 
     private var sections: [(title: String, people: [DirectoryAttendee])] {
@@ -812,9 +832,22 @@ struct EventDirectoryView: View {
                 HStack(spacing: 12) {
                     AvatarView(imageURL: person.avatarURL, seed: person.userID, initials: person.initials, size: 48)
                     VStack(alignment: .leading, spacing: 3) {
-                        Text(person.name)
-                            .font(ClickTypography.bodyEmphasized)
-                            .foregroundStyle(ClickColors.textPrimary)
+                        // The badge sits beside the name so the detail lines get the full width.
+                        HStack(spacing: 6) {
+                            Text(person.name)
+                                .font(ClickTypography.bodyEmphasized)
+                                .foregroundStyle(ClickColors.textPrimary)
+                                .lineLimit(1)
+                            if let badge = Self.badge(person) {
+                                Text(badge)
+                                    .font(ClickTypography.caption.weight(.semibold))
+                                    .foregroundStyle(ClickColors.accentForeground)
+                                    .padding(.horizontal, 7)
+                                    .padding(.vertical, 2)
+                                    .background(ClickColors.selectionTint, in: Capsule())
+                                    .fixedSize()
+                            }
+                        }
                         ForEach(Self.details(person), id: \.self) { line in
                             Text(line)
                                 .font(ClickTypography.supporting)
@@ -822,18 +855,11 @@ struct EventDirectoryView: View {
                                 .lineLimit(2)
                         }
                     }
-                    Spacer(minLength: 8)
-                    if let badge = Self.badge(person) {
-                        Text(badge)
-                            .font(ClickTypography.metadataEmphasized)
-                            .foregroundStyle(ClickColors.accentForeground)
-                            .padding(.horizontal, 10)
-                            .padding(.vertical, 5)
-                            .background(ClickColors.selectionTint, in: Capsule())
-                    }
+                    Spacer(minLength: 0)
                 }
                 .padding(.vertical, 4)
             }
+            .listRowBackground(ClickColors.surfaceElevated)
         }
     }
 

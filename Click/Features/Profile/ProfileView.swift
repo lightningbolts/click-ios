@@ -439,10 +439,15 @@ public struct ProfileView: View {
             let voice = model.mediaItems.filter { $0.media?.kind == .audio }
             VStack(alignment: .leading, spacing: 14) {
                 if !photos.isEmpty {
+                    let prefetchFrom = Set(photos.suffix(12).map(\.id))
                     LazyVGrid(columns: Array(repeating: GridItem(.flexible(), spacing: 3), count: 3), spacing: 3) {
                         ForEach(photos) { item in
                             ProfileMediaThumbnail(item: item, load: { try await model.mediaURL(for: item) }) { url in
                                 viewerURL = ProfileViewerURL(url: url)
+                            }
+                            // The next page loads while the last rows are still coming into view.
+                            .onAppear {
+                                if prefetchFrom.contains(item.id) { Task { await model.loadMoreMedia() } }
                             }
                         }
                     }
@@ -453,9 +458,14 @@ public struct ProfileView: View {
                         Text("Voice notes")
                             .font(ClickTypography.supportingEmphasized)
                             .foregroundStyle(ClickColors.textSecondary)
-                        ForEach(voice) { item in
-                            if let media = item.media {
-                                MessageMediaContent(message: item, media: media, load: { try await model.mediaURL(for: item) }, onOpen: { _ in })
+                        LazyVStack(alignment: .leading, spacing: 8) {
+                            ForEach(voice) { item in
+                                if let media = item.media {
+                                    MessageMediaContent(message: item, media: media, load: { try await model.mediaURL(for: item) }, onOpen: { _ in })
+                                        .onAppear {
+                                            if item.id == voice.last?.id { Task { await model.loadMoreMedia() } }
+                                        }
+                                }
                             }
                         }
                     }

@@ -11,6 +11,10 @@ public struct ClickMapView: View {
     @State private var model = MapFeatureModel()
     @State private var creating = false
     @State private var mapCenter: CLLocationCoordinate2D?
+    /// The tab bar's inset, remembered. While a pushed screen hides the tab bar the map root's
+    /// safe area briefly loses it (during the back-swipe too); anchoring to the remembered
+    /// value keeps the Nearby lip and buttons from dropping under the bar and jumping back.
+    @State private var stableBottomInset: CGFloat = 0
 
     public init() {}
 
@@ -52,8 +56,15 @@ public struct ClickMapView: View {
                 }
                 .padding(.horizontal, ClickSpacing.screenGutter)
                 .padding(.bottom, 84 + 12)
+                .padding(.bottom, stableBottomInset)
+                .ignoresSafeArea(.container, edges: .bottom)
 
                 NearbyLip(model: model, pins: pins)
+                    .padding(.bottom, stableBottomInset)
+                    .ignoresSafeArea(.container, edges: .bottom)
+            }
+            .onChange(of: proxy.safeAreaInsets.bottom, initial: true) { _, inset in
+                stableBottomInset = max(stableBottomInset, inset)
             }
         }
         // The map is full-bleed: no title bar, just floating glass controls (prototype Map root).
