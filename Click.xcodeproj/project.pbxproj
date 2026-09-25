@@ -314,7 +314,7 @@
 		3C7452B96DAD3F83C3B030DB /* ActivityShareSheet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ActivityShareSheet.swift; sourceTree = "<group>"; };
 		3CCC3D3C78411FA8933E0013 /* LocalStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LocalStore.swift; sourceTree = "<group>"; };
 		3D2EBB1A2205878F093380E1 /* HubRepository.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HubRepository.swift; sourceTree = "<group>"; };
-		3D70677902656DA92DEB50B3 /* NotificationService.appex */ = {isa = PBXFileReference; includeInIndex = 0; lastKnownFileType = "wrapper.app-extension"; path = NotificationService.appex; sourceTree = BUILT_PRODUCTS_DIR; };
+		3D70677902656DA92DEB50B3 /* NotificationService.appex */ = {isa = PBXFileReference; explicitFileType = "wrapper.app-extension"; includeInIndex = 0; path = NotificationService.appex; sourceTree = BUILT_PRODUCTS_DIR; };
 		3F45F0FEE3AA9FAC0DF8A5CA /* ContextTagPicker.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ContextTagPicker.swift; sourceTree = "<group>"; };
 		42726C3E89949B1741E4C897 /* InboxRowLayoutTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = InboxRowLayoutTests.swift; sourceTree = "<group>"; };
 		43B915D15511AD49D780AE8B /* JoinedHubStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = JoinedHubStore.swift; sourceTree = "<group>"; };
@@ -353,7 +353,7 @@
 		758475F38EA92E1DDE8CB3B9 /* APIError.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = APIError.swift; sourceTree = "<group>"; };
 		75F3B6683C059DAF391328A6 /* PendingSendStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PendingSendStore.swift; sourceTree = "<group>"; };
 		7706CFCC8974CFECA09912F7 /* EventVisual.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = EventVisual.swift; sourceTree = "<group>"; };
-		77CF1D6BB251C87ECF61B463 /* ClickTests.xctest */ = {isa = PBXFileReference; includeInIndex = 0; lastKnownFileType = wrapper.cfbundle; path = ClickTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
+		77CF1D6BB251C87ECF61B463 /* ClickTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = ClickTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 		7878BF7DD3F7FE11ED9C8866 /* MapFeatureModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MapFeatureModel.swift; sourceTree = "<group>"; };
 		78C43D61D08B8E0F50B37997 /* Phase3Repository.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Phase3Repository.swift; sourceTree = "<group>"; };
 		7932DD36D8B0EFAEF2B85379 /* AvatarUploadView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AvatarUploadView.swift; sourceTree = "<group>"; };
@@ -436,7 +436,7 @@
 		DFFB60FCF05BC5CD192D91F3 /* InboxFormatting.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = InboxFormatting.swift; sourceTree = "<group>"; };
 		E242ED11CC7420590A7C5777 /* ClickDropFilter.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ClickDropFilter.swift; sourceTree = "<group>"; };
 		E2EC3690E271F4DA7D73D18B /* AuthValidationTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AuthValidationTests.swift; sourceTree = "<group>"; };
-		E3B19D4621050199A97E10A9 /* Click.app */ = {isa = PBXFileReference; includeInIndex = 0; lastKnownFileType = wrapper.application; path = Click.app; sourceTree = BUILT_PRODUCTS_DIR; };
+		E3B19D4621050199A97E10A9 /* Click.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = Click.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		E667F8D1F4DAC876F8758433 /* EncounterContextRepository.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = EncounterContextRepository.swift; sourceTree = "<group>"; };
 		E6948B635825154782DB64D8 /* LegacyKMPStateMigrator.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LegacyKMPStateMigrator.swift; sourceTree = "<group>"; };
 		E976EF8A656006D5B73FFD10 /* ClickMapView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ClickMapView.swift; sourceTree = "<group>"; };
@@ -448,7 +448,7 @@
 		F63751F6535F913F9900FA93 /* ClickLog.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ClickLog.swift; sourceTree = "<group>"; };
 		F7C2A0E83548CF65E326CC1E /* ClickAPIClient.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ClickAPIClient.swift; sourceTree = "<group>"; };
 		F7E185BE4051D3D0888112E1 /* HomeFeedTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HomeFeedTests.swift; sourceTree = "<group>"; };
-		F8AF88527EA315B8FEEC3769 /* ClickClip.app */ = {isa = PBXFileReference; includeInIndex = 0; lastKnownFileType = wrapper.application; path = ClickClip.app; sourceTree = BUILT_PRODUCTS_DIR; };
+		F8AF88527EA315B8FEEC3769 /* ClickClip.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = ClickClip.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		F8B2A1B9A3CEE977F49608DC /* Manrope-ExtraBold.ttf */ = {isa = PBXFileReference; lastKnownFileType = file; path = "Manrope-ExtraBold.ttf"; sourceTree = "<group>"; };
 		F96A5E440B359E2A2F052A29 /* ChatView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ChatView.swift; sourceTree = "<group>"; };
 		F96CCA59CCC5C8B399A2E1C6 /* BeaconRepository.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BeaconRepository.swift; sourceTree = "<group>"; };
@@ -1218,7 +1218,7 @@
 			isa = PBXProject;
 			attributes = {
 				BuildIndependentTargetsInParallel = YES;
-				LastUpgradeCheck = 1600;
+				LastUpgradeCheck = 2700;
 				TargetAttributes = {
 					05BF3B1FC1A07DE75A181358 = {
 						DevelopmentTeam = W4C3V9Z2N4;
@@ -1549,6 +1549,7 @@
 				CLANG_WARN__DUPLICATE_METHOD_MATCH = YES;
 				COPY_PHASE_STRIP = NO;
 				DEBUG_INFORMATION_FORMAT = dwarf;
+				DEVELOPMENT_TEAM = W4C3V9Z2N4;
 				ENABLE_STRICT_OBJC_MSGSEND = YES;
 				ENABLE_TESTABILITY = YES;
 				GCC_C_LANGUAGE_STANDARD = gnu11;
@@ -1571,6 +1572,7 @@
 				ONLY_ACTIVE_ARCH = YES;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SDKROOT = iphoneos;
+				STRING_CATALOG_GENERATE_SYMBOLS = YES;
 				SWIFT_ACTIVE_COMPILATION_CONDITIONS = DEBUG;
 				SWIFT_OPTIMIZATION_LEVEL = "-Onone";
 				SWIFT_VERSION = 5.0;
@@ -1583,7 +1585,6 @@
 			buildSettings = {
 				CODE_SIGN_ENTITLEMENTS = Resources/ClickClip.entitlements;
 				CODE_SIGN_STYLE = Automatic;
-				DEVELOPMENT_TEAM = W4C3V9Z2N4;
 				INFOPLIST_FILE = ClickClip/Info.plist;
 				INFOPLIST_KEY_CFBundleDisplayName = Click;
 				LD_RUNPATH_SEARCH_PATHS = (
@@ -1603,7 +1604,6 @@
 			baseConfigurationReference = 5CE872BED60D02250BA16BD1 /* Debug.xcconfig */;
 			buildSettings = {
 				CODE_SIGN_STYLE = Automatic;
-				DEVELOPMENT_TEAM = W4C3V9Z2N4;
 				INFOPLIST_FILE = NotificationService/Info.plist;
 				INFOPLIST_KEY_CFBundleDisplayName = NotificationService;
 				LD_RUNPATH_SEARCH_PATHS = (
@@ -1628,7 +1628,6 @@
 				CODE_SIGN_ENTITLEMENTS = Resources/Click.entitlements;
 				CODE_SIGN_IDENTITY = "iPhone Developer";
 				CODE_SIGN_STYLE = Automatic;
-				DEVELOPMENT_TEAM = W4C3V9Z2N4;
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_FILE = Click/Info.plist;
 				INFOPLIST_KEY_CADisableMinimumFrameDurationOnPhone = YES;
@@ -1665,7 +1664,6 @@
 			buildSettings = {
 				BUNDLE_LOADER = "$(TEST_HOST)";
 				CODE_SIGN_STYLE = Automatic;
-				DEVELOPMENT_TEAM = W4C3V9Z2N4;
 				GENERATE_INFOPLIST_FILE = YES;
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",
@@ -1716,6 +1714,7 @@
 				CLANG_WARN__DUPLICATE_METHOD_MATCH = YES;
 				COPY_PHASE_STRIP = NO;
 				DEBUG_INFORMATION_FORMAT = "dwarf-with-dsym";
+				DEVELOPMENT_TEAM = W4C3V9Z2N4;
 				ENABLE_NS_ASSERTIONS = NO;
 				ENABLE_STRICT_OBJC_MSGSEND = YES;
 				GCC_C_LANGUAGE_STANDARD = gnu11;
@@ -1731,6 +1730,7 @@
 				MTL_FAST_MATH = YES;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SDKROOT = iphoneos;
+				STRING_CATALOG_GENERATE_SYMBOLS = YES;
 				SWIFT_COMPILATION_MODE = wholemodule;
 				SWIFT_OPTIMIZATION_LEVEL = "-O";
 				SWIFT_VERSION = 5.0;
@@ -1743,7 +1743,6 @@
 			buildSettings = {
 				BUNDLE_LOADER = "$(TEST_HOST)";
 				CODE_SIGN_STYLE = Automatic;
-				DEVELOPMENT_TEAM = W4C3V9Z2N4;
 				GENERATE_INFOPLIST_FILE = YES;
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",
@@ -1765,7 +1764,6 @@
 			buildSettings = {
 				CODE_SIGN_ENTITLEMENTS = Resources/ClickClip.entitlements;
 				CODE_SIGN_STYLE = Automatic;
-				DEVELOPMENT_TEAM = W4C3V9Z2N4;
 				INFOPLIST_FILE = ClickClip/Info.plist;
 				INFOPLIST_KEY_CFBundleDisplayName = Click;
 				LD_RUNPATH_SEARCH_PATHS = (
@@ -1785,7 +1783,6 @@
 			baseConfigurationReference = FC2D8FD2E9A926E650F8748C /* Release.xcconfig */;
 			buildSettings = {
 				CODE_SIGN_STYLE = Automatic;
-				DEVELOPMENT_TEAM = W4C3V9Z2N4;
 				INFOPLIST_FILE = NotificationService/Info.plist;
 				INFOPLIST_KEY_CFBundleDisplayName = NotificationService;
 				LD_RUNPATH_SEARCH_PATHS = (
@@ -1810,7 +1807,6 @@
 				CODE_SIGN_ENTITLEMENTS = Resources/Click.entitlements;
 				CODE_SIGN_IDENTITY = "iPhone Developer";
 				CODE_SIGN_STYLE = Automatic;
-				DEVELOPMENT_TEAM = W4C3V9Z2N4;
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_FILE = Click/Info.plist;
 				INFOPLIST_KEY_CADisableMinimumFrameDurationOnPhone = YES;
