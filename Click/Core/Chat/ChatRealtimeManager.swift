@@ -54,6 +54,8 @@ public enum RealtimeStream: Sendable {
     case hub
     /// Every `messages` row the viewer can read (RLS-scoped); drives inbox freshness.
     case inbox
+    /// `group_members` changes the viewer can see (joins, leaves, removals), RLS-scoped.
+    case groupMembers
 }
 
 /// Realtime coordinator for one active chat.
@@ -71,6 +73,8 @@ public final class ChatRealtimeManager {
     public var onMessageUpdated: (@Sendable (RealtimeMessagePayload) -> Void)?
     public var onMessageDeleted: (@Sendable (String) -> Void)?
     public var onTypingChanged: (@Sendable (Set<String>) -> Void)?
+    /// Any row change on a non-message stream (`groupMembers`).
+    public var onRowChanged: (@Sendable () -> Void)?
 
     private struct ConnectionContext {
         let chatID: String
@@ -193,6 +197,7 @@ public final class ChatRealtimeManager {
         case .chat: "realtime:chat:\(context.chatID)"
         case .hub: "realtime:hub:\(context.chatID)"
         case .inbox: "realtime:inbox:\(context.chatID)"
+        case .groupMembers: "realtime:group-members:\(context.chatID)"
         }
     }
 
@@ -204,6 +209,8 @@ public final class ChatRealtimeManager {
             ["event": "*", "schema": "public", "table": "hub_messages", "filter": "hub_id=eq.\(context.chatID)"]
         case .inbox:
             ["event": "INSERT", "schema": "public", "table": "messages"]
+        case .groupMembers:
+            ["event": "*", "schema": "public", "table": "group_members"]
         }
     }
 
@@ -299,6 +306,10 @@ public final class ChatRealtimeManager {
         record: [String: Any],
         oldRecord: [String: Any]
     ) {
+        if context?.stream == .groupMembers {
+            onRowChanged?()
+            return
+        }
         switch type {
         case "INSERT":
             onMessageInserted?(parseRecord(record))

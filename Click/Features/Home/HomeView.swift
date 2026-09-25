@@ -37,7 +37,14 @@ public struct HomeView: View {
                             Task { await model.resolveNudge(nudge, action: action) }
                         }
                     )
+                    .frame(minHeight: HomeFeedModel.opportunityPlaceholderHeight, alignment: .top)
                     .transition(.opacity)
+                } else if model.isOpportunityPending {
+                    // Reserved space: the card fades in without shifting the sections below.
+                    RoundedRectangle(cornerRadius: 18, style: .continuous)
+                        .fill(ClickColors.surface)
+                        .frame(height: HomeFeedModel.opportunityPlaceholderHeight)
+                        .accessibilityHidden(true)
                 }
                 recentPeopleSection(promoted: opportunity)
                 recapSection
@@ -48,7 +55,9 @@ public struct HomeView: View {
             .padding(.horizontal, ClickSpacing.screenGutter)
             .padding(.top, 4)
             .padding(.bottom, 32)
-            .animation(ClickMotion.subtleFade, value: opportunity?.id)
+            // Only the card appearing or leaving animates; swapping one opportunity for another
+            // updates in place instead of replaying every section's entrance.
+            .animation(ClickMotion.subtleFade, value: opportunity == nil)
         }
         .background(ClickColors.background.ignoresSafeArea())
         .refreshable {
@@ -89,6 +98,10 @@ public struct HomeView: View {
         .task {
             model.attach(env)
             await model.loadIfNeeded()
+        }
+        // Re-asks when the viewer's plans or their Clicks change.
+        .task(id: [model.intents.value?.map(\.id).joined() ?? "", String(conversations.active.count)]) {
+            await model.loadOverlaps(peerIDs: conversations.active.map(\.userID).filter { !$0.isEmpty })
         }
         .sheet(isPresented: $isSearching) {
             GlobalSearchView()
@@ -144,6 +157,27 @@ public struct HomeView: View {
 
     // MARK: - 2. Availability
 
+    /// Clicks who are free for the same thing or at the same time (`get_availability_overlaps`).
+    @ViewBuilder
+    private var overlapRow: some View {
+        let people = conversations.active.filter { model.overlappingPeerIDs.contains($0.userID) }
+        if let title = HomeFeedModel.overlapTitle(names: people.map { HomeFeedModel.firstName($0.displayName) ?? $0.displayName }) {
+            HomeRow(inset: 60) {
+                AvatarView(imageURL: people[0].avatarUrl, seed: people[0].userID, initials: people[0].initials, size: 28)
+            } content: {
+                Text(title)
+                    .font(ClickTypography.bodyEmphasized)
+                    .foregroundStyle(ClickColors.textPrimary)
+                    .lineLimit(1)
+                Text("Matching plans · say hi")
+                    .font(ClickTypography.supporting)
+                    .foregroundStyle(ClickColors.textTertiary)
+            }
+            .accessibilityElement(children: .combine)
+            HomeDivider(inset: 60)
+        }
+    }
+
     private var availabilitySection: some View {
         VStack(alignment: .leading, spacing: 7) {
             HomeCaption("I'm down for…")
@@ -170,6 +204,7 @@ public struct HomeView: View {
                         .buttonStyle(.plain)
                         HomeDivider(inset: 60)
                     }
+                    overlapRow
                 } else if model.intents.isPending {
                     HomeRow(inset: 60) {
                         ProgressView().frame(width: 28)

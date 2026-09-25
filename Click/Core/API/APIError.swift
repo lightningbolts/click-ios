@@ -48,3 +48,63 @@ public enum APIError: Error, LocalizedError, Equatable, Sendable {
         errorDescription ?? "An unexpected error occurred."
     }
 }
+
+/// One policy for URLSession transport failures, shared by the API client and Supabase Auth.
+///
+/// A failure while *establishing* the connection (TLS handshake, DNS, connect) means the request
+/// never reached the server, so it is safe to retry for any method. Those failures are common
+/// on real devices right after launch or a network hand-off (stale pooled connections), and
+/// must never read as "offline" when the device is online.
+enum Transport {
+    /// `code` on `APIError.server` for a connection that couldn't be established.
+    static let connectionFailedCode = "transport"
+
+    static func neverReachedServer(_ error: URLError) -> Bool {
+        switch error.code {
+        case .secureConnectionFailed, .cannotConnectToHost, .cannotFindHost, .dnsLookupFailed,
+             .notConnectedToInternet, .dataNotAllowed, .internationalRoamingOff, .callIsActive:
+            true
+        default:
+            false
+        }
+    }
+
+    static func isTransient(_ error: URLError) -> Bool {
+        neverReachedServer(error) || error.code == .timedOut || error.code == .networkConnectionLost
+    }
+
+    static func map(_ error: URLError) -> APIError {
+        switch error.code {
+        case .notConnectedToInternet, .dataNotAllowed, .internationalRoamingOff: .offline
+        case .timedOut: .timeout
+        case .cancelled: .cancelled
+        case .networkConnectionLost, .secureConnectionFailed, .cannotConnectToHost, .cannotFindHost, .dnsLookupFailed, .callIsActive:
+            .server(status: error.errorCode, code: connectionFailedCode, message: "Couldn't reach Click. Try again.")
+        default:
+            .server(status: error.errorCode, code: nil, message: error.localizedDescription)
+        }
+    }
+
+    /// Runs `operation`, retrying up to twice (250 ms, then 700 ms) when it is safe: always for
+    /// connection-establishment failures, and for timeouts/dropped connections only when
+    /// `idempotent`. Throws the mapped `APIError`.
+    static func withRetry<T: Sendable>(idempotent: Bool, _ operation: () async throws -> T) async throws -> T {
+        var attempt = 0
+        while true {
+            do {
+                return try await operation()
+            } catch let error as URLError {
+                let retryable = neverReachedServer(error) || (idempotent && isTransient(error))
+                guard retryable, attempt < 2, error.code != .cancelled else { throw map(error) }
+                attempt += 1
+                do {
+                    try await Task.sleep(for: .milliseconds(attempt == 1 ? 250 : 700))
+                } catch {
+                    throw APIError.cancelled
+                }
+            } catch is CancellationError {
+                throw APIError.cancelled
+            }
+        }
+    }
+}

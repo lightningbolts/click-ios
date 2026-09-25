@@ -317,6 +317,7 @@ struct GlobalSearchView: View {
     }
 
     private func openMessage(_ hit: MessageHit) {
+        env.pendingMessageFocus = MessageFocus(conversationIDs: [hit.chatID, hit.connectionID, hit.hubID], messageID: hit.messageID)
         if hit.isHub, let hubID = hit.hubID {
             open(.hub(hubID: hubID))
         } else if let group = conversations.groups.first(where: { $0.chatID == hit.chatID }) {

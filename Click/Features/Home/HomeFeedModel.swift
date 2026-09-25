@@ -153,6 +153,15 @@ final class HomeFeedModel {
         )
     }
 
+    /// True until every source of the opportunity card has answered once (cache counts), so
+    /// Home can hold the card's space instead of pushing everything down when it lands.
+    var isOpportunityPending: Bool {
+        savedEvents.isPending || discovery.isPending || nudges.isPending
+    }
+
+    /// Height held for the opportunity card while its sources load.
+    nonisolated static let opportunityPlaceholderHeight: CGFloat = 132
+
     /// Saved events that are still upcoming/live, soonest first, excluding the promoted event.
     func upcomingSaved(excluding promotedID: String?, now: Date = .now) -> [SavedEvent] {
         (savedEvents.value ?? [])
@@ -197,6 +206,30 @@ final class HomeFeedModel {
 
     func reloadIntents() async {
         await loadIntents()
+    }
+
+    /// Clicks whose live availability overlaps the viewer's (empty until the viewer shares one).
+    private(set) var overlappingPeerIDs: Set<String> = []
+
+    func loadOverlaps(peerIDs: [String]) async {
+        guard let environment, !(intents.value ?? []).isEmpty else {
+            overlappingPeerIDs = []
+            return
+        }
+        // Best effort: a failed lookup keeps the last answer rather than flashing the card away.
+        if let overlaps = try? await environment.me.availabilityOverlaps(peerIDs: peerIDs) {
+            overlappingPeerIDs = overlaps
+        }
+    }
+
+    /// "Lena is also free", "Lena and Sam are also free", "3 Clicks are also free".
+    nonisolated static func overlapTitle(names: [String]) -> String? {
+        switch names.count {
+        case 0: nil
+        case 1: "\(names[0]) is also free"
+        case 2: "\(names[0]) and \(names[1]) are also free"
+        default: "\(names.count) Clicks are also free"
+        }
     }
 
     /// Hides a nudge immediately and records the outcome; a failed dismissal restores it.

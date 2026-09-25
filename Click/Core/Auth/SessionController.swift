@@ -1,5 +1,6 @@
 import Foundation
 import Observation
+import UIKit
 
 /// Snapshot of an active authenticated session.
 public struct SessionSnapshot: Equatable, Sendable, Codable {
@@ -36,6 +37,18 @@ public protocol SessionControlling: AnyObject {
 
 /// Represents the high-level authentication lifecycle of the client.
 public enum SessionState: Equatable, Sendable {
+    /// Which root screen the state shows; token refreshes don't change it.
+    public enum Phase: Equatable, Sendable { case launching, signedOut, profileBasics, signedIn }
+
+    public var phase: Phase {
+        switch self {
+        case .restoring: .launching
+        case .unauthenticated, .terminalError: .signedOut
+        case .profileBasicsRequired: .profileBasics
+        case .authenticated, .refreshing, .offlineAuthenticated: .signedIn
+        }
+    }
+
     case restoring
     case unauthenticated
     case profileBasicsRequired(userId: String)
@@ -49,7 +62,25 @@ public enum SessionState: Equatable, Sendable {
 @Observable
 @MainActor
 public final class SessionController: SessionControlling {
-    public private(set) var state: SessionState = .restoring
+    public private(set) var state: SessionState = .restoring {
+        didSet {
+            #if DEBUG
+            if oldValue != state { print("[auth] \(Self.label(oldValue)) → \(Self.label(state))") }
+            #endif
+        }
+    }
+
+    nonisolated static func label(_ state: SessionState) -> String {
+        switch state {
+        case .restoring: "restoring"
+        case .unauthenticated: "unauthenticated"
+        case .profileBasicsRequired: "profileBasicsRequired"
+        case .authenticated(let s): "authenticated(exp \(s.expiresAt.map { Int($0.timeIntervalSinceNow) } ?? -1)s)"
+        case .refreshing: "refreshing"
+        case .offlineAuthenticated: "offlineAuthenticated"
+        case .terminalError(let m): "terminalError(\(m))"
+        }
+    }
 
     private let migrator: LegacyKMPStateMigrator
     private let vault: KeychainSessionVault
@@ -58,6 +89,16 @@ public final class SessionController: SessionControlling {
     /// The authenticated bearer session remains available while a blocking gate is visible.
     /// UI state must not destroy the credentials required to complete that gate.
     private var retainedSession: SessionSnapshot?
+
+    /// The profile body the gate just read, so onboarding resolution doesn't fetch it again.
+    private var recentProfile: (userId: String, data: Data, at: Date)?
+
+    /// The gate's profile response for `userId` if it is under 10 seconds old (consumed once).
+    public func takeRecentProfile(for userId: String) -> Data? {
+        defer { recentProfile = nil }
+        guard let recentProfile, recentProfile.userId == userId, Date().timeIntervalSince(recentProfile.at) < 10 else { return nil }
+        return recentProfile.data
+    }
 
     public var apiClient: ClickAPIClient?
     public var settingsStore: SettingsStore?
@@ -101,11 +142,19 @@ public final class SessionController: SessionControlling {
             migrator.performFullMigration(settings: settings, vault: vault)
         }
 
-        // 1. Check native Keychain vault first
-        if let current = vault.readSession() {
+        // 1. Check native Keychain vault first. A locked device (background launch before
+        // first unlock) is not "signed out": wait for protected data and read again.
+        switch vault.read() {
+        case .found(let current):
             retainedSession = current
             await evaluateAndAdmitSession(current)
             return
+        case .unavailable:
+            await Self.waitForProtectedData()
+            await restoreSession()
+            return
+        case .notFound:
+            break
         }
 
         // 2. Attempt legacy KMP migration if available
@@ -190,6 +239,16 @@ public final class SessionController: SessionControlling {
         }
     }
 
+    private static func waitForProtectedData() async {
+        guard !UIApplication.shared.isProtectedDataAvailable else {
+            try? await Task.sleep(for: .milliseconds(300))
+            return
+        }
+        for await _ in NotificationCenter.default.notifications(named: UIApplication.protectedDataDidBecomeAvailableNotification) {
+            return
+        }
+    }
+
     /// Resolves profile completion requirements from server truth.
     public func resolveProfileGate(for userId: String) async {
         guard let api = apiClient else {
@@ -216,7 +275,9 @@ public final class SessionController: SessionControlling {
 
         do {
             let request = APIRequest(path: "/api/users/\(userId)/profile", method: .get, requiresAuth: true)
-            let res: ProfileGateResponse = try await api.execute(request)
+            let (data, _) = try await api.executeRaw(request)
+            recentProfile = (userId, data, .now)
+            guard let res = try? JSONDecoder().decode(ProfileGateResponse.self, from: data) else { throw APIError.decoding }
 
             let firstName = res.user?.firstName?.trimmingCharacters(in: .whitespacesAndNewlines)
             let lastName = res.user?.lastName?.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -462,6 +523,15 @@ public final class SessionController: SessionControlling {
                     self.state = .offlineAuthenticated(current)
                 }
             case .unauthorized, .forbidden, .validation:
+                // The token we sent may already have been rotated and saved by an earlier
+                // refresh (e.g. one that finished just before the app was suspended). Adopt the
+                // stored session instead of signing out.
+                if let stored = self.vault.readSession(), stored.refreshToken != current.refreshToken {
+                    self.retainedSession = stored
+                    self.state = wasProfileGated ? .profileBasicsRequired(userId: stored.userId)
+                        : wasResolvingProfile ? .restoring : .authenticated(stored)
+                    return stored
+                }
                 self.vault.deleteSession()
                 self.migrator.deleteLegacySession()
                 self.retainedSession = nil

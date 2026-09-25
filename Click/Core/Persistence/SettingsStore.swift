@@ -1,5 +1,6 @@
 import Foundation
 import Observation
+import SwiftUI
 
 /// Accesses and manages user preferences stored in the `click_auth_prefs` suite.
 @Observable
@@ -14,6 +15,7 @@ public final class SettingsStore {
         static let freeThisWeek = "free_this_week"
         static let tagsInitialized = "tags_initialized"
         static let darkModeEnabled = "dark_mode_enabled"
+        static let appearance = "appearance_mode"
         static let messageNotificationsEnabled = "message_notifications_enabled"
         static let ambientNoiseOptIn = "ambient_noise_opt_in"
         static let barometricContextOptIn = "barometric_context_opt_in"
@@ -27,7 +29,10 @@ public final class SettingsStore {
         let defaults = UserDefaults(suiteName: suiteName) ?? .standard
         self.defaults = defaults
         self.freeThisWeek = defaults.bool(forKey: Key.freeThisWeek)
-        self.darkModeEnabled = defaults.bool(forKey: Key.darkModeEnabled)
+        self.appearance = Self.storedAppearance(
+            mode: defaults.string(forKey: Key.appearance),
+            legacyDarkMode: defaults.object(forKey: Key.darkModeEnabled) as? Bool
+        )
         self.messageNotificationsEnabled = defaults.object(forKey: Key.messageNotificationsEnabled) as? Bool ?? true
         self.ambientNoiseOptIn = defaults.bool(forKey: Key.ambientNoiseOptIn)
         self.barometricContextOptIn = defaults.bool(forKey: Key.barometricContextOptIn)
@@ -42,8 +47,29 @@ public final class SettingsStore {
         didSet { defaults.set(freeThisWeek, forKey: Key.freeThisWeek) }
     }
 
-    public var darkModeEnabled: Bool {
-        didSet { defaults.set(darkModeEnabled, forKey: Key.darkModeEnabled) }
+    /// System / Light / Dark. The legacy KMP `dark_mode_enabled` flag is kept in step.
+    public var appearance: Appearance {
+        didSet {
+            defaults.set(appearance.rawValue, forKey: Key.appearance)
+            defaults.set(appearance == .dark, forKey: Key.darkModeEnabled)
+        }
+    }
+
+    public enum Appearance: String, CaseIterable, Identifiable, Sendable {
+        case system, light, dark
+        public var id: String { rawValue }
+        public var label: String { rawValue.capitalized }
+    }
+
+    /// A saved mode wins; otherwise an explicit legacy toggle maps to Dark/Light, and a user
+    /// who never chose follows the system.
+    nonisolated static func storedAppearance(mode: String?, legacyDarkMode: Bool?) -> Appearance {
+        if let mode, let saved = Appearance(rawValue: mode) { return saved }
+        switch legacyDarkMode {
+        case true?: return .dark
+        case false?: return .light
+        case nil: return .system
+        }
     }
 
     public var messageNotificationsEnabled: Bool {
@@ -108,5 +134,16 @@ public final class SettingsStore {
     public func resetSessionScopedData() {
         defaults.removeObject(forKey: Key.onboardingState)
         defaults.removeObject(forKey: Key.hasCompletedOnboarding)
+    }
+}
+
+extension SettingsStore.Appearance {
+    /// nil follows the system.
+    var colorScheme: ColorScheme? {
+        switch self {
+        case .system: nil
+        case .light: .light
+        case .dark: .dark
+        }
     }
 }

@@ -1,7 +1,7 @@
 import Foundation
 
 /// Opt-in sensor context stored with an encounter (KMP `ConnectionSensorContext` keys).
-public struct EncounterSensorContext: Equatable, Sendable {
+public struct EncounterSensorContext: Codable, Equatable, Sendable {
     public var noiseLevel: String?
     public var noiseDecibels: Double?
     public var elevationCategory: String?

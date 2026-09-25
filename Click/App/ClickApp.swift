@@ -24,7 +24,7 @@ struct ClickApp: App {
                 .environment(environment)
                 // Preserve the existing Click appearance preference across the KMP -> native
                 // in-place upgrade instead of silently falling back to the simulator/system theme.
-                .preferredColorScheme(environment.settings.darkModeEnabled ? .dark : .light)
+                .preferredColorScheme(environment.settings.appearance.colorScheme)
                 .task {
                     if DebugLaunch.has("-preview-profile-basics") {
                         environment.session.requireProfileBasics(userId: "usr_preview_99")
@@ -146,6 +146,8 @@ final class ClickNotificationCoordinator {
     private let tokenVault = PushTokenVault()
     private let installIDKey = "click.standard_apns.install_id"
     private var lastObservedUserID: String?
+    private var uploadedTokenKey: String?
+    private var uploadingTokenKey: String?
 
     private init() {}
 
@@ -227,6 +229,11 @@ final class ClickNotificationCoordinator {
            pendingScope != session.userId {
             return
         }
+        // Several launch triggers flush at once; one upload per user/token per launch is enough.
+        let key = session.userId + "|" + token
+        guard uploadedTokenKey != key, uploadingTokenKey != key else { return }
+        uploadingTokenKey = key
+        defer { uploadingTokenKey = nil }
 
         let body: [String: Any] = [
             "token": token,
@@ -247,50 +254,63 @@ final class ClickNotificationCoordinator {
                 requiresAuth: true
             )
             _ = try await environment.api.executeRaw(request)
+            uploadedTokenKey = key
             tokenVault.writeUserScope(session.userId)
         } catch {
             // Keep the token securely queued. The next session/foreground registration retries it.
         }
     }
 
+    /// What a notification tap should open, decided from the payload alone (unit-tested per `type`).
+    enum TapRoute: Equatable {
+        /// A direct chat; resolved against the cached inbox so the header has real identity.
+        case chat(chatID: String?, connectionID: String?, senderUserID: String?, senderName: String?)
+        case route(AppRoute)
+        /// Clicks root (unknown identity, availability matches).
+        case connections
+        /// Unknown future categories keep the current app state.
+        case none
+    }
+
+    nonisolated static func tapRoute(for payload: [String: String]) -> TapRoute {
+        let value = { (keys: [String]) in firstValue(payload, keys: keys) }
+        switch payload["type"] ?? payload["category"] ?? "" {
+        case "chat_message", "new_message", "disposable_reveal":
+            return .chat(chatID: value(["chat_id", "chatId"]), connectionID: value(["connection_id", "connectionId"]),
+                         senderUserID: value(["sender_user_id", "user_id", "peer_user_id"]),
+                         senderName: value(["sender_name", "peer_name", "title"]))
+        case "event_reminder", "event_teaser", "shared_upcoming_event":
+            return value(["beacon_id", "event_id"]).map { .route(.event(beaconID: $0)) } ?? .none
+        case "hub_message":
+            return value(["hub_id", "venue_id"]).map { .route(.hub(hubID: $0)) } ?? .none
+        case "archive_warning", "reconnect_nudge":
+            guard let userID = value(["user_id", "peer_user_id", "sender_user_id"]) else { return .connections }
+            return .route(.userProfile(userID: userID, connectionID: value(["connection_id", "connectionId"])))
+        case "availability_match":
+            return .connections
+        default:
+            return .none
+        }
+    }
+
     func handleNotificationTap(_ payload: [String: String]) async {
         guard let environment else { return }
-
-        let type = payload["type"] ?? payload["category"] ?? ""
-        switch type {
-        case "chat_message", "new_message":
-            await routeChat(payload, environment: environment)
-
-        case "event_reminder", "event_teaser", "shared_upcoming_event":
-            if let beaconID = firstValue(payload, keys: ["beacon_id", "event_id"]), !beaconID.isEmpty {
-                environment.handleIncomingRoute(.event(beaconID: beaconID))
-            }
-
-        case "hub_message":
-            if let hubID = firstValue(payload, keys: ["hub_id", "venue_id"]), !hubID.isEmpty {
-                environment.handleIncomingRoute(.hub(hubID: hubID))
-            }
-
-        case "archive_warning", "reconnect_nudge":
-            await routeConnectionContext(payload, environment: environment)
-
-        case "disposable_reveal":
-            await routeChat(payload, environment: environment)
-
-        case "availability_match":
+        switch Self.tapRoute(for: payload) {
+        case let .chat(chatID, connectionID, senderUserID, senderName):
+            await routeChat(chatID: chatID, connectionID: connectionID, senderUserID: senderUserID,
+                            senderName: senderName, environment: environment)
+        case .route(let route):
+            environment.handleIncomingRoute(route)
+        case .connections:
             environment.router.selectedTab = .connections
             environment.router.connectionsPath.removeAll()
-
-        default:
-            // Unknown future categories intentionally fall back to the current/root app state.
+        case .none:
             break
         }
     }
 
-    private func routeChat(_ payload: [String: String], environment: AppEnvironment) async {
-        let chatID = firstValue(payload, keys: ["chat_id", "chatId"])
-        let connectionID = firstValue(payload, keys: ["connection_id", "connectionId"])
-        let senderUserID = firstValue(payload, keys: ["sender_user_id", "user_id", "peer_user_id"])
+    private func routeChat(chatID: String?, connectionID: String?, senderUserID: String?, senderName: String?,
+                           environment: AppEnvironment) async {
 
         if let connectionID,
            let currentUserID = environment.session.currentSession?.userId {
@@ -325,9 +345,7 @@ final class ClickNotificationCoordinator {
            let senderUserID,
            !chatID.isEmpty,
            !senderUserID.isEmpty {
-            let displayName =
-                firstValue(payload, keys: ["sender_name", "peer_name", "title"])
-                ?? "Click"
+            let displayName = senderName ?? "Click"
 
             environment.handleIncomingRoute(
                 .chat(
@@ -348,24 +366,7 @@ final class ClickNotificationCoordinator {
         environment.router.connectionsPath.removeAll()
     }
 
-    private func routeConnectionContext(
-        _ payload: [String: String],
-        environment: AppEnvironment
-    ) async {
-        let connectionID = firstValue(payload, keys: ["connection_id", "connectionId"])
-        let userID = firstValue(payload, keys: ["user_id", "peer_user_id", "sender_user_id"])
-
-        if let userID, !userID.isEmpty {
-            environment.handleIncomingRoute(
-                .userProfile(userID: userID, connectionID: connectionID)
-            )
-        } else {
-            environment.router.selectedTab = .connections
-            environment.router.connectionsPath.removeAll()
-        }
-    }
-
-    private func firstValue(_ payload: [String: String], keys: [String]) -> String? {
+    nonisolated private static func firstValue(_ payload: [String: String], keys: [String]) -> String? {
         for key in keys {
             if let value = payload[key]?.trimmingCharacters(in: .whitespacesAndNewlines),
                !value.isEmpty {

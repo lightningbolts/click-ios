@@ -29,8 +29,6 @@ struct NearbySheet: View {
         }
     }
 
-    private var cornerRadius: CGFloat { model.sheetDetent == .lip ? 30 : 38 }
-
     private var baseHeight: CGFloat { Self.height(for: model.sheetDetent, available: availableHeight) }
 
     /// Content fades in over the first 60 pt above the lip instead of mounting mid-drag.
@@ -48,29 +46,28 @@ struct NearbySheet: View {
     var body: some View {
         let maxHeight = Self.height(for: .expanded, available: availableHeight)
         let height = min(max(liveHeight ?? baseHeight, Self.lipHeight), maxHeight)
+        // The card is always laid out at full height and only *moved* (offset) — a transform,
+        // not a relayout — so dragging and snapping never re-measure the list, material or
+        // shadow. The host clips it at the map's bottom edge.
         VStack(spacing: 0) {
             header
-            // Always mounted: clipped by the frame and faded by height, so dragging up from
-            // the lip reveals real content instead of an empty card.
             content
                 .opacity(Self.contentOpacity(height: height))
                 .allowsHitTesting(model.sheetDetent != .lip && liveHeight == nil)
                 .accessibilityHidden(model.sheetDetent == .lip)
         }
         .frame(maxWidth: .infinity)
-        .frame(height: height, alignment: .top)
-        // Every detent is a floating, fully rounded card (visual system: 38 pt sheet radius,
-        // inset from the edges) so the expanded state never ends in a hard straight edge.
-        .background(.regularMaterial, in: RoundedRectangle(cornerRadius: cornerRadius, style: .continuous))
-        .clipShape(RoundedRectangle(cornerRadius: cornerRadius, style: .continuous))
+        .frame(height: maxHeight, alignment: .top)
+        .background(.regularMaterial, in: UnevenRoundedRectangle(topLeadingRadius: 30, topTrailingRadius: 30, style: .continuous))
+        .clipShape(UnevenRoundedRectangle(topLeadingRadius: 30, topTrailingRadius: 30, style: .continuous))
         .overlay(
-            RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
+            UnevenRoundedRectangle(topLeadingRadius: 30, topTrailingRadius: 30, style: .continuous)
                 .stroke(Color.white.opacity(0.08), lineWidth: 0.5)
         )
         .shadow(color: .black.opacity(0.22), radius: 18, y: 4)
         .padding(.horizontal, 8)
-        .padding(.bottom, 8)
-        .animation(liveHeight == nil && !reduceMotion ? .spring(response: 0.5, dampingFraction: 0.85) : nil, value: model.sheetDetent)
+        .offset(y: maxHeight - height)
+        .animation(liveHeight == nil && !reduceMotion ? .spring(response: 0.45, dampingFraction: 0.86) : nil, value: model.sheetDetent)
         .onChange(of: model.sheetDetent) { _, detent in
             // Tab bar and floating map controls change only once the snap has finished.
             Task {
@@ -124,7 +121,8 @@ struct NearbySheet: View {
             model.sheetDetent = model.sheetDetent == .lip ? .medium : .lip
         }
         .gesture(
-            DragGesture(minimumDistance: 6)
+            // Global space: the header moves with the card, so local translation would feed back.
+            DragGesture(minimumDistance: 6, coordinateSpace: .global)
                 .onChanged { value in
                     var transaction = Transaction(animation: nil)
                     transaction.disablesAnimations = true
@@ -235,6 +233,8 @@ struct NearbySheet: View {
     @ViewBuilder
     private var list: some View {
         let sections = model.sections(pins: pins)
+        // The part of the full-height card hidden below the edge at the current detent.
+        let hidden = Self.height(for: .expanded, available: availableHeight) - baseHeight
         ScrollView {
             LazyVStack(alignment: .leading, spacing: 20) {
                 if sections.isEmpty {
@@ -265,6 +265,7 @@ struct NearbySheet: View {
             .padding(.horizontal, ClickSpacing.screenGutter)
             .padding(.bottom, 40)
         }
+        .contentMargins(.bottom, max(0, hidden), for: .scrollContent)
         .scrollDismissesKeyboard(.interactively)
     }
 

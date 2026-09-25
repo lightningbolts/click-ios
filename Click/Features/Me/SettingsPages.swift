@@ -30,7 +30,6 @@ struct AlertsSettingsView: View {
     @State private var pendingKey: NotificationPreferences.Key?
     @State private var systemStatus: PermissionStatus?
     @State private var errorMessage: String?
-    @State private var microphoneDenied = false
 
     var body: some View {
         Form {
@@ -66,27 +65,6 @@ struct AlertsSettingsView: View {
                     Text(errorMessage).foregroundStyle(ClickColors.destructive)
                 } else {
                     Text("These are saved to your account and control what Click sends to all your devices.")
-                }
-            }
-
-            Section {
-                Toggle(isOn: Binding(
-                    get: { env.settings.ambientNoiseOptIn },
-                    set: { value in Task { await setAmbient(value) } }
-                )) {
-                    VStack(alignment: .leading, spacing: 2) {
-                        Text("Ambient sound enrichment")
-                        Text("Adds a noise-level label to new encounters. Nothing is recorded or stored.")
-                            .font(ClickTypography.metadata)
-                            .foregroundStyle(ClickColors.textTertiary)
-                    }
-                }
-            } header: {
-                Text("Encounter context")
-            } footer: {
-                if microphoneDenied {
-                    Button("Microphone access is off. Open Settings") { env.permissions.openSystemSettings() }
-                        .font(ClickTypography.metadata)
                 }
             }
         }
@@ -148,21 +126,6 @@ struct AlertsSettingsView: View {
             errorMessage = "\(key.title) wasn't changed. \(error.userFacingMessage)"
         }
     }
-
-    private func setAmbient(_ enabled: Bool) async {
-        microphoneDenied = false
-        guard enabled else {
-            env.settings.ambientNoiseOptIn = false
-            return
-        }
-        let status = env.permissions.status(for: .microphone)
-        let resolved = status == .notDetermined ? await env.permissions.requestPermission(for: .microphone) : status
-        if resolved == .authorized {
-            env.settings.ambientNoiseOptIn = true
-        } else {
-            microphoneDenied = true
-        }
-    }
 }
 
 // MARK: - Privacy & data
@@ -175,6 +138,7 @@ struct PrivacySettingsView: View {
     @State private var isSaving = false
     @State private var errorMessage: String?
     @State private var locationHint: String?
+    @State private var microphoneDenied = false
 
     var body: some View {
         @Bindable var settings = env.settings
@@ -202,11 +166,32 @@ struct PrivacySettingsView: View {
             }
 
             Section {
-                Toggle("Barometric context", isOn: $settings.barometricContextOptIn)
+                Toggle(isOn: Binding(
+                    get: { env.settings.ambientNoiseOptIn },
+                    set: { value in Task { await setAmbient(value) } }
+                )) {
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text("Ambient sound")
+                        Text("Adds a noise-level label to new encounters. Nothing is recorded or stored.")
+                            .font(ClickTypography.metadata)
+                            .foregroundStyle(ClickColors.textTertiary)
+                    }
+                }
+                Toggle(isOn: $settings.barometricContextOptIn) {
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text("Barometric context")
+                        Text("Adds an elevation label to new encounters using this iPhone's barometer.")
+                            .font(ClickTypography.metadata)
+                            .foregroundStyle(ClickColors.textTertiary)
+                    }
+                }
             } header: {
                 Text("Encounter context")
             } footer: {
-                Text("Adds an elevation label to new encounters using this iPhone's barometer.")
+                if microphoneDenied {
+                    Button("Microphone access is off. Open Settings") { env.permissions.openSystemSettings() }
+                        .font(ClickTypography.metadata)
+                }
             }
 
             Section {
@@ -247,6 +232,21 @@ struct PrivacySettingsView: View {
         .disabled(isSaving)
     }
 
+    private func setAmbient(_ enabled: Bool) async {
+        microphoneDenied = false
+        guard enabled else {
+            env.settings.ambientNoiseOptIn = false
+            return
+        }
+        let status = env.permissions.status(for: .microphone)
+        let resolved = status == .notDetermined ? await env.permissions.requestPermission(for: .microphone) : status
+        if resolved == .authorized {
+            env.settings.ambientNoiseOptIn = true
+        } else {
+            microphoneDenied = true
+        }
+    }
+
     private func load() async {
         guard let userID = env.session.currentSession?.userId else { return }
         privacy.begin()
@@ -283,6 +283,7 @@ struct PrivacySettingsView: View {
 /// People the user blocked (`GET /api/safety/block`), with Unblock. Names come from the shared
 /// identity cache; a failed load is shown as a failure, never as an empty list.
 struct BlockedUsersView: View {
+    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
     @Environment(AppEnvironment.self) private var env
 
     @State private var blocked = ModuleState<[BlockedUser]>()
@@ -319,7 +320,10 @@ struct BlockedUsersView: View {
 
     private func row(_ item: BlockedUser) -> some View {
         let identity = names[item.userID]
-        return HStack(spacing: 12) {
+        // Accessibility text sizes stack the Unblock button under the name instead of squeezing it.
+        let layout = dynamicTypeSize.isAccessibilitySize
+            ? AnyLayout(VStackLayout(alignment: .leading, spacing: 8)) : AnyLayout(HStackLayout(spacing: 12))
+        return layout {
             AvatarView(imageURL: identity?.avatarURL, seed: item.userID, initials: String((identity?.name ?? "?").prefix(1)), size: 36)
             VStack(alignment: .leading, spacing: 2) {
                 Text(identity?.name ?? "Click user")
@@ -334,6 +338,7 @@ struct BlockedUsersView: View {
             Button("Unblock") { Task { await unblock(item) } }
                 .buttonStyle(.bordered)
                 .disabled(unblocking.contains(item.userID))
+                .accessibilityLabel("Unblock \(identity?.name ?? "this person")")
         }
     }
 
@@ -526,7 +531,7 @@ struct SelfProfileLoadingView: View {
     var body: some View {
         if let message = state.errorMessage {
             ContentUnavailableView {
-                Label("Couldn't load your profile", systemImage: "wifi.exclamationmark")
+                Label("Couldn't load your profile", systemImage: "exclamationmark.arrow.circlepath")
             } description: {
                 Text(message)
             } actions: {

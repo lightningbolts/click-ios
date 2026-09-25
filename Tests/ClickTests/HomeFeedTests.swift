@@ -218,3 +218,21 @@ struct MapPinTests {
         #expect(coordinate?.longitude == 2.5)
     }
 }
+
+@Suite("Availability overlaps")
+struct AvailabilityOverlapTests {
+    @Test("Only peers flagged has_overlap are kept")
+    func parse() {
+        let data = Data(#"[{"peer_id":"a","has_overlap":true},{"peer_id":"b","has_overlap":false},{"peer_id":"c"}]"#.utf8)
+        #expect(MeRepository.overlappingPeers(data) == ["a"])
+        #expect(MeRepository.overlappingPeers(Data("oops".utf8)).isEmpty)
+    }
+
+    @Test("Card title by count")
+    func title() {
+        #expect(HomeFeedModel.overlapTitle(names: []) == nil)
+        #expect(HomeFeedModel.overlapTitle(names: ["Lena"]) == "Lena is also free")
+        #expect(HomeFeedModel.overlapTitle(names: ["Lena", "Sam"]) == "Lena and Sam are also free")
+        #expect(HomeFeedModel.overlapTitle(names: ["A", "B", "C"]) == "3 Clicks are also free")
+    }
+}

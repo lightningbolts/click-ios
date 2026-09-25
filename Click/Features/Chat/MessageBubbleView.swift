@@ -20,16 +20,18 @@ public struct MessageBubbleView: View {
     let onOpenBeacon: ((SharedBeacon) -> Void)?
     /// Removes a failed outgoing row (✕ on a failed attachment).
     var onDiscardFailed: ((ChatMessageItem) -> Void)?
+    /// Forward, save/share and "who reacted"; nil hides the matching menu item.
+    var onForward: ((ChatMessageItem) -> Void)?
+    var onSaveMedia: ((ChatMessageItem) -> Void)?
+    var onShowReactions: ((ChatMessageItem, String) -> Void)?
+    var onMoreReactions: ((ChatMessageItem) -> Void)?
+    /// The message this one replies to (for its thumbnail) and a tap on the quote.
+    var replyTarget: ChatMessageItem?
+    var onTapReplyQuote: ((String) -> Void)?
 
+    @State private var confirmingDelete = false
     @State private var dragOffset: CGFloat = 0
-    @State private var dragIntent: DragIntent = .undecided
     @State private var hasTriggeredReplyHaptic = false
-
-    private enum DragIntent {
-        case undecided
-        case horizontal
-        case vertical
-    }
 
     private let quickEmojis = ["👍", "❤️", "😂", "😮", "😢", "😡"]
 
@@ -45,8 +47,20 @@ public struct MessageBubbleView: View {
         mediaLoader: ((ChatMessageItem) async throws -> URL)? = nil,
         onOpenMedia: ((URL, MessageMedia.Kind) -> Void)? = nil,
         onOpenBeacon: ((SharedBeacon) -> Void)? = nil,
-        onDiscardFailed: ((ChatMessageItem) -> Void)? = nil
+        onDiscardFailed: ((ChatMessageItem) -> Void)? = nil,
+        onForward: ((ChatMessageItem) -> Void)? = nil,
+        onSaveMedia: ((ChatMessageItem) -> Void)? = nil,
+        onShowReactions: ((ChatMessageItem, String) -> Void)? = nil,
+        replyTarget: ChatMessageItem? = nil,
+        onTapReplyQuote: ((String) -> Void)? = nil,
+        onMoreReactions: ((ChatMessageItem) -> Void)? = nil
     ) {
+        self.onMoreReactions = onMoreReactions
+        self.replyTarget = replyTarget
+        self.onTapReplyQuote = onTapReplyQuote
+        self.onForward = onForward
+        self.onSaveMedia = onSaveMedia
+        self.onShowReactions = onShowReactions
         self.onDiscardFailed = onDiscardFailed
         self.onOpenBeacon = onOpenBeacon
         self.mediaLoader = mediaLoader
@@ -107,9 +121,10 @@ public struct MessageBubbleView: View {
                     .offset(x: dragOffset)
                     .overlay(alignment: message.isOutgoing ? .trailing : .leading) { replyHint }
                     // A voice note's seek slider must win over swipe-to-reply (spec §37.6).
-                    .simultaneousGesture(replyGesture, including: message.media?.kind == .audio ? .subviews : .all)
+                    .gesture(HorizontalSwipeGesture(isEnabled: message.media?.kind != .audio, onChanged: swipeChanged, onEnded: swipeEnded))
                     .contextMenu {
-                        Section {
+                        // One horizontal reaction row, separate from the actions below.
+                        ControlGroup {
                             ForEach(quickEmojis, id: \.self) { emoji in
                                 Button {
                                     ClickHaptics.impact(.light)
@@ -118,7 +133,13 @@ public struct MessageBubbleView: View {
                                     Text(emoji)
                                 }
                             }
+                            if let onMoreReactions {
+                                Button { onMoreReactions(message) } label: {
+                                    Label("More reactions", systemImage: "plus")
+                                }
+                            }
                         }
+                        .controlGroupStyle(.palette)
 
                         Button {
                             ClickHaptics.impact(.medium)
@@ -136,6 +157,20 @@ public struct MessageBubbleView: View {
                             }
                         }
 
+                        if let onForward {
+                            Button { onForward(message) } label: {
+                                Label("Forward", systemImage: "arrowshape.turn.up.right")
+                            }
+                        }
+
+                        if let onSaveMedia, let media = message.media, !media.isLocked() {
+                            Button { onSaveMedia(message) } label: {
+                                media.kind == .image
+                                    ? Label("Save to Photos", systemImage: "square.and.arrow.down")
+                                    : Label("Share…", systemImage: "square.and.arrow.up")
+                            }
+                        }
+
                         if message.isOutgoing {
                             if !message.isMedia {
                                 Button {
@@ -146,11 +181,16 @@ public struct MessageBubbleView: View {
                             }
 
                             Button(role: .destructive) {
-                                onDelete(message)
+                                confirmingDelete = true
                             } label: {
                                 Label("Delete", systemImage: "trash")
                             }
                         }
+                    }
+                    .confirmationDialog("Delete for everyone?", isPresented: $confirmingDelete, titleVisibility: .visible) {
+                        Button("Delete", role: .destructive) { onDelete(message) }
+                    } message: {
+                        Text("Everyone in this chat will see \"Message deleted\" instead.")
                     }
 
                 if !message.reactions.isEmpty {
@@ -263,7 +303,7 @@ public struct MessageBubbleView: View {
     }
 
     private func replyQuote(snippet: String) -> some View {
-        HStack(alignment: .top, spacing: 8) {
+        HStack(alignment: .center, spacing: 8) {
             RoundedRectangle(cornerRadius: 2)
                 .fill(message.isOutgoing ? ClickColors.messageOutgoingForeground.opacity(0.85) : ClickColors.accentForeground)
                 .frame(width: 3)
@@ -277,9 +317,19 @@ public struct MessageBubbleView: View {
                     .lineLimit(2)
             }
             .padding(.vertical, 6)
-            .padding(.trailing, 10)
+            .padding(.trailing, ReplyThumbnail.applies(to: replyTarget) ? 0 : 10)
+            if let replyTarget, ReplyThumbnail.applies(to: replyTarget) {
+                ReplyThumbnail(target: replyTarget, load: mediaLoader)
+                    .padding(.trailing, 6)
+            }
         }
         .fixedSize(horizontal: false, vertical: true)
+        .contentShape(Rectangle())
+        .onTapGesture {
+            if let id = message.replyToID { onTapReplyQuote?(id) }
+        }
+        .accessibilityAddTraits(onTapReplyQuote == nil ? [] : .isButton)
+        .accessibilityHint(onTapReplyQuote == nil ? "" : "Shows the original message")
         .background(
             (message.isOutgoing ? Color.white.opacity(0.14) : ClickColors.fillSubtle),
             in: RoundedRectangle(cornerRadius: 10, style: .continuous)
@@ -324,6 +374,14 @@ public struct MessageBubbleView: View {
                     }
                 }
                 .buttonStyle(.plain)
+                // Long press lists who reacted.
+                .simultaneousGesture(LongPressGesture(minimumDuration: 0.4).onEnded { _ in
+                    guard let onShowReactions else { return }
+                    ClickHaptics.impact(.medium)
+                    onShowReactions(message, reaction.reactionType)
+                })
+                .accessibilityLabel("\(reaction.reactionType), \(reaction.count)\(reaction.userReacted ? ", including you" : "")")
+                .accessibilityAction(named: "Show who reacted") { onShowReactions?(message, reaction.reactionType) }
             }
         }
         .padding(.horizontal, 5)
@@ -345,44 +403,28 @@ public struct MessageBubbleView: View {
             .accessibilityHidden(true)
     }
 
-    private var replyGesture: some Gesture {
-        DragGesture(minimumDistance: SwipeReplyPhysics.activationDistance)
-            .onChanged { value in
-                let dx = value.translation.width
-                let dy = value.translation.height
+    private func swipeChanged(_ dx: CGFloat) {
+        // Incoming bubbles swipe right, outgoing swipe left; the other way is inert.
+        let allowed = message.isOutgoing ? min(dx, 0) : max(dx, 0)
+        dragOffset = SwipeReplyPhysics.rubberBand(allowed)
+        let crossed = abs(dragOffset) >= SwipeReplyPhysics.threshold
+        if crossed, !hasTriggeredReplyHaptic {
+            ClickHaptics.impact(.light)
+            hasTriggeredReplyHaptic = true
+        } else if !crossed {
+            // Backing off re-arms, but only one haptic fires per crossing.
+            hasTriggeredReplyHaptic = false
+        }
+    }
 
-                if dragIntent == .undecided {
-                    switch SwipeReplyPhysics.intent(dx: dx, dy: dy) {
-                    case .horizontal: dragIntent = .horizontal
-                    case .vertical: dragIntent = .vertical
-                    case nil: break
-                    }
-                }
-                guard dragIntent == .horizontal else { return }
-
-                // Incoming bubbles swipe right, outgoing swipe left; the other way is inert.
-                let allowed = message.isOutgoing ? min(dx, 0) : max(dx, 0)
-                dragOffset = SwipeReplyPhysics.rubberBand(allowed)
-
-                let crossed = abs(dragOffset) >= SwipeReplyPhysics.threshold
-                if crossed, !hasTriggeredReplyHaptic {
-                    ClickHaptics.impact(.light)
-                    hasTriggeredReplyHaptic = true
-                } else if !crossed {
-                    // Backing off re-arms, but only one haptic fires per crossing.
-                    hasTriggeredReplyHaptic = false
-                }
-            }
-            .onEnded { _ in
-                if dragIntent == .horizontal, abs(dragOffset) >= SwipeReplyPhysics.threshold {
-                    onReply(message)
-                }
-                withAnimation(.spring(response: 0.35, dampingFraction: 0.7)) {
-                    dragOffset = 0
-                }
-                dragIntent = .undecided
-                hasTriggeredReplyHaptic = false
-            }
+    private func swipeEnded() {
+        if abs(dragOffset) >= SwipeReplyPhysics.threshold {
+            onReply(message)
+        }
+        withAnimation(.spring(response: 0.35, dampingFraction: 0.7)) {
+            dragOffset = 0
+        }
+        hasTriggeredReplyHaptic = false
     }
 
     /// clock → ✓ → ✓✓ with a small pop on each step.

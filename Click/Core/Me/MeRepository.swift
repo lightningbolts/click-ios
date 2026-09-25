@@ -343,6 +343,21 @@ public actor MeRepository {
         return LocationPrivacy(row: row)
     }
 
+    /// Clicks whose live availability shares a tag or timeframe with the viewer's
+    /// (`get_availability_overlaps`; the RPC only answers for mutual connections).
+    public func availabilityOverlaps(peerIDs: [String]) async throws -> Set<String> {
+        guard let supabaseURL, !supabaseAnonKey.isEmpty else { throw APIError.invalidURL }
+        guard !peerIDs.isEmpty else { return [] }
+        let body = try JSONSerialization.data(withJSONObject: ["p_peer_ids": Array(Set(peerIDs)).sorted()])
+        let (data, _) = try await api.executeRaw(.supabaseRPC("get_availability_overlaps", baseURL: supabaseURL, anonKey: supabaseAnonKey, body: body))
+        return Self.overlappingPeers(data)
+    }
+
+    nonisolated static func overlappingPeers(_ data: Data) -> Set<String> {
+        let rows = (try? JSONSerialization.jsonObject(with: data) as? [[String: Any]]) ?? []
+        return Set(rows.compactMap { JSONFields.bool($0["has_overlap"]) == true ? JSONFields.string($0["peer_id"]) : nil })
+    }
+
     private func restRows(table: String, query: [URLQueryItem]) async throws -> [[String: Any]] {
         guard let supabaseURL, !supabaseAnonKey.isEmpty else { throw APIError.invalidURL }
         let request = APIRequest(

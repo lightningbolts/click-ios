@@ -40,9 +40,7 @@ Ledger:
 
 click-web:
 - Nothing is committed. `click-web` is on `main` with uncommitted changes, and so is `click-ios`. **Create a branch before committing.**
-- Two new migrations must be applied to Supabase before the iOS features that use them work in production:
-  - `supabase/migrations/20260924120000_users_bio.sql`
-  - `supabase/migrations/20260924121000_message_tombstones.sql`
+- Both round-4 migrations are **applied**: `20260924120000_users_bio.sql` and `20260924121000_message_tombstones.sql`.
 
 ## 1. Built in round 4 (for orientation)
 

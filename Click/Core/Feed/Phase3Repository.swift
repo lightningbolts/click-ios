@@ -129,14 +129,7 @@ public actor Phase3Repository {
     /// `get_inbox_previews` RPC shared with the Android and web clients.
     private func fetchInboxPreviews(currentUserID: String) async -> [String: InboxPreviewRow] {
         guard let supabaseURL, !supabaseAnonKey.isEmpty else { return [:] }
-        let request = APIRequest(
-            baseURL: supabaseURL,
-            path: "/rest/v1/rpc/get_inbox_previews",
-            method: .post,
-            headers: ["apikey": supabaseAnonKey],
-            body: Data("{}".utf8),
-            requiresAuth: true
-        )
+        let request = APIRequest.supabaseRPC("get_inbox_previews", baseURL: supabaseURL, anonKey: supabaseAnonKey, body: Data("{}".utf8))
         guard
             let (data, _) = try? await api.executeRaw(request),
             let rows = try? JSONSerialization.jsonObject(with: data) as? [[String: Any]]

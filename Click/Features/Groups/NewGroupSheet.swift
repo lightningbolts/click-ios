@@ -9,15 +9,26 @@ struct NewGroupSheet: View {
 
     @State private var isCreating = false
     @State private var error: String?
+    @State private var eligibility = CliqueEligibility()
 
     var body: some View {
         GroupMemberPickerSheet(
             title: "New verified group",
             actionTitle: isCreating ? "Creating…" : "Create",
-            candidates: conversations.active.filter { !$0.userID.isEmpty && !$0.connectionID.isEmpty },
+            candidates: candidates,
             asksForName: true,
             explanation: "Pick friends who are all connected to each other. Eligibility is verified on the server.",
-            onDone: { name, ids in Task { await create(name: name, memberIDs: ids) } }
+            onDone: { name, ids in Task { await create(name: name, memberIDs: ids) } },
+            ineligibleReason: { id, selected in eligibility.reason(for: id, selected: selected, names: firstNames) },
+            onSelectionChange: { selected in
+                guard let viewer = env.session.currentSession?.userId else { return }
+                let groups = env.groups
+                Task {
+                    await eligibility.check(selected: selected, candidates: candidates.map(\.userID), viewerID: viewer) { ids in
+                        try await groups.cliqueExists(memberIDs: ids)
+                    }
+                }
+            }
         )
         .interactiveDismissDisabled(isCreating)
         .disabled(isCreating)
@@ -26,6 +37,14 @@ struct NewGroupSheet: View {
         } message: {
             Text(error ?? "")
         }
+    }
+
+    private var candidates: [ConnectionItem] {
+        conversations.active.filter { !$0.userID.isEmpty && !$0.connectionID.isEmpty }
+    }
+
+    private var firstNames: [String: String] {
+        Dictionary(candidates.map { ($0.userID, HomeFeedModel.firstName($0.displayName) ?? $0.displayName) }, uniquingKeysWith: { a, _ in a })
     }
 
     private func create(name: String, memberIDs: [String]) async {

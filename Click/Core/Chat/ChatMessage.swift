@@ -26,11 +26,14 @@ public struct ReactionSummary: Identifiable, Hashable, Codable, Sendable {
     public let reactionType: String
     public var count: Int
     public var userReacted: Bool
+    /// Who reacted (for the "who reacted" sheet); may be empty for older cached rows.
+    public var userIDs: [String]
 
-    public init(reactionType: String, count: Int, userReacted: Bool) {
+    public init(reactionType: String, count: Int, userReacted: Bool, userIDs: [String] = []) {
         self.reactionType = reactionType
         self.count = count
         self.userReacted = userReacted
+        self.userIDs = userIDs
     }
 }
 

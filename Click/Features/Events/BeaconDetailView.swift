@@ -93,8 +93,6 @@ struct BeaconDetailView: View {
 
                     infoCard(beacon)
 
-                    if beacon.isEvent { peoplePreview }
-
                     if let description = beacon.description, !description.isEmpty {
                         VStack(alignment: .leading, spacing: 8) {
                             Text("About")
@@ -107,6 +105,8 @@ struct BeaconDetailView: View {
                                 .textSelection(.enabled)
                         }
                     }
+
+                    if beacon.isEvent { peoplePreview }
 
                     if beacon.creatorID == env.session.currentSession?.userId {
                         if beacon.isEvent {
@@ -817,77 +817,13 @@ struct EventDirectoryView: View {
 /// "Share to chat": pick a Click or group, then send the event card (plaintext card fields).
 struct ShareToChatSheet: View {
     @Environment(AppEnvironment.self) private var env
-    @Environment(ConversationListModel.self) private var conversations
-    @Environment(\.dismiss) private var dismiss
     let beacon: MapBeacon
 
-    @State private var query = ""
-    @State private var sending: String?
-    @State private var error: String?
-
     var body: some View {
-        NavigationStack {
-            List {
-                let people = conversations.active.filter { query.isEmpty || $0.displayName.localizedCaseInsensitiveContains(query) }
-                let groups = conversations.groups.filter { query.isEmpty || $0.name.localizedCaseInsensitiveContains(query) }
-                if !people.isEmpty {
-                    Section("Clicks") {
-                        ForEach(people) { item in
-                            row(title: item.displayName, id: item.id,
-                                avatar: AnyView(AvatarView(imageURL: item.avatarUrl, seed: item.userID, initials: item.initials, size: 40))) {
-                                ConversationIdentity(chatID: item.chatID ?? item.connectionID, connectionID: item.connectionID,
-                                                     peerUserID: item.userID, peerDisplayName: item.displayName)
-                            }
-                        }
-                    }
-                }
-                if !groups.isEmpty {
-                    Section("Groups") {
-                        ForEach(groups) { group in
-                            row(title: group.name, id: group.id,
-                                avatar: AnyView(GroupAvatarView(avatarURL: group.avatarURL, seed: group.chatID, initials: group.initials,
-                                                                members: group.members, size: 40))) {
-                                group.chatRoute.conversationIdentity
-                            }
-                        }
-                    }
-                }
-            }
-            .searchable(text: $query)
-            .navigationTitle("Share to chat")
-            .navigationBarTitleDisplayMode(.inline)
-            .toolbar { ToolbarItem(placement: .cancellationAction) { Button("Cancel") { dismiss() } } }
-            .alert("Couldn't share", isPresented: Binding(get: { error != nil }, set: { if !$0 { error = nil } })) {
-                Button("OK", role: .cancel) {}
-            } message: { Text(error ?? "") }
-        }
-    }
-
-    private func row(title: String, id: String, avatar: AnyView, identity: @escaping () -> ConversationIdentity) -> some View {
-        Button {
-            Task { await send(to: identity(), id: id) }
-        } label: {
-            HStack(spacing: 12) {
-                avatar
-                Text(title).foregroundStyle(ClickColors.textPrimary)
-                Spacer()
-                if sending == id { ProgressView() }
-            }
-        }
-        .disabled(sending != nil)
-    }
-
-    private func send(to identity: ConversationIdentity, id: String) async {
-        guard let userID = env.session.currentSession?.userId else { return }
-        sending = id
-        defer { sending = nil }
-        do {
+        ChatTargetPicker(title: "Share to chat") { identity in
+            guard let userID = env.session.currentSession?.userId else { return }
             _ = try await env.chat.sendBeacon(conversation: identity, currentUserID: userID, currentUserName: "You",
                                               beacon: beacon, clientMessageID: UUID().uuidString.lowercased())
-            ClickHaptics.success()
-            dismiss()
-        } catch {
-            self.error = error.userFacingMessage
         }
     }
 }

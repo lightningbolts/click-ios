@@ -14,6 +14,9 @@ struct PostConnectView: View {
     let onDone: () -> Void
 
     @State private var joined = false
+    @State private var showingClickDrop = false
+    @State private var dropNotice: String?
+    @State private var dropError: String?
 
     var body: some View {
         ScrollView {
@@ -50,7 +53,18 @@ struct PostConnectView: View {
         .task {
             // The heavy "person detected" haptic already fired; the join lands with success.
             withAnimation(reduceMotion ? .easeOut(duration: 0.2) : ClickMotion.reveal) { joined = true }
+            if let session = model.clickDropSession, session.endsAt > .now { env.clickDropSession = session }
+            async let sensors: Void = model.recordSensorContext(env)
             await model.load(env)
+            await sensors
+        }
+        .alert("Couldn't send the Click Drop", isPresented: Binding(get: { dropError != nil }, set: { if !$0 { dropError = nil } })) {
+            Button("OK", role: .cancel) {}
+        } message: { Text(dropError ?? "") }
+        .fullScreenCover(isPresented: $showingClickDrop) {
+            ClickDropCameraView(endsAt: model.clickDropSession?.endsAt) { draft in
+                Task { await sendClickDrop(draft) }
+            }
         }
         .animation(ClickMotion.content, value: model.recommendation)
     }
@@ -150,6 +164,24 @@ struct PostConnectView: View {
 
     // MARK: - Actions
 
+    /// Sends the Drop straight to the new Click's chat with the encounter attached.
+    private func sendClickDrop(_ draft: MediaDraft) async {
+        guard let peer = model.primaryPeer, let session = model.clickDropSession,
+              let userID = env.session.currentSession?.userId else { return }
+        var drop = draft
+        drop.encounterID = session.encounterID(for: session.connectionID)
+        let identity = DirectChatRoute(connectionID: session.connectionID, peerUserID: peer.id,
+                                       peerDisplayName: peer.name, peerAvatarURL: peer.avatarURL).conversationIdentity
+        do {
+            _ = try await env.chat.sendMedia(conversation: identity, currentUserID: userID, currentUserName: "You", draft: drop,
+                                             replyToID: nil, clientMessageID: UUID().uuidString.lowercased())
+            dropNotice = "Click Drop sent"
+        } catch {
+            ClickHaptics.warning()
+            dropError = error.userFacingMessage
+        }
+    }
+
     private var actions: some View {
         VStack(spacing: 10) {
             if !model.selectedTags.isEmpty || !model.customTag.trimmingCharacters(in: .whitespaces).isEmpty,
@@ -166,6 +198,16 @@ struct PostConnectView: View {
             } else if let peer = model.primaryPeer {
                 Button("Say hi") { onSayHi(peer) }
                     .buttonStyle(.clickPrimary)
+                if let session = model.clickDropSession {
+                    // Only while the server's collaboration window is open.
+                    TimelineView(.periodic(from: .now, by: 30)) { context in
+                        if session.endsAt > context.date {
+                            Button(dropNotice ?? "Send a Click Drop", systemImage: "hourglass") { showingClickDrop = true }
+                                .buttonStyle(.clickSecondary)
+                                .disabled(dropNotice != nil)
+                        }
+                    }
+                }
                 Button("View profile") { onViewProfile(peer) }
                     .buttonStyle(.clickSecondary)
             }

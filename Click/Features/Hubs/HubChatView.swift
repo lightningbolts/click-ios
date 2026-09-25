@@ -23,6 +23,7 @@ struct HubChatView: View {
     @State private var renaming = false
     @State private var draftName = ""
     @State private var notice: String?
+    @State private var showingInfo = false
 
     var body: some View {
         Group {
@@ -47,9 +48,9 @@ struct HubChatView: View {
                 .navigationTitle(fallbackTitle ?? "Hub")
                 .navigationBarTitleDisplayMode(.inline)
             case .ready(let hub, let model):
-                ChatView(model: model)
-                    .toolbar {
-                        ToolbarItem(placement: .topBarTrailing) { hubMenu(hub) }
+                ChatView(model: model, hubMenu: AnyView(hubMenuItems(hub)), onOpenHubInfo: { showingInfo = true })
+                    .sheet(isPresented: $showingInfo) {
+                        HubInfoView(hub: hub) { Task { await reload() } }
                     }
                     .confirmationDialog("Leave \(hub.name)?", isPresented: $confirmLeave, titleVisibility: .visible) {
                         Button("Leave Hub", role: .destructive) { Task { await leave(hub) } }
@@ -74,8 +75,11 @@ struct HubChatView: View {
         .task { await load() }
     }
 
-    private func hubMenu(_ hub: HubInfo) -> some View {
-        Menu {
+    /// Hub items inside the chat's one options menu (after Search).
+    @ViewBuilder
+    private func hubMenuItems(_ hub: HubInfo) -> some View {
+        Button("Hub Info", systemImage: "info.circle") { showingInfo = true }
+        Section {
             if hub.creatorID == env.session.currentSession?.userId {
                 Button("Rename", systemImage: "pencil") {
                     draftName = hub.name
@@ -86,10 +90,12 @@ struct HubChatView: View {
                 // Event hub membership follows the RSVP; the server manages it.
                 Button("Leave Hub", systemImage: "rectangle.portrait.and.arrow.right", role: .destructive) { confirmLeave = true }
             }
-        } label: {
-            Image(systemName: "ellipsis.circle")
         }
-        .accessibilityLabel("Hub options")
+    }
+
+    private func reload() async {
+        phase = .loading
+        await load()
     }
 
     private func load() async {
@@ -103,14 +109,7 @@ struct HubChatView: View {
                 peerDisplayName: hub.name,
                 kind: .hub(hubID: hub.id)
             )
-            let model = ConversationModel(
-                identity: identity,
-                chatRepository: env.chat,
-                currentUserID: env.session.currentSession?.userId ?? "",
-                currentUserName: "You",
-                    timelineCache: env.timelineCache,
-                    pendingSends: env.pendingSends
-            )
+            let model = env.conversationModel(for: identity)
             phase = .ready(hub, model)
             await conversations.rememberHub(JoinedHub(
                 hubID: hub.id, name: hub.name, category: hub.category, eventBeaconID: hub.eventBeaconID, joinedAt: .now,
@@ -173,9 +172,8 @@ struct HubChatView: View {
     private func rename(_ hub: HubInfo) async {
         guard let name = draftName.nonEmptyTrimmed, name != hub.name else { return }
         do {
-            try await env.hubs.rename(hubID: hub.id, to: name)
-            phase = .loading
-            await load()
+            try await env.hubs.update(hubID: hub.id, name: name)
+            await reload()
         } catch {
             notice = "Couldn't rename the hub. \(error.userFacingMessage)"
         }

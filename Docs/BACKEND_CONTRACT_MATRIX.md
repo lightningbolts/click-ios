@@ -40,6 +40,8 @@ Authoritative ledger of backend HTTP endpoints, authorization requirements, and 
 | `/api/qr` | GET | Bearer JWT | QR | `{ data: { qrPayload, expiresAt(ms) } }` — 90 s single-use token |
 | `/api/hub/messages` | GET `?hubId&limit≤120` | Bearer JWT | Hub chat | `{messages, reactions, participant_ids, sender_profiles_visible, occupant_count, channel}`; 403 `NOT_A_PARTICIPANT`/`EVENT_HUB_ACCESS_DENIED`, 410 `HUB_EXPIRED` |
 | `/api/hub/messages` | POST `{hub_id, body, message_type, metadata, user_lat?, user_long?}` | Bearer JWT | Hub chat | 201 `{message}`; 400 `OUT_OF_BOUNDS` / coordinates required (standalone hubs); v2 body required once the hub is upgraded |
+| `/api/hub/media` | POST multipart `{hub_id, object_path, file, mime_type, user_lat?, user_long?, e2ee_v2_envelope?, media_ciphertext_sha256?, epoch?, sender_device_id?, client_message_id?}` | Bearer JWT | Hub chat | ≤25 MiB; 201 `{path, bucket:"hub-media", url, ttl_seconds:300}`; path must be `{uid}/hub/{hubId}/…`; v2 digest checked; 429 `RATE_LIMITED` |
+| `/api/hub/media` | GET `?hub_id&path` | Bearer JWT | Hub chat | Fresh signed URL (re-checks hub access) |
 | `/api/hub/messages/{id}` | PATCH `{hubId, body, metadata, userLat?, userLong?}` · DELETE `{hubId, userLat?, userLong?}` | Bearer JWT | Hub chat | Edit / delete own hub message |
 | `/api/hub/reactions` | POST/DELETE `{hubId, messageId, reactionType, userLat?, userLong?}` | Bearer JWT | Hub chat | Toggle reaction |
 | `/api/hub/devices` · `/api/hub/epochs` | GET `?hub_id` · GET `?hub_id&device_id` / POST `{hub_id, epoch, sender_device_id, membership_fingerprint, envelopes}` | Bearer JWT | Hub E2EE v2 | Hub envelopes bind to the hub ID as `chatId` |
@@ -82,3 +84,11 @@ Authoritative ledger of backend HTTP endpoints, authorization requirements, and 
 | `/api/hub/{id}/participants/me` | DELETE | Bearer JWT | Hubs | Same as `POST /api/hub/leave` |
 | `/api/chat/messages` | GET `?include_tombstones=1` | Bearer JWT | Chat | **New opt-in** `tombstones[{message_id, user_id, time_created, deleted_at}]` within the returned window |
 | `/api/chat/messages` | DELETE `?messageId=` | Bearer JWT (owner) | Chat | Hard delete unchanged; also writes `message_tombstones` |
+| `/api/chat/messages` | GET `?chatId&aroundMessageId&limit` | Bearer JWT | Chat | Window around one message (target + ≤`limit` older + ≤40 newer, newest first); iOS search jump |
+| `/api/hub/messages` | GET `?hubId&aroundMessageId&limit` | Bearer JWT | Hub chat | Same around window for hubs; iOS search jump |
+| `/api/groups/{groupId}/avatar` | DELETE | Bearer JWT (member) | Groups | **New** (additive): clears `groups.avatar_url`, removes the stored object in that group's folder; 403 non-member, 429 inside the 60 s profile cooldown |
+| `/api/hub/{id}` | GET | Bearer JWT | Hub | Now also returns `radius_meters` (additive) |
+| `/api/hub/{id}` | PATCH `{name?, category?}` | Bearer JWT (creator) | Hub | Rename / change category |
+| `rpc/get_availability_overlaps` | POST `{p_peer_ids: uuid[]}` | Bearer JWT (Supabase) | Availability | `[{peer_id, has_overlap}]` for mutual connections |
+| `rpc/verified_clique_edges_exist` | POST `{p_member_ids: uuid[]}` | Bearer JWT (Supabase) | Groups | Bool: every pair has an active/kept 1:1 connection; caller must be in the set |
+

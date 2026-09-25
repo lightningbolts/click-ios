@@ -81,3 +81,8 @@ Automated unit tests in [`Tests/ClickTests/ClickCryptoTests.swift`](file:///User
 - Rejection of tampered ciphertext, tampered nonce, or tampered metadata.
 - V2 ReplayGuard duplicate detection.
 - V2 Epoch key multi-device wrap and unwrap across independent device keypairs.
+- V2 hub media (`Tests/ClickTests/HubMediaTests.swift`): media AAD binds `chatId` = hub ID, so hub photos never decrypt under another hub's metadata; the upload is `nonce(12) || ciphertext || tag(16)` and `media_ciphertext_sha256` = base64 SHA-256 of exactly those bytes (the `/api/hub/media` route recomputes it over the multipart `file`).
+
+### Hub media (spec §62)
+- **Send (v2 only)**: `ClickCryptoV2.encryptMedia` with the hub epoch session (`resolveV2Session(scope: .hub)`, same as hub text). Ciphertext goes to `POST /api/hub/media` as multipart (`hub_id`, `object_path` = `{uid}/hub/{hubId}/<20>.bin`, `file`, `mime_type` = `application/octet-stream`, `user_lat`/`user_long`, `e2ee_v2_envelope`, `media_ciphertext_sha256`, `epoch`, `sender_device_id`, `client_message_id`). The `image` message body is the v2-encrypted label ("Photo" / "Click Drop"), with `media_path`, `media_bucket: "hub-media"`, `is_encrypted_media`, `original_mime_type`, `crypto_version`, `media_chat_id`, `media_epoch`, `media_sender_device_id`, `media_client_message_id`, `media_ciphertext_sha256`, `media_authorization_envelope` (KMP `HubChatViewModel` keys).
+- **Read**: `GET /api/hub/media?hub_id=&path=` re-signs the path immediately before download (the server re-checks access). v2 rows decrypt with the hub epoch key; rows without v2 metadata use legacy `deriveKeysForHub` (read-only; iOS never writes legacy hub media).

@@ -39,6 +39,13 @@ final class PostConnectModel {
     var isGroup: Bool { match.isGroup || match.peers.count > 1 }
     var primaryPeer: ProximityPeer? { match.peers.first }
 
+    /// The Click Drop window the server opened for this one-to-one encounter (spec §44.1).
+    var clickDropSession: ClickDropSession? {
+        guard !isGroup, let encounterID = match.encounterID, let endsAt = match.collaborationEndsAt,
+              let connectionID = primaryPeer?.connectionID ?? match.connectionID else { return nil }
+        return ClickDropSession(connectionID: connectionID, encounterID: encounterID, endsAt: endsAt)
+    }
+
     var title: String {
         if isGroup { return match.isNewConnection ? "Group created" : "Encounter saved" }
         if match.isReconnect { return "Reconnected" }
@@ -106,7 +113,8 @@ final class PostConnectModel {
             return
         }
         saveState = .saving
-        let sensor = await EncounterSensorSampler.sample(settings: env.settings)
+        // Sensor context is recorded on its own when the screen opens (`recordSensorContext`).
+        let sensor = EncounterSensorContext()
         do {
             for connectionID in connectionIDs {
                 try await env.encounterContext.saveContext(connectionID: connectionID, tags: tags, sensor: sensor, reportingUserID: userID)
@@ -117,6 +125,20 @@ final class PostConnectModel {
             saveState = .failed("This encounter is too old to tag here. Add tags from their profile timeline.")
         } catch {
             saveState = .failed("Tags weren't saved. \(error.userFacingMessage)")
+        }
+    }
+
+    /// Samples opted-in sensors now that the tap's microphone use is over, then writes them to
+    /// this encounter (sensor-only patch; tags are saved separately). Silent on failure.
+    func recordSensorContext(_ env: AppEnvironment) async {
+        guard env.settings.ambientNoiseOptIn || env.settings.barometricContextOptIn,
+              let userID = env.session.currentSession?.userId else { return }
+        let connectionIDs = match.isGroup ? match.peers.compactMap(\.connectionID) : [match.connectionID].compactMap { $0 }
+        guard !connectionIDs.isEmpty else { return }
+        let sensor = await EncounterSensorSampler.sample(settings: env.settings)
+        guard !sensor.isEmpty else { return }
+        for connectionID in connectionIDs {
+            try? await env.encounterContext.saveContext(connectionID: connectionID, tags: [], sensor: sensor, reportingUserID: userID)
         }
     }
 

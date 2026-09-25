@@ -80,7 +80,9 @@ public struct MessageMedia: Hashable, Sendable {
         switch type {
         case "image", "photo", "audio", "voice", "voice_note":
             let url = JSONFields.string(meta, "media_url", "mediaUrl")
-            guard url != nil || (v2 != nil && v2Path != nil) else { return nil }
+            // Hub photos store only a path in the `hub-media` bucket (signed on demand).
+            let isHubPath = v2Path != nil && JSONFields.string(meta["media_bucket"]) == "hub-media"
+            guard url != nil || (v2 != nil && v2Path != nil) || isHubPath else { return nil }
             let isImage = type == "image" || type == "photo"
             return MessageMedia(
                 kind: isImage ? .image : .audio,
@@ -219,6 +221,8 @@ public struct MediaDraft: Sendable {
     public var waveform: [Double]?
     /// A Click Drop photo: revealed to everyone 24 hours after it is taken.
     public var isClickDrop = false
+    /// The in-person encounter a Click Drop belongs to (`metadata.encounter_id`), when one is active.
+    public var encounterID: String?
 
     public init(kind: MessageMedia.Kind, data: Data, mimeType: String, fileName: String? = nil, durationSeconds: Int? = nil) {
         self.kind = kind

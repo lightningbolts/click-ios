@@ -97,6 +97,7 @@ extension Error {
         case .forbidden: "You don't have access to this."
         case .notFound: "This is no longer available."
         case .rateLimited: "Too many requests. Try again shortly."
+        case .server(_, Transport.connectionFailedCode?, _): "Couldn't reach Click. Try again."
         case .server, .decoding, .conflict, .validation, .invalidURL, .cancelled, nil:
             "Something went wrong. Try again."
         }

@@ -37,7 +37,7 @@ public struct RootGateView: View {
             }
         }
         .tint(ClickColors.accentForeground)
-        .animation(ClickMotion.subtleFade, value: env.session.state)
+        .animation(ClickMotion.subtleFade, value: env.session.state.phase)
     }
 }
 
@@ -129,7 +129,10 @@ public struct MainTabShellView: View {
     public var body: some View {
         @Bindable var r = env.router
         // Routing selection through `selectTab` makes re-tapping the active tab pop to its root.
-        let selection = Binding(get: { r.selectedTab }, set: { r.selectTab($0) })
+        let selection = Binding(get: { r.selectedTab }, set: { tab in
+            if tab == .addClick { ClickHaptics.impact(.medium) }
+            r.selectTab(tab)
+        })
 
         TabView(selection: selection) {
             Tab("Home", systemImage: "house.fill", value: MainTab.home) {
@@ -137,12 +140,21 @@ public struct MainTabShellView: View {
                     HomeView()
                         .appRouteDestinations()
                 }
+                .tabFadeIn(.home)
             }
 
-            Tab("Add Click", systemImage: "plus.circle.fill", value: MainTab.addClick) {
+            Tab(value: MainTab.addClick) {
                 NavigationStack(path: $r.addClickPath) {
                     AddClickView()
                         .appRouteDestinations()
+                }
+                .tabFadeIn(.addClick)
+            } label: {
+                // Always purple (original rendering), selected or not: it's the primary action.
+                Label {
+                    Text("Add Click")
+                } icon: {
+                    Image(uiImage: Self.addClickIcon)
                 }
             }
 
@@ -151,6 +163,7 @@ public struct MainTabShellView: View {
                     ClicksView(model: conversations)
                         .appRouteDestinations()
                 }
+                .tabFadeIn(.connections)
             }
             .badge(conversations.unreadTotal)
 
@@ -159,6 +172,7 @@ public struct MainTabShellView: View {
                     ClickMapView()
                         .appRouteDestinations()
                 }
+                .tabFadeIn(.map)
             }
 
             Tab(value: MainTab.settings) {
@@ -166,6 +180,7 @@ public struct MainTabShellView: View {
                     MeView()
                         .appRouteDestinations()
                 }
+                .tabFadeIn(.settings)
             } label: {
                 Label {
                     Text("Me")
@@ -230,6 +245,12 @@ public struct MainTabShellView: View {
         }
     }
 
+    private static let addClickIcon: UIImage = {
+        let config = UIImage.SymbolConfiguration(pointSize: 22, weight: .semibold)
+        let base = UIImage(systemName: "plus.circle.fill", withConfiguration: config) ?? UIImage()
+        return base.withTintColor(UIColor(ClickColors.accentForeground), renderingMode: .alwaysOriginal)
+    }()
+
     /// Seeds the Me tab from the cached self profile, fetching it only when nothing is cached.
     /// Later profile refreshes on the Me root forward their avatar to `meTabAvatar`.
     private func seedMeTabAvatar() async {
@@ -256,4 +277,26 @@ private struct ClicksPreviewHost: View {
             ClicksView(model: model)
         }
     }
+}
+
+/// A quick fade when a tab becomes selected from the tab bar (not on first launch paint).
+private struct TabFadeIn: ViewModifier {
+    @Environment(AppEnvironment.self) private var env
+    let tab: MainTab
+    @State private var opacity = 1.0
+
+    func body(content: Content) -> some View {
+        content
+            .opacity(opacity)
+            .onChange(of: env.router.selectedTab) { old, new in
+                guard new == tab, old != tab else { return }
+                // Commit the hidden frame first, then animate in on the next run loop.
+                opacity = 0
+                DispatchQueue.main.async { withAnimation(.easeOut(duration: 0.18)) { opacity = 1 } }
+            }
+    }
+}
+
+private extension View {
+    func tabFadeIn(_ tab: MainTab) -> some View { modifier(TabFadeIn(tab: tab)) }
 }

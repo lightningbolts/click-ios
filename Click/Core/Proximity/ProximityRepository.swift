@@ -8,6 +8,9 @@ public struct ProximityEvidence: Codable, Equatable, Sendable {
     public let latitude: Double?
     public let longitude: Double?
     public let simulatorMock: Bool
+    /// Opt-in encounter context sent with the handshake (KMP body keys); the server stores it
+    /// on the encounter it creates.
+    public var sensor = EncounterSensorContext()
 
     var peerTokens: [String] { Array(Set(heardTokens + detectedDevices)).sorted() }
 
@@ -26,6 +29,9 @@ public struct ProximityEvidence: Codable, Equatable, Sendable {
             body["longitude"] = longitude
         }
         if simulatorMock { body["simulator_mock"] = true }
+        if let meters = sensor.barometricElevationMeters { body["exact_barometric_elevation_m"] = meters }
+        if let level = sensor.noiseLevel { body["noise_level"] = level }
+        if let decibels = sensor.noiseDecibels { body["exact_noise_level_db"] = decibels }
         return body
     }
 }

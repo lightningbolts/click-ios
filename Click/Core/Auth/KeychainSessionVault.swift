@@ -26,6 +26,28 @@ public final class KeychainSessionVault: Sendable {
     }
 
     private static let storage = Storage()
+    static var accessibility: CFString { kSecAttrAccessibleAfterFirstUnlockThisDeviceOnly }
+
+    private final class Once: @unchecked Sendable {
+        private let lock = NSLock()
+        private var done = false
+        func claim() -> Bool {
+            lock.lock()
+            defer { lock.unlock() }
+            if done { return false }
+            done = true
+            return true
+        }
+    }
+    private static let migration = Once()
+
+    /// What a Keychain read found. `unavailable` (device locked, protected data not yet
+    /// available) is *not* "signed out" — callers wait and read again.
+    public enum ReadResult: Equatable, Sendable {
+        case found(SessionSnapshot)
+        case notFound
+        case unavailable
+    }
     private let account: String
 
     /// `account` is overridable only so tests never touch the real session item.
@@ -61,8 +83,11 @@ public final class KeychainSessionVault: Sendable {
             kSecAttrService: Self.serviceName,
             kSecAttrAccount: account
         ]
+        // Readable after the first unlock since boot: background launches (prewarm, push) and
+        // token refreshes while the phone is locked must see — and persist — the session.
         let updateAttributes: [CFString: Any] = [
-            kSecValueData: data
+            kSecValueData: data,
+            kSecAttrAccessible: Self.accessibility
         ]
 
         var status = SecItemUpdate(matchQuery as CFDictionary, updateAttributes as CFDictionary)
@@ -72,7 +97,7 @@ public final class KeychainSessionVault: Sendable {
                 kSecAttrService: Self.serviceName,
                 kSecAttrAccount: account,
                 kSecValueData: data,
-                kSecAttrAccessible: kSecAttrAccessibleWhenUnlockedThisDeviceOnly
+                kSecAttrAccessible: Self.accessibility
             ]
             status = SecItemAdd(addQuery as CFDictionary, nil)
         }
@@ -92,8 +117,13 @@ public final class KeychainSessionVault: Sendable {
 
     /// Reads and validates the active session from Keychain.
     public func readSession() -> SessionSnapshot? {
+        if case .found(let snapshot) = read() { return snapshot }
+        return nil
+    }
+
+    public func read() -> ReadResult {
         if let fallback = Self.storage.get(account: account) {
-            return fallback
+            return .found(fallback)
         }
 
         let query: [CFString: Any] = [
@@ -106,13 +136,14 @@ public final class KeychainSessionVault: Sendable {
 
         var item: CFTypeRef?
         let status = SecItemCopyMatching(query as CFDictionary, &item)
+        if status == errSecInteractionNotAllowed { return .unavailable }
 
         guard status == errSecSuccess, let data = item as? Data,
               let record = try? JSONDecoder().decode(LegacyKMPSession.self, from: data),
               record.version == 2,
               !record.jwt.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
               !record.refreshToken.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
-            return nil
+            return .notFound
         }
 
         let storedUserId = record.userId?.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -120,16 +151,20 @@ public final class KeychainSessionVault: Sendable {
             ? storedUserId
             : LegacyKMPStateMigrator.extractSubFromJWT(record.jwt)
         guard let resolvedUserId, !resolvedUserId.isEmpty else {
-            return nil
+            return .notFound
         }
 
         let expiresAt = record.expiresAt.map { Date(timeIntervalSince1970: TimeInterval($0) / 1000.0) }
-        return SessionSnapshot(
+        let snapshot = SessionSnapshot(
             userId: resolvedUserId,
             jwt: record.jwt,
             refreshToken: record.refreshToken,
             expiresAt: expiresAt
         )
+        // Items written by older builds were unlocked-only; re-save once per launch (the
+        // update also sets the wider accessibility) so the next locked launch can read it.
+        if Self.migration.claim() { saveSession(snapshot) }
+        return .found(snapshot)
     }
 
     /// Deletes the session record on explicit sign-out or hard authentication invalidation.

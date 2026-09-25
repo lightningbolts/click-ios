@@ -35,6 +35,23 @@ public final class AppEnvironment {
     public let identities: IdentityCache
     /// The conversation currently on screen, so inbox realtime doesn't count it as unread.
     public var activeChatID: String?
+    /// The latest in-person Click Drop window (post-connect), so Drops sent in it carry the encounter.
+    public var clickDropSession: ClickDropSession?
+    /// A message to scroll to when its conversation next opens (search deep links).
+    public var pendingMessageFocus: MessageFocus?
+
+    /// The one way screens build a conversation model, so every chat shares caches and resolvers.
+    public func conversationModel(for identity: ConversationIdentity) -> ConversationModel {
+        ConversationModel(
+            identity: identity,
+            chatRepository: chat,
+            currentUserID: session.currentSession?.userId ?? "",
+            currentUserName: "You",
+            timelineCache: timelineCache,
+            pendingSends: pendingSends,
+            identities: identities
+        )
+    }
 
     public init(
         session: SessionController = SessionController(),
@@ -164,16 +181,25 @@ public final class AppEnvironment {
     private func resolveOnboarding(for userId: String, coordinator: OnboardingCoordinator) {
         Task { [weak self, weak coordinator] in
             guard let self, let coordinator else { return }
-            do {
-                let resolved = try await self.onboardingRepository.resolveOnboardingState(for: userId)
-                coordinator.hydrate(resolved.state, hasAvatar: resolved.hasAvatar)
-                self.handlePostAuthResolved()
-            } catch {
-                // A cached completion already admitted the user; a failed background re-check
-                // must not bounce them back to onboarding.
-                guard coordinator.step != .complete else { return }
-                coordinator.markLoadFailed("We couldn't load your onboarding state. Check your connection and try again.")
+            var prefetched = self.session.takeRecentProfile(for: userId)
+            // Transient failures retry quietly (the launch screen stays up) before any error.
+            for attempt in 0..<3 {
+                do {
+                    let resolved = try await self.onboardingRepository.resolveOnboardingState(for: userId, prefetchedProfile: prefetched)
+                    coordinator.hydrate(resolved.state, hasAvatar: resolved.hasAvatar)
+                    self.handlePostAuthResolved()
+                    return
+                } catch {
+                    prefetched = nil
+                    // A cached completion already admitted the user; a failed background
+                    // re-check must not bounce them back to onboarding.
+                    guard coordinator.step != .complete else { return }
+                    if attempt < 2 { try? await Task.sleep(for: .seconds(attempt == 0 ? 1 : 3)) }
+                }
             }
+            coordinator.markLoadFailed(self.network.isOnline
+                ? "Click couldn't finish setting up. Try again in a moment."
+                : "You're offline. Connect to the internet and try again.")
         }
     }
 
@@ -236,5 +262,32 @@ public final class AppEnvironment {
     /// Sends queued telemetry (called on foreground and background; never blocks the UI).
     public func flushTelemetry() {
         Task.detached(priority: .utility) { [telemetryQueue] in await telemetryQueue.flush() }
+    }
+}
+
+/// Where a search result lives: any of the conversation's IDs plus the message.
+public struct MessageFocus: Equatable, Sendable {
+    public let conversationIDs: Set<String>
+    public let messageID: String
+
+    public init(conversationIDs: [String?], messageID: String) {
+        self.conversationIDs = Set(conversationIDs.compactMap { $0 }.filter { !$0.isEmpty })
+        self.messageID = messageID
+    }
+
+    public func matches(_ identity: ConversationIdentity) -> Bool {
+        !conversationIDs.isDisjoint(with: [identity.chatID, identity.connectionID, identity.hubID].compactMap { $0 })
+    }
+}
+
+/// A post-connect collaboration window (`ProximityMatch.encounterID` / `collaborationEndsAt`).
+public struct ClickDropSession: Equatable, Sendable {
+    public let connectionID: String
+    public let encounterID: String
+    public let endsAt: Date
+
+    /// The encounter for Drops sent to `connectionID` while the window is open.
+    public func encounterID(for connectionID: String?, now: Date = .now) -> String? {
+        connectionID == self.connectionID && endsAt > now ? encounterID : nil
     }
 }

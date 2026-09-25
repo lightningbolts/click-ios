@@ -43,13 +43,17 @@ public final class OnboardingRepository {
     /// Resolves onboarding requirements from server truth plus the minimum local state
     /// needed for non-server-backed/skippable steps. Remote failure never fabricates a new-user
     /// state, which would make returning users flash Welcome or Avatar.
-    public func resolveOnboardingState(for userId: String) async throws -> (state: OnboardingState, hasAvatar: Bool) {
+    public func resolveOnboardingState(for userId: String, prefetchedProfile: Data? = nil) async throws -> (state: OnboardingState, hasAvatar: Bool) {
         let legacyCompleted = settings.hasCompletedOnboarding
         let cached = settings.onboardingState(for: userId)
 
         do {
-            let request = APIRequest(path: "/api/users/\(userId)/profile", method: .get, requiresAuth: true)
-            let res: SelfProfileResponse = try await client.execute(request)
+            let res: SelfProfileResponse
+            if let prefetchedProfile, let decoded = try? JSONDecoder().decode(SelfProfileResponse.self, from: prefetchedProfile) {
+                res = decoded
+            } else {
+                res = try await client.execute(APIRequest(path: "/api/users/\(userId)/profile", method: .get, requiresAuth: true))
+            }
 
             let interests = res.tags ?? []
             let personality = res.personalityTags ?? res.user?.personalityTags ?? []

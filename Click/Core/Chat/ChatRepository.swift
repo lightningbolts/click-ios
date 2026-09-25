@@ -34,6 +34,10 @@ public protocol ChatRepositoryProtocol: Sendable {
     ) async throws
 
     func deleteMessage(messageID: String, conversation: ConversationIdentity) async throws
+
+    /// A window centred on one message (search deep links): the target, up to `limit` older and
+    /// up to 40 newer rows, newest first.
+    func fetchMessages(around messageID: String, conversation: ConversationIdentity, currentUserID: String, limit: Int) async throws -> [ChatMessageItem]
     func setReaction(messageID: String, reactionType: String, adding: Bool, conversation: ConversationIdentity) async throws
     func markRead(chatID: String, messageIDs: [String]) async throws
     func markDelivered(chatID: String, messageIDs: [String]) async throws
@@ -74,6 +78,10 @@ public protocol ChatRepositoryProtocol: Sendable {
 }
 
 public extension ChatRepositoryProtocol {
+    func fetchMessages(around messageID: String, conversation: ConversationIdentity, currentUserID: String, limit: Int) async throws -> [ChatMessageItem] {
+        []
+    }
+
     func sendMedia(
         conversation: ConversationIdentity,
         currentUserID: String,
@@ -150,7 +158,7 @@ public enum ChatRepositoryError: Error, LocalizedError, Sendable {
     public var errorDescription: String? {
         switch self {
         case .mediaUnsupported:
-            return "Media in hub chats isn't available on iOS yet."
+            return "This conversation doesn't accept that kind of attachment."
         case .mediaTooLarge:
             return "This file is too large to send."
         case .mediaTypeNotAllowed:
@@ -198,6 +206,11 @@ public actor ChatRepository: ChatRepositoryProtocol {
     private var v1KeyCache: [String: ClickCryptoV1.DerivedKeys] = [:]
     private var groupMasterCache: [String: Data] = [:]
     private var v2SessionCache: [String: V2Session] = [:]
+    /// When each cached session was resolved; writes reuse one for `sendSessionReuse` seconds.
+    private var v2SessionResolvedAt: [String: Date] = [:]
+    private static let sendSessionReuse: TimeInterval = 60
+    /// Canonical chat UUIDs for connections resolved this install (never changes once created).
+    private var canonicalChatIDs: [String: String] = UserDefaults.standard.dictionary(forKey: "click.chat.canonical-ids") as? [String: String] ?? [:]
     private var hubParticipants: [String: [String]] = [:]
     /// Actor-local mirror of `identities` so synchronous mapping can read resolved names.
     private var senderNames: [String: (name: String, avatarURL: String?)] = [:]
@@ -237,6 +250,7 @@ public actor ChatRepository: ChatRepositoryProtocol {
             guard !proposed.isEmpty else { throw ChatRepositoryError.unresolvedChat }
             return proposed
         }
+        if let known = canonicalChatIDs[connection] { return known }
 
         let request = APIRequest(
             path: "/api/connections/\(connection)/tabs",
@@ -248,6 +262,8 @@ public actor ChatRepository: ChatRepositoryProtocol {
         let decoded = try JSONDecoder().decode(ChatResolutionResponse.self, from: data)
         let resolved = decoded.chatId.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !resolved.isEmpty else { throw ChatRepositoryError.unresolvedChat }
+        canonicalChatIDs[connection] = resolved
+        UserDefaults.standard.set(canonicalChatIDs, forKey: "click.chat.canonical-ids")
         return resolved
     }
 
@@ -261,6 +277,13 @@ public actor ChatRepository: ChatRepositoryProtocol {
     public func registerDevice() async throws {
         guard !deviceRegistered else { return }
         let identity = try vault.loadOrCreate()
+        // Registered on an earlier launch: skip the round trip. Discovery re-registers if the
+        // server doesn't list this device (see `resolveV2Session`).
+        let registeredKey = "click.v2.registered.\(identity.info.deviceID)"
+        if UserDefaults.standard.bool(forKey: registeredKey) {
+            deviceRegistered = true
+            return
+        }
         let body = try JSONSerialization.data(
             withJSONObject: [
                 "device_id": identity.info.deviceID,
@@ -281,6 +304,7 @@ public actor ChatRepository: ChatRepositoryProtocol {
             // Registration is idempotent from the client's perspective.
         }
         deviceRegistered = true
+        UserDefaults.standard.set(true, forKey: registeredKey)
     }
 
     /// Where a v2 epoch lives: chat routes (direct + group) or hub routes. Hub envelopes bind to
@@ -328,18 +352,27 @@ public actor ChatRepository: ChatRepositoryProtocol {
         allowUpgrade: Bool,
         didRetryDiscovery: Bool = false
     ) async throws -> V2Session? {
-        if !allowUpgrade, let cached = v2SessionCache[scope.cacheKey] {
-            return cached
+        if let cached = v2SessionCache[scope.cacheKey] {
+            // Reads always reuse; writes reuse a recent session (direct chats and freshly
+            // opened groups/hubs), otherwise re-check membership and rotation.
+            let fresh = v2SessionResolvedAt[scope.cacheKey].map { Date().timeIntervalSince($0) < Self.sendSessionReuse } ?? false
+            if !allowUpgrade || fresh { return cached }
         }
 
         let identity = try vault.loadOrCreate()
         try await registerDevice()
 
-        let devices = try await discoverDevices(scope)
+        // Independent reads: fetch the device list and this device's epoch envelopes together.
+        async let devicesTask = discoverDevices(scope)
+        async let stateTask = fetchEpochState(scope, deviceID: identity.info.deviceID)
+        let devices = try await devicesTask
         guard let ownDevice = devices.first(where: { $0.deviceID == identity.info.deviceID }) else {
-            // Registration and discovery are separate authenticated requests. Refresh once in case
-            // the just-created row was not visible to the first read.
+            _ = try? await stateTask
+            // Registration and discovery are separate authenticated requests. Register again
+            // (a remembered registration may be for another account) and refresh once.
             guard !didRetryDiscovery else { throw ChatRepositoryError.currentDeviceNotRegistered }
+            deviceRegistered = false
+            UserDefaults.standard.removeObject(forKey: "click.v2.registered.\(identity.info.deviceID)")
             return try await resolveV2Session(
                 scope: scope,
                 participantUserIDs: participantUserIDs,
@@ -348,7 +381,7 @@ public actor ChatRepository: ChatRepositoryProtocol {
             )
         }
 
-        var state = try await fetchEpochState(scope, deviceID: identity.info.deviceID)
+        var state = try await stateTask
         let participants = Set(
             participantUserIDs
                 .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
@@ -426,6 +459,7 @@ public actor ChatRepository: ChatRepositoryProtocol {
             epochKeys: epochKeys
         )
         v2SessionCache[scope.cacheKey] = session
+        v2SessionResolvedAt[scope.cacheKey] = Date()
         return session
     }
 
@@ -442,6 +476,7 @@ public actor ChatRepository: ChatRepositoryProtocol {
     /// new epoch could not be established — callers must not report the change as complete.
     public func reconcileMembershipEpoch(chatID: String, participantUserIDs: [String]) async throws -> EpochReconciliation {
         v2SessionCache[chatID] = nil
+        v2SessionResolvedAt[chatID] = nil
         guard let session = try await resolveV2Session(
             scope: .chat(chatID),
             participantUserIDs: participantUserIDs,
@@ -540,10 +575,25 @@ public actor ChatRepository: ChatRepositoryProtocol {
         cursor: Int64?,
         limit: Int = 40
     ) async throws -> [ChatMessageItem] {
+        try await fetchPage(conversation: conversation, currentUserID: currentUserID, cursor: cursor, around: nil, limit: limit)
+    }
+
+    public func fetchMessages(around messageID: String, conversation: ConversationIdentity, currentUserID: String, limit: Int) async throws -> [ChatMessageItem] {
+        try await fetchPage(conversation: conversation, currentUserID: currentUserID, cursor: nil, around: messageID, limit: limit)
+    }
+
+    /// Latest page, an older page (`cursor`), or a window around one message (`around`).
+    private func fetchPage(
+        conversation: ConversationIdentity,
+        currentUserID: String,
+        cursor: Int64?,
+        around: String?,
+        limit: Int
+    ) async throws -> [ChatMessageItem] {
         if let hubID = conversation.hubID {
-            // The hub thread route returns the latest window only; it has no older cursor.
+            // The hub thread route returns the latest window (or an around window); no older cursor.
             guard cursor == nil else { return [] }
-            return try await fetchHubMessages(hubID: hubID, currentUserID: currentUserID, limit: limit)
+            return try await fetchHubMessages(hubID: hubID, currentUserID: currentUserID, limit: limit, around: around)
         }
 
         let canonicalChatID = try await canonicalChatID(conversation)
@@ -555,6 +605,9 @@ public actor ChatRepository: ChatRepositoryProtocol {
         ]
         if let cursor {
             queryItems.append(URLQueryItem(name: "cursor", value: String(cursor)))
+        }
+        if let around {
+            queryItems.append(URLQueryItem(name: "aroundMessageId", value: around))
         }
 
         let request = APIRequest(
@@ -1058,11 +1111,14 @@ public actor ChatRepository: ChatRepositoryProtocol {
         clientMessageID: String,
         progress: (@Sendable (MediaUploadProgress) -> Void)?
     ) async throws -> ChatMessageItem {
-        guard conversation.hubID == nil else { throw ChatRepositoryError.mediaUnsupported }
         switch MediaValidator.validate(draft) {
         case .tooLarge?: throw ChatRepositoryError.mediaTooLarge
         case .typeNotAllowed?, .empty?: throw ChatRepositoryError.mediaTypeNotAllowed
         case nil: break
+        }
+        if let hubID = conversation.hubID {
+            return try await sendHubMedia(hubID: hubID, currentUserID: currentUserID, currentUserName: currentUserName, draft: draft,
+                                          replyToID: replyToID, clientMessageID: clientMessageID, progress: progress)
         }
         progress?(.encrypting)
         let chatID = try await canonicalChatID(conversation)
@@ -1154,11 +1210,7 @@ public actor ChatRepository: ChatRepositoryProtocol {
         case .image, .audio:
             metadata["original_mime_type"] = draft.mimeType
             metadata["is_encrypted_media"] = true
-            if draft.isClickDrop {
-                // KMP Click Drop: reveal is always 24 hours after send.
-                metadata["disposable_roll"] = true
-                metadata["collaboration_ttl"] = ISO8601DateFormatter().string(from: Date().addingTimeInterval(86_400))
-            }
+            metadata.merge(Self.clickDropMetadata(draft)) { _, new in new }
             if let duration = draft.durationSeconds { metadata["duration_seconds"] = duration }
             if draft.kind == .audio, let waveform = draft.waveform { metadata["waveform"] = VoiceWaveform.wire(waveform) }
         case .file:
@@ -1265,7 +1317,9 @@ public actor ChatRepository: ChatRepositoryProtocol {
         if let cached = await ChatMediaVault.shared.cachedURL(messageID: message.id, fileExtension: media.fileExtension) {
             return cached
         }
-        guard conversation.hubID == nil else { throw ChatRepositoryError.mediaUnsupported }
+        if let hubID = conversation.hubID {
+            return try await loadHubMedia(media, messageID: message.id, hubID: hubID)
+        }
 
         let plain: Data
         if let v2 = media.v2 {
@@ -1395,7 +1449,7 @@ public actor ChatRepository: ChatRepositoryProtocol {
 
     // MARK: - Hub transport (spec §61, §62)
 
-    private func fetchHubMessages(hubID: String, currentUserID: String, limit: Int) async throws -> [ChatMessageItem] {
+    private func fetchHubMessages(hubID: String, currentUserID: String, limit: Int, around: String? = nil) async throws -> [ChatMessageItem] {
         let data: Data
         do {
             (data, _) = try await apiClient.executeRaw(APIRequest(
@@ -1404,7 +1458,7 @@ public actor ChatRepository: ChatRepositoryProtocol {
                 queryItems: [
                     URLQueryItem(name: "hubId", value: hubID),
                     URLQueryItem(name: "limit", value: String(min(max(limit, 1), 120)))
-                ]
+                ] + (around.map { [URLQueryItem(name: "aroundMessageId", value: $0)] } ?? [])
             ))
         } catch {
             throw HubChatError.map(error)
@@ -1498,6 +1552,165 @@ public actor ChatRepository: ChatRepositoryProtocol {
         )
     }
 
+    // MARK: - Hub media (spec §62; KMP `HubChatViewModel.sendHubImageFromPicker/sendHubDisposableRoll`)
+
+    /// Photos and Click Drops only (KMP parity). New uploads are always v2: the ciphertext goes
+    /// to `POST /api/hub/media` (multipart), then an `image` message carries the path.
+    private func sendHubMedia(
+        hubID: String,
+        currentUserID: String,
+        currentUserName: String,
+        draft: MediaDraft,
+        replyToID: String?,
+        clientMessageID: String,
+        progress: (@Sendable (MediaUploadProgress) -> Void)?
+    ) async throws -> ChatMessageItem {
+        guard draft.kind == .image else { throw ChatRepositoryError.mediaTypeNotAllowed }
+        progress?(.encrypting)
+        guard let session = try await resolveV2Session(scope: .hub(hubID), participantUserIDs: hubParticipants[hubID] ?? [], allowUpgrade: true) else {
+            throw ChatRepositoryError.encryptionUnavailable
+        }
+        guard let epochKey = session.epochKeys[session.currentEpoch] else { throw ChatRepositoryError.currentEpochKeyUnavailable }
+        let encrypted = try ClickCryptoV2.encryptMedia(
+            metadata: .init(chatId: hubID, epoch: session.currentEpoch, senderDeviceId: session.deviceID,
+                            clientMessageId: clientMessageID, mediaCiphertextSha256: ""),
+            epochKey: epochKey,
+            plaintext: draft.data,
+            replayGuard: messageReplayGuard
+        )
+        let location = await hubLocationFields(camelCase: false)
+        let path = try await uploadHubMedia(
+            hubID: hubID,
+            objectPath: Self.hubMediaObjectPath(userID: currentUserID, hubID: hubID),
+            bytes: encrypted.uploadedBytes,
+            fields: location.mapValues { "\($0)" }.merging([
+                "e2ee_v2_envelope": encrypted.authorizationEnvelope,
+                "media_ciphertext_sha256": encrypted.mediaCiphertextSha256,
+                "epoch": String(session.currentEpoch),
+                "sender_device_id": session.deviceID,
+                "client_message_id": clientMessageID
+            ]) { _, new in new },
+            progress: progress
+        )
+
+        let label = draft.isClickDrop ? "Click Drop" : "Photo"
+        let body = try encryptV2(label, chatID: hubID, session: session, clientMessageID: clientMessageID)
+        var metadata: [String: Any] = [
+            "media_path": path,
+            "media_bucket": "hub-media",
+            "is_encrypted_media": true,
+            "original_mime_type": draft.mimeType,
+            "media_chat_id": hubID,
+            "media_epoch": session.currentEpoch,
+            "media_sender_device_id": session.deviceID,
+            "media_client_message_id": clientMessageID,
+            "media_ciphertext_sha256": encrypted.mediaCiphertextSha256,
+            "media_authorization_envelope": encrypted.authorizationEnvelope
+        ]
+        metadata.merge(body.metadata) { current, _ in current }
+        metadata.merge(Self.clickDropMetadata(draft)) { _, new in new }
+        if let replyToID { metadata["reply_to_id"] = replyToID }
+
+        var post = location
+        post["hub_id"] = hubID
+        post["body"] = body.wireContent
+        post["message_type"] = "image"
+        post["metadata"] = metadata
+        let data: Data
+        do {
+            (data, _) = try await apiClient.executeRaw(APIRequest(
+                path: "/api/hub/messages", method: .post, body: try JSONSerialization.data(withJSONObject: post)
+            ))
+        } catch {
+            throw HubChatError.map(error)
+        }
+        let root = try JSONFields.object(data)
+        let row = JSONFields.dictionary(root["message"]) ?? root
+        guard let id = JSONFields.string(row["id"]) else { throw ChatRepositoryError.invalidServerPayload }
+        let media = MessageMedia.parse(messageType: "image", metadata: metadata, decryptedContent: "", chatID: hubID)
+        let local = try? await ChatMediaVault.shared.store(draft.data, messageID: id, fileExtension: media?.fileExtension ?? "jpg")
+        return ChatMessageItem(
+            id: id, chatID: hubID, senderID: currentUserID, senderName: currentUserName, content: label,
+            rawContent: body.wireContent, messageType: .image, createdAt: JSONFields.date(row["created_at"]) ?? .now,
+            deliveryStatus: .sent, isOutgoing: true, replyToID: replyToID, media: media, localMediaURL: local
+        )
+    }
+
+    /// `{uid}/hub/{hubId}/<20 random alphanumerics>.bin`, the layout the route enforces.
+    nonisolated static func hubMediaObjectPath(userID: String, hubID: String) -> String {
+        let alphabet = Array("abcdefghijklmnopqrstuvwxyz0123456789")
+        let leaf = String((0..<20).map { _ in alphabet.randomElement()! })
+        return "\(userID)/hub/\(hubID)/\(leaf).bin"
+    }
+
+    private func uploadHubMedia(
+        hubID: String,
+        objectPath: String,
+        bytes: Data,
+        fields: [String: String],
+        progress: (@Sendable (MediaUploadProgress) -> Void)?
+    ) async throws -> String {
+        var form = MultipartForm()
+        form.add("hub_id", hubID)
+        form.add("object_path", objectPath)
+        form.add("mime_type", "application/octet-stream")
+        for (name, value) in fields.sorted(by: { $0.key < $1.key }) { form.add(name, value) }
+        form.addFile("file", fileName: "media.bin", mimeType: "application/octet-stream", data: bytes)
+        progress?(.uploading(fraction: 0))
+        let data: Data
+        do {
+            (data, _) = try await apiClient.executeRaw(
+                .multipart(path: "/api/hub/media", form: form),
+                uploadProgress: progress.map { report in { @Sendable fraction in report(.uploading(fraction: fraction)) } }
+            )
+        } catch {
+            throw HubChatError.map(error)
+        }
+        guard let path = JSONFields.string(try JSONFields.object(data)["path"]) else { throw ChatRepositoryError.invalidServerPayload }
+        return path
+    }
+
+    /// Hub media stores a path, not a bearer URL: re-sign it right before download so the server
+    /// enforces current access (KMP `resolveHubMediaUrl`). v2 decrypts with the hub epoch; older
+    /// hub photos use the legacy hub keys (read-only).
+    private func loadHubMedia(_ media: MessageMedia, messageID: String, hubID: String) async throws -> URL {
+        let raw: Data
+        if let path = media.storagePath {
+            let (data, _) = try await apiClient.executeRaw(APIRequest(
+                path: "/api/hub/media",
+                queryItems: [URLQueryItem(name: "hub_id", value: hubID), URLQueryItem(name: "path", value: path)]
+            ))
+            guard let signed = JSONFields.string(try JSONFields.object(data)["url"]), let url = URL(string: signed) else {
+                throw ChatRepositoryError.mediaUnavailable
+            }
+            raw = Self.normalizedMediaPayload(try await Self.fetch(url))
+        } else {
+            raw = Self.normalizedMediaPayload(try await downloadMedia(media))
+        }
+        let plain: Data
+        if let v2 = media.v2 {
+            guard
+                let session = try await resolveV2Session(scope: .hub(hubID), participantUserIDs: hubParticipants[hubID] ?? [], allowUpgrade: false),
+                let key = session.epochKeys[v2.epoch]
+            else { throw ChatRepositoryError.currentEpochKeyUnavailable }
+            plain = try ClickCryptoV2.decryptMedia(metadata: v2, epochKey: key, uploadedBytes: raw, replayGuard: messageReplayGuard)
+        } else {
+            plain = try ClickCryptoV1.decryptMediaBytes(raw, keys: ClickCryptoV1.deriveKeysForHub(hubID: hubID))
+        }
+        return try await ChatMediaVault.shared.store(plain, messageID: messageID, fileExtension: media.fileExtension)
+    }
+
+    /// KMP Click Drop fields: reveal is always 24 hours after send, plus the encounter if any.
+    static func clickDropMetadata(_ draft: MediaDraft, now: Date = .now) -> [String: Any] {
+        guard draft.isClickDrop else { return [:] }
+        var metadata: [String: Any] = [
+            "disposable_roll": true,
+            "collaboration_ttl": ISO8601DateFormatter().string(from: now.addingTimeInterval(86_400))
+        ]
+        if let encounterID = draft.encounterID { metadata["encounter_id"] = encounterID }
+        return metadata
+    }
+
     /// v2 when the hub is (or can now be) upgraded; plaintext only for never-upgraded hubs.
     /// A v2 hub whose key this device lacks throws rather than falling back.
     private func encryptHubText(
@@ -1551,7 +1764,7 @@ public actor ChatRepository: ChatRepositoryProtocol {
         let metadata = JSONFields.dictionary(row["metadata"]) ?? [:]
         let isOutgoing = sender == currentUserID
         let summaries = (reactions[id] ?? [:]).map { type, users in
-            ReactionSummary(reactionType: type, count: users.count, userReacted: users.contains(currentUserID))
+            ReactionSummary(reactionType: type, count: users.count, userReacted: users.contains(currentUserID), userIDs: users)
         }
         .sorted { $0.reactionType < $1.reactionType }
         return ChatMessageItem(
@@ -1570,7 +1783,9 @@ public actor ChatRepository: ChatRepositoryProtocol {
             replyToSnippet: string(metadata["reply_to_content"]) ?? string(metadata["reply_to_snippet"]),
             replyToSenderName: string(metadata["reply_to_sender_name"]),
             reactions: summaries,
-            isEdited: JSONFields.string(row["edited_at"]) != nil
+            isEdited: JSONFields.string(row["edited_at"]) != nil,
+            media: MessageMedia.parse(messageType: JSONFields.string(row["message_type"]) ?? "text", metadata: metadata,
+                                      decryptedContent: "", chatID: hubID)
         )
     }
 
@@ -1637,7 +1852,8 @@ public actor ChatRepository: ChatRepositoryProtocol {
                 ReactionSummary(
                     reactionType: emoji,
                     count: entries.count,
-                    userReacted: entries.contains { $0.userID == currentUserID }
+                    userReacted: entries.contains { $0.userID == currentUserID },
+                    userIDs: entries.map(\.userID)
                 )
             }
             .sorted { $0.reactionType < $1.reactionType }
