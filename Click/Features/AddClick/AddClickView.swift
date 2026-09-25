@@ -270,7 +270,6 @@ struct MyClickCodeView: View {
         .background(ClickColors.background.ignoresSafeArea())
         .navigationTitle("My QR")
         .navigationBarTitleDisplayMode(.inline)
-        .toolbar(.hidden, for: .tabBar)
         .task {
             if let userID = env.session.currentSession?.userId {
                 identity = await env.me.cachedSelfProfile(userID: userID)
@@ -487,7 +486,6 @@ struct ScanClickCodeView: View {
         }
         .navigationTitle("Scan Code")
         .navigationBarTitleDisplayMode(.inline)
-        .toolbar(.hidden, for: .tabBar)
         .task {
             let current = env.permissions.status(for: .camera)
             permission = current == .notDetermined
@@ -770,7 +768,6 @@ struct ConnectionInvocationView: View {
         .background(ClickColors.background.ignoresSafeArea())
         .navigationTitle("Add Click")
         .navigationBarTitleDisplayMode(.inline)
-        .toolbar(.hidden, for: .tabBar)
         .task {
             guard !didRun else { return }
             didRun = true

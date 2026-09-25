@@ -12,7 +12,6 @@ public struct ChatView: View {
     /// Rows currently on screen, updated while scrolling without invalidating the view.
     private final class VisibleRows { var topID: String? }
     @State private var visibleRows = VisibleRows()
-    @State private var rowActions = ChatRowActions()
     /// Messages that arrived while the reader was scrolled up.
     @State private var unseenCount = 0
     /// Insert animations run only after the first paint, never for the initial page.
@@ -34,7 +33,6 @@ public struct ChatView: View {
         var id: String { message.stableID }
     }
     @State private var actionTarget: ActionTarget?
-    @State private var moreReactionsTarget: ChatMessageItem?
     @State private var confirmingDeleteMessage: ChatMessageItem?
     @State private var isSearching = false
     @State private var searchQuery = ""
@@ -113,7 +111,6 @@ public struct ChatView: View {
                 }
             }
             .navigationBarTitleDisplayMode(.inline)
-            .hidesTabBarWhenPushed()
             .toolbar {
                 // Identity cluster sits right after the back button, leading-aligned (prototype
                 // chat header). The principal slot keeps it free of per-item glass chrome.
@@ -171,42 +168,11 @@ public struct ChatView: View {
                     onReact: { emoji in
                         Task { await model.toggleReaction(item: target.message, reactionType: emoji) }
                     },
-                    onMoreReactions: {
-                        moreReactionsTarget = target.message
-                    },
                     onDismiss: {
-                        var transaction = Transaction()
-                        transaction.disablesAnimations = true
-                        withTransaction(transaction) {
-                            actionTarget = nil
-                        }
+                        actionTarget = nil
                     }
                 )
                 .presentationBackground(.clear)
-            }
-            .transaction { transaction in
-                if actionTarget != nil {
-                    transaction.disablesAnimations = true
-                }
-            }
-            .sheet(item: $moreReactionsTarget) { target in
-                if EmojiKeyboardPicker.hasSystemEmojiKeyboard {
-                    EmojiKeyboardPicker { emoji in
-                        let item = target
-                        moreReactionsTarget = nil
-                        Task { await model.toggleReaction(item: item, reactionType: emoji) }
-                    }
-                    .frame(width: 1, height: 1)
-                    .presentationDetents([.height(60)])
-                    .presentationBackground(.clear)
-                } else {
-                    EmojiFallbackSheet { emoji in
-                        let item = target
-                        moreReactionsTarget = nil
-                        Task { await model.toggleReaction(item: item, reactionType: emoji) }
-                    }
-                    .presentationDetents([.medium, .large])
-                }
             }
             .confirmationDialog("Delete for everyone?", isPresented: Binding(
                 get: { confirmingDeleteMessage != nil },
@@ -230,8 +196,8 @@ public struct ChatView: View {
             .onChange(of: model.identity.chatID, initial: true) { _, chatID in
                 env.activeChatID = chatID
             }
-            .onChange(of: model.phase) { _, newPhase in
-                guard newPhase == .loaded, !animatesInserts else { return }
+            .onChange(of: model.phase) { oldPhase, newPhase in
+                guard oldPhase != .loaded, newPhase == .loaded, !animatesInserts else { return }
                 DispatchQueue.main.async {
                     proxy.scrollTo("bottom-anchor", anchor: .bottom)
                     DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) { animatesInserts = true }
@@ -302,18 +268,57 @@ public struct ChatView: View {
                         .padding(.vertical, 8)
                 }
                 ForEach(Array(model.items.enumerated()), id: \.element.stableID) { index, item in
-                    MessageRow(
-                        item: item,
-                        showsDateHeader: shouldShowDateHeader(at: index),
-                        isFirstUnread: item.id == model.firstUnreadID,
+                    if shouldShowDateHeader(at: index) {
+                        Self.dateHeader(item.createdAt)
+                    }
+                    if item.id == model.firstUnreadID {
+                        UnreadDivider().id("unread-divider")
+                    }
+                    MessageBubbleView(
+                        message: item,
+                        onReply: { target in
+                            withAnimation(ClickMotion.selection) {
+                                model.editTarget = nil
+                                model.replyTarget = target
+                            }
+                        },
+                        onEdit: { target in
+                            withAnimation(ClickMotion.selection) {
+                                model.replyTarget = nil
+                                model.editTarget = target
+                                model.composerText = target.content
+                            }
+                        },
+                        onDelete: { target in Task { await model.deleteMessage(item: target) } },
+                        onToggleReaction: { target, emoji in Task { await model.toggleReaction(item: target, reactionType: emoji) } },
+                        onRetrySend: { target in Task { await model.retrySend(item: target) } },
                         showsSenderName: !model.identity.isDirect && startsSenderRun(at: index),
                         showsReceipts: model.identity.supportsReceipts,
-                        isHighlighted: highlightedID == item.stableID,
+                        mediaLoader: { message in try await model.mediaURL(for: message) },   // never nil
+                        onOpenMedia: { url, kind in
+                            if kind == .image { viewerURL = ViewerURL(url: url) } else { quickLookURL = url }
+                        },
+                        onOpenBeacon: { beacon in
+                            env.router.navigate(to: beacon.isEvent ? .event(beaconID: beacon.beaconID) : .beacon(beaconID: beacon.beaconID))
+                        },
+                        onDiscardFailed: { target in withAnimation(ClickMotion.content) { model.discardFailed(item: target) } },
+                        onForward: conversations != nil && model.canForward(item) ? { forwarding = $0 } : nil,
+                        onSaveMedia: { target in Task { await saveOrShare(target) } },
+                        onShowReactions: { target, reaction in reactorsFor = ReactorsTarget(message: target, reaction: reaction) },
                         replyTarget: item.replyToID.flatMap { byID[$0] },
-                        canForward: conversations != nil && model.canForward(item),
-                        actions: rowActions
+                        onTapReplyQuote: { id in Task { await jump(to: id, proxy: proxy) } },
+                        onLongPress: { message, frame in actionTarget = ActionTarget(message: message, frame: frame) }
                     )
-                    .equatable()
+                    .background {
+                        if highlightedID == item.stableID {
+                            ClickColors.accentForeground.opacity(0.14).transition(.opacity)
+                        }
+                    }
+                    .id(item.stableID)
+                    .transition(.asymmetric(
+                        insertion: .move(edge: .bottom).combined(with: .scale(scale: 0.92, anchor: item.isOutgoing ? .bottomTrailing : .bottomLeading)).combined(with: .opacity),
+                        removal: .opacity
+                    ))
                 }
 
                 if model.isPeerTyping {
@@ -359,61 +364,6 @@ public struct ChatView: View {
             geometry.visibleRect.maxY >= geometry.contentSize.height - 90
         } action: { _, nearBottom in
             isNearBottom = nearBottom
-        }
-        .onAppear { setupRowActions(proxy: proxy) }
-    }
-
-    private func setupRowActions(proxy: ScrollViewProxy) {
-        rowActions.onReply = { target in
-            withAnimation(ClickMotion.selection) {
-                model.editTarget = nil
-                model.replyTarget = target
-            }
-        }
-        rowActions.onEdit = { target in
-            withAnimation(ClickMotion.selection) {
-                model.replyTarget = nil
-                model.editTarget = target
-                model.composerText = target.content
-            }
-        }
-        rowActions.onDelete = { target in
-            Task { await model.deleteMessage(item: target) }
-        }
-        rowActions.onToggleReaction = { target, emoji in
-            Task { await model.toggleReaction(item: target, reactionType: emoji) }
-        }
-        rowActions.onRetrySend = { target in
-            Task { await model.retrySend(item: target) }
-        }
-        rowActions.mediaLoader = { message in
-            try await model.mediaURL(for: message)
-        }
-        rowActions.onOpenMedia = { url, kind in
-            if kind == .image { viewerURL = ViewerURL(url: url) } else { quickLookURL = url }
-        }
-        rowActions.onOpenBeacon = { beacon in
-            env.router.navigate(to: beacon.isEvent ? .event(beaconID: beacon.beaconID) : .beacon(beaconID: beacon.beaconID))
-        }
-        rowActions.onDiscardFailed = { target in
-            withAnimation(ClickMotion.content) { model.discardFailed(item: target) }
-        }
-        rowActions.onForward = { forwarding = $0 }
-        rowActions.onSaveMedia = { target in
-            Task { await saveOrShare(target) }
-        }
-        rowActions.onShowReactions = { target, reaction in
-            reactorsFor = ReactorsTarget(message: target, reaction: reaction)
-        }
-        rowActions.onTapReplyQuote = { id in
-            Task { await jump(to: id, proxy: proxy) }
-        }
-        rowActions.onLongPress = { message, frame in
-            var transaction = Transaction()
-            transaction.disablesAnimations = true
-            withTransaction(transaction) {
-                actionTarget = ActionTarget(message: message, frame: frame)
-            }
         }
     }
 
@@ -480,11 +430,7 @@ public struct ChatView: View {
             guard model.hasMoreHistory, !model.isLoadingOlder else { return }
             guard let anchor = visibleRows.topID else { return }
             await model.loadOlder()
-            var transaction = Transaction()
-            transaction.disablesAnimations = true
-            withTransaction(transaction) {
-                proxy.scrollTo(anchor, anchor: .top)
-            }
+            proxy.scrollTo(anchor, anchor: .top)
         }
     }
 
@@ -895,89 +841,5 @@ public struct ChatView: View {
             return "Yesterday"
         }
         return date.formatted(.dateTime.month(.abbreviated).day())
-    }
-}
-
-/// Closures for message row interactions, passed by reference to keep MessageRow equatable.
-private final class ChatRowActions {
-    var onReply: ((ChatMessageItem) -> Void)?
-    var onEdit: ((ChatMessageItem) -> Void)?
-    var onDelete: ((ChatMessageItem) -> Void)?
-    var onToggleReaction: ((ChatMessageItem, String) -> Void)?
-    var onRetrySend: ((ChatMessageItem) -> Void)?
-    var mediaLoader: ((ChatMessageItem) async throws -> URL)?
-    var onOpenMedia: ((URL, MessageMedia.Kind) -> Void)?
-    var onOpenBeacon: ((SharedBeacon) -> Void)?
-    var onDiscardFailed: ((ChatMessageItem) -> Void)?
-    var onForward: ((ChatMessageItem) -> Void)?
-    var onSaveMedia: ((ChatMessageItem) -> Void)?
-    var onShowReactions: ((ChatMessageItem, String) -> Void)?
-    var onTapReplyQuote: ((String) -> Void)?
-    var onLongPress: ((ChatMessageItem, CGRect) -> Void)?
-}
-
-/// Equatable message row: skips re-rendering unchanged messages during scrolling and body updates.
-private struct MessageRow: View, Equatable {
-    let item: ChatMessageItem
-    let showsDateHeader: Bool
-    let isFirstUnread: Bool
-    let showsSenderName: Bool
-    let showsReceipts: Bool
-    let isHighlighted: Bool
-    let replyTarget: ChatMessageItem?
-    let canForward: Bool
-    let actions: ChatRowActions
-
-    nonisolated static func == (lhs: MessageRow, rhs: MessageRow) -> Bool {
-        lhs.item == rhs.item &&
-        lhs.showsDateHeader == rhs.showsDateHeader &&
-        lhs.isFirstUnread == rhs.isFirstUnread &&
-        lhs.showsSenderName == rhs.showsSenderName &&
-        lhs.showsReceipts == rhs.showsReceipts &&
-        lhs.isHighlighted == rhs.isHighlighted &&
-        lhs.replyTarget == rhs.replyTarget &&
-        lhs.canForward == rhs.canForward
-    }
-
-    var body: some View {
-        VStack(spacing: 0) {
-            if showsDateHeader {
-                ChatView.dateHeader(item.createdAt)
-            }
-            if isFirstUnread {
-                UnreadDivider().id("unread-divider")
-            }
-
-            MessageBubbleView(
-                message: item,
-                onReply: { actions.onReply?($0) },
-                onEdit: { actions.onEdit?($0) },
-                onDelete: { actions.onDelete?($0) },
-                onToggleReaction: { actions.onToggleReaction?($0, $1) },
-                onRetrySend: { actions.onRetrySend?($0) },
-                showsSenderName: showsSenderName,
-                showsReceipts: showsReceipts,
-                mediaLoader: actions.mediaLoader,
-                onOpenMedia: actions.onOpenMedia,
-                onOpenBeacon: actions.onOpenBeacon,
-                onDiscardFailed: { actions.onDiscardFailed?($0) },
-                onForward: canForward ? { actions.onForward?($0) } : nil,
-                onSaveMedia: { actions.onSaveMedia?($0) },
-                onShowReactions: { actions.onShowReactions?($0, $1) },
-                replyTarget: replyTarget,
-                onTapReplyQuote: actions.onTapReplyQuote,
-                onLongPress: actions.onLongPress
-            )
-            .background {
-                if isHighlighted {
-                    ClickColors.accentForeground.opacity(0.14).transition(.opacity)
-                }
-            }
-            .id(item.stableID)
-            .transition(.asymmetric(
-                insertion: .move(edge: .bottom).combined(with: .scale(scale: 0.92, anchor: item.isOutgoing ? .bottomTrailing : .bottomLeading)).combined(with: .opacity),
-                removal: .opacity
-            ))
-        }
     }
 }

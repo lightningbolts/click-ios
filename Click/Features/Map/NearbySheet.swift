@@ -34,7 +34,7 @@ struct NearbyLip: View {
             .padding(.horizontal, 20)
             .padding(.bottom, 12)
         }
-        .frame(maxWidth: .infinity)
+        .frame(maxWidth: .infinity, minHeight: 64)
         .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 30, style: .continuous))
         .clipShape(RoundedRectangle(cornerRadius: 30, style: .continuous))
         .overlay(
@@ -44,7 +44,7 @@ struct NearbyLip: View {
         .shadow(color: .black.opacity(0.22), radius: 18, y: 4)
         .padding(.horizontal, 8)
         .padding(.bottom, 8)
-        .contentShape(Rectangle())
+        .contentShape(RoundedRectangle(cornerRadius: 30, style: .continuous))
         .onTapGesture {
             model.isNearbyPresented = true
         }
@@ -57,6 +57,8 @@ struct NearbyLip: View {
                 }
         )
         .accessibilityElement(children: .contain)
+        .accessibilityAddTraits(.isButton)
+        .accessibilityHint("Opens the Nearby list")
         .accessibilityAction(named: "Open Nearby list") {
             model.isNearbyPresented = true
         }
@@ -130,6 +132,9 @@ struct NearbyListView: View {
             .scrollIndicators(.hidden)
 
             list
+        }
+        .onChange(of: isSearchFocused) { _, focused in
+            if focused { model.nearbyDetent = .large }
         }
     }
 

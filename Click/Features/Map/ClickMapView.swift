@@ -129,9 +129,13 @@ public struct ClickMapView: View {
             }
             .presentationDetents([.medium, .large], selection: $model.nearbyDetent)
             .presentationDragIndicator(.visible)
+            .presentationContentInteraction(.scrolls)
             .presentationBackgroundInteraction(.enabled(upThrough: .medium))
             .presentationBackground(.regularMaterial)
             .presentationCornerRadius(38)
+        }
+        .onChange(of: model.isNearbyPresented) { _, open in
+            if !open { model.nearbyDetent = .medium }
         }
         .sheet(isPresented: $creating) {
             CreateBeaconSheet(fallback: mapCenter) { beacon in

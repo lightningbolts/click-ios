@@ -157,6 +157,16 @@ struct MessageOperationsTests {
         #expect(model1 === model2)
     }
 
+    @Test("isEmoji recognizes all keyboard emojis and rejects non-emojis")
+    func isEmojiRecognition() {
+        #expect(EmojiKeyboardPicker.isEmoji("👍"))
+        #expect(EmojiKeyboardPicker.isEmoji("🇺🇸"))
+        #expect(EmojiKeyboardPicker.isEmoji("1️⃣"))
+        #expect(EmojiKeyboardPicker.isEmoji("👩🏽‍💻"))
+        #expect(!EmojiKeyboardPicker.isEmoji("a"))
+        #expect(!EmojiKeyboardPicker.isEmoji("1"))
+    }
+
     @Test("EmojiKeyboardPicker fallback list contains > 1000 emojis and includes standard reactions")
     func emojiKeyboardPickerFallbackList() {
         let emojis = EmojiKeyboardPicker.allEmoji()

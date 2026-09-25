@@ -44,6 +44,7 @@
 		2AB27C901147F125B30A3E71 /* ChatSendPipelineTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = C2D7B43054D3829FDF8F8F3F /* ChatSendPipelineTests.swift */; };
 		2AE58F26B4198628E285BCD4 /* ImagePipeline.swift in Sources */ = {isa = PBXBuildFile; fileRef = F4A7259C78F05583D7D2BF35 /* ImagePipeline.swift */; };
 		2BC0FD0FBF17D5EBD39AC88C /* ChatTargetPicker.swift in Sources */ = {isa = PBXBuildFile; fileRef = 79A26B08508E31DA4A4A7330 /* ChatTargetPicker.swift */; };
+		2EFF2526EFAF88CEC4F82A12 /* ClickTabBar.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0A2A626503C7A93F34652E14 /* ClickTabBar.swift */; };
 		306512AA3D989236575986CD /* PeerProfileModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = F23B8F9BB56FEA60442B3E78 /* PeerProfileModel.swift */; };
 		308E04AF2F255C5B30A99CD6 /* PhotoLibrarySaver.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9BA96073B0A2829E201BD915 /* PhotoLibrarySaver.swift */; };
 		3396C88A0F195A5E0253B73B /* UserProfileSnapshot.swift in Sources */ = {isa = PBXBuildFile; fileRef = C04BB0EDB80B1C58203CF1B1 /* UserProfileSnapshot.swift */; };
@@ -126,7 +127,6 @@
 		9AC749853721AF6DE61C1348 /* EmojiKeyboardPicker.swift in Sources */ = {isa = PBXBuildFile; fileRef = AAD7E291890A95117C367052 /* EmojiKeyboardPicker.swift */; };
 		9B5130FF9140BEAE3CCDE585 /* SavedEventsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8A25B36F7B43CDA3235FEFDD /* SavedEventsView.swift */; };
 		9BCC7EC969F64D6BDC9AB051 /* EventReminderScheduler.swift in Sources */ = {isa = PBXBuildFile; fileRef = FCB1638F35F178E0F0FE80F1 /* EventReminderScheduler.swift */; };
-		9C2C951902E4776FAA70D2D0 /* TabBarPushPolicy.swift in Sources */ = {isa = PBXBuildFile; fileRef = 62172BB0415008D1CA99FFFB /* TabBarPushPolicy.swift */; };
 		9FFE49B750AFD7B106E7F990 /* CreateBeaconSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1704BBFEC1035AD1234E1B8D /* CreateBeaconSheet.swift */; };
 		A30461AB84F2BAE2A8A57572 /* EventEngagementRepository.swift in Sources */ = {isa = PBXBuildFile; fileRef = AC24CFA0E6E02114CAA8699B /* EventEngagementRepository.swift */; };
 		A6368ED8BCD618DA44245AF9 /* BeaconDetailView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8449BE5D6B21017344E55E9E /* BeaconDetailView.swift */; };
@@ -256,6 +256,7 @@
 		0984317C23132C065F522391 /* ChatRealtimeManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ChatRealtimeManager.swift; sourceTree = "<group>"; };
 		09B254B0F4FB61FBD50BB520 /* HubInfoView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HubInfoView.swift; sourceTree = "<group>"; };
 		09BDA2C2A494538273494E1E /* SettingsStoreTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SettingsStoreTests.swift; sourceTree = "<group>"; };
+		0A2A626503C7A93F34652E14 /* ClickTabBar.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ClickTabBar.swift; sourceTree = "<group>"; };
 		0F37F164483F60E35B52EF4F /* PostConnectView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PostConnectView.swift; sourceTree = "<group>"; };
 		1129F5B0BDFF83F9CE1A6759 /* EventDetailTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = EventDetailTests.swift; sourceTree = "<group>"; };
 		115558E16D558D82B19CEDFD /* Typography.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Typography.swift; sourceTree = "<group>"; };
@@ -321,7 +322,6 @@
 		5B25B865B17C60099FB2E33C /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist; path = Info.plist; sourceTree = "<group>"; };
 		5CE872BED60D02250BA16BD1 /* Debug.xcconfig */ = {isa = PBXFileReference; lastKnownFileType = text.xcconfig; path = Debug.xcconfig; sourceTree = "<group>"; };
 		5FFF30E5C1CD35BF6388FFDA /* InterestsPickerView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = InterestsPickerView.swift; sourceTree = "<group>"; };
-		62172BB0415008D1CA99FFFB /* TabBarPushPolicy.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TabBarPushPolicy.swift; sourceTree = "<group>"; };
 		625A527B98598B022044B468 /* HubChatView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HubChatView.swift; sourceTree = "<group>"; };
 		65E7D2050E854DAEDA0621FB /* NetworkMonitor.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NetworkMonitor.swift; sourceTree = "<group>"; };
 		66CDD7B3970AD090C2755F16 /* MeSettingsTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MeSettingsTests.swift; sourceTree = "<group>"; };
@@ -524,10 +524,10 @@
 				FF26912F27B4E25BACF33C07 /* AppRouteDestination.swift */,
 				7D2D91C12835F0AF71AF14F9 /* AppRouter.swift */,
 				464D8F9F85AB107124A0DFC4 /* ClickApp.swift */,
+				0A2A626503C7A93F34652E14 /* ClickTabBar.swift */,
 				AFFF0C420D046C1E8CDC3E89 /* DebugLaunch.swift */,
 				9E1DF371E97CE2C8CBF99560 /* MeTabAvatarModel.swift */,
 				DA0BA02DE0FE06FB525A130A /* RootGateView.swift */,
-				62172BB0415008D1CA99FFFB /* TabBarPushPolicy.swift */,
 			);
 			path = App;
 			sourceTree = "<group>";
@@ -1290,6 +1290,7 @@
 				8A07FC1B9619FAE67BD81910 /* ClickDropFilter.swift in Sources */,
 				77E16A225B4E34C27CD1EC85 /* ClickLogo.swift in Sources */,
 				400758128DC990342F01CCF2 /* ClickMapView.swift in Sources */,
+				2EFF2526EFAF88CEC4F82A12 /* ClickTabBar.swift in Sources */,
 				FEEF3EB93549BC0E8570F080 /* ClicksSnapshot.swift in Sources */,
 				07E26E70DB1B5BEE2525D0AB /* ClicksView.swift in Sources */,
 				19888E74E00427F4E1A940FF /* CliqueEligibility.swift in Sources */,
@@ -1389,7 +1390,6 @@
 				B12D7E2CA0F7D433B947DA57 /* Spacing.swift in Sources */,
 				8D429531C644A536648D8BC5 /* StatusPill.swift in Sources */,
 				09B424FA14F8AFB0370CA393 /* SupabaseAuthService.swift in Sources */,
-				9C2C951902E4776FAA70D2D0 /* TabBarPushPolicy.swift in Sources */,
 				4538B728A68E8E3B3EEA9912 /* TapConnectModel.swift in Sources */,
 				D65F1754EA234A84D1056733 /* TapConnectView.swift in Sources */,
 				4708F31411ACBDD9DC20FFA6 /* TelemetryQueue.swift in Sources */,

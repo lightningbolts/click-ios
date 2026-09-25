@@ -14,8 +14,8 @@ public struct MessageBubbleView: View {
     let showsSenderName: Bool
     /// Hubs have no delivery/read receipts; only pending/failed state is shown.
     let showsReceipts: Bool
-    /// Decrypted-media provider and opener; nil renders media as an unavailable label.
-    let mediaLoader: ((ChatMessageItem) async throws -> URL)?
+    /// Decrypted-media provider and opener; cannot be nil.
+    let mediaLoader: (ChatMessageItem) async throws -> URL
     let onOpenMedia: ((URL, MessageMedia.Kind) -> Void)?
     let onOpenBeacon: ((SharedBeacon) -> Void)?
     /// Removes a failed outgoing row (✕ on a failed attachment).
@@ -44,7 +44,7 @@ public struct MessageBubbleView: View {
         onRetrySend: ((ChatMessageItem) -> Void)? = nil,
         showsSenderName: Bool = false,
         showsReceipts: Bool = true,
-        mediaLoader: ((ChatMessageItem) async throws -> URL)? = nil,
+        mediaLoader: @escaping (ChatMessageItem) async throws -> URL,
         onOpenMedia: ((URL, MessageMedia.Kind) -> Void)? = nil,
         onOpenBeacon: ((SharedBeacon) -> Void)? = nil,
         onDiscardFailed: ((ChatMessageItem) -> Void)? = nil,
@@ -157,7 +157,7 @@ public struct MessageBubbleView: View {
             BeaconMessageCard(beacon: beacon, time: message.formattedTime, isOutgoing: message.isOutgoing) {
                 onOpenBeacon?(beacon)
             }
-        } else if let media = message.media, let mediaLoader {
+        } else if let media = message.media {
             VStack(alignment: message.isOutgoing ? .trailing : .leading, spacing: 4) {
                 if let snippet = message.replyToSnippet, !snippet.isEmpty {
                     replyQuote(snippet: snippet)

@@ -130,7 +130,6 @@ public struct MainTabShellView: View {
         @Bindable var r = env.router
         // Routing selection through `selectTab` makes re-tapping the active tab pop to its root.
         let selection = Binding(get: { r.selectedTab }, set: { tab in
-            if tab == .addClick { ClickHaptics.impact(.medium) }
             r.selectTab(tab)
         })
 
@@ -138,49 +137,59 @@ public struct MainTabShellView: View {
             Tab("Home", systemImage: "house.fill", value: MainTab.home) {
                 NavigationStack(path: $r.homePath) {
                     HomeView()
+                        .safeAreaInset(edge: .bottom, spacing: 0) { ClickTabBar() }
                         .appRouteDestinations()
                 }
                 .tabFadeIn(.home)
+                .toolbar(.hidden, for: .tabBar)
             }
 
             Tab(value: MainTab.addClick) {
                 NavigationStack(path: $r.addClickPath) {
                     AddClickView()
+                        .safeAreaInset(edge: .bottom, spacing: 0) { ClickTabBar() }
                         .appRouteDestinations()
                 }
                 .tabFadeIn(.addClick)
+                .toolbar(.hidden, for: .tabBar)
             } label: {
                 // Always purple (original rendering), selected or not: it's the primary action.
                 Label {
                     Text("Add Click")
                 } icon: {
-                    Image(uiImage: Self.addClickIcon)
+                    Image(systemName: "plus.circle.fill")
                 }
             }
 
             Tab("Clicks", systemImage: "person.2.fill", value: MainTab.connections) {
                 NavigationStack(path: $r.connectionsPath) {
                     ClicksView(model: conversations)
+                        .safeAreaInset(edge: .bottom, spacing: 0) { ClickTabBar() }
                         .appRouteDestinations()
                 }
                 .tabFadeIn(.connections)
+                .toolbar(.hidden, for: .tabBar)
             }
             .badge(conversations.unreadTotal)
 
             Tab("Map", systemImage: "location.fill", value: MainTab.map) {
                 NavigationStack(path: $r.mapPath) {
                     ClickMapView()
+                        .safeAreaInset(edge: .bottom, spacing: 0) { ClickTabBar() }
                         .appRouteDestinations()
                 }
                 .tabFadeIn(.map)
+                .toolbar(.hidden, for: .tabBar)
             }
 
             Tab(value: MainTab.settings) {
                 NavigationStack(path: $r.settingsPath) {
                     MeView()
+                        .safeAreaInset(edge: .bottom, spacing: 0) { ClickTabBar() }
                         .appRouteDestinations()
                 }
                 .tabFadeIn(.settings)
+                .toolbar(.hidden, for: .tabBar)
             } label: {
                 Label {
                     Text("Me")
@@ -244,12 +253,6 @@ public struct MainTabShellView: View {
             }
         }
     }
-
-    private static let addClickIcon: UIImage = {
-        let config = UIImage.SymbolConfiguration(pointSize: 22, weight: .semibold)
-        let base = UIImage(systemName: "plus.circle.fill", withConfiguration: config) ?? UIImage()
-        return base.withTintColor(UIColor(ClickColors.accentForeground), renderingMode: .alwaysOriginal)
-    }()
 
     /// Seeds the Me tab from the cached self profile, fetching it only when nothing is cached.
     /// Later profile refreshes on the Me root forward their avatar to `meTabAvatar`.

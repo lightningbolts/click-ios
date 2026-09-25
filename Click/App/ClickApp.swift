@@ -16,7 +16,6 @@ struct ClickApp: App {
         // Only the font is customized so the platform keeps owning bar layout and material.
         UINavigationBar.appearance().largeTitleTextAttributes = [.font: ClickTypography.largeTitleUIFont()]
         ClickNotificationCoordinator.shared.attach(environment: environment)
-        TabBarPushPolicy.install()
     }
 
     var body: some Scene {

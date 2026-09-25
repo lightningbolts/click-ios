@@ -22,12 +22,18 @@ public struct EmojiKeyboardPicker: UIViewRepresentable {
 
     public func makeCoordinator() -> Coordinator { Coordinator(onPick: onPick) }
 
+    /// Any emoji the keyboard can produce: single emoji, flags, keycaps, ZWJ sequences, skin tones.
+    public nonisolated static func isEmoji(_ character: Character) -> Bool {
+        character.unicodeScalars.contains { $0.properties.isEmojiPresentation }
+            || character.unicodeScalars.contains { $0.value == 0xFE0F }
+    }
+
     public final class Coordinator: NSObject, UITextFieldDelegate {
         let onPick: (String) -> Void
         init(onPick: @escaping (String) -> Void) { self.onPick = onPick }
         public func textField(_ textField: UITextField, shouldChangeCharactersIn range: NSRange, replacementString string: String) -> Bool {
-            if let emoji = string.first, emoji.unicodeScalars.contains(where: { $0.properties.isEmoji && $0.value > 0x238C }) {
-                onPick(String(emoji))
+            if let first = string.first, EmojiKeyboardPicker.isEmoji(first) {
+                onPick(String(first))
             }
             return false
         }
@@ -70,9 +76,8 @@ public final class EmojiTextField: UITextField {
     }
 }
 
-/// Fallback full emoji picker when the system emoji keyboard is not active in user settings.
-public struct EmojiFallbackSheet: View {
-    @Environment(\.dismiss) private var dismiss
+/// Fallback full emoji picker panel when the system emoji keyboard is not active in user settings.
+public struct EmojiFallbackPanel: View {
     public let onPick: (String) -> Void
     @State private var query = ""
 
@@ -89,30 +94,53 @@ public struct EmojiFallbackSheet: View {
     }
 
     public var body: some View {
-        NavigationStack {
+        VStack(spacing: 8) {
+            HStack(spacing: 8) {
+                Image(systemName: "magnifyingglass")
+                    .foregroundStyle(ClickColors.textSecondary)
+                TextField("Search emoji", text: $query)
+                    .textFieldStyle(.plain)
+                if !query.isEmpty {
+                    Button {
+                        query = ""
+                    } label: {
+                        Image(systemName: "xmark.circle.fill")
+                            .foregroundStyle(ClickColors.textSecondary)
+                    }
+                    .buttonStyle(.plain)
+                }
+            }
+            .padding(.horizontal, 10)
+            .padding(.vertical, 8)
+            .background(ClickColors.fillSubtle, in: RoundedRectangle(cornerRadius: 10, style: .continuous))
+            .padding(.horizontal, 16)
+            .padding(.top, 12)
+
             ScrollView {
                 LazyVGrid(columns: Array(repeating: GridItem(.flexible(), spacing: 8), count: 8), spacing: 12) {
                     ForEach(filtered, id: \.emoji) { item in
                         Button {
                             ClickHaptics.impact(.light)
                             onPick(item.emoji)
-                            dismiss()
                         } label: {
                             Text(item.emoji).font(.system(size: 30))
                         }
                         .buttonStyle(.plain)
                     }
                 }
-                .padding(16)
-            }
-            .searchable(text: $query, prompt: "Search emoji")
-            .navigationTitle("Reactions")
-            .navigationBarTitleDisplayMode(.inline)
-            .toolbar {
-                ToolbarItem(placement: .cancellationAction) {
-                    Button("Cancel") { dismiss() }
-                }
+                .padding(.horizontal, 16)
+                .padding(.bottom, 16)
             }
         }
+        .background(
+            UnevenRoundedRectangle(
+                topLeadingRadius: 24,
+                bottomLeadingRadius: 0,
+                bottomTrailingRadius: 0,
+                topTrailingRadius: 24,
+                style: .continuous
+            )
+            .fill(.regularMaterial)
+        )
     }
 }
