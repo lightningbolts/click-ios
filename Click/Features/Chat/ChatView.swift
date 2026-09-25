@@ -157,7 +157,7 @@ public struct ChatView: View {
             }
             .sheet(item: $emojiPickerTarget) { target in
                 EmojiPickerSheet { emoji in
-                    Task { await model.toggleReaction(item: target, reactionType: emoji) }
+                    react(to: target, with: emoji)
                 }
             }
             .confirmationDialog("Delete for everyone?", isPresented: Binding(
@@ -333,7 +333,7 @@ public struct ChatView: View {
                 }
             },
             onDelete: { target in Task { await model.deleteMessage(item: target) } },
-            onToggleReaction: { target, emoji in Task { await model.toggleReaction(item: target, reactionType: emoji) } },
+            onToggleReaction: { target, emoji in react(to: target, with: emoji) },
             onRetrySend: { target in Task { await model.retrySend(item: target) } },
             showsSenderName: !model.identity.isDirect && Self.startsSenderRun(at: index, in: items),
             showsReceipts: model.identity.supportsReceipts,
@@ -364,6 +364,11 @@ public struct ChatView: View {
         }
     }
 
+    private func react(to item: ChatMessageItem, with emoji: String) {
+        timeline.preservePositionOnNextContentChange()
+        Task { await model.toggleReaction(item: item, reactionType: emoji) }
+    }
+
     private func actionOverlay(for target: ActionTarget) -> some View {
         MessageActionOverlay(
             message: target.message,
@@ -379,7 +384,7 @@ public struct ChatView: View {
             ),
             actions: messageActions(for: target.message),
             onReact: { emoji in
-                Task { await model.toggleReaction(item: target.message, reactionType: emoji) }
+                react(to: target.message, with: emoji)
             },
             onMoreReactions: {
                 actionTarget = nil
