@@ -64,71 +64,7 @@ public struct ChatView: View {
     }
 
     public var body: some View {
-        Group {
-                switch model.phase {
-                case .initial where model.items.isEmpty:
-                    loadingState
-
-                case .loading where model.items.isEmpty:
-                    loadingState
-
-                case .failed(let message) where model.items.isEmpty:
-                    failureState(message: message)
-
-                default:
-                    timelineView
-                }
-            }
-            .background { ChatBackground(seed: model.identity.connectionID ?? model.identity.chatID).equatable() }
-            .onGeometryChange(for: CGFloat.self) { $0.size.width } action: { screenWidth = $0 }
-            .safeAreaInset(edge: .bottom, spacing: 0) {
-                composer
-            }
-            // In-view (not a cover): the chat never disappears underneath, so realtime, audio
-            // and the keyboard state are untouched while actions are open.
-            .overlay {
-                if let target = actionTarget {
-                    actionOverlay(for: target).id(target.id)
-                }
-            }
-            .overlay(alignment: .top) {
-                if isSearching {
-                    searchBar
-                        .padding(.horizontal, 12)
-                        .padding(.top, 8)
-                        .transition(.move(edge: .top).combined(with: .opacity))
-                } else if let error = model.operationError, !model.items.isEmpty {
-                    operationBanner(error)
-                        .padding(.horizontal, 12)
-                        .padding(.top, 8)
-                        .transition(.move(edge: .top).combined(with: .opacity))
-                } else if let connection = sayHiConnection {
-                    // An overlay, so it appears and leaves without moving the timeline.
-                    SayHiPanel(
-                        deadline: connection.sayHiDeadline,
-                        context: ([connection.encounterLocation] + connection.mutualTags).joined(separator: " "),
-                        seed: connection.connectionID
-                    ) { prompt in
-                        Task { await model.sendText(prompt) }
-                    }
-                    .padding(.horizontal, 12)
-                    .padding(.top, 8)
-                }
-            }
-            .navigationBarTitleDisplayMode(.inline)
-            .toolbar {
-                // Identity cluster sits right after the back button, leading-aligned (prototype
-                // chat header). The principal slot keeps it free of per-item glass chrome.
-                ToolbarItem(placement: .principal) {
-                    // The principal slot sizes to content (centered); an explicit width that
-                    // spans back-button to menu keeps the cluster leading-aligned.
-                    conversationTitle
-                        .frame(width: max(120, screenWidth - 132), alignment: .leading)
-                }
-                ToolbarItem(placement: .topBarTrailing) {
-                    conversationMenu
-                }
-            }
+        chatSurface
             .task {
                 await model.onAppear(
                     supabaseURL: AppConfig.shared.supabaseURL,
@@ -157,7 +93,7 @@ public struct ChatView: View {
             }
             .sheet(item: $emojiPickerTarget) { target in
                 EmojiPickerSheet { emoji in
-                    Task { await model.toggleReaction(item: target, reactionType: emoji) }
+                    react(to: target, with: emoji)
                 }
             }
             .confirmationDialog("Delete for everyone?", isPresented: Binding(
@@ -211,6 +147,66 @@ public struct ChatView: View {
                 guard !Task.isCancelled else { return }
                 await showToast(next.isOutgoing ? "Your Click Drop developed" : "A Click Drop developed")
             }
+    }
+
+    private var chatSurface: some View {
+        Group {
+            switch model.phase {
+            case .initial where model.items.isEmpty:
+                loadingState
+            case .loading where model.items.isEmpty:
+                loadingState
+            case .failed(let message) where model.items.isEmpty:
+                failureState(message: message)
+            default:
+                timelineView
+            }
+        }
+        .background { ChatBackground(seed: model.identity.connectionID ?? model.identity.chatID).equatable() }
+        .onGeometryChange(for: CGFloat.self) { $0.size.width } action: { screenWidth = $0 }
+        .safeAreaInset(edge: .bottom, spacing: 0) {
+            composer
+        }
+        // In-view (not a cover): the chat never disappears underneath, so realtime, audio
+        // and the keyboard state are untouched while actions are open.
+        .overlay {
+            if let target = actionTarget {
+                actionOverlay(for: target).id(target.id)
+            }
+        }
+        .overlay(alignment: .top) {
+            if isSearching {
+                searchBar
+                    .padding(.horizontal, 12)
+                    .padding(.top, 8)
+                    .transition(.move(edge: .top).combined(with: .opacity))
+            } else if let error = model.operationError, !model.items.isEmpty {
+                operationBanner(error)
+                    .padding(.horizontal, 12)
+                    .padding(.top, 8)
+                    .transition(.move(edge: .top).combined(with: .opacity))
+            } else if let connection = sayHiConnection {
+                SayHiPanel(
+                    deadline: connection.sayHiDeadline,
+                    context: ([connection.encounterLocation] + connection.mutualTags).joined(separator: " "),
+                    seed: connection.connectionID
+                ) { prompt in
+                    Task { await model.sendText(prompt) }
+                }
+                .padding(.horizontal, 12)
+                .padding(.top, 8)
+            }
+        }
+        .navigationBarTitleDisplayMode(.inline)
+        .toolbar {
+            ToolbarItem(placement: .principal) {
+                conversationTitle
+                    .frame(width: max(120, screenWidth - 132), alignment: .leading)
+            }
+            ToolbarItem(placement: .topBarTrailing) {
+                conversationMenu
+            }
+        }
     }
 
     /// Tells the inbox and push presentation which conversation the reader is looking at.
@@ -333,7 +329,7 @@ public struct ChatView: View {
                 }
             },
             onDelete: { target in Task { await model.deleteMessage(item: target) } },
-            onToggleReaction: { target, emoji in Task { await model.toggleReaction(item: target, reactionType: emoji) } },
+            onToggleReaction: { target, emoji in react(to: target, with: emoji) },
             onRetrySend: { target in Task { await model.retrySend(item: target) } },
             showsSenderName: !model.identity.isDirect && Self.startsSenderRun(at: index, in: items),
             showsReceipts: model.identity.supportsReceipts,
@@ -364,6 +360,11 @@ public struct ChatView: View {
         }
     }
 
+    private func react(to item: ChatMessageItem, with emoji: String) {
+        timeline.preservePositionOnNextContentChange()
+        Task { await model.toggleReaction(item: item, reactionType: emoji) }
+    }
+
     private func actionOverlay(for target: ActionTarget) -> some View {
         MessageActionOverlay(
             message: target.message,
@@ -379,7 +380,7 @@ public struct ChatView: View {
             ),
             actions: messageActions(for: target.message),
             onReact: { emoji in
-                Task { await model.toggleReaction(item: target.message, reactionType: emoji) }
+                react(to: target.message, with: emoji)
             },
             onMoreReactions: {
                 actionTarget = nil
@@ -830,12 +831,16 @@ public struct ChatView: View {
                 HStack(spacing: 5) {
                     ForEach(0..<3, id: \.self) { index in
                         // Each dot peaks a third of a cycle after the previous one.
-                        let wave = reduceMotion ? 0.5 : (sin((time * 2 * .pi / 1.2) - Double(index) * 0.9) + 1) / 2
+                        let phase = (time * 2 * Double.pi / 1.2) - (Double(index) * 0.9)
+                        let wave: Double = reduceMotion ? 0.5 : (sin(phase) + 1) / 2
+                        let opacity = 0.4 + 0.5 * wave
+                        let scale = 0.85 + 0.2 * wave
+                        let offset = -2.5 * wave
                         Circle()
-                            .fill(ClickColors.textSecondary.opacity(0.4 + 0.5 * wave))
+                            .fill(ClickColors.textSecondary.opacity(opacity))
                             .frame(width: 7, height: 7)
-                            .scaleEffect(0.85 + 0.2 * wave)
-                            .offset(y: -2.5 * wave)
+                            .scaleEffect(scale)
+                            .offset(y: offset)
                     }
                 }
                 .frame(height: 12)

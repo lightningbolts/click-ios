@@ -143,6 +143,13 @@ public struct MessageBubbleView: View {
                         ClickHaptics.impact(.medium)
                         onLongPress?(message, bubbleFrame)
                     })
+                    .highPriorityGesture(
+                        TapGesture(count: 2).onEnded {
+                            guard BubbleTapGate.allowsTap else { return }
+                            ClickHaptics.impact(.light)
+                            onToggleReaction(message, "❤️")
+                        }
+                    )
                     .accessibilityAction(named: "Message actions") {
                         onLongPress?(message, bubbleFrame)
                     }
