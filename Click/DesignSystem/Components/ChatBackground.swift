@@ -5,8 +5,12 @@ import SwiftUI
 ///
 /// It is a stationary layer behind the timeline — computed once from the seed, never animated
 /// or re-rendered by scrolling — and needs no network, so it exists on the first frame.
-struct ChatBackground: View {
+struct ChatBackground: View, Equatable {
     let seed: String
+
+    nonisolated static func == (lhs: ChatBackground, rhs: ChatBackground) -> Bool {
+        lhs.seed == rhs.seed
+    }
 
     var body: some View {
         let visual = CardVisual(seed: seed)

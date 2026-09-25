@@ -73,11 +73,6 @@ final class MapFeatureModel {
         case precise
     }
 
-    enum SheetDetent: CaseIterable {
-        case lip
-        case medium
-        case expanded
-    }
 
     var camera: MapCameraPosition = .automatic
     private(set) var userCoordinate: CLLocationCoordinate2D?
@@ -91,9 +86,8 @@ final class MapFeatureModel {
     var filter: MapLayer?
     var query = ""
     var selection: MapSelection?
-    var sheetDetent: SheetDetent = .lip
-    /// `sheetDetent` once its snap animation finished; drives tab-bar and chrome visibility.
-    var settledDetent: SheetDetent = .lip
+    var isNearbyPresented = false
+    var nearbyDetent: PresentationDetent = .medium
 
     private var environment: AppEnvironment?
     private var locationTask: Task<Void, Never>?
@@ -287,7 +281,8 @@ final class MapFeatureModel {
         case .layer(let layer):
             filter = layer
             layers.insert(layer)
-            sheetDetent = .medium
+            isNearbyPresented = true
+            nearbyDetent = .medium
         case .hub(let id):
             if let hub = discovery.value?.hubs.first(where: { $0.id == id }) {
                 select(.hub(id), at: hub.coordinate)
@@ -301,7 +296,7 @@ final class MapFeatureModel {
                 focusedBeacons.append(beacon)
             }
             layers.insert(MapLayer(kind: beacon.kind))
-            sheetDetent = .lip
+            isNearbyPresented = false
             withAnimation {
                 camera = .region(MKCoordinateRegion(center: beacon.coordinate, latitudinalMeters: 1200, longitudinalMeters: 1200))
             }
@@ -319,7 +314,7 @@ final class MapFeatureModel {
 
     func select(_ selection: MapSelection, at coordinate: CLLocationCoordinate2D) {
         self.selection = selection
-        sheetDetent = .lip
+        isNearbyPresented = false
         withAnimation {
             camera = .region(MKCoordinateRegion(center: coordinate, latitudinalMeters: 1200, longitudinalMeters: 1200))
         }

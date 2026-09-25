@@ -272,38 +272,3 @@ struct HorizontalSwipeGesture: UIGestureRecognizerRepresentable {
     }
 }
 
-/// "More reactions": a larger emoji set in a grid.
-struct EmojiPickerSheet: View {
-    @Environment(\.dismiss) private var dismiss
-    let onPick: (String) -> Void
-
-    static let emojis = [
-        "👍", "❤️", "😂", "😮", "😢", "😡", "🔥", "🎉", "👏", "🙏", "😍", "🥰", "😎", "🤔", "😅", "🤣",
-        "😭", "😬", "🙌", "💯", "✨", "👀", "🤝", "💪", "🥳", "😴", "🤯", "😇", "🫶", "👋", "✅", "❌",
-        "☕️", "🍕", "🍻", "🎶", "⚽️", "🏀", "📍", "🌅", "💜", "💀", "🤷", "🙃", "😏", "🤩", "😳", "🫡"
-    ]
-
-    var body: some View {
-        NavigationStack {
-            ScrollView {
-                LazyVGrid(columns: Array(repeating: GridItem(.flexible(), spacing: 8), count: 8), spacing: 12) {
-                    ForEach(Self.emojis, id: \.self) { emoji in
-                        Button {
-                            ClickHaptics.impact(.light)
-                            onPick(emoji)
-                            dismiss()
-                        } label: {
-                            Text(emoji).font(.system(size: 30))
-                        }
-                        .buttonStyle(.plain)
-                    }
-                }
-                .padding(16)
-            }
-            .navigationTitle("React")
-            .navigationBarTitleDisplayMode(.inline)
-            .toolbar { ToolbarItem(placement: .cancellationAction) { Button("Cancel") { dismiss() } } }
-        }
-        .presentationDetents([.medium])
-    }
-}

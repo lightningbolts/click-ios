@@ -40,9 +40,14 @@ public final class AppEnvironment {
     /// A message to scroll to when its conversation next opens (search deep links).
     public var pendingMessageFocus: MessageFocus?
 
-    /// The one way screens build a conversation model, so every chat shares caches and resolvers.
+    /// One live model per conversation for the session: re-entering a chat shows exactly what was
+    /// on screen (timeline, decrypted media, older pages) and refreshes in place.
+    private var conversationModels: [String: ConversationModel] = [:]
+
     public func conversationModel(for identity: ConversationIdentity) -> ConversationModel {
-        ConversationModel(
+        let key = identity.hubID ?? identity.connectionID ?? identity.chatID
+        if let existing = conversationModels[key] { return existing }
+        let model = ConversationModel(
             identity: identity,
             chatRepository: chat,
             currentUserID: session.currentSession?.userId ?? "",
@@ -51,6 +56,8 @@ public final class AppEnvironment {
             pendingSends: pendingSends,
             identities: identities
         )
+        conversationModels[key] = model
+        return model
     }
 
     public init(
@@ -153,6 +160,7 @@ public final class AppEnvironment {
         await telemetryQueue.removeAll()
         await EventReminderScheduler.cancelAll()
         onboardingCoordinators.removeAll()
+        conversationModels.removeAll()
     }
 
     private var onboardingCoordinators: [String: OnboardingCoordinator] = [:]

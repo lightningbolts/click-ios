@@ -63,7 +63,6 @@
 		4A68B024FDEF49BCAA019EDD /* ActivityShareSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3C7452B96DAD3F83C3B030DB /* ActivityShareSheet.swift */; };
 		4B24696C76DA27D9F45A29E6 /* GroupAvatarView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 856572EA2FE8C0C700768A86 /* GroupAvatarView.swift */; };
 		4D7E0DB5A728A3859C52C4D7 /* HomeFeedModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8BE0A7042C675D3713023C20 /* HomeFeedModel.swift */; };
-		4DB4238C84B8794BE6594D62 /* HidesTabBarWhenPushed.swift in Sources */ = {isa = PBXBuildFile; fileRef = CE8E2F813C2C36ED0FB06D8A /* HidesTabBarWhenPushed.swift */; };
 		4FF734BB5DB5B1FDAB2EDFAA /* ChatMedia.swift in Sources */ = {isa = PBXBuildFile; fileRef = DC15CEB319B08A9727F91D25 /* ChatMedia.swift */; };
 		50024DD402AC701EE16BDD1C /* JSONFields.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7B2A63B6D14A5828F75C3A23 /* JSONFields.swift */; };
 		5644CD79052856D5EBB5002A /* ClickCryptoV1.swift in Sources */ = {isa = PBXBuildFile; fileRef = DF1EEA7316772A0B9800A223 /* ClickCryptoV1.swift */; };
@@ -118,13 +117,16 @@
 		960AE12D4E878C46BF271473 /* ProfileBasicsGateView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8DF21D6194CC4FB19507D99C /* ProfileBasicsGateView.swift */; };
 		96AC60FC284F2F6A42ABC946 /* EventFormatting.swift in Sources */ = {isa = PBXBuildFile; fileRef = 501636A7B4E12830E982F608 /* EventFormatting.swift */; };
 		972C13760ACEC9B165E723CF /* ClickDropCameraView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 68FA499EB03E1FC06A6AB7F6 /* ClickDropCameraView.swift */; };
+		97BBC1D22AC5414DC303337C /* MessageActionOverlay.swift in Sources */ = {isa = PBXBuildFile; fileRef = AC3573DCEE944B2879A651CC /* MessageActionOverlay.swift */; };
 		9860E542B517457217E2C247 /* ClickDropTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = C617AC86021B01BE0BE320EA /* ClickDropTests.swift */; };
 		98F61FE26FFFEEF3406D8342 /* InboxRowLayoutTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 42726C3E89949B1741E4C897 /* InboxRowLayoutTests.swift */; };
 		99792F8C19DC5B5E730BAB56 /* GlobalSearchTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = D96864E512FF90DCA0D3AF9E /* GlobalSearchTests.swift */; };
 		9A29D8423432ACDEFEC6AD35 /* ContextTagPicker.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3F45F0FEE3AA9FAC0DF8A5CA /* ContextTagPicker.swift */; };
 		9A7DDCDDC70230ABCE0DBEC9 /* OnboardingHeaderView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2363F153118BAC82700FA97A /* OnboardingHeaderView.swift */; };
+		9AC749853721AF6DE61C1348 /* EmojiKeyboardPicker.swift in Sources */ = {isa = PBXBuildFile; fileRef = AAD7E291890A95117C367052 /* EmojiKeyboardPicker.swift */; };
 		9B5130FF9140BEAE3CCDE585 /* SavedEventsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8A25B36F7B43CDA3235FEFDD /* SavedEventsView.swift */; };
 		9BCC7EC969F64D6BDC9AB051 /* EventReminderScheduler.swift in Sources */ = {isa = PBXBuildFile; fileRef = FCB1638F35F178E0F0FE80F1 /* EventReminderScheduler.swift */; };
+		9C2C951902E4776FAA70D2D0 /* TabBarPushPolicy.swift in Sources */ = {isa = PBXBuildFile; fileRef = 62172BB0415008D1CA99FFFB /* TabBarPushPolicy.swift */; };
 		9FFE49B750AFD7B106E7F990 /* CreateBeaconSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1704BBFEC1035AD1234E1B8D /* CreateBeaconSheet.swift */; };
 		A30461AB84F2BAE2A8A57572 /* EventEngagementRepository.swift in Sources */ = {isa = PBXBuildFile; fileRef = AC24CFA0E6E02114CAA8699B /* EventEngagementRepository.swift */; };
 		A6368ED8BCD618DA44245AF9 /* BeaconDetailView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8449BE5D6B21017344E55E9E /* BeaconDetailView.swift */; };
@@ -319,6 +321,7 @@
 		5B25B865B17C60099FB2E33C /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist; path = Info.plist; sourceTree = "<group>"; };
 		5CE872BED60D02250BA16BD1 /* Debug.xcconfig */ = {isa = PBXFileReference; lastKnownFileType = text.xcconfig; path = Debug.xcconfig; sourceTree = "<group>"; };
 		5FFF30E5C1CD35BF6388FFDA /* InterestsPickerView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = InterestsPickerView.swift; sourceTree = "<group>"; };
+		62172BB0415008D1CA99FFFB /* TabBarPushPolicy.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TabBarPushPolicy.swift; sourceTree = "<group>"; };
 		625A527B98598B022044B468 /* HubChatView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HubChatView.swift; sourceTree = "<group>"; };
 		65E7D2050E854DAEDA0621FB /* NetworkMonitor.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NetworkMonitor.swift; sourceTree = "<group>"; };
 		66CDD7B3970AD090C2755F16 /* MeSettingsTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MeSettingsTests.swift; sourceTree = "<group>"; };
@@ -367,8 +370,10 @@
 		A8EE27D772DD98E886CD7F0C /* LocationProvider.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LocationProvider.swift; sourceTree = "<group>"; };
 		A90BEC0659B6560183DE5269 /* TelemetryQueue.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TelemetryQueue.swift; sourceTree = "<group>"; };
 		AAC9E2A2A2CF84BFD5B7C9B3 /* ClicksView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ClicksView.swift; sourceTree = "<group>"; };
+		AAD7E291890A95117C367052 /* EmojiKeyboardPicker.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = EmojiKeyboardPicker.swift; sourceTree = "<group>"; };
 		AB9A71018D3F776F0EF48368 /* ClickCryptoTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ClickCryptoTests.swift; sourceTree = "<group>"; };
 		AC24CFA0E6E02114CAA8699B /* EventEngagementRepository.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = EventEngagementRepository.swift; sourceTree = "<group>"; };
+		AC3573DCEE944B2879A651CC /* MessageActionOverlay.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MessageActionOverlay.swift; sourceTree = "<group>"; };
 		AE598C64A86DFA1E5EBF5211 /* IdentityCache.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = IdentityCache.swift; sourceTree = "<group>"; };
 		AEF2CAC62F36511082C94869 /* FreshnessCache.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FreshnessCache.swift; sourceTree = "<group>"; };
 		AFFF0C420D046C1E8CDC3E89 /* DebugLaunch.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DebugLaunch.swift; sourceTree = "<group>"; };
@@ -394,7 +399,6 @@
 		C6233093B7CC58508DF4534E /* BLEProximityService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BLEProximityService.swift; sourceTree = "<group>"; };
 		C8EA116736D43E0C9432BBF5 /* FlowLayout.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FlowLayout.swift; sourceTree = "<group>"; };
 		CAC6727608A5C61CD9DC9BCD /* ProximityRepository.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ProximityRepository.swift; sourceTree = "<group>"; };
-		CE8E2F813C2C36ED0FB06D8A /* HidesTabBarWhenPushed.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HidesTabBarWhenPushed.swift; sourceTree = "<group>"; };
 		CEEFE47A4CBAB925D04FB0E9 /* GroupedSurface.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GroupedSurface.swift; sourceTree = "<group>"; };
 		CEFB1BA8BE902D3D92C87CCD /* ProximityCodec.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ProximityCodec.swift; sourceTree = "<group>"; };
 		CFDEEB947FE11EAC6206E3B0 /* ChatMessageSheets.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ChatMessageSheets.swift; sourceTree = "<group>"; };
@@ -457,7 +461,6 @@
 				C0EEFAB074A9D2D9EB6AA5B9 /* GlassCircle.swift */,
 				856572EA2FE8C0C700768A86 /* GroupAvatarView.swift */,
 				CEEFE47A4CBAB925D04FB0E9 /* GroupedSurface.swift */,
-				CE8E2F813C2C36ED0FB06D8A /* HidesTabBarWhenPushed.swift */,
 				30988D99C421B40B486F5134 /* OfflineNotice.swift */,
 				2229C327502C1A82ABD17D9B /* StatusPill.swift */,
 			);
@@ -524,6 +527,7 @@
 				AFFF0C420D046C1E8CDC3E89 /* DebugLaunch.swift */,
 				9E1DF371E97CE2C8CBF99560 /* MeTabAvatarModel.swift */,
 				DA0BA02DE0FE06FB525A130A /* RootGateView.swift */,
+				62172BB0415008D1CA99FFFB /* TabBarPushPolicy.swift */,
 			);
 			path = App;
 			sourceTree = "<group>";
@@ -1037,6 +1041,8 @@
 				F96A5E440B359E2A2F052A29 /* ChatView.swift */,
 				68FA499EB03E1FC06A6AB7F6 /* ClickDropCameraView.swift */,
 				B5503A75FDC271224C037F0F /* ConversationModel.swift */,
+				AAD7E291890A95117C367052 /* EmojiKeyboardPicker.swift */,
+				AC3573DCEE944B2879A651CC /* MessageActionOverlay.swift */,
 				059E174F6A0ABD87301344BE /* MessageBubbleView.swift */,
 			);
 			path = Chat;
@@ -1300,6 +1306,7 @@
 				9FFE49B750AFD7B106E7F990 /* CreateBeaconSheet.swift in Sources */,
 				E8C81D7F00C0A4745CB45C91 /* DebugLaunch.swift in Sources */,
 				D3646E36CA545C20E2D35A93 /* DeviceIdentityVault.swift in Sources */,
+				9AC749853721AF6DE61C1348 /* EmojiKeyboardPicker.swift in Sources */,
 				B73D41F788E49DA35A63D6F4 /* EncounterContextRepository.swift in Sources */,
 				4083D10D51C7254F40D5AB0E /* EncounterSensorSampler.swift in Sources */,
 				A30461AB84F2BAE2A8A57572 /* EventEngagementRepository.swift in Sources */,
@@ -1318,7 +1325,6 @@
 				8D75F15C30FE0E789CC024BD /* GroupedSurface.swift in Sources */,
 				BD15C469A9C372102E428997 /* GuestListView.swift in Sources */,
 				081AA9386D6FCC4DC3B03DA0 /* Haptics.swift in Sources */,
-				4DB4238C84B8794BE6594D62 /* HidesTabBarWhenPushed.swift in Sources */,
 				BBA0C506BD5F9CA0033D890F /* HomeComponents.swift in Sources */,
 				4D7E0DB5A728A3859C52C4D7 /* HomeFeedModel.swift in Sources */,
 				8DD8D0AEB2396A470B9CBC66 /* HomeView.swift in Sources */,
@@ -1344,6 +1350,7 @@
 				5B7B2613D4B9042F81200881 /* MeTabAvatarModel.swift in Sources */,
 				724C7C8B838896AB2B8A7CE2 /* MeView.swift in Sources */,
 				94B7ABF583A435F507645E2F /* MediaValidator.swift in Sources */,
+				97BBC1D22AC5414DC303337C /* MessageActionOverlay.swift in Sources */,
 				92F8F1122F82982A3FD0193D /* MessageBubbleView.swift in Sources */,
 				FC356859F3A30B0B78840011 /* ModuleState.swift in Sources */,
 				E1F59976B1B289C600055E22 /* Motion.swift in Sources */,
@@ -1382,6 +1389,7 @@
 				B12D7E2CA0F7D433B947DA57 /* Spacing.swift in Sources */,
 				8D429531C644A536648D8BC5 /* StatusPill.swift in Sources */,
 				09B424FA14F8AFB0370CA393 /* SupabaseAuthService.swift in Sources */,
+				9C2C951902E4776FAA70D2D0 /* TabBarPushPolicy.swift in Sources */,
 				4538B728A68E8E3B3EEA9912 /* TapConnectModel.swift in Sources */,
 				D65F1754EA234A84D1056733 /* TapConnectView.swift in Sources */,
 				4708F31411ACBDD9DC20FFA6 /* TelemetryQueue.swift in Sources */,

@@ -695,6 +695,10 @@ private struct TimelineRow: View {
     private var content: some View {
         switch item {
         case .encounter(let encounter, let isFirst):
+            Text(EncounterLabels.whenLine(encounter.date))
+                .font(ClickTypography.caption)
+                .foregroundStyle(ClickColors.textSecondary)
+
             if let title = encounter.eventTitle {
                 Button {
                     if let beaconID = encounter.eventBeaconID { onOpenEvent(beaconID) }
@@ -713,19 +717,49 @@ private struct TimelineRow: View {
                     .font(ClickTypography.bodyEmphasized)
                     .foregroundStyle(ClickColors.textPrimary)
             }
-            // One compact line (KMP ProfileConnectionMoment density): place, weather, sound, floor.
-            let details = EncounterLabels.lines(for: encounter).map(\.text)
-            if !details.isEmpty {
-                Text(details.joined(separator: " · "))
-                    .font(ClickTypography.metadata)
+
+            let currentTitle = encounter.eventTitle ?? title(encounter, isFirst: isFirst)
+            if let place = EncounterLabels.placeLine(locationName: encounter.locationName ?? encounter.venue,
+                                                     displayLocation: encounter.displayLocation,
+                                                     neighbourhood: encounter.neighbourhood),
+               place != currentTitle {
+                Text(place)
+                    .font(ClickTypography.supporting)
                     .foregroundStyle(ClickColors.textSecondary)
-                    .lineLimit(2)
             }
+
             let chips = EncounterLabels.chips(for: encounter)
             if !chips.isEmpty {
-                TagFlow(tags: chips, highlighted: false, compact: true)
-                    .padding(.top, 4)
+                FlowLayout(spacing: 6) {
+                    ForEach(chips, id: \.self) { tag in
+                        HStack(spacing: 4) {
+                            Image(systemName: "sparkles")
+                                .font(.system(size: 14))
+                                .foregroundStyle(ClickColors.accentForeground)
+                            Text(tag)
+                                .font(ClickTypography.caption.weight(.medium))
+                                .foregroundStyle(ClickColors.textPrimary)
+                                .lineLimit(1)
+                        }
+                        .padding(.horizontal, 8)
+                        .padding(.vertical, 4)
+                        .background(ClickColors.fillSubtle, in: Capsule())
+                        .overlay(Capsule().stroke(ClickColors.separator, lineWidth: 1))
+                    }
+                }
+                .padding(.top, 2)
             }
+
+            let pills = EncounterLabels.metricPills(for: encounter)
+            if !pills.isEmpty {
+                FlowLayout(spacing: 6) {
+                    ForEach(pills, id: \.self) { pill in
+                        TimelineMetricPill(pill: pill)
+                    }
+                }
+                .padding(.top, 2)
+            }
+
             if let vibe = encounter.vibeCapture {
                 Text("“\(vibe)”")
                     .font(ClickTypography.supporting.italic())
@@ -969,6 +1003,26 @@ struct TagFlow: View {
                     .background(highlighted ? ClickColors.selectionTint : ClickColors.fillSubtle, in: Capsule())
             }
         }
+    }
+}
+
+private struct TimelineMetricPill: View {
+    let pill: EncounterLabels.MetricPill
+
+    var body: some View {
+        HStack(spacing: 4) {
+            Image(systemName: pill.symbol)
+                .font(.system(size: 14))
+                .foregroundStyle(Color(hex: pill.tintHex))
+            Text(pill.text)
+                .font(ClickTypography.caption.weight(.medium))
+                .foregroundStyle(ClickColors.textPrimary)
+                .lineLimit(1)
+        }
+        .padding(.horizontal, 8)
+        .padding(.vertical, 4)
+        .background(ClickColors.fillSubtle, in: Capsule())
+        .overlay(Capsule().stroke(ClickColors.separator, lineWidth: 1))
     }
 }
 

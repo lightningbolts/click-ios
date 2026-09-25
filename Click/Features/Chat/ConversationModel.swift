@@ -93,6 +93,9 @@ public final class ConversationModel {
     // MARK: - Lifecycle
 
     public func onAppear(supabaseURL: URL?, anonKey: String?, authToken: String?) async {
+        if isDetachedFromLatest {
+            await returnToLatest()
+        }
         setupRealtimeCallbacks()
 
         if identity.hubID == nil {
@@ -170,6 +173,8 @@ public final class ConversationModel {
         }
         typingActive = false
         realtimeManager.teardown()
+        hasCapturedUnread = false
+        firstUnreadID = nil
     }
 
     // MARK: - Data loading

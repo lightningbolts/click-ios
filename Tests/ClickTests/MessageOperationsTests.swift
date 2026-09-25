@@ -148,4 +148,22 @@ struct MessageOperationsTests {
         #expect(focus.matches(ConversationIdentity(chatID: "conn-9", connectionID: "conn-9", peerUserID: "p", peerDisplayName: "P")))
         #expect(!focus.matches(ConversationIdentity(chatID: "other", peerUserID: "p", peerDisplayName: "P")))
     }
+
+    @Test("AppEnvironment returns the same ConversationModel instance for the same identity")
+    func conversationModelInstanceReuse() {
+        let env = AppEnvironment(network: NetworkMonitor(start: false))
+        let model1 = env.conversationModel(for: identity)
+        let model2 = env.conversationModel(for: identity)
+        #expect(model1 === model2)
+    }
+
+    @Test("EmojiKeyboardPicker fallback list contains > 1000 emojis and includes standard reactions")
+    func emojiKeyboardPickerFallbackList() {
+        let emojis = EmojiKeyboardPicker.allEmoji()
+        #expect(emojis.count > 1000)
+        let symbols = Set(emojis.map(\.emoji))
+        #expect(symbols.contains("👍"))
+        #expect(symbols.contains("🫶"))
+        #expect(symbols.contains("🙏"))
+    }
 }

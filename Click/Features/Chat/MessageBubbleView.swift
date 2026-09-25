@@ -28,19 +28,19 @@ public struct MessageBubbleView: View {
     /// The message this one replies to (for its thumbnail) and a tap on the quote.
     var replyTarget: ChatMessageItem?
     var onTapReplyQuote: ((String) -> Void)?
+    var onLongPress: ((ChatMessageItem, CGRect) -> Void)?
 
     @State private var confirmingDelete = false
     @State private var dragOffset: CGFloat = 0
     @State private var hasTriggeredReplyHaptic = false
-
-    private let quickEmojis = ["👍", "❤️", "😂", "😮", "😢", "😡"]
+    @State private var bubbleFrame: CGRect = .zero
 
     public init(
         message: ChatMessageItem,
-        onReply: @escaping (ChatMessageItem) -> Void,
-        onEdit: @escaping (ChatMessageItem) -> Void,
-        onDelete: @escaping (ChatMessageItem) -> Void,
-        onToggleReaction: @escaping (ChatMessageItem, String) -> Void,
+        onReply: @escaping (ChatMessageItem) -> Void = { _ in },
+        onEdit: @escaping (ChatMessageItem) -> Void = { _ in },
+        onDelete: @escaping (ChatMessageItem) -> Void = { _ in },
+        onToggleReaction: @escaping (ChatMessageItem, String) -> Void = { _, _ in },
         onRetrySend: ((ChatMessageItem) -> Void)? = nil,
         showsSenderName: Bool = false,
         showsReceipts: Bool = true,
@@ -53,8 +53,10 @@ public struct MessageBubbleView: View {
         onShowReactions: ((ChatMessageItem, String) -> Void)? = nil,
         replyTarget: ChatMessageItem? = nil,
         onTapReplyQuote: ((String) -> Void)? = nil,
-        onMoreReactions: ((ChatMessageItem) -> Void)? = nil
+        onMoreReactions: ((ChatMessageItem) -> Void)? = nil,
+        onLongPress: ((ChatMessageItem, CGRect) -> Void)? = nil
     ) {
+        self.onLongPress = onLongPress
         self.onMoreReactions = onMoreReactions
         self.replyTarget = replyTarget
         self.onTapReplyQuote = onTapReplyQuote
@@ -122,70 +124,13 @@ public struct MessageBubbleView: View {
                     .overlay(alignment: message.isOutgoing ? .trailing : .leading) { replyHint }
                     // A voice note's seek slider must win over swipe-to-reply (spec §37.6).
                     .gesture(HorizontalSwipeGesture(isEnabled: message.media?.kind != .audio, onChanged: swipeChanged, onEnded: swipeEnded))
-                    .contextMenu {
-                        // One horizontal reaction row, separate from the actions below.
-                        ControlGroup {
-                            ForEach(quickEmojis, id: \.self) { emoji in
-                                Button {
-                                    ClickHaptics.impact(.light)
-                                    onToggleReaction(message, emoji)
-                                } label: {
-                                    Text(emoji)
-                                }
-                            }
-                            if let onMoreReactions {
-                                Button { onMoreReactions(message) } label: {
-                                    Label("More reactions", systemImage: "plus")
-                                }
-                            }
-                        }
-                        .controlGroupStyle(.palette)
-
-                        Button {
-                            ClickHaptics.impact(.medium)
-                            onReply(message)
-                        } label: {
-                            Label("Reply", systemImage: "arrowshape.turn.up.left")
-                        }
-
-                        if !message.isMedia {
-                            Button {
-                                UIPasteboard.general.string = message.content
-                                ClickHaptics.success()
-                            } label: {
-                                Label("Copy", systemImage: "doc.on.doc")
-                            }
-                        }
-
-                        if let onForward {
-                            Button { onForward(message) } label: {
-                                Label("Forward", systemImage: "arrowshape.turn.up.right")
-                            }
-                        }
-
-                        if let onSaveMedia, let media = message.media, !media.isLocked() {
-                            Button { onSaveMedia(message) } label: {
-                                media.kind == .image
-                                    ? Label("Save to Photos", systemImage: "square.and.arrow.down")
-                                    : Label("Share…", systemImage: "square.and.arrow.up")
-                            }
-                        }
-
-                        if message.isOutgoing {
-                            if !message.isMedia {
-                                Button {
-                                    onEdit(message)
-                                } label: {
-                                    Label("Edit", systemImage: "pencil")
-                                }
-                            }
-
-                            Button(role: .destructive) {
-                                confirmingDelete = true
-                            } label: {
-                                Label("Delete", systemImage: "trash")
-                            }
-                        }
+                    .onGeometryChange(for: CGRect.self) { $0.frame(in: .global) } action: { bubbleFrame = $0 }
+                    .onLongPressGesture(minimumDuration: 0.35) {
+                        ClickHaptics.impact(.medium)
+                        onLongPress?(message, bubbleFrame)
+                    }
+                    .accessibilityAction(named: "Message actions") {
+                        onLongPress?(message, bubbleFrame)
                     }
                     .confirmationDialog("Delete for everyone?", isPresented: $confirmingDelete, titleVisibility: .visible) {
                         Button("Delete", role: .destructive) { onDelete(message) }

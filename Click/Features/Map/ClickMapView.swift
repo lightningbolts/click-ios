@@ -49,19 +49,11 @@ public struct ClickMapView: View {
                         .accessibilityLabel("Create beacon or event")
                         }
                     }
-                    .opacity(model.settledDetent == .expanded ? 0 : 1)
                 }
                 .padding(.horizontal, ClickSpacing.screenGutter)
-                .padding(.bottom, NearbySheet.height(for: model.sheetDetent, available: proxy.size.height) + 12)
+                .padding(.bottom, 84 + 12)
 
-                // Clipped at the map's bottom edge: the full-height card slides behind it.
-                Color.clear
-                    .overlay(alignment: .bottom) {
-                        NearbySheet(model: model, pins: pins, availableHeight: proxy.size.height) { item in
-                            open(item)
-                        }
-                    }
-                    .clipped()
+                NearbyLip(model: model, pins: pins)
             }
         }
         // The map is full-bleed: no title bar, just floating glass controls (prototype Map root).
@@ -70,7 +62,7 @@ public struct ClickMapView: View {
                 RootMenu(floating: true, includesAccountItems: false) {
                     Button("Center on me", systemImage: "location") { Task { await model.requestLocation() } }
                     Button("Refresh nearby", systemImage: "arrow.clockwise") { model.refresh() }
-                    Button("Open Nearby list", systemImage: "list.bullet") { model.sheetDetent = .medium }
+                    Button("Open Nearby list", systemImage: "list.bullet") { model.isNearbyPresented = true }
                     Button("Saved events", systemImage: "bookmark") { env.router.navigate(to: .savedEvents) }
                     if model.filter != nil || model.layers.count != MapLayer.allCases.count {
                         Button("Show everything", systemImage: "square.3.layers.3d") {
@@ -84,7 +76,6 @@ public struct ClickMapView: View {
             }
             .padding(.horizontal, ClickSpacing.screenGutter)
             .padding(.top, 4)
-            .opacity(model.settledDetent == .expanded ? 0 : 1)
         }
         .navigationTitle("Map")
         .toolbar(.hidden, for: .navigationBar)
@@ -98,8 +89,12 @@ public struct ClickMapView: View {
         }
         .onAppear { env.friction.beginSession() }
         .onDisappear {
+            model.isNearbyPresented = false
             model.stopLocation()
             Task { await env.friction.endSession() }
+        }
+        .onChange(of: env.router.selectedTab) { _, tab in
+            if tab != .map { model.isNearbyPresented = false }
         }
         .onChange(of: model.userCoordinate?.latitude) { _, _ in
             if let coordinate = model.userCoordinate {
@@ -126,6 +121,17 @@ public struct ClickMapView: View {
                 model.stopLocation()
                 Task { await env.friction.endSession() }
             }
+        }
+        .sheet(isPresented: $model.isNearbyPresented) {
+            NearbyListView(model: model, pins: pins) { item in
+                model.isNearbyPresented = false
+                Task { try? await Task.sleep(for: .milliseconds(350)); open(item) }
+            }
+            .presentationDetents([.medium, .large], selection: $model.nearbyDetent)
+            .presentationDragIndicator(.visible)
+            .presentationBackgroundInteraction(.enabled(upThrough: .medium))
+            .presentationBackground(.regularMaterial)
+            .presentationCornerRadius(38)
         }
         .sheet(isPresented: $creating) {
             CreateBeaconSheet(fallback: mapCenter) { beacon in

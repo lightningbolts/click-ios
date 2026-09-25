@@ -93,16 +93,31 @@ struct HubChatView: View {
         }
     }
 
+    private static var hubCache: [String: HubInfo] = [:]
+
     private func reload() async {
+        Self.hubCache.removeValue(forKey: hubID)
         phase = .loading
         await load()
     }
 
     private func load() async {
-        if case .ready = phase { return }
-        phase = .loading
+        if let cached = Self.hubCache[hubID] {
+            let identity = ConversationIdentity(
+                chatID: cached.id,
+                peerUserID: "",
+                peerDisplayName: cached.name,
+                kind: .hub(hubID: cached.id)
+            )
+            phase = .ready(cached, env.conversationModel(for: identity))
+        } else if case .ready = phase {
+            // Already ready
+        } else {
+            phase = .loading
+        }
         do {
             let hub = try await resolveHub()
+            Self.hubCache[hubID] = hub
             let identity = ConversationIdentity(
                 chatID: hub.id,
                 peerUserID: "",
@@ -110,16 +125,25 @@ struct HubChatView: View {
                 kind: .hub(hubID: hub.id)
             )
             let model = env.conversationModel(for: identity)
-            phase = .ready(hub, model)
+            if case .ready(let currentHub, _) = phase, currentHub == hub {
+                // Already displaying this hub info
+            } else {
+                phase = .ready(hub, model)
+            }
             await conversations.rememberHub(JoinedHub(
                 hubID: hub.id, name: hub.name, category: hub.category, eventBeaconID: hub.eventBeaconID, joinedAt: .now,
                 creatorID: hub.creatorID
             ))
         } catch {
             if let hubError = error as? HubChatError, hubError == .ended || hubError == .accessDenied {
+                Self.hubCache.removeValue(forKey: hubID)
                 await conversations.forgetHub(id: hubID)
+                phase = .failed(message(for: error), canRetry: false)
+            } else if case .ready = phase {
+                // Retain cached HubInfo if background network error occurs
+            } else {
+                phase = .failed(message(for: error), canRetry: error as? HubChatError != .ended)
             }
-            phase = .failed(message(for: error), canRetry: error as? HubChatError != .ended)
         }
     }
 
@@ -153,6 +177,7 @@ struct HubChatView: View {
 
     private func leave(_ hub: HubInfo) async {
         do {
+            Self.hubCache.removeValue(forKey: hub.id)
             try await conversations.leaveHub(id: hub.id)
             dismiss()
         } catch {
@@ -162,6 +187,7 @@ struct HubChatView: View {
 
     private func delete(_ hub: HubInfo) async {
         do {
+            Self.hubCache.removeValue(forKey: hub.id)
             try await conversations.deleteHub(id: hub.id)
             dismiss()
         } catch {
