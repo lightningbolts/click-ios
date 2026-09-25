@@ -37,7 +37,14 @@ public struct HomeView: View {
                             Task { await model.resolveNudge(nudge, action: action) }
                         }
                     )
+                    .frame(minHeight: HomeFeedModel.opportunityPlaceholderHeight, alignment: .top)
                     .transition(.opacity)
+                } else if model.isOpportunityPending {
+                    // Reserved space: the card fades in without shifting the sections below.
+                    RoundedRectangle(cornerRadius: 18, style: .continuous)
+                        .fill(ClickColors.surface)
+                        .frame(height: HomeFeedModel.opportunityPlaceholderHeight)
+                        .accessibilityHidden(true)
                 }
                 recentPeopleSection(promoted: opportunity)
                 recapSection
@@ -48,7 +55,9 @@ public struct HomeView: View {
             .padding(.horizontal, ClickSpacing.screenGutter)
             .padding(.top, 4)
             .padding(.bottom, 32)
-            .animation(ClickMotion.subtleFade, value: opportunity?.id)
+            // Only the card appearing or leaving animates; swapping one opportunity for another
+            // updates in place instead of replaying every section's entrance.
+            .animation(ClickMotion.subtleFade, value: opportunity == nil)
         }
         .background(ClickColors.background.ignoresSafeArea())
         .refreshable {

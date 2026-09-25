@@ -164,8 +164,10 @@ final class TapConnectModel {
         async let fix: CLLocation? = captureLocation
             ? environment.location.preciseLocation(targetAccuracy: 20, timeout: .milliseconds(6500))
             : nil
+        // Barometer only: the microphone is busy with the ultrasonic exchange.
+        async let sensor = EncounterSensorSampler.sample(settings: environment.settings, includeNoise: false)
 
-        let evidence: ProximityEvidence
+        var evidence: ProximityEvidence
         if simulator {
             try? await Task.sleep(for: .seconds(2))
             let located = await fix
@@ -205,6 +207,7 @@ final class TapConnectModel {
                 simulatorMock: false
             )
         }
+        evidence.sensor = await sensor
         if captureLocation {
             location = evidence.latitude == nil ? .none : .found
         }

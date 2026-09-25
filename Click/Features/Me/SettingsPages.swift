@@ -30,7 +30,6 @@ struct AlertsSettingsView: View {
     @State private var pendingKey: NotificationPreferences.Key?
     @State private var systemStatus: PermissionStatus?
     @State private var errorMessage: String?
-    @State private var microphoneDenied = false
 
     var body: some View {
         Form {
@@ -66,27 +65,6 @@ struct AlertsSettingsView: View {
                     Text(errorMessage).foregroundStyle(ClickColors.destructive)
                 } else {
                     Text("These are saved to your account and control what Click sends to all your devices.")
-                }
-            }
-
-            Section {
-                Toggle(isOn: Binding(
-                    get: { env.settings.ambientNoiseOptIn },
-                    set: { value in Task { await setAmbient(value) } }
-                )) {
-                    VStack(alignment: .leading, spacing: 2) {
-                        Text("Ambient sound enrichment")
-                        Text("Adds a noise-level label to new encounters. Nothing is recorded or stored.")
-                            .font(ClickTypography.metadata)
-                            .foregroundStyle(ClickColors.textTertiary)
-                    }
-                }
-            } header: {
-                Text("Encounter context")
-            } footer: {
-                if microphoneDenied {
-                    Button("Microphone access is off. Open Settings") { env.permissions.openSystemSettings() }
-                        .font(ClickTypography.metadata)
                 }
             }
         }
@@ -148,21 +126,6 @@ struct AlertsSettingsView: View {
             errorMessage = "\(key.title) wasn't changed. \(error.userFacingMessage)"
         }
     }
-
-    private func setAmbient(_ enabled: Bool) async {
-        microphoneDenied = false
-        guard enabled else {
-            env.settings.ambientNoiseOptIn = false
-            return
-        }
-        let status = env.permissions.status(for: .microphone)
-        let resolved = status == .notDetermined ? await env.permissions.requestPermission(for: .microphone) : status
-        if resolved == .authorized {
-            env.settings.ambientNoiseOptIn = true
-        } else {
-            microphoneDenied = true
-        }
-    }
 }
 
 // MARK: - Privacy & data
@@ -175,6 +138,7 @@ struct PrivacySettingsView: View {
     @State private var isSaving = false
     @State private var errorMessage: String?
     @State private var locationHint: String?
+    @State private var microphoneDenied = false
 
     var body: some View {
         @Bindable var settings = env.settings
@@ -202,11 +166,32 @@ struct PrivacySettingsView: View {
             }
 
             Section {
-                Toggle("Barometric context", isOn: $settings.barometricContextOptIn)
+                Toggle(isOn: Binding(
+                    get: { env.settings.ambientNoiseOptIn },
+                    set: { value in Task { await setAmbient(value) } }
+                )) {
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text("Ambient sound")
+                        Text("Adds a noise-level label to new encounters. Nothing is recorded or stored.")
+                            .font(ClickTypography.metadata)
+                            .foregroundStyle(ClickColors.textTertiary)
+                    }
+                }
+                Toggle(isOn: $settings.barometricContextOptIn) {
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text("Barometric context")
+                        Text("Adds an elevation label to new encounters using this iPhone's barometer.")
+                            .font(ClickTypography.metadata)
+                            .foregroundStyle(ClickColors.textTertiary)
+                    }
+                }
             } header: {
                 Text("Encounter context")
             } footer: {
-                Text("Adds an elevation label to new encounters using this iPhone's barometer.")
+                if microphoneDenied {
+                    Button("Microphone access is off. Open Settings") { env.permissions.openSystemSettings() }
+                        .font(ClickTypography.metadata)
+                }
             }
 
             Section {
@@ -245,6 +230,21 @@ struct PrivacySettingsView: View {
             }
         }
         .disabled(isSaving)
+    }
+
+    private func setAmbient(_ enabled: Bool) async {
+        microphoneDenied = false
+        guard enabled else {
+            env.settings.ambientNoiseOptIn = false
+            return
+        }
+        let status = env.permissions.status(for: .microphone)
+        let resolved = status == .notDetermined ? await env.permissions.requestPermission(for: .microphone) : status
+        if resolved == .authorized {
+            env.settings.ambientNoiseOptIn = true
+        } else {
+            microphoneDenied = true
+        }
     }
 
     private func load() async {

@@ -153,6 +153,15 @@ final class HomeFeedModel {
         )
     }
 
+    /// True until every source of the opportunity card has answered once (cache counts), so
+    /// Home can hold the card's space instead of pushing everything down when it lands.
+    var isOpportunityPending: Bool {
+        savedEvents.isPending || discovery.isPending || nudges.isPending
+    }
+
+    /// Height held for the opportunity card while its sources load.
+    nonisolated static let opportunityPlaceholderHeight: CGFloat = 132
+
     /// Saved events that are still upcoming/live, soonest first, excluding the promoted event.
     func upcomingSaved(excluding promotedID: String?, now: Date = .now) -> [SavedEvent] {
         (savedEvents.value ?? [])

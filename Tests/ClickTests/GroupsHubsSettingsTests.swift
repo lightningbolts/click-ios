@@ -46,3 +46,32 @@ struct GroupsHubsSettingsTests {
         #expect(HubInfoView.label("Board games") == "Board Games")
     }
 }
+
+@Suite("Encounter sensors")
+struct EncounterSensorTests {
+    @Test("Noise tiers match KMP thresholds and enum names")
+    func noiseTiers() {
+        #expect(EncounterSensorSampler.noiseLevel(decibels: 34.9) == "VERY_QUIET")
+        #expect(EncounterSensorSampler.noiseLevel(decibels: 35) == "QUIET")
+        #expect(EncounterSensorSampler.noiseLevel(decibels: 74.9) == "MODERATE")
+        #expect(EncounterSensorSampler.noiseLevel(decibels: 89.9) == "LOUD")
+        #expect(EncounterSensorSampler.noiseLevel(decibels: 90) == "VERY_LOUD")
+    }
+
+    @Test("dB approximation is average power + 90, clamped")
+    func approximation() {
+        #expect(EncounterSensorSampler.approximateDecibels(averagePower: -40) == 50)
+        #expect(EncounterSensorSampler.approximateDecibels(averagePower: -160) == 0)
+        #expect(EncounterSensorSampler.approximateDecibels(averagePower: 20) == 100)
+    }
+
+    @Test("Handshake body carries opted-in sensor fields with KMP keys")
+    func handshakeBody() {
+        var evidence = ProximityEvidence(myToken: "t", heardTokens: [], detectedDevices: [], latitude: nil, longitude: nil, simulatorMock: false)
+        #expect(evidence.body["exact_barometric_elevation_m"] == nil)
+        evidence.sensor = EncounterSensorContext(noiseLevel: "QUIET", noiseDecibels: 40, barometricElevationMeters: 12.5)
+        #expect(evidence.body["exact_barometric_elevation_m"] as? Double == 12.5)
+        #expect(evidence.body["noise_level"] as? String == "QUIET")
+        #expect(evidence.body["exact_noise_level_db"] as? Double == 40)
+    }
+}

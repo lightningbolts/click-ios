@@ -113,7 +113,8 @@ final class PostConnectModel {
             return
         }
         saveState = .saving
-        let sensor = await EncounterSensorSampler.sample(settings: env.settings)
+        // Sensor context is recorded on its own when the screen opens (`recordSensorContext`).
+        let sensor = EncounterSensorContext()
         do {
             for connectionID in connectionIDs {
                 try await env.encounterContext.saveContext(connectionID: connectionID, tags: tags, sensor: sensor, reportingUserID: userID)
@@ -124,6 +125,20 @@ final class PostConnectModel {
             saveState = .failed("This encounter is too old to tag here. Add tags from their profile timeline.")
         } catch {
             saveState = .failed("Tags weren't saved. \(error.userFacingMessage)")
+        }
+    }
+
+    /// Samples opted-in sensors now that the tap's microphone use is over, then writes them to
+    /// this encounter (sensor-only patch; tags are saved separately). Silent on failure.
+    func recordSensorContext(_ env: AppEnvironment) async {
+        guard env.settings.ambientNoiseOptIn || env.settings.barometricContextOptIn,
+              let userID = env.session.currentSession?.userId else { return }
+        let connectionIDs = match.isGroup ? match.peers.compactMap(\.connectionID) : [match.connectionID].compactMap { $0 }
+        guard !connectionIDs.isEmpty else { return }
+        let sensor = await EncounterSensorSampler.sample(settings: env.settings)
+        guard !sensor.isEmpty else { return }
+        for connectionID in connectionIDs {
+            try? await env.encounterContext.saveContext(connectionID: connectionID, tags: [], sensor: sensor, reportingUserID: userID)
         }
     }
 

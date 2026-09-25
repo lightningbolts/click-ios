@@ -54,7 +54,9 @@ struct PostConnectView: View {
             // The heavy "person detected" haptic already fired; the join lands with success.
             withAnimation(reduceMotion ? .easeOut(duration: 0.2) : ClickMotion.reveal) { joined = true }
             if let session = model.clickDropSession, session.endsAt > .now { env.clickDropSession = session }
+            async let sensors: Void = model.recordSensorContext(env)
             await model.load(env)
+            await sensors
         }
         .alert("Couldn't send the Click Drop", isPresented: Binding(get: { dropError != nil }, set: { if !$0 { dropError = nil } })) {
             Button("OK", role: .cancel) {}
