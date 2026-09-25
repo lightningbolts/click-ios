@@ -74,4 +74,33 @@ struct EncounterSensorTests {
         #expect(evidence.body["noise_level"] as? String == "QUIET")
         #expect(evidence.body["exact_noise_level_db"] as? Double == 40)
     }
+
+    @Test("Handshake body carries the connect-time hardware snapshot with encounter column keys")
+    func handshakeHardwareBody() {
+        var evidence = ProximityEvidence(myToken: "t", heardTokens: [], detectedDevices: [], latitude: nil, longitude: nil, simulatorMock: false)
+        evidence.sensor = EncounterSensorContext(luxLevel: 600, motionVariance: 0.04, compassAzimuth: 114.9, batteryLevel: 56)
+        #expect(evidence.body["lux_level"] as? Double == 600)
+        #expect(evidence.body["motion_variance"] as? Double == 0.04)
+        #expect(evidence.body["compass_azimuth"] as? Double == 114.9)
+        #expect(evidence.body["battery_level"] as? Int == 56)
+        #expect(evidence.body["my_token"] as? String == "t")
+        #expect(!evidence.sensor.isEmpty)
+        #expect(EncounterSensorContext().isEmpty)
+    }
+
+    @Test("Motion variance is the population variance, nil below three samples")
+    func motionVariance() {
+        #expect(HardwareVibeSampler.variance([1, 2]) == nil)
+        #expect(HardwareVibeSampler.variance([2, 4, 4, 4, 5, 5, 7, 9]) == 4)
+    }
+
+    @Test("Nested JSON strings decode and the no-location placeholder is dropped")
+    func legacyEncounterFields() {
+        let doubleEncoded = "\"{\\\"condition\\\":\\\"Clear\\\",\\\"temperatureCelsius\\\":26.3}\""
+        #expect(JSONFields.dictionary(doubleEncoded)?["condition"] as? String == "Clear")
+        #expect(JSONFields.dictionary("{\"condition\":\"Sunny\"}")?["condition"] as? String == "Sunny")
+        #expect(JSONFields.dictionary("\"plain\"") == nil)
+        #expect(JSONFields.place("A new city") == nil)
+        #expect(JSONFields.place("Seattle, Washington") == "Seattle, Washington")
+    }
 }

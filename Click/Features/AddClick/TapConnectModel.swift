@@ -164,8 +164,8 @@ final class TapConnectModel {
         async let fix: CLLocation? = captureLocation
             ? environment.location.preciseLocation(targetAccuracy: 20, timeout: .milliseconds(6500))
             : nil
-        // Barometer only: the microphone is busy with the ultrasonic exchange.
-        async let sensor = EncounterSensorSampler.sample(settings: environment.settings, includeNoise: false)
+        // Barometer and the hardware snapshot only: the microphone is busy with the ultrasonic exchange.
+        async let sensor = EncounterSensorSampler.sample(settings: environment.settings, includeNoise: false, includeHardware: true)
 
         var evidence: ProximityEvidence
         if simulator {
@@ -343,14 +343,7 @@ final class TapConnectModel {
     /// Location is captured only when Location snap is on (KMP
     /// `shouldCaptureLocationAtTap`). A failed preference read is treated as off.
     private func shouldCaptureLocation(_ environment: AppEnvironment, userID: String) async -> Bool {
-        guard let privacy = try? await environment.me.locationPrivacy(userID: userID), privacy.connectionSnap else {
-            return false
-        }
-        let status = environment.permissions.status(for: .locationWhenInUse)
-        let resolved = status == .notDetermined
-            ? await environment.permissions.requestPermission(for: .locationWhenInUse)
-            : status
-        return resolved == .authorized
+        await environment.shouldCaptureConnectionLocation(userID: userID)
     }
 
     private func stopSensors() {
@@ -362,5 +355,21 @@ final class TapConnectModel {
         bluetooth = .waiting
         sound = .waiting
         location = .waiting
+    }
+}
+
+extension AppEnvironment {
+    /// Location snap gate shared by Tap to Connect and QR: the user's "Location snap" setting
+    /// plus When-In-Use permission (asked here, on explicit connect intent).
+    @MainActor
+    func shouldCaptureConnectionLocation(userID: String) async -> Bool {
+        guard let privacy = try? await me.locationPrivacy(userID: userID), privacy.connectionSnap else {
+            return false
+        }
+        let status = permissions.status(for: .locationWhenInUse)
+        let resolved = status == .notDetermined
+            ? await permissions.requestPermission(for: .locationWhenInUse)
+            : status
+        return resolved == .authorized
     }
 }

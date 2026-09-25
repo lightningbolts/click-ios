@@ -1,27 +1,51 @@
 import Foundation
 
-/// Opt-in sensor context stored with an encounter (KMP `ConnectionSensorContext` keys).
+/// Sensor context stored with an encounter (KMP `ConnectionSensorContext` + `HardwareVibeSnapshot`
+/// keys). Noise and barometric elevation are opt-in; the hardware snapshot (screen-brightness
+/// light proxy, motion variance, compass heading, battery) is captured at connect time only.
 public struct EncounterSensorContext: Codable, Equatable, Sendable {
     public var noiseLevel: String?
     public var noiseDecibels: Double?
     public var elevationCategory: String?
     public var barometricElevationMeters: Double?
+    public var luxLevel: Double?
+    public var motionVariance: Double?
+    public var compassAzimuth: Double?
+    public var batteryLevel: Int?
 
-    public init(noiseLevel: String? = nil, noiseDecibels: Double? = nil, elevationCategory: String? = nil, barometricElevationMeters: Double? = nil) {
+    public init(
+        noiseLevel: String? = nil,
+        noiseDecibels: Double? = nil,
+        elevationCategory: String? = nil,
+        barometricElevationMeters: Double? = nil,
+        luxLevel: Double? = nil,
+        motionVariance: Double? = nil,
+        compassAzimuth: Double? = nil,
+        batteryLevel: Int? = nil
+    ) {
         self.noiseLevel = noiseLevel
         self.noiseDecibels = noiseDecibels
         self.elevationCategory = elevationCategory
         self.barometricElevationMeters = barometricElevationMeters
+        self.luxLevel = luxLevel
+        self.motionVariance = motionVariance
+        self.compassAzimuth = compassAzimuth
+        self.batteryLevel = batteryLevel
     }
 
-    var isEmpty: Bool { noiseLevel == nil && noiseDecibels == nil && elevationCategory == nil && barometricElevationMeters == nil }
+    var isEmpty: Bool { columns.isEmpty }
 
+    /// `connection_encounters` columns; also the request-body keys every connect route reads.
     var columns: [String: Any] {
         var out: [String: Any] = [:]
         if let noiseLevel { out["noise_level"] = noiseLevel }
         if let noiseDecibels { out["exact_noise_level_db"] = noiseDecibels }
         if let elevationCategory { out["elevation_category"] = elevationCategory }
         if let barometricElevationMeters { out["exact_barometric_elevation_m"] = barometricElevationMeters }
+        if let luxLevel { out["lux_level"] = luxLevel }
+        if let motionVariance { out["motion_variance"] = motionVariance }
+        if let compassAzimuth { out["compass_azimuth"] = compassAzimuth }
+        if let batteryLevel { out["battery_level"] = batteryLevel }
         return out
     }
 }

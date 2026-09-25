@@ -909,7 +909,10 @@ struct ProfileMediaThumbnail: View {
         Color.clear
             .aspectRatio(1, contentMode: .fit)
             .overlay {
-                if let image {
+                if item.media?.isLocked() == true {
+                    // An undeveloped Click Drop stays hidden here, as in chat, until its reveal.
+                    Image(systemName: "hourglass").foregroundStyle(ClickColors.textTertiary)
+                } else if let image {
                     Image(uiImage: image).resizable().scaledToFill()
                 } else if failed {
                     Image(systemName: "photo.badge.exclamationmark").foregroundStyle(ClickColors.textTertiary)
@@ -922,7 +925,7 @@ struct ProfileMediaThumbnail: View {
             .contentShape(Rectangle())
             .onTapGesture { if let url { onOpen(url) } }
             .task(id: item.id) {
-                guard image == nil else { return }
+                guard image == nil, item.media?.isLocked() != true else { return }
                 do {
                     let fileURL = try await load()
                     let thumb = await Task.detached(priority: .utility) {

@@ -19,13 +19,20 @@ enum JSONFields {
 
     static func dictionary(_ value: Any?) -> [String: Any]? {
         if let value = value as? [String: Any] { return value }
-        // Some historical metadata columns were double-encoded as a JSON string.
+        // Some historical columns were JSON-encoded as a string, some twice
+        // (e.g. `weather_snapshot` written as "\"{...}\"").
         if let text = value as? String,
            let data = text.data(using: .utf8),
-           let parsed = try? JSONSerialization.jsonObject(with: data) as? [String: Any] {
-            return parsed
+           let parsed = try? JSONSerialization.jsonObject(with: data, options: .fragmentsAllowed) {
+            if let object = parsed as? [String: Any] { return object }
+            if let inner = parsed as? String, inner != text { return dictionary(inner) }
         }
         return nil
+    }
+
+    /// An encounter place string, without the server's former "no location" placeholder.
+    static func place(_ value: Any?) -> String? {
+        string(value).flatMap { $0 == "A new city" ? nil : $0 }
     }
 
     /// A trimmed, non-empty string.

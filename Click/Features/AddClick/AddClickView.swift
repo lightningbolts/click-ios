@@ -1,3 +1,4 @@
+import CoreLocation
 import SwiftUI
 import CoreImage
 import CoreImage.CIFilterBuiltins
@@ -550,7 +551,10 @@ struct ScanClickCodeView: View {
                 isGroup: false,
                 peers: [ProximityPeer(id: result.userID, name: result.name, avatarURL: nil, connectionID: result.connectionID, isNewConnection: result.isNew)],
                 groupMemberIDs: [],
-                encounterLogged: true
+                encounterLogged: result.encounterLogged,
+                rateLimited: !result.isNew && !result.encounterLogged,
+                encounterID: result.encounterID,
+                collaborationEndsAt: result.collaborationEndsAt
             )
             Task { await conversations.refresh() }
         } catch {
@@ -623,20 +627,59 @@ enum QRRedeemMessages {
 }
 
 private enum ClickConnectionRedeemer {
+    struct Result {
+        let name: String
+        let connectionID: String?
+        let userID: String
+        let isNew: Bool
+        var encounterLogged = true
+        var encounterID: String?
+        var collaborationEndsAt: Date?
+    }
+
+    /// A scanner fix coarser than this is left out: `redeem_qr_token` rejects scans more than
+    /// 100 m from the code's owner, and a poor fix must never block a real in-person scan.
+    static let maxScannerAccuracyMeters: CLLocationAccuracy = 50
+
+    /// Encounter context captured at scan time, as the body keys `/api/qr` and
+    /// `/api/connections` read (GPS, opted-in barometer, hardware snapshot, timezone).
+    /// Noise is sampled after the reveal (`PostConnectModel.recordSensorContext`).
+    @MainActor
+    static func context(_ env: AppEnvironment, userID: String) async -> (fields: [String: Any], fix: CLLocation?) {
+        async let allowed = env.shouldCaptureConnectionLocation(userID: userID)
+        async let sensor = EncounterSensorSampler.sample(settings: env.settings, includeNoise: false, includeHardware: true)
+        let fix: CLLocation? = await allowed
+            ? await env.location.currentLocation(maximumAge: 60, acceptableAccuracy: 30, timeout: .seconds(3))
+            : nil
+        var fields = await sensor.columns
+        fields["timezone_offset_minutes"] = TimeZone.current.secondsFromGMT() / 60
+        guard let fix, fix.horizontalAccuracy >= 0, fix.horizontalAccuracy <= maxScannerAccuracyMeters else {
+            return (fields, nil)
+        }
+        return (fields, fix)
+    }
+
     @MainActor
     static func redeem(
         _ invocation: ConnectionInvocation,
         environment env: AppEnvironment
-    ) async throws -> (name: String, connectionID: String?, userID: String, isNew: Bool) {
+    ) async throws -> Result {
         guard let currentUserID = env.session.currentSession?.userId else {
             throw APIError.unauthorized
         }
 
-        var redeemBody: [String: Any] = [:]
+        let captured = await Self.context(env, userID: currentUserID)
+        var redeemBody = captured.fields
         if let token = invocation.token, !token.isEmpty {
             redeemBody["token"] = token
         } else {
             redeemBody["targetUserId"] = invocation.userID
+        }
+        if let fix = captured.fix {
+            let lat = fix.coordinate.latitude, lon = fix.coordinate.longitude
+            redeemBody["gps_lat"] = lat
+            redeemBody["gps_lon"] = lon
+            redeemBody["scannerLocation"] = ["lat": lat, "lon": lon]
         }
 
         let redeemData = try JSONSerialization.data(withJSONObject: redeemBody)
@@ -650,17 +693,20 @@ private enum ClickConnectionRedeemer {
             throw APIError.decoding
         }
 
-        let targetName = (result["targetUserName"] as? String)?.trimmingCharacters(in: .whitespacesAndNewlines)
+        let trimmedName = (result["targetUserName"] as? String)?.trimmingCharacters(in: .whitespacesAndNewlines)
+        let targetName = trimmedName?.isEmpty == false ? trimmedName! : "Click user"
         let existingConnectionID = result["connectionId"] as? String
 
         if existingConnectionID == nil {
-            var createBody: [String: Any] = [
-                "userId1": currentUserID,
-                "userId2": targetUserID,
-                "connectionMethod": "qr"
-            ]
+            var createBody = captured.fields
+            createBody["userId1"] = currentUserID
+            createBody["userId2"] = targetUserID
+            createBody["connectionMethod"] = "qr"
             if let tokenAgeMs = result["tokenAgeMs"] as? NSNumber {
                 createBody["tokenAgeMs"] = tokenAgeMs.doubleValue
+            }
+            if let fix = captured.fix {
+                createBody["location1"] = ["lat": fix.coordinate.latitude, "lon": fix.coordinate.longitude]
             }
 
             let body = try JSONSerialization.data(withJSONObject: createBody)
@@ -671,21 +717,27 @@ private enum ClickConnectionRedeemer {
                 requiresAuth: true
             )
             let (created, _) = try await env.api.executeRaw(createRequest)
-            let createdRoot = try JSONSerialization.jsonObject(with: created) as? [String: Any]
-            let connection = createdRoot?["connection"] as? [String: Any]
-            return (
-                targetName?.isEmpty == false ? targetName! : "Click user",
-                connection?["id"] as? String,
-                targetUserID,
-                true
+            let createdRoot = (try JSONSerialization.jsonObject(with: created) as? [String: Any]) ?? [:]
+            let connection = createdRoot["connection"] as? [String: Any]
+            return Result(
+                name: targetName,
+                connectionID: JSONFields.string(createdRoot["connection_id"]) ?? JSONFields.string(connection?["id"]),
+                userID: targetUserID,
+                isNew: true,
+                encounterLogged: JSONFields.bool(createdRoot["encounter_logged"]) ?? true,
+                encounterID: JSONFields.string(createdRoot["encounter_id"]),
+                collaborationEndsAt: JSONFields.date(createdRoot["collaboration_ttl"])
             )
         }
 
-        return (
-            targetName?.isEmpty == false ? targetName! : "Click user",
-            existingConnectionID,
-            targetUserID,
-            false
+        return Result(
+            name: targetName,
+            connectionID: existingConnectionID,
+            userID: targetUserID,
+            isNew: false,
+            encounterLogged: JSONFields.bool(root["encounter_logged"]) ?? true,
+            encounterID: JSONFields.string(root["encounter_id"]),
+            collaborationEndsAt: JSONFields.date(root["collaboration_ttl"])
         )
     }
 }

@@ -245,7 +245,7 @@ public actor Phase3Repository {
                 (timestamp($0["encountered_at"]) ?? .distantPast) < (timestamp($1["encountered_at"]) ?? .distantPast)
             }
             let location = string(latestEncounter?["location_name"])
-                ?? string(latestEncounter?["display_location"])
+                ?? JSONFields.place(latestEncounter?["display_location"])
                 ?? string(row["semantic_location"])
                 ?? ""
             let created = timestamp(row["created"])

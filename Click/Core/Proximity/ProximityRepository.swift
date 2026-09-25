@@ -29,9 +29,8 @@ public struct ProximityEvidence: Codable, Equatable, Sendable {
             body["longitude"] = longitude
         }
         if simulatorMock { body["simulator_mock"] = true }
-        if let meters = sensor.barometricElevationMeters { body["exact_barometric_elevation_m"] = meters }
-        if let level = sensor.noiseLevel { body["noise_level"] = level }
-        if let decibels = sensor.noiseDecibels { body["exact_noise_level_db"] = decibels }
+        // Sensor readings and the hardware snapshot use the server's encounter column names.
+        body.merge(sensor.columns) { current, _ in current }
         return body
     }
 }

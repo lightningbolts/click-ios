@@ -81,7 +81,7 @@ public struct Encounter: Codable, Equatable, Identifiable, Sendable {
         return Encounter(
             id: id,
             date: date,
-            place: JSONFields.string(row, "location_name", "display_location"),
+            place: JSONFields.string(row["location_name"]) ?? JSONFields.place(row["display_location"]),
             eventTitle: JSONFields.string(row["event_beacon_title"]),
             eventBeaconID: JSONFields.string(row["event_beacon_id"]),
             contextTags: JSONFields.stringArray(row["context_tags"]).filter { $0 != "at_event" },
@@ -100,7 +100,7 @@ public struct Encounter: Codable, Equatable, Identifiable, Sendable {
             windKph: weather.flatMap { JSONFields.double($0["windSpeedKph"]) },
             windDirectionDegrees: weather.flatMap { JSONFields.double($0["windDirectionDegrees"]) },
             locationName: JSONFields.string(row["location_name"]),
-            displayLocation: JSONFields.string(row["display_location"]),
+            displayLocation: JSONFields.place(row["display_location"]),
             compassAzimuth: JSONFields.double(row["compass_azimuth"]),
             batteryLevel: JSONFields.int(row["battery_level"]),
             vibeCapture: JSONFields.string(row["vibe_capture"])
