@@ -355,6 +355,13 @@ struct ChatTimelineView: UIViewRepresentable {
             requestOlderIfNeeded()
         }
 
+        func collectionView(_ collectionView: UICollectionView, willDisplay cell: UICollectionViewCell, forItemAt indexPath: IndexPath) {
+            // Scroll callbacks can be sparse while self-sizing SwiftUI cells settle. Treat
+            // displaying one of the leading rows as an independent pagination sentinel.
+            guard indexPath.item <= 3 else { return }
+            requestOlderIfNeeded()
+        }
+
         func scrollViewWillBeginDragging(_ scrollView: UIScrollView) {
             parent?.onUserScroll()
         }
