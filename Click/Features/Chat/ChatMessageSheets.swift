@@ -125,7 +125,10 @@ struct ReactorsSheet: View {
     private var selectedUserIDs: [String] {
         guard let reaction = selectedReaction else { return [] }
         var ids = reaction.userIDs
-        if reaction.userReacted, !currentUserID.isEmpty, !ids.contains(currentUserID) {
+        if !currentUserID.isEmpty, let ownIndex = ids.firstIndex(of: currentUserID) {
+            ids.remove(at: ownIndex)
+            ids.insert(currentUserID, at: 0)
+        } else if reaction.userReacted, !currentUserID.isEmpty {
             ids.insert(currentUserID, at: 0)
         }
         return ids
@@ -233,7 +236,6 @@ struct ReactorsSheet: View {
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
-        .disabled(!isCurrentUser)
         .accessibilityHint(isCurrentUser ? "Removes your reaction" : "")
     }
 }
