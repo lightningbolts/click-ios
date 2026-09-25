@@ -383,6 +383,9 @@ public struct ChatView: View {
                     showsSenderName: false,
                     showsReceipts: model.identity.supportsReceipts,
                     mediaLoader: { msg in try await model.mediaURL(for: msg) },
+                    replyTarget: target.message.replyToID.flatMap { replyID in
+                        model.items.first { $0.id == replyID }
+                    },
                     isLiftedCopy: true
                 )
             ),
