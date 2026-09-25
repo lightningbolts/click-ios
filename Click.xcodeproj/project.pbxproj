@@ -117,6 +117,7 @@
 		9059C7BC731D34781013C8E7 /* GlobalSearchView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9A1DDAF186000D4AB6CC00E9 /* GlobalSearchView.swift */; };
 		92E8BB4744E0DC418DC3813B /* NetworkingTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8B1EC4A055326A9384062E22 /* NetworkingTests.swift */; };
 		92F27DA0C01DD9C90070F34F /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = 32BCA700988129E7FE7DC06B /* Assets.xcassets */; };
+		A11C0A1A7E6B4A9F8C21D001 /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = 32BCA700988129E7FE7DC06B /* Assets.xcassets */; };
 		92F8F1122F82982A3FD0193D /* MessageBubbleView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 059E174F6A0ABD87301344BE /* MessageBubbleView.swift */; };
 		94B7ABF583A435F507645E2F /* MediaValidator.swift in Sources */ = {isa = PBXBuildFile; fileRef = 74E0259A1FAA13222827DE61 /* MediaValidator.swift */; };
 		954D883F8A78E83AA2C7A63E /* ChatBackground.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7125294CCB8A33E80B3A394C /* ChatBackground.swift */; };
@@ -1159,6 +1160,7 @@
 			buildConfigurationList = 07FCB726CF723FDBBE96E049 /* Build configuration list for PBXNativeTarget "ClickClip" */;
 			buildPhases = (
 				FDCDE2F4C0B82386B822E285 /* Sources */,
+				A11C0A1A7E6B4A9F8C21D002 /* Resources */,
 			);
 			buildRules = (
 			);
@@ -1261,6 +1263,14 @@
 /* End PBXProject section */
 
 /* Begin PBXResourcesBuildPhase section */
+		A11C0A1A7E6B4A9F8C21D002 /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				A11C0A1A7E6B4A9F8C21D001 /* Assets.xcassets in Resources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
 		45E6E5CDB4D96C377CD314F4 /* Resources */ = {
 			isa = PBXResourcesBuildPhase;
 			buildActionMask = 2147483647;
@@ -1583,6 +1593,7 @@
 			isa = XCBuildConfiguration;
 			baseConfigurationReference = 5CE872BED60D02250BA16BD1 /* Debug.xcconfig */;
 			buildSettings = {
+				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				CODE_SIGN_ENTITLEMENTS = Resources/ClickClip.entitlements;
 				CODE_SIGN_STYLE = Automatic;
 				INFOPLIST_FILE = ClickClip/Info.plist;
@@ -1762,6 +1773,7 @@
 			isa = XCBuildConfiguration;
 			baseConfigurationReference = FC2D8FD2E9A926E650F8748C /* Release.xcconfig */;
 			buildSettings = {
+				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				CODE_SIGN_ENTITLEMENTS = Resources/ClickClip.entitlements;
 				CODE_SIGN_STYLE = Automatic;
 				INFOPLIST_FILE = ClickClip/Info.plist;
