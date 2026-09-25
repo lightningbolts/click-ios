@@ -95,6 +95,7 @@ struct ChatTimelineView: UIViewRepresentable {
         private var contentVersion = -1
         private var hasPositionedInitially = false
         private var lastNearBottom = true
+        private var nearBottomReportTask: Task<Void, Never>?
         private var lastNearTopRequest = Date.distantPast
 
         func attach(_ view: TimelineCollectionView, controller: TimelineController) {
@@ -231,7 +232,17 @@ struct ChatTimelineView: UIViewRepresentable {
         private func reportNearBottom(_ near: Bool) {
             guard near != lastNearBottom else { return }
             lastNearBottom = near
-            parent?.onNearBottomChanged(near)
+
+            // UIKit can call scroll delegates while SwiftUI is updating this representable
+            // (for example while a diffable snapshot/layout pass changes contentOffset).
+            // Defer and coalesce the bridge back into SwiftUI state so @State is never mutated
+            // synchronously from inside a view update.
+            nearBottomReportTask?.cancel()
+            nearBottomReportTask = Task { @MainActor [weak self] in
+                await Task.yield()
+                guard !Task.isCancelled else { return }
+                self?.parent?.onNearBottomChanged(near)
+            }
         }
 
         private func requestOlderIfNeeded() {
