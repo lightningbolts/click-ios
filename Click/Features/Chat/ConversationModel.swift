@@ -141,6 +141,12 @@ public final class ConversationModel {
                     connectionID: identity.connectionID
                 )
                 store?.link(aliases: [requested, identity.connectionID ?? ""], to: identity.chatID, userID: currentUserID)
+                if let store {
+                    // The model can be created before a connection route resolves to its canonical
+                    // chat UUID. Re-read paging state against that canonical conversation so a
+                    // stale alias cannot permanently disable older-history loading.
+                    hasMoreHistory = !store.reachedStart(conversation: identity.chatID, userID: currentUserID)
+                }
                 if items.isEmpty, let store {
                     let stored = store.latestMessages(conversation: identity.chatID, userID: currentUserID, limit: Self.initialPaintSize)
                     if !stored.isEmpty {
@@ -267,7 +273,16 @@ public final class ConversationModel {
                fetched.count >= Self.pageSize, oldestFetched > newestKnown {
                 rows += try await fetchDeltas(after: newestKnown, until: oldestFetched)
             }
-            if !hadItems { hasMoreHistory = fetched.count >= Self.pageSize && hasMoreHistory }
+            if !hadItems {
+                hasMoreHistory = fetched.count >= Self.pageSize && hasMoreHistory
+            } else if fetched.count >= Self.pageSize,
+                      let oldestFetched = fetched.map(\.createdAt).min(),
+                      !items.contains(where: { $0.createdAt < oldestFetched }) {
+                // If the currently painted timeline contains only the latest server page, there
+                // may be older history even when a stale persisted reached-start flag said no.
+                // One cursor fetch will cheaply prove the true start and persist it again.
+                hasMoreHistory = true
+            }
             items = mergeFetched(rows)
             resolveReplyQuotes()
             phase = .loaded
