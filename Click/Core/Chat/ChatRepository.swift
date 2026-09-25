@@ -1,6 +1,13 @@
 import Foundation
 import CryptoKit
 
+extension ChatRepositoryProtocol {
+    public func fetchMessages(conversation: ConversationIdentity, currentUserID: String, since: Int64, limit: Int) async throws -> [ChatMessageItem] {
+        try await fetchMessages(conversation: conversation, currentUserID: currentUserID, cursor: nil, limit: limit)
+            .filter { Int64($0.createdAt.timeIntervalSince1970 * 1000) > since }
+    }
+}
+
 /// Conversation operations for every supported kind (direct, verified group, community hub).
 ///
 /// The protocol intentionally owns wire/encryption concerns. Presentation models never decide
@@ -12,6 +19,15 @@ public protocol ChatRepositoryProtocol: Sendable {
         conversation: ConversationIdentity,
         currentUserID: String,
         cursor: Int64?,
+        limit: Int
+    ) async throws -> [ChatMessageItem]
+
+    /// Delta sync: messages created after `since` (ms), oldest first, at most `limit`.
+    /// Servers without `since` support ignore it and return the latest page (deduped by ID).
+    func fetchMessages(
+        conversation: ConversationIdentity,
+        currentUserID: String,
+        since: Int64,
         limit: Int
     ) async throws -> [ChatMessageItem]
 
@@ -582,18 +598,24 @@ public actor ChatRepository: ChatRepositoryProtocol {
         try await fetchPage(conversation: conversation, currentUserID: currentUserID, cursor: nil, around: messageID, limit: limit)
     }
 
-    /// Latest page, an older page (`cursor`), or a window around one message (`around`).
+    public func fetchMessages(conversation: ConversationIdentity, currentUserID: String, since: Int64, limit: Int) async throws -> [ChatMessageItem] {
+        let rows = try await fetchPage(conversation: conversation, currentUserID: currentUserID, cursor: nil, around: nil, since: since, limit: limit)
+        // An older server ignores `since` and returns the latest page: keep only newer rows
+        // (tombstones pass through so deletions apply).
+        return rows.filter { $0.isDeleted || Int64($0.createdAt.timeIntervalSince1970 * 1000) > since }
+    }
+
+    /// Latest page, an older page (`cursor`), rows after `since`, or a window around one message.
     private func fetchPage(
         conversation: ConversationIdentity,
         currentUserID: String,
         cursor: Int64?,
         around: String?,
+        since: Int64? = nil,
         limit: Int
     ) async throws -> [ChatMessageItem] {
         if let hubID = conversation.hubID {
-            // The hub thread route returns the latest window (or an around window); no older cursor.
-            guard cursor == nil else { return [] }
-            return try await fetchHubMessages(hubID: hubID, currentUserID: currentUserID, limit: limit, around: around)
+            return try await fetchHubMessages(hubID: hubID, currentUserID: currentUserID, limit: limit, around: around, cursor: cursor, since: since)
         }
 
         let canonicalChatID = try await canonicalChatID(conversation)
@@ -605,6 +627,9 @@ public actor ChatRepository: ChatRepositoryProtocol {
         ]
         if let cursor {
             queryItems.append(URLQueryItem(name: "cursor", value: String(cursor)))
+        }
+        if let since {
+            queryItems.append(URLQueryItem(name: "since", value: String(since)))
         }
         if let around {
             queryItems.append(URLQueryItem(name: "aroundMessageId", value: around))
@@ -1449,16 +1474,20 @@ public actor ChatRepository: ChatRepositoryProtocol {
 
     // MARK: - Hub transport (spec §61, §62)
 
-    private func fetchHubMessages(hubID: String, currentUserID: String, limit: Int, around: String? = nil) async throws -> [ChatMessageItem] {
+    private func fetchHubMessages(hubID: String, currentUserID: String, limit: Int, around: String? = nil, cursor: Int64? = nil, since: Int64? = nil) async throws -> [ChatMessageItem] {
         let data: Data
         do {
+            var items = [
+                URLQueryItem(name: "hubId", value: hubID),
+                URLQueryItem(name: "limit", value: String(min(max(limit, 1), 120)))
+            ]
+            if let around { items.append(URLQueryItem(name: "aroundMessageId", value: around)) }
+            if let cursor { items.append(URLQueryItem(name: "cursor", value: String(cursor))) }
+            if let since { items.append(URLQueryItem(name: "since", value: String(since))) }
             (data, _) = try await apiClient.executeRaw(APIRequest(
                 path: "/api/hub/messages",
                 method: .get,
-                queryItems: [
-                    URLQueryItem(name: "hubId", value: hubID),
-                    URLQueryItem(name: "limit", value: String(min(max(limit, 1), 120)))
-                ] + (around.map { [URLQueryItem(name: "aroundMessageId", value: $0)] } ?? [])
+                queryItems: items
             ))
         } catch {
             throw HubChatError.map(error)

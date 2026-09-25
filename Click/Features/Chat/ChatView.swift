@@ -8,17 +8,14 @@ public struct ChatView: View {
     @Environment(AppEnvironment.self) private var env
     @State private var model: ConversationModel
     @State private var isNearBottom = true
-    @State private var userHasScrolled = false
-    /// Rows currently on screen, updated while scrolling without invalidating the view.
-    private final class VisibleRows { var topID: String? }
-    @State private var visibleRows = VisibleRows()
+    /// Moves the UIKit timeline (jump to latest / to a message).
+    @State private var timeline = TimelineController()
     /// Messages that arrived while the reader was scrolled up.
     @State private var unseenCount = 0
-    /// Insert animations run only after the first paint, never for the initial page.
-    @State private var animatesInserts = false
     @State private var screenWidth: CGFloat = 390
     @State private var viewerURL: ViewerURL?
     @Environment(ConversationListModel.self) private var conversations: ConversationListModel?
+    @Environment(\.scenePhase) private var scenePhase
     @State private var pendingAction: PendingConversationAction?
     @State private var notice: String?
 
@@ -66,8 +63,7 @@ public struct ChatView: View {
     }
 
     public var body: some View {
-        ScrollViewReader { proxy in
-            Group {
+        Group {
                 switch model.phase {
                 case .initial where model.items.isEmpty:
                     loadingState
@@ -79,7 +75,7 @@ public struct ChatView: View {
                     failureState(message: message)
 
                 default:
-                    timeline(proxy: proxy)
+                    timelineView
                 }
             }
             .background { ChatBackground(seed: model.identity.connectionID ?? model.identity.chatID).equatable() }
@@ -96,7 +92,7 @@ public struct ChatView: View {
             }
             .overlay(alignment: .top) {
                 if isSearching {
-                    searchBar(proxy: proxy)
+                    searchBar
                         .padding(.horizontal, 12)
                         .padding(.top, 8)
                         .transition(.move(edge: .top).combined(with: .opacity))
@@ -141,7 +137,7 @@ public struct ChatView: View {
                 // A search result opened this chat: bring that message into view.
                 if let focus = env.pendingMessageFocus, focus.matches(model.identity) {
                     env.pendingMessageFocus = nil
-                    await jump(to: focus.messageID, proxy: proxy)
+                    await jump(to: focus.messageID)
                 }
             }
             .fullScreenCover(item: $viewerURL) { item in
@@ -185,30 +181,25 @@ public struct ChatView: View {
             .onChange(of: model.identity.chatID, initial: true) { _, chatID in
                 env.activeChatID = chatID
             }
-            .onChange(of: model.phase) { oldPhase, newPhase in
-                guard oldPhase != .loaded, newPhase == .loaded, !animatesInserts else { return }
-                DispatchQueue.main.async {
-                    proxy.scrollTo("bottom-anchor", anchor: .bottom)
-                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) { animatesInserts = true }
-                }
-            }
-            // Only a new *latest* message moves the timeline. Loading older history prepends
-            // and never changes the last ID, so the reader keeps their place.
+            // Only a new *latest* message matters here: the timeline keeps itself pinned while
+            // the reader is at the bottom; our own sends always bring it into view.
             .onChange(of: model.items.last?.stableID) { oldID, newID in
                 guard let newID, let oldID, newID != oldID else { return }
-                if isNearBottom || model.items.last?.isOutgoing == true {
-                    withAnimation(ClickMotion.content) {
-                        proxy.scrollTo("bottom-anchor", anchor: .bottom)
-                    }
+                if model.items.last?.isOutgoing == true {
+                    timeline.scrollToBottom(animated: true)
                     unseenCount = 0
-                } else {
+                } else if !isNearBottom {
                     unseenCount += 1
                 }
             }
             .onChange(of: isNearBottom) { _, nearBottom in
                 if nearBottom { unseenCount = 0 }
             }
-            .animation(ClickMotion.selection, value: isNearBottom)
+            .onChange(of: highlightedID) { timeline.refreshVisibleRows() }
+            .onChange(of: actionTarget?.id) { timeline.refreshVisibleRows() }
+            .onChange(of: scenePhase) { _, phase in
+                if phase == .active { Task { await model.resume() } }
+            }
             .task(id: model.nextClickDropReveal?.date) {
                 // Local, in-chat only: the server's `disposable_reveal` push covers the background.
                 guard let next = model.nextClickDropReveal else { return }
@@ -216,109 +207,72 @@ public struct ChatView: View {
                 guard !Task.isCancelled else { return }
                 await showToast(next.isOutgoing ? "Your Click Drop developed" : "A Click Drop developed")
             }
-            .onChange(of: model.isPeerTyping) { _, isTyping in
-                guard isTyping, isNearBottom else { return }
-                withAnimation(ClickMotion.selection) {
-                    proxy.scrollTo("bottom-anchor", anchor: .bottom)
-                }
-            }
-        }
     }
 
-    private func timeline(proxy: ScrollViewProxy) -> some View {
-        let byID = Dictionary(model.items.map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first })
-        return ScrollView {
-            LazyVStack(spacing: 2) {
-                // Reaching the top loads the previous page (spec §31.3).
-                if model.hasMoreHistory, model.identity.hubID == nil, !model.items.isEmpty, model.isLoadingOlder {
-                    ProgressView()
-                        .frame(maxWidth: .infinity)
-                        .padding(.vertical, 8)
-                }
-                ForEach(Array(model.items.enumerated()), id: \.element.stableID) { index, item in
-                    if shouldShowDateHeader(at: index) {
-                        Self.dateHeader(item.createdAt)
-                    }
-                    if item.id == model.firstUnreadID {
-                        UnreadDivider().id("unread-divider")
-                    }
-                    MessageBubbleView(
-                        message: item,
-                        onReply: { target in
-                            withAnimation(ClickMotion.selection) {
-                                model.editTarget = nil
-                                model.replyTarget = target
-                            }
-                        },
-                        onEdit: { target in
-                            withAnimation(ClickMotion.selection) {
-                                model.replyTarget = nil
-                                model.editTarget = target
-                                model.composerText = target.content
-                            }
-                        },
-                        onDelete: { target in Task { await model.deleteMessage(item: target) } },
-                        onToggleReaction: { target, emoji in Task { await model.toggleReaction(item: target, reactionType: emoji) } },
-                        onRetrySend: { target in Task { await model.retrySend(item: target) } },
-                        showsSenderName: !model.identity.isDirect && startsSenderRun(at: index),
-                        showsReceipts: model.identity.supportsReceipts,
-                        mediaLoader: { message in try await model.mediaURL(for: message) },   // never nil
-                        onOpenMedia: { url, kind in
-                            if kind == .image { viewerURL = ViewerURL(url: url) } else { quickLookURL = url }
-                        },
-                        onOpenBeacon: { beacon in
-                            env.router.navigate(to: beacon.isEvent ? .event(beaconID: beacon.beaconID) : .beacon(beaconID: beacon.beaconID))
-                        },
-                        onDiscardFailed: { target in withAnimation(ClickMotion.content) { model.discardFailed(item: target) } },
-                        onForward: conversations != nil && model.canForward(item) ? { forwarding = $0 } : nil,
-                        onSaveMedia: { target in Task { await saveOrShare(target) } },
-                        onShowReactions: { target, reaction in reactorsFor = ReactorsTarget(message: target, reaction: reaction) },
-                        replyTarget: item.replyToID.flatMap { byID[$0] },
-                        onTapReplyQuote: { id in Task { await jump(to: id, proxy: proxy) } },
-                        onLongPress: { message, frame in
-                            UIApplication.shared.sendAction(#selector(UIResponder.resignFirstResponder), to: nil, from: nil, for: nil)
-                            actionTarget = ActionTarget(message: message, frame: frame)
-                        }
-                        ,
-                        // The lifted copy stands in for the bubble while actions are open.
-                        isBubbleHidden: actionTarget?.message.stableID == item.stableID
-                    )
-                    .background {
-                        if highlightedID == item.stableID {
-                            ClickColors.accentForeground.opacity(0.14).transition(.opacity)
-                        }
-                    }
-                    .id(item.stableID)
-                    .transition(.asymmetric(
-                        insertion: .move(edge: .bottom).combined(with: .scale(scale: 0.92, anchor: item.isOutgoing ? .bottomTrailing : .bottomLeading)).combined(with: .opacity),
-                        removal: .opacity
-                    ))
-                }
-
-                if model.isPeerTyping {
-                    typingIndicator
-                        .id("typing-indicator")
-                }
-
-                Color.clear
-                    .frame(height: 1)
-                    .id("bottom-anchor")
+    /// Rows for the timeline: day headers, the "New messages" divider, messages, typing.
+    private var timelineRows: [ChatTimelineRow] {
+        var rows: [ChatTimelineRow] = []
+        rows.reserveCapacity(model.items.count + 8)
+        var previousDay: Date?
+        for item in model.items {
+            let day = Calendar.current.startOfDay(for: item.createdAt)
+            if day != previousDay {
+                rows.append(.dateHeader(day))
+                previousDay = day
             }
-            .padding(.top, 8)
-            .padding(.bottom, 8)
-            .scrollTargetLayout()
-            .animation(animatesInserts ? ClickMotion.content : nil, value: model.items.last?.stableID)
+            if item.id == model.firstUnreadID { rows.append(.unreadDivider) }
+            rows.append(.message(item.stableID))
         }
-        .onScrollPhaseChange { _, phase in
-            if phase == .interacting { userHasScrolled = true }
-        }
-        .onScrollGeometryChange(for: Bool.self) { geometry in
-            geometry.contentOffset.y + geometry.contentInsets.top < 600   // within 600 pt of the top
-        } action: { _, nearTop in
-            if nearTop, userHasScrolled { requestOlderHistory(proxy: proxy) }
-        }
-        .onScrollTargetVisibilityChange(idType: String.self, threshold: 0.2) { ids in
-            visibleRows.topID = ids.first
+        if model.isPeerTyping { rows.append(.typing) }
+        return rows
+    }
+
+    private var timelineView: some View {
+        let items = model.items
+        let indexByStableID = Dictionary(items.enumerated().map { ($0.element.stableID, $0.offset) }, uniquingKeysWith: { first, _ in first })
+        let byID = Dictionary(items.map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first })
+        var hasher = Hasher()
+        hasher.combine(items)
+        hasher.combine(model.typingNames)
+        let version = hasher.finalize()
+        return ChatTimelineView(
+            rows: timelineRows,
+            contentVersion: version,
+            hasMoreHistory: model.hasMoreHistory,
+            isLoadingOlder: model.isLoadingOlder,
+            controller: timeline,
+            rowContent: { row in
+                switch row {
+                case .dateHeader(let day):
+                    AnyView(Self.dateHeader(day).frame(maxWidth: .infinity))
+                case .unreadDivider:
+                    AnyView(UnreadDivider())
+                case .typing:
+                    AnyView(typingIndicator)
+                case .message(let stableID):
+                    if let index = indexByStableID[stableID], items.indices.contains(index) {
+                        AnyView(bubble(for: items[index], at: index, in: items, byID: byID))
+                    } else {
+                        AnyView(Color.clear.frame(height: 1))
+                    }
+                }
+            },
+            onNearTop: {
+                Task { await model.loadOlder() }
+            },
+            onNearBottomChanged: { near in
+                withAnimation(ClickMotion.selection) { isNearBottom = near }
+            },
+            onUserScroll: {
+                if actionTarget != nil { actionTarget = nil }
+            }
+        )
+        .ignoresSafeArea(.container, edges: .top)
+        .overlay(alignment: .top) {
+            // Only when the reader has genuinely reached the start while a page is loading.
+            if model.isLoadingOlder, model.items.count < 8 {
+                ProgressView().padding(.top, 12)
+            }
         }
         .dropDestination(for: Data.self) { payloads, _ in
             Task {
@@ -332,16 +286,9 @@ public struct ChatView: View {
             }
             return true
         }
-        .scrollDismissesKeyboard(.interactively)
-        .defaultScrollAnchor(.bottom)
-        .onScrollGeometryChange(for: Bool.self) { geometry in
-            geometry.visibleRect.maxY >= geometry.contentSize.height - 90
-        } action: { _, nearBottom in
-            isNearBottom = nearBottom
-        }
         .overlay(alignment: .bottomTrailing) {
             if !isNearBottom || model.isDetachedFromLatest, !model.items.isEmpty {
-                jumpToLatestButton(proxy: proxy)
+                jumpToLatestButton
                     .padding(.trailing, 16)
                     .padding(.bottom, 12)
                     .transition(.scale(scale: 0.8).combined(with: .opacity))
@@ -358,6 +305,54 @@ public struct ChatView: View {
                     .padding(.bottom, 12)
                     .transition(.move(edge: .bottom).combined(with: .opacity))
                     .accessibilityAddTraits(.isStaticText)
+            }
+        }
+    }
+
+    private func bubble(for item: ChatMessageItem, at index: Int, in items: [ChatMessageItem], byID: [String: ChatMessageItem]) -> some View {
+        MessageBubbleView(
+            message: item,
+            onReply: { target in
+                withAnimation(ClickMotion.selection) {
+                    model.editTarget = nil
+                    model.replyTarget = target
+                }
+            },
+            onEdit: { target in
+                withAnimation(ClickMotion.selection) {
+                    model.replyTarget = nil
+                    model.editTarget = target
+                    model.composerText = target.content
+                }
+            },
+            onDelete: { target in Task { await model.deleteMessage(item: target) } },
+            onToggleReaction: { target, emoji in Task { await model.toggleReaction(item: target, reactionType: emoji) } },
+            onRetrySend: { target in Task { await model.retrySend(item: target) } },
+            showsSenderName: !model.identity.isDirect && Self.startsSenderRun(at: index, in: items),
+            showsReceipts: model.identity.supportsReceipts,
+            mediaLoader: { message in try await model.mediaURL(for: message) },   // never nil
+            onOpenMedia: { url, kind in
+                if kind == .image { viewerURL = ViewerURL(url: url) } else { quickLookURL = url }
+            },
+            onOpenBeacon: { beacon in
+                env.router.navigate(to: beacon.isEvent ? .event(beaconID: beacon.beaconID) : .beacon(beaconID: beacon.beaconID))
+            },
+            onDiscardFailed: { target in withAnimation(ClickMotion.content) { model.discardFailed(item: target) } },
+            onForward: conversations != nil && model.canForward(item) ? { forwarding = $0 } : nil,
+            onSaveMedia: { target in Task { await saveOrShare(target) } },
+            onShowReactions: { target, reaction in reactorsFor = ReactorsTarget(message: target, reaction: reaction) },
+            replyTarget: item.replyToID.flatMap { byID[$0] },
+            onTapReplyQuote: { id in Task { await jump(to: id) } },
+            onLongPress: { message, frame in
+                UIApplication.shared.sendAction(#selector(UIResponder.resignFirstResponder), to: nil, from: nil, for: nil)
+                actionTarget = ActionTarget(message: message, frame: frame)
+            },
+            // The lifted copy stands in for the bubble while actions are open.
+            isBubbleHidden: actionTarget?.message.stableID == item.stableID
+        )
+        .background {
+            if highlightedID == item.stableID {
+                ClickColors.accentForeground.opacity(0.14)
             }
         }
     }
@@ -445,30 +440,12 @@ public struct ChatView: View {
         return actions
     }
 
-    /// Instant older-history request that restores the reader's anchor seamlessly.
-    private func requestOlderHistory(proxy: ScrollViewProxy) {
-        Task { @MainActor in
-            guard model.hasMoreHistory, !model.isLoadingOlder else { return }
-            let anchor = visibleRows.topID ?? model.items.first?.stableID
-            await model.loadOlder()
-            if let anchor {
-                var transaction = Transaction()
-                transaction.disablesAnimations = true
-                withTransaction(transaction) {
-                    proxy.scrollTo(anchor, anchor: .top)
-                }
-            }
-        }
-    }
-
-    private func jumpToLatestButton(proxy: ScrollViewProxy) -> some View {
+    private var jumpToLatestButton: some View {
         Button {
             Task {
                 // A search window that isn't joined to the latest page reloads it first.
                 await model.returnToLatest()
-                withAnimation(ClickMotion.content) {
-                    proxy.scrollTo("bottom-anchor", anchor: .bottom)
-                }
+                timeline.scrollToBottom(animated: true)
             }
             unseenCount = 0
         } label: {
@@ -608,15 +585,15 @@ public struct ChatView: View {
         ConversationModel.searchMatches(in: model.items, query: searchQuery)
     }
 
-    private func searchBar(proxy: ScrollViewProxy) -> some View {
+    private var searchBar: some View {
         let matches = searchMatches
         return ChatSearchBar(
             query: $searchQuery,
             matchCount: matches.count,
             position: searchPosition,
-            canSearchOlder: model.hasMoreHistory && model.identity.hubID == nil,
-            onPrevious: { Task { await stepSearch(older: true, proxy: proxy) } },
-            onNext: { Task { await stepSearch(older: false, proxy: proxy) } },
+            canSearchOlder: model.hasMoreHistory,
+            onPrevious: { Task { await stepSearch(older: true) } },
+            onNext: { Task { await stepSearch(older: false) } },
             onDone: {
                 withAnimation(ClickMotion.selection) { isSearching = false }
                 searchQuery = ""
@@ -627,11 +604,11 @@ public struct ChatView: View {
     }
 
     /// Steps through matches newest → oldest; past the oldest, loads older history and retries.
-    private func stepSearch(older: Bool, proxy: ScrollViewProxy) async {
+    private func stepSearch(older: Bool) async {
         var matches = searchMatches
         let current = searchPosition ?? matches.count
         var next = older ? current - 1 : current + 1
-        if older, next < 0 || matches.isEmpty, model.hasMoreHistory, model.identity.hubID == nil {
+        if older, next < 0 || matches.isEmpty, model.hasMoreHistory {
             let before = matches.count
             await model.loadOlder()
             matches = searchMatches
@@ -639,17 +616,18 @@ public struct ChatView: View {
         }
         guard matches.indices.contains(next) else { return }
         searchPosition = next
-        await jump(to: matches[next], proxy: proxy)
+        await jump(to: matches[next])
     }
 
     /// Scrolls to a message (loading a window around it when needed) and flashes it.
-    private func jump(to messageID: String, proxy: ScrollViewProxy) async {
+    private func jump(to messageID: String) async {
         guard let stableID = await model.reveal(messageID: messageID) else {
             notice = "That message isn't available anymore."
             return
         }
-        try? await Task.sleep(for: .milliseconds(50))
-        withAnimation(ClickMotion.content) { proxy.scrollTo(stableID, anchor: .center) }
+        // Let the timeline apply the revealed window before scrolling to it.
+        try? await Task.sleep(for: .milliseconds(60))
+        timeline.scrollTo(stableID: stableID, animated: true)
         withAnimation(ClickMotion.subtleFade) { highlightedID = stableID }
         try? await Task.sleep(for: .seconds(1.6))
         withAnimation(ClickMotion.subtleFade) { if highlightedID == stableID { highlightedID = nil } }
@@ -685,11 +663,11 @@ public struct ChatView: View {
         }
     }
 
-    private func startsSenderRun(at index: Int) -> Bool {
-        guard model.items.indices.contains(index) else { return false }
+    private static func startsSenderRun(at index: Int, in items: [ChatMessageItem]) -> Bool {
+        guard items.indices.contains(index) else { return false }
         guard index > 0 else { return true }
-        let previous = model.items[index - 1]
-        let current = model.items[index]
+        let previous = items[index - 1]
+        let current = items[index]
         return previous.senderID != current.senderID
             || !Calendar.current.isDate(previous.createdAt, inSameDayAs: current.createdAt)
     }
@@ -838,15 +816,6 @@ public struct ChatView: View {
         }
         .padding(.horizontal, 12)
         .padding(.vertical, 2)
-    }
-
-    private func shouldShowDateHeader(at index: Int) -> Bool {
-        guard model.items.indices.contains(index) else { return false }
-        guard index > 0 else { return true }
-        return !Calendar.current.isDate(
-            model.items[index - 1].createdAt,
-            inSameDayAs: model.items[index].createdAt
-        )
     }
 
     fileprivate static func dateHeader(_ date: Date) -> some View {

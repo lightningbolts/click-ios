@@ -2,8 +2,8 @@ import Foundation
 
 /// Media carried by a chat message (spec §37). Built from the server metadata plus the
 /// decrypted body (file descriptors travel inside the encrypted content).
-public struct MessageMedia: Hashable, Sendable {
-    public enum Kind: String, Sendable {
+public struct MessageMedia: Hashable, Sendable, Codable {
+    public enum Kind: String, Sendable, Codable {
         case image
         case audio
         case file

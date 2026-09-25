@@ -71,7 +71,8 @@ public final class AppEnvironment {
             currentUserName: "You",
             timelineCache: timelineCache,
             pendingSends: pendingSends,
-            identities: identities
+            identities: identities,
+            store: .shared
         )
         model.onLocalSend = { [weak self] chatID, messageID, content, type, date in
             self?.inbox?.applyLocalSend(chatID: chatID, messageID: messageID, content: content, messageType: type, date: date)

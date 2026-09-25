@@ -374,7 +374,7 @@ public enum ClickCryptoV2 {
 
     // MARK: - Media (KMP `MessageCryptoV2.encryptMedia` / `authorizeMedia` / `decryptMedia`)
 
-    public struct MediaMetadata: Sendable, Equatable, Hashable {
+    public struct MediaMetadata: Sendable, Equatable, Hashable, Codable {
         public let chatId: String
         public let epoch: Int
         public let senderDeviceId: String

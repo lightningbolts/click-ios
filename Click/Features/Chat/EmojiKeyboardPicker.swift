@@ -99,7 +99,7 @@ struct EmojiPickerSheet: View {
     var body: some View {
         NavigationStack {
             ScrollView {
-                LazyVGrid(columns: columns, spacing: 6, pinnedViews: [.sectionHeaders]) {
+                LazyVGrid(columns: columns, spacing: 6) {
                     if query.isEmpty, !recents.isEmpty {
                         Section {
                             ForEach(recents, id: \.self) { cell($0) }
@@ -145,8 +145,8 @@ struct EmojiPickerSheet: View {
             .font(ClickTypography.metadataEmphasized)
             .foregroundStyle(ClickColors.textSecondary)
             .frame(maxWidth: .infinity, alignment: .leading)
-            .padding(.vertical, 6)
-            .background(.background)
+            .padding(.top, 10)
+            .padding(.bottom, 2)
     }
 
     private func cell(_ emoji: String) -> some View {

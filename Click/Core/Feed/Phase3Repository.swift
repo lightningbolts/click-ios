@@ -22,7 +22,17 @@ public actor Phase3Repository {
     }
 
     public func cachedClicks(for userID: String) -> ClicksSnapshot? {
-        cached(ClicksSnapshot.self, key: "phase3.clicks.\(userID)")
+        guard defaults === UserDefaults.standard else {
+            return cached(ClicksSnapshot.self, key: "phase3.clicks.\(userID)")
+        }
+        if let stored = LocalStore.shared.load(ClicksSnapshot.self, key: "inbox.snapshot", userID: userID) {
+            return stored.value
+        }
+        // One-time move of the inbox snapshot out of UserDefaults.
+        guard let legacy = cached(ClicksSnapshot.self, key: "phase3.clicks.\(userID)") else { return nil }
+        LocalStore.shared.save(legacy, key: "inbox.snapshot", userID: userID)
+        defaults.removeObject(forKey: "phase3.clicks.\(userID)")
+        return legacy
     }
 
     /// Builds the Clicks inbox in three requests regardless of inbox size: the connections
@@ -92,7 +102,11 @@ public actor Phase3Repository {
             groups: [],
             mapPins: Self.mapPins(rows: mapRows, currentUserID: userID, identities: identities, coreIDs: coreIDs)
         )
-        store(snapshot, key: "phase3.clicks.\(userID)")
+        if defaults === UserDefaults.standard {
+            LocalStore.shared.save(snapshot, key: "inbox.snapshot", userID: userID)
+        } else {
+            store(snapshot, key: "phase3.clicks.\(userID)")
+        }
         return snapshot
     }
 

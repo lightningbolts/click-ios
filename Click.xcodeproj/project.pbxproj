@@ -8,6 +8,7 @@
 
 /* Begin PBXBuildFile section */
 		00FA66D87FBBA8D335FDAD20 /* AddClickView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B7D3128AB165039747A9ED1C /* AddClickView.swift */; };
+		0129B20D6EF5FD53C967A7A4 /* LocalStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3CCC3D3C78411FA8933E0013 /* LocalStore.swift */; };
 		02B49E1B236CECA73DE9449F /* MeSettingsTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 66CDD7B3970AD090C2755F16 /* MeSettingsTests.swift */; };
 		0303E291A9CBE5068AFE7A96 /* Manrope-ExtraBold.ttf in Resources */ = {isa = PBXBuildFile; fileRef = F8B2A1B9A3CEE977F49608DC /* Manrope-ExtraBold.ttf */; };
 		03B037B570CBC883E6BEB1A7 /* ProximityCodecTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7CB3BD1B60178FAB0356E7F1 /* ProximityCodecTests.swift */; };
@@ -34,6 +35,7 @@
 		1A5711493067F5BC9BDF30F1 /* ShellNavigationTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 79D81340C370C0FD0A7086EB /* ShellNavigationTests.swift */; };
 		1B134B977C322761A9BE9F57 /* ClipApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = DA511983FBEDC6F47528DD28 /* ClipApp.swift */; };
 		1B4617C370DCCBFD2032386E /* MeRepository.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2C12F5C06BB5F4AD618B53D7 /* MeRepository.swift */; };
+		1BB1A6936D5CD5CA154FE1B0 /* Round7Tests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3768AC3A65EACD0273F1F050 /* Round7Tests.swift */; };
 		1D63E327A07E5CFBD3D046CD /* HubSheets.swift in Sources */ = {isa = PBXBuildFile; fileRef = 14D92B168AB77244D3727B0F /* HubSheets.swift */; };
 		1ED39C3ECEE0BD874E98A0BC /* ClickCryptoTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = AB9A71018D3F776F0EF48368 /* ClickCryptoTests.swift */; };
 		1F1C4D8400E005913567300C /* SettingsStoreTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 09BDA2C2A494538273494E1E /* SettingsStoreTests.swift */; };
@@ -187,6 +189,7 @@
 		F812BC1232D69B6E594EF4A6 /* MapFeatureModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7878BF7DD3F7FE11ED9C8866 /* MapFeatureModel.swift */; };
 		F9549923EB17C4F1A31929C3 /* LegacyKMPStateMigratorTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2D76120005FD30AE72B1126F /* LegacyKMPStateMigratorTests.swift */; };
 		F9E65FFF00CC772831231F03 /* ChatComposerView.swift in Sources */ = {isa = PBXBuildFile; fileRef = D037086EDE795B72EE43A547 /* ChatComposerView.swift */; };
+		FA2AFC7CD7C41E30F05CABF2 /* ChatTimelineView.swift in Sources */ = {isa = PBXBuildFile; fileRef = AE7FA351CE8C9F0C265B78B1 /* ChatTimelineView.swift */; };
 		FAC64483BE0386233DBB0B4F /* LegacyKMPStateMigrator.swift in Sources */ = {isa = PBXBuildFile; fileRef = E6948B635825154782DB64D8 /* LegacyKMPStateMigrator.swift */; };
 		FB674CD4A8616D2FA30C7344 /* OnboardingRepository.swift in Sources */ = {isa = PBXBuildFile; fileRef = B016BAE6D25749FE30CC6AEB /* OnboardingRepository.swift */; };
 		FC356859F3A30B0B78840011 /* ModuleState.swift in Sources */ = {isa = PBXBuildFile; fileRef = 25BDF9FB87DD4FEC1F9E4C99 /* ModuleState.swift */; };
@@ -296,11 +299,13 @@
 		33388B555994FAC30B7DA7C1 /* NearbyMapTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NearbyMapTests.swift; sourceTree = "<group>"; };
 		352CD16A8EB0AD27BC1F46F7 /* AuthView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AuthView.swift; sourceTree = "<group>"; };
 		35FA42EC82D7BD78B3083FDE /* MockURLProtocol.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MockURLProtocol.swift; sourceTree = "<group>"; };
+		3768AC3A65EACD0273F1F050 /* Round7Tests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Round7Tests.swift; sourceTree = "<group>"; };
 		37D904F0D520550EBBC3AA1B /* AvailabilitySheet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AvailabilitySheet.swift; sourceTree = "<group>"; };
 		385A8122FAAD5A5FB19BCF56 /* DeviceIdentityVault.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DeviceIdentityVault.swift; sourceTree = "<group>"; };
 		398978787A590D62A0ED1FA6 /* ClickAPIClientTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ClickAPIClientTests.swift; sourceTree = "<group>"; };
 		3A9C809281EFE78177559CBF /* FrictionTelemetry.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FrictionTelemetry.swift; sourceTree = "<group>"; };
 		3C7452B96DAD3F83C3B030DB /* ActivityShareSheet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ActivityShareSheet.swift; sourceTree = "<group>"; };
+		3CCC3D3C78411FA8933E0013 /* LocalStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LocalStore.swift; sourceTree = "<group>"; };
 		3D2EBB1A2205878F093380E1 /* HubRepository.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HubRepository.swift; sourceTree = "<group>"; };
 		3D70677902656DA92DEB50B3 /* NotificationService.appex */ = {isa = PBXFileReference; includeInIndex = 0; lastKnownFileType = "wrapper.app-extension"; path = NotificationService.appex; sourceTree = BUILT_PRODUCTS_DIR; };
 		3F45F0FEE3AA9FAC0DF8A5CA /* ContextTagPicker.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ContextTagPicker.swift; sourceTree = "<group>"; };
@@ -378,6 +383,7 @@
 		AC24CFA0E6E02114CAA8699B /* EventEngagementRepository.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = EventEngagementRepository.swift; sourceTree = "<group>"; };
 		AC3573DCEE944B2879A651CC /* MessageActionOverlay.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MessageActionOverlay.swift; sourceTree = "<group>"; };
 		AE598C64A86DFA1E5EBF5211 /* IdentityCache.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = IdentityCache.swift; sourceTree = "<group>"; };
+		AE7FA351CE8C9F0C265B78B1 /* ChatTimelineView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ChatTimelineView.swift; sourceTree = "<group>"; };
 		AEF2CAC62F36511082C94869 /* FreshnessCache.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FreshnessCache.swift; sourceTree = "<group>"; };
 		AFFF0C420D046C1E8CDC3E89 /* DebugLaunch.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DebugLaunch.swift; sourceTree = "<group>"; };
 		B016BAE6D25749FE30CC6AEB /* OnboardingRepository.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OnboardingRepository.swift; sourceTree = "<group>"; };
@@ -741,6 +747,7 @@
 				01DF541D37D451BAB9008186 /* Phase3FeedTests.swift */,
 				7CB3BD1B60178FAB0356E7F1 /* ProximityCodecTests.swift */,
 				30DD4C9A7E9B5D5321C8F98A /* RevisionTests.swift */,
+				3768AC3A65EACD0273F1F050 /* Round7Tests.swift */,
 				09BDA2C2A494538273494E1E /* SettingsStoreTests.swift */,
 				79D81340C370C0FD0A7086EB /* ShellNavigationTests.swift */,
 				24923300FE8FCED3010533B3 /* TelemetryTests.swift */,
@@ -828,6 +835,7 @@
 			children = (
 				003194C59DD7C08710C713C1 /* CacheStore.swift */,
 				AEF2CAC62F36511082C94869 /* FreshnessCache.swift */,
+				3CCC3D3C78411FA8933E0013 /* LocalStore.swift */,
 				7A2429F10776DF1079D326B5 /* SettingsStore.swift */,
 			);
 			path = Persistence;
@@ -1044,6 +1052,7 @@
 				B22B0A3012F4CC56A01188C7 /* ChatMediaViews.swift */,
 				CFDEEB947FE11EAC6206E3B0 /* ChatMessageSheets.swift */,
 				79A26B08508E31DA4A4A7330 /* ChatTargetPicker.swift */,
+				AE7FA351CE8C9F0C265B78B1 /* ChatTimelineView.swift */,
 				F96A5E440B359E2A2F052A29 /* ChatView.swift */,
 				68FA499EB03E1FC06A6AB7F6 /* ClickDropCameraView.swift */,
 				B5503A75FDC271224C037F0F /* ConversationModel.swift */,
@@ -1288,6 +1297,7 @@
 				442AEA315FD898EB8BFED96F /* ChatRealtimeManager.swift in Sources */,
 				EC60870B8E0FFA7A95EA1733 /* ChatRepository.swift in Sources */,
 				2BC0FD0FBF17D5EBD39AC88C /* ChatTargetPicker.swift in Sources */,
+				FA2AFC7CD7C41E30F05CABF2 /* ChatTimelineView.swift in Sources */,
 				12CEB6414B495389B44F2C0A /* ChatView.swift in Sources */,
 				B741FE5C5E7099D25DF60D0F /* ClickAPIClient.swift in Sources */,
 				141635CE6697C819553C2786 /* ClickApp.swift in Sources */,
@@ -1351,6 +1361,7 @@
 				589EAB6A4BADAE6F53FA105B /* JournalEditor.swift in Sources */,
 				72698DEA93E808276C44668E /* KeychainSessionVault.swift in Sources */,
 				FAC64483BE0386233DBB0B4F /* LegacyKMPStateMigrator.swift in Sources */,
+				0129B20D6EF5FD53C967A7A4 /* LocalStore.swift in Sources */,
 				761B604CDB4F953AFB0B3E29 /* LocationProvider.swift in Sources */,
 				F52ACBD891E2FDA84ECE47D4 /* MapBeacon.swift in Sources */,
 				F812BC1232D69B6E594EF4A6 /* MapFeatureModel.swift in Sources */,
@@ -1447,6 +1458,7 @@
 				15E1002EACD031C0520ECBB1 /* Phase3FeedTests.swift in Sources */,
 				03B037B570CBC883E6BEB1A7 /* ProximityCodecTests.swift in Sources */,
 				C7E3044705CB8DDF9A10AF7D /* RevisionTests.swift in Sources */,
+				1BB1A6936D5CD5CA154FE1B0 /* Round7Tests.swift in Sources */,
 				1F1C4D8400E005913567300C /* SettingsStoreTests.swift in Sources */,
 				1A5711493067F5BC9BDF30F1 /* ShellNavigationTests.swift in Sources */,
 				ADFB16FA877CFBED2013DF5F /* TelemetryTests.swift in Sources */,

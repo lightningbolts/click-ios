@@ -459,6 +459,8 @@ public final class SessionController: SessionControlling {
         migrator.deleteLegacySession()
         if let userId = signingOutUserId {
             settingsStore?.clearOnboardingState(for: userId)
+            // Stored timelines, inbox and read models belong to this account only.
+            LocalStore.shared.wipe(userID: userId)
         }
         settingsStore?.resetSessionScopedData()
         // Decrypted chat media never outlives the session that decrypted it.

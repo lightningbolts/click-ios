@@ -218,7 +218,10 @@ public struct MessageActionOverlay: View {
         }
         .padding(.horizontal, 8)
         .padding(.vertical, 6)
-        .glassCircleBackground()
+        // Opaque: with no dimmed backdrop, the capsule must stay legible over any bubble.
+        .background(Capsule().fill(ClickColors.surfaceElevated))
+        .overlay(Capsule().stroke(ClickColors.separator.opacity(0.5), lineWidth: ClickMetrics.strokeWidth))
+        .shadow(color: .black.opacity(0.22), radius: 18, x: 0, y: 8)
     }
 
     private var actionPanel: some View {
@@ -252,9 +255,10 @@ public struct MessageActionOverlay: View {
         }
         .background(
             RoundedRectangle(cornerRadius: 22, style: .continuous)
-                .fill(.regularMaterial)
+                .fill(ClickColors.surfaceElevated)
         )
         .clipShape(RoundedRectangle(cornerRadius: 22, style: .continuous))
-        .shadow(color: .black.opacity(0.12), radius: 16, x: 0, y: 8)
+        .overlay(RoundedRectangle(cornerRadius: 22, style: .continuous).stroke(ClickColors.separator.opacity(0.5), lineWidth: ClickMetrics.strokeWidth))
+        .shadow(color: .black.opacity(0.22), radius: 18, x: 0, y: 8)
     }
 }
