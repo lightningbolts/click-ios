@@ -1,5 +1,5 @@
 import CoreLocation
-import MapKit
+@preconcurrency import MapKit
 import Observation
 import SwiftUI
 import UIKit

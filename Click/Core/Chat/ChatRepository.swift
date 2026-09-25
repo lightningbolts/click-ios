@@ -983,6 +983,12 @@ public actor ChatRepository: ChatRepositoryProtocol {
                 : nil
             await resolveNames([payload.senderID])
             let metadata = payload.metadata ?? [:]
+            let replyToID = string(metadata["reply_to_id"])
+            let replyToContent = string(metadata["reply_to_content"])
+            let replyToFallback = string(metadata["reply_to_snippet"])
+            let replyToSnippet = replyToContent ?? replyToFallback
+            let replyToSenderName = string(metadata["reply_to_sender_name"])
+            let clientMessageID = string(metadata["client_message_id"])
             return ChatMessageItem(
                 id: payload.id,
                 chatID: hubID,
@@ -995,12 +1001,12 @@ public actor ChatRepository: ChatRepositoryProtocol {
                 createdAt: Date(timeIntervalSince1970: Double(payload.timeCreated) / 1000.0),
                 deliveryStatus: .sent,
                 isOutgoing: isOutgoing,
-                replyToID: string(metadata["reply_to_id"]),
-                replyToSnippet: string(metadata["reply_to_content"]) ?? string(metadata["reply_to_snippet"]),
-                replyToSenderName: string(metadata["reply_to_sender_name"]),
+                replyToID: replyToID,
+                replyToSnippet: replyToSnippet,
+                replyToSenderName: replyToSenderName,
                 reactions: [],
                 isEdited: payload.isEdited,
-                clientMessageID: string(metadata["client_message_id"])
+                clientMessageID: clientMessageID
             )
         }
 
@@ -1791,6 +1797,11 @@ public actor ChatRepository: ChatRepositoryProtocol {
         let sender = JSONFields.string(row["user_id"]) ?? ""
         let body = row["body"] as? String ?? ""
         let metadata = JSONFields.dictionary(row["metadata"]) ?? [:]
+        let replyToID = string(metadata["reply_to_id"])
+        let replyToContent = string(metadata["reply_to_content"])
+        let replyToFallback = string(metadata["reply_to_snippet"])
+        let replyToSnippet = replyToContent ?? replyToFallback
+        let replyToSenderName = string(metadata["reply_to_sender_name"])
         let isOutgoing = sender == currentUserID
         let summaries = (reactions[id] ?? [:]).map { type, users in
             ReactionSummary(reactionType: type, count: users.count, userReacted: users.contains(currentUserID), userIDs: users)
@@ -1808,9 +1819,9 @@ public actor ChatRepository: ChatRepositoryProtocol {
             createdAt: JSONFields.date(row["created_at"]) ?? .distantPast,
             deliveryStatus: .sent,
             isOutgoing: isOutgoing,
-            replyToID: string(metadata["reply_to_id"]),
-            replyToSnippet: string(metadata["reply_to_content"]) ?? string(metadata["reply_to_snippet"]),
-            replyToSenderName: string(metadata["reply_to_sender_name"]),
+            replyToID: replyToID,
+            replyToSnippet: replyToSnippet,
+            replyToSenderName: replyToSenderName,
             reactions: summaries,
             isEdited: JSONFields.string(row["edited_at"]) != nil,
             media: MessageMedia.parse(messageType: JSONFields.string(row["message_type"]) ?? "text", metadata: metadata,
