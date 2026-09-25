@@ -88,8 +88,17 @@ public struct ChatView: View {
             }
             .sheet(item: $shareFile) { ActivityShareSheet(items: [$0.url]).presentationDetents([.medium, .large]) }
             .sheet(item: $reactorsFor) { target in
-                ReactorsSheet(reactions: target.message.reactions, initial: target.reaction,
-                              currentUserID: env.session.currentSession?.userId ?? "")
+                ReactorsSheet(
+                    reactions: target.message.reactions,
+                    initial: target.reaction,
+                    currentUserID: env.session.currentSession?.userId ?? "",
+                    onRemoveOwnReaction: { emoji in
+                        react(to: target.message, with: emoji)
+                    },
+                    onAddReaction: {
+                        emojiPickerTarget = target.message
+                    }
+                )
             }
             .sheet(item: $emojiPickerTarget) { target in
                 EmojiPickerSheet { emoji in
@@ -361,7 +370,6 @@ public struct ChatView: View {
     }
 
     private func react(to item: ChatMessageItem, with emoji: String) {
-        timeline.preservePositionOnNextContentChange()
         Task { await model.toggleReaction(item: item, reactionType: emoji) }
     }
 
@@ -375,6 +383,9 @@ public struct ChatView: View {
                     showsSenderName: false,
                     showsReceipts: model.identity.supportsReceipts,
                     mediaLoader: { msg in try await model.mediaURL(for: msg) },
+                    replyTarget: target.message.replyToID.flatMap { replyID in
+                        model.items.first { $0.id == replyID }
+                    },
                     isLiftedCopy: true
                 )
             ),

@@ -128,6 +128,17 @@ public struct MessageBubbleView: View {
                 }
                 content
                     .frame(maxWidth: 320, alignment: message.isOutgoing ? .trailing : .leading)
+                    .onGeometryChange(for: CGRect.self) { $0.frame(in: .global) } action: { bubbleFrame = $0 }
+                    // Reactions are an overlay, not another row. The small fixed clearance is
+                    // always present, so the first reaction never changes this message's height.
+                    .overlay(alignment: message.isOutgoing ? .bottomTrailing : .bottomLeading) {
+                        if !message.reactions.isEmpty {
+                            reactionsStrip
+                                .offset(y: Self.reactionClearance)
+                                .transition(.scale(scale: 0.92).combined(with: .opacity))
+                        }
+                    }
+                    .padding(.bottom, Self.reactionClearance)
                     .offset(x: dragOffset)
                     .opacity(isBubbleHidden ? 0 : 1)
                     .overlay(alignment: message.isOutgoing ? .trailing : .leading) { replyHint }
@@ -138,7 +149,6 @@ public struct MessageBubbleView: View {
                         onChanged: swipeChanged,
                         onEnded: swipeEnded
                     ))
-                    .onGeometryChange(for: CGRect.self) { $0.frame(in: .global) } action: { bubbleFrame = $0 }
                     .gesture(PressAndHoldGesture {
                         ClickHaptics.impact(.medium)
                         onLongPress?(message, bubbleFrame)
@@ -154,9 +164,6 @@ public struct MessageBubbleView: View {
                         onLongPress?(message, bubbleFrame)
                     }
 
-                if !message.reactions.isEmpty {
-                    reactionsStrip
-                }
             }
 
             if !message.isOutgoing {
@@ -307,12 +314,14 @@ public struct MessageBubbleView: View {
         .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
     }
 
+    private static let reactionClearance: CGFloat = 10
+
     private var reactionsStrip: some View {
         HStack(spacing: 4) {
             ForEach(message.reactions) { reaction in
                 Button {
                     ClickHaptics.impact(.light)
-                    onToggleReaction(message, reaction.reactionType)
+                    onShowReactions?(message, reaction.reactionType)
                 } label: {
                     HStack(spacing: 3) {
                         Text(reaction.reactionType)
@@ -344,13 +353,8 @@ public struct MessageBubbleView: View {
                     }
                 }
                 .buttonStyle(.plain)
-                // Long press lists who reacted.
-                .simultaneousGesture(LongPressGesture(minimumDuration: 0.4).onEnded { _ in
-                    guard let onShowReactions else { return }
-                    ClickHaptics.impact(.medium)
-                    onShowReactions(message, reaction.reactionType)
-                })
                 .accessibilityLabel("\(reaction.reactionType), \(reaction.count)\(reaction.userReacted ? ", including you" : "")")
+                .accessibilityHint("Shows who reacted")
                 .accessibilityAction(named: "Show who reacted") { onShowReactions?(message, reaction.reactionType) }
             }
         }
