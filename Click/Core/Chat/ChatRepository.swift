@@ -984,7 +984,9 @@ public actor ChatRepository: ChatRepositoryProtocol {
             await resolveNames([payload.senderID])
             let metadata = payload.metadata ?? [:]
             let replyToID = string(metadata["reply_to_id"])
-            let replyToSnippet = string(metadata["reply_to_content"]) ?? string(metadata["reply_to_snippet"])
+            let replyToContent = string(metadata["reply_to_content"])
+            let replyToFallback = string(metadata["reply_to_snippet"])
+            let replyToSnippet = replyToContent ?? replyToFallback
             let replyToSenderName = string(metadata["reply_to_sender_name"])
             let clientMessageID = string(metadata["client_message_id"])
             return ChatMessageItem(
@@ -1796,7 +1798,9 @@ public actor ChatRepository: ChatRepositoryProtocol {
         let body = row["body"] as? String ?? ""
         let metadata = JSONFields.dictionary(row["metadata"]) ?? [:]
         let replyToID = string(metadata["reply_to_id"])
-        let replyToSnippet = string(metadata["reply_to_content"]) ?? string(metadata["reply_to_snippet"])
+        let replyToContent = string(metadata["reply_to_content"])
+        let replyToFallback = string(metadata["reply_to_snippet"])
+        let replyToSnippet = replyToContent ?? replyToFallback
         let replyToSenderName = string(metadata["reply_to_sender_name"])
         let isOutgoing = sender == currentUserID
         let summaries = (reactions[id] ?? [:]).map { type, users in
