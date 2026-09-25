@@ -170,10 +170,12 @@ public struct ChatComposerView: View {
     /// Stops and stages the clip for review (play or discard) before it is sent.
     private func finishRecording() {
         guard isRecording else { return }
-        if let draft = recorder.finish() {
-            onDraft?(draft)
-        } else {
-            onAttachmentError("That voice note was too short.")
+        Task {
+            if let draft = await recorder.finish() {
+                onDraft?(draft)
+            } else {
+                onAttachmentError("That voice note was too short.")
+            }
         }
     }
 

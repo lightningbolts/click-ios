@@ -24,13 +24,16 @@ public struct MessageBubbleView: View {
     var onForward: ((ChatMessageItem) -> Void)?
     var onSaveMedia: ((ChatMessageItem) -> Void)?
     var onShowReactions: ((ChatMessageItem, String) -> Void)?
-    var onMoreReactions: ((ChatMessageItem) -> Void)?
+    /// Renders only the bubble itself (no row spacing, name, reactions or gestures): the copy
+    /// lifted by the message action overlay, which must match the on-screen bubble exactly.
+    var isLiftedCopy = false
+    /// Hides the bubble (keeping its space) while the action overlay shows its lifted copy.
+    var isBubbleHidden = false
     /// The message this one replies to (for its thumbnail) and a tap on the quote.
     var replyTarget: ChatMessageItem?
     var onTapReplyQuote: ((String) -> Void)?
     var onLongPress: ((ChatMessageItem, CGRect) -> Void)?
 
-    @State private var confirmingDelete = false
     @State private var dragOffset: CGFloat = 0
     @State private var hasTriggeredReplyHaptic = false
     @State private var bubbleFrame: CGRect = .zero
@@ -53,11 +56,13 @@ public struct MessageBubbleView: View {
         onShowReactions: ((ChatMessageItem, String) -> Void)? = nil,
         replyTarget: ChatMessageItem? = nil,
         onTapReplyQuote: ((String) -> Void)? = nil,
-        onMoreReactions: ((ChatMessageItem) -> Void)? = nil,
-        onLongPress: ((ChatMessageItem, CGRect) -> Void)? = nil
+        isLiftedCopy: Bool = false,
+        onLongPress: ((ChatMessageItem, CGRect) -> Void)? = nil,
+        isBubbleHidden: Bool = false
     ) {
+        self.isBubbleHidden = isBubbleHidden
         self.onLongPress = onLongPress
-        self.onMoreReactions = onMoreReactions
+        self.isLiftedCopy = isLiftedCopy
         self.replyTarget = replyTarget
         self.onTapReplyQuote = onTapReplyQuote
         self.onForward = onForward
@@ -78,7 +83,10 @@ public struct MessageBubbleView: View {
     }
 
     public var body: some View {
-        if message.isDeleted {
+        if isLiftedCopy {
+            content
+                .frame(maxWidth: 320, alignment: message.isOutgoing ? .trailing : .leading)
+        } else if message.isDeleted {
             deletedPlaceholder
         } else {
             liveBubble
@@ -121,21 +129,22 @@ public struct MessageBubbleView: View {
                 content
                     .frame(maxWidth: 320, alignment: message.isOutgoing ? .trailing : .leading)
                     .offset(x: dragOffset)
+                    .opacity(isBubbleHidden ? 0 : 1)
                     .overlay(alignment: message.isOutgoing ? .trailing : .leading) { replyHint }
                     // A voice note's seek slider must win over swipe-to-reply (spec §37.6).
-                    .gesture(HorizontalSwipeGesture(isEnabled: message.media?.kind != .audio, onChanged: swipeChanged, onEnded: swipeEnded))
+                    .gesture(HorizontalSwipeGesture(
+                        isEnabled: message.media?.kind != .audio && message.deliveryStatus != .sending,
+                        direction: message.isOutgoing ? -1 : 1,
+                        onChanged: swipeChanged,
+                        onEnded: swipeEnded
+                    ))
                     .onGeometryChange(for: CGRect.self) { $0.frame(in: .global) } action: { bubbleFrame = $0 }
-                    .onLongPressGesture(minimumDuration: 0.28, maximumDistance: 15) {
+                    .onLongPressGesture(minimumDuration: 0.3, maximumDistance: 12) {
                         ClickHaptics.impact(.medium)
                         onLongPress?(message, bubbleFrame)
                     }
                     .accessibilityAction(named: "Message actions") {
                         onLongPress?(message, bubbleFrame)
-                    }
-                    .confirmationDialog("Delete for everyone?", isPresented: $confirmingDelete, titleVisibility: .visible) {
-                        Button("Delete", role: .destructive) { onDelete(message) }
-                    } message: {
-                        Text("Everyone in this chat will see \"Message deleted\" instead.")
                     }
 
                 if !message.reactions.isEmpty {

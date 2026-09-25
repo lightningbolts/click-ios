@@ -182,7 +182,7 @@ final class TapConnectModel {
         } else {
             let token = ProximityCodec.randomToken()
             do {
-                try ultrasonic.activateSession()
+                try await ultrasonic.activateSession()
             } catch {
                 phase = .needsPermission(.microphone)
                 return

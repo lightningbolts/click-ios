@@ -27,21 +27,25 @@ private struct OverlayLayoutMetrics {
     let panelWidth: CGFloat
 }
 
-/// WhatsApp-style actions for one message: dimmed, blurred backdrop; the message lifted in place;
-/// a reaction capsule above it; an action panel below it. Tapping the backdrop dismisses.
+/// WhatsApp-style actions for one message: the message lifted in place, a reaction capsule
+/// above it and an action panel below it. There is no dimming or blur: the chat stays exactly
+/// as it was, and a tap anywhere else dismisses. Shown as an in-view overlay (not a cover), so
+/// the conversation never disappears underneath it.
 public struct MessageActionOverlay: View {
     public let message: ChatMessageItem
     public let sourceFrame: CGRect          // bubble frame in global coordinates
     public let bubble: AnyView              // a non-interactive copy of the bubble to show lifted
     public let actions: [MessageAction]     // built by ChatView (only the ones that apply)
     public let onReact: (String) -> Void
+    public let onMoreReactions: () -> Void
     public let onDismiss: () -> Void
 
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @State private var appeared = false
-    @State private var pickingEmoji = false
 
     private static let quickEmojis = ["👍", "❤️", "😂", "😮", "😢", "🙏"]
+    /// Height of the inline navigation bar the overlay must stay clear of.
+    private static let navigationBarHeight: CGFloat = 54
 
     public init(
         message: ChatMessageItem,
@@ -49,6 +53,7 @@ public struct MessageActionOverlay: View {
         bubble: AnyView,
         actions: [MessageAction],
         onReact: @escaping (String) -> Void,
+        onMoreReactions: @escaping () -> Void,
         onDismiss: @escaping () -> Void
     ) {
         self.message = message
@@ -56,34 +61,39 @@ public struct MessageActionOverlay: View {
         self.bubble = bubble
         self.actions = actions
         self.onReact = onReact
+        self.onMoreReactions = onMoreReactions
         self.onDismiss = onDismiss
     }
 
-    private func computeLayout(screenSize: CGSize, safeArea: EdgeInsets, pickingEmoji: Bool) -> OverlayLayoutMetrics {
+    /// Window safe area (the overlay itself ignores the safe area, so its proxy reports zero).
+    private static var windowSafeArea: UIEdgeInsets {
+        let window = UIApplication.shared.connectedScenes
+            .compactMap { $0 as? UIWindowScene }
+            .flatMap(\.windows)
+            .first { $0.isKeyWindow }
+        return window?.safeAreaInsets ?? UIEdgeInsets(top: 59, left: 0, bottom: 34, right: 0)
+    }
+
+    private func computeLayout(screenSize: CGSize, source: CGRect) -> OverlayLayoutMetrics {
+        let safeArea = Self.windowSafeArea
         let menuHeight: CGFloat = CGFloat(actions.count) * 48
         let capsuleHeight: CGFloat = 56
         let gap: CGFloat = 8
 
         let maxHeight: CGFloat = screenSize.height * 0.40
-        let bubbleHeight: CGFloat = min(sourceFrame.height, maxHeight)
+        let bubbleHeight: CGFloat = min(source.height, maxHeight)
 
-        let midY: CGFloat
-        if pickingEmoji {
-            midY = safeArea.top + 16 + capsuleHeight + gap + (bubbleHeight / 2)
-        } else {
-            let topBoundary: CGFloat = safeArea.top + 8
-            let bottomBoundary: CGFloat = screenSize.height - safeArea.bottom - 8
-            let neededAbove: CGFloat = capsuleHeight + gap + (bubbleHeight / 2)
-            let neededBelow: CGFloat = (bubbleHeight / 2) + gap + menuHeight
+        let topBoundary: CGFloat = safeArea.top + Self.navigationBarHeight + 4
+        let bottomBoundary: CGFloat = screenSize.height - safeArea.bottom - 8
+        let neededAbove: CGFloat = capsuleHeight + gap + (bubbleHeight / 2)
+        let neededBelow: CGFloat = (bubbleHeight / 2) + gap + menuHeight
 
-            var calculatedY: CGFloat = sourceFrame.midY
-            if calculatedY - neededAbove < topBoundary {
-                calculatedY = topBoundary + neededAbove
-            }
-            if calculatedY + neededBelow > bottomBoundary {
-                calculatedY = bottomBoundary - neededBelow
-            }
-            midY = calculatedY
+        var midY: CGFloat = source.midY
+        if midY + neededBelow > bottomBoundary {
+            midY = bottomBoundary - neededBelow
+        }
+        if midY - neededAbove < topBoundary {
+            midY = topBoundary + neededAbove
         }
 
         let bubbleTop: CGFloat = midY - (bubbleHeight / 2)
@@ -95,23 +105,13 @@ public struct MessageActionOverlay: View {
         let capsuleWidth: CGFloat = min(screenWidth - 32, 332)
         let panelWidth: CGFloat = 250
 
-        let isOutgoing = message.isOutgoing
-        let capsuleCenterX: CGFloat
-        if !isOutgoing {
-            let minX = max(16, min(sourceFrame.minX, screenWidth - 16 - capsuleWidth))
-            capsuleCenterX = minX + (capsuleWidth / 2)
-        } else {
-            let maxX = min(screenWidth - 16, max(sourceFrame.maxX, 16 + capsuleWidth))
-            capsuleCenterX = maxX - (capsuleWidth / 2)
-        }
-
-        let panelCenterX: CGFloat
-        if !isOutgoing {
-            let minX = max(16, min(sourceFrame.minX, screenWidth - 16 - panelWidth))
-            panelCenterX = minX + (panelWidth / 2)
-        } else {
-            let maxX = min(screenWidth - 16, max(sourceFrame.maxX, 16 + panelWidth))
-            panelCenterX = maxX - (panelWidth / 2)
+        func centerX(width: CGFloat) -> CGFloat {
+            if message.isOutgoing {
+                let maxX = min(screenWidth - 16, max(source.maxX, 16 + width))
+                return maxX - width / 2
+            }
+            let minX = max(16, min(source.minX, screenWidth - 16 - width))
+            return minX + width / 2
         }
 
         return OverlayLayoutMetrics(
@@ -119,36 +119,34 @@ public struct MessageActionOverlay: View {
             bubbleHeight: bubbleHeight,
             capsuleCenterY: capsuleCenterY,
             menuCenterY: menuCenterY,
-            capsuleCenterX: capsuleCenterX,
+            capsuleCenterX: centerX(width: capsuleWidth),
             capsuleWidth: capsuleWidth,
-            panelCenterX: panelCenterX,
+            panelCenterX: centerX(width: panelWidth),
             panelWidth: panelWidth
         )
     }
 
     public var body: some View {
         GeometryReader { geometry in
-            let metrics = computeLayout(screenSize: geometry.size, safeArea: geometry.safeAreaInsets, pickingEmoji: pickingEmoji)
+            // Global → local: the overlay's own origin may not be the screen origin.
+            let origin = geometry.frame(in: .global).origin
+            let source = sourceFrame.offsetBy(dx: -origin.x, dy: -origin.y)
+            let metrics = computeLayout(screenSize: geometry.size, source: source)
             ZStack {
-                // 1. Backdrop
-                ZStack {
-                    Rectangle()
-                        .fill(.ultraThinMaterial)
-                    Color.black.opacity(0.35)
-                }
-                .ignoresSafeArea()
-                .contentShape(Rectangle())
-                .onTapGesture(perform: dismissOverlay)
-                .opacity(appeared ? 1 : 0)
+                // Invisible catcher: taps and drags anywhere else dismiss; nothing is dimmed.
+                Color.clear
+                    .contentShape(Rectangle())
+                    .onTapGesture(perform: dismissOverlay)
+                    .gesture(DragGesture(minimumDistance: 8).onEnded { _ in dismissOverlay() })
 
-                // 2. Lifted Bubble Copy
                 bubble
-                    .frame(height: metrics.bubbleHeight)
+                    .frame(width: source.width, height: metrics.bubbleHeight, alignment: .top)
                     .clipped()
-                    .position(x: sourceFrame.midX, y: metrics.midY)
+                    .shadow(color: .black.opacity(appeared ? 0.18 : 0), radius: 14, x: 0, y: 6)
+                    .scaleEffect(reduceMotion ? 1 : (appeared ? 1.02 : 1))
+                    .position(x: source.midX, y: appeared ? metrics.midY : source.midY)
                     .allowsHitTesting(false)
 
-                // 3. Reaction Capsule Above
                 reactionCapsule
                     .frame(width: metrics.capsuleWidth, height: 56)
                     .position(x: metrics.capsuleCenterX, y: metrics.capsuleCenterY)
@@ -156,48 +154,25 @@ public struct MessageActionOverlay: View {
                     .scaleEffect(reduceMotion ? 1 : (appeared ? 1.0 : 0.9),
                                  anchor: message.isOutgoing ? .bottomTrailing : .bottomLeading)
 
-                // 4. Action Panel Below
                 if !actions.isEmpty {
                     actionPanel
                         .frame(width: metrics.panelWidth)
                         .position(x: metrics.panelCenterX, y: metrics.menuCenterY)
-                        .opacity(pickingEmoji ? 0 : (appeared ? 1 : 0))
-                        .allowsHitTesting(!pickingEmoji)
+                        .opacity(appeared ? 1 : 0)
                         .scaleEffect(reduceMotion ? 1 : (appeared ? 1.0 : 0.9),
                                      anchor: message.isOutgoing ? .topTrailing : .topLeading)
                 }
-
-                if pickingEmoji {
-                    if EmojiKeyboardPicker.hasSystemEmojiKeyboard {
-                        EmojiKeyboardPicker { emoji in
-                            onReact(emoji)
-                            dismissOverlay()
-                        }
-                        .frame(width: 1, height: 1)
-                        .opacity(0.01)
-                    } else {
-                        EmojiFallbackPanel { emoji in
-                            onReact(emoji)
-                            dismissOverlay()
-                        }
-                        .frame(maxHeight: geometry.size.height * 0.45)
-                        .frame(maxHeight: .infinity, alignment: .bottom)
-                        .transition(.move(edge: .bottom))
-                    }
-                }
             }
-            .animation(.spring(response: 0.35, dampingFraction: 0.85), value: pickingEmoji)
         }
         .ignoresSafeArea()
         .onAppear {
-            withAnimation(.easeOut(duration: 0.2)) {
+            withAnimation(.spring(response: 0.3, dampingFraction: 0.86)) {
                 appeared = true
             }
         }
     }
 
     private func dismissOverlay() {
-        UIApplication.shared.sendAction(#selector(UIResponder.resignFirstResponder), to: nil, from: nil, for: nil)
         onDismiss()
     }
 
@@ -225,10 +200,8 @@ public struct MessageActionOverlay: View {
             }
 
             Button {
-                ClickHaptics.impact(.medium)
-                withAnimation(.spring(response: 0.35, dampingFraction: 0.85)) {
-                    pickingEmoji = true
-                }
+                ClickHaptics.impact(.light)
+                onMoreReactions()
             } label: {
                 ZStack {
                     Circle()

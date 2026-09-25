@@ -33,6 +33,7 @@ public struct ChatView: View {
         var id: String { message.stableID }
     }
     @State private var actionTarget: ActionTarget?
+    @State private var emojiPickerTarget: ChatMessageItem?
     @State private var confirmingDeleteMessage: ChatMessageItem?
     @State private var isSearching = false
     @State private var searchQuery = ""
@@ -85,6 +86,13 @@ public struct ChatView: View {
             .onGeometryChange(for: CGFloat.self) { $0.size.width } action: { screenWidth = $0 }
             .safeAreaInset(edge: .bottom, spacing: 0) {
                 composer
+            }
+            // In-view (not a cover): the chat never disappears underneath, so realtime, audio
+            // and the keyboard state are untouched while actions are open.
+            .overlay {
+                if let target = actionTarget {
+                    actionOverlay(for: target)
+                }
             }
             .overlay(alignment: .top) {
                 if isSearching {
@@ -150,29 +158,10 @@ public struct ChatView: View {
                 ReactorsSheet(reactions: target.message.reactions, initial: target.reaction,
                               currentUserID: env.session.currentSession?.userId ?? "")
             }
-            .fullScreenCover(item: $actionTarget) { target in
-                let byID = Dictionary(model.items.map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first })
-                MessageActionOverlay(
-                    message: target.message,
-                    sourceFrame: target.frame,
-                    bubble: AnyView(
-                        MessageBubbleView(
-                            message: target.message,
-                            showsSenderName: !model.identity.isDirect,
-                            showsReceipts: model.identity.supportsReceipts,
-                            mediaLoader: { msg in try await model.mediaURL(for: msg) },
-                            replyTarget: target.message.replyToID.flatMap { byID[$0] }
-                        )
-                    ),
-                    actions: messageActions(for: target.message),
-                    onReact: { emoji in
-                        Task { await model.toggleReaction(item: target.message, reactionType: emoji) }
-                    },
-                    onDismiss: {
-                        actionTarget = nil
-                    }
-                )
-                .presentationBackground(.clear)
+            .sheet(item: $emojiPickerTarget) { target in
+                EmojiPickerSheet { emoji in
+                    Task { await model.toggleReaction(item: target, reactionType: emoji) }
+                }
             }
             .confirmationDialog("Delete for everyone?", isPresented: Binding(
                 get: { confirmingDeleteMessage != nil },
@@ -219,7 +208,6 @@ public struct ChatView: View {
             .onChange(of: isNearBottom) { _, nearBottom in
                 if nearBottom { unseenCount = 0 }
             }
-            .toolbar(.hidden, for: .tabBar)
             .animation(ClickMotion.selection, value: isNearBottom)
             .task(id: model.nextClickDropReveal?.date) {
                 // Local, in-chat only: the server's `disposable_reveal` push covers the background.
@@ -288,12 +276,12 @@ public struct ChatView: View {
                         replyTarget: item.replyToID.flatMap { byID[$0] },
                         onTapReplyQuote: { id in Task { await jump(to: id, proxy: proxy) } },
                         onLongPress: { message, frame in
-                            var transaction = Transaction()
-                            transaction.disablesAnimations = true
-                            withTransaction(transaction) {
-                                actionTarget = ActionTarget(message: message, frame: frame)
-                            }
+                            UIApplication.shared.sendAction(#selector(UIResponder.resignFirstResponder), to: nil, from: nil, for: nil)
+                            actionTarget = ActionTarget(message: message, frame: frame)
                         }
+                        ,
+                        // The lifted copy stands in for the bubble while actions are open.
+                        isBubbleHidden: actionTarget?.message.stableID == item.stableID
                     )
                     .background {
                         if highlightedID == item.stableID {
@@ -372,6 +360,33 @@ public struct ChatView: View {
                     .accessibilityAddTraits(.isStaticText)
             }
         }
+    }
+
+    private func actionOverlay(for target: ActionTarget) -> some View {
+        MessageActionOverlay(
+            message: target.message,
+            sourceFrame: target.frame,
+            bubble: AnyView(
+                MessageBubbleView(
+                    message: target.message,
+                    showsSenderName: false,
+                    showsReceipts: model.identity.supportsReceipts,
+                    mediaLoader: { msg in try await model.mediaURL(for: msg) },
+                    isLiftedCopy: true
+                )
+            ),
+            actions: messageActions(for: target.message),
+            onReact: { emoji in
+                Task { await model.toggleReaction(item: target.message, reactionType: emoji) }
+            },
+            onMoreReactions: {
+                actionTarget = nil
+                emojiPickerTarget = target.message
+            },
+            onDismiss: {
+                actionTarget = nil
+            }
+        )
     }
 
     private func messageActions(for item: ChatMessageItem) -> [MessageAction] {

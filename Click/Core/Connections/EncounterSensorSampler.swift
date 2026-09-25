@@ -60,16 +60,14 @@ enum EncounterSensorSampler {
     /// permission is asked when the toggle is turned on.
     private static func ambientNoiseDecibels(duration: Duration) async -> Double? {
         guard AVAudioApplication.shared.recordPermission == .granted else { return nil }
-        let session = AVAudioSession.sharedInstance()
         let url = FileManager.default.temporaryDirectory.appendingPathComponent("click-ambient-\(UUID().uuidString).m4a")
         defer { try? FileManager.default.removeItem(at: url) }
         do {
-            try session.setCategory(.playAndRecord, mode: .measurement, options: [.mixWithOthers, .defaultToSpeaker])
-            try session.setActive(true)
+            try await AudioSessionController.shared.activate(.measurement)
         } catch {
             return nil
         }
-        defer { try? session.setActive(false, options: .notifyOthersOnDeactivation) }
+        defer { AudioSessionController.shared.deactivate() }
         let settings: [String: Any] = [
             AVFormatIDKey: kAudioFormatMPEG4AAC,
             AVSampleRateKey: 12_000.0,

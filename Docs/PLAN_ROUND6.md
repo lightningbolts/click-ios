@@ -382,3 +382,17 @@ Keep `NearbyLip`, `NearbyListView` and the native `.sheet` from `e45aace`. Add t
 3. Install on the phone and walk **every** Done-when above. Report each one as ✅ or ❌ with what you saw. Don't summarize without the list.
 4. Ledger rows: one each for R1–R5 and the server change.
 5. Commit on `feat/ios-round6`, ending the message with the attribution line required by the environment. Don't push unless the owner asks.
+
+---
+
+## Round 7 decision: tab bar (final — do not flip again)
+
+The custom `ClickTabBar` (root `safeAreaInset`) and the per-tab `tabFadeIn` opacity were removed.
+The shell uses the **system `TabView` bar** (Liquid Glass). Pushed screens hide it with
+`.toolbar(.hidden, for: .tabBar)` in `AppRouteDestination` only, and `TabBarTransitionFader`
+(`Click/App/TabBarTransitionFader.swift`) drives `tabBar.alpha` through
+`transitionCoordinator.animate(alongsideTransition:)`, so the bar fades in tracking an interactive
+back-swipe (and fades back out if the swipe is cancelled), like WhatsApp. Verified on the iOS 27
+simulator mid-gesture. Add Click stays purple via a pre-tinted `.alwaysOriginal` image, and the
+haptic fires in the `TabView` selection binding. Never set opacity on a `NavigationStack`: glass
+and collapsed large-title bars don't render under a partially transparent ancestor.

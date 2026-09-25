@@ -44,6 +44,7 @@ struct AppRouteDestination: View {
             }
         }
         .toolbar(.hidden, for: .tabBar)
+        .background { TabBarTransitionFader().frame(width: 0, height: 0).accessibilityHidden(true) }
     }
 }
 
