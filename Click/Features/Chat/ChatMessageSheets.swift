@@ -80,7 +80,7 @@ struct ReactorsSheet: View {
     var body: some View {
         VStack(spacing: 0) {
             Text(title)
-                .font(ClickTypography.title3)
+                .font(.title3.weight(.semibold))
                 .foregroundStyle(ClickColors.textPrimary)
                 .padding(.top, 8)
                 .padding(.bottom, 18)
