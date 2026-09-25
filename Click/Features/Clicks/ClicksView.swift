@@ -8,7 +8,6 @@ public struct ClicksView: View {
     let model: ConversationListModel
 
     @State private var selectedTab: InboxTab = .active
-    @State private var query = ""
     @State private var creatingGroup = false
     @State private var pendingAction: PendingConversationAction?
 
@@ -24,6 +23,7 @@ public struct ClicksView: View {
                         Task { await model.refresh() }
                     }
                 }
+                SearchLaunchField()
                 filterChips
                 if showsRememberStrip {
                     rememberStrip
@@ -47,7 +47,6 @@ public struct ClicksView: View {
         }
         .navigationTitle("Clicks")
         .navigationBarTitleDisplayMode(.large)
-        .searchable(text: $query, placement: .navigationBarDrawer(displayMode: .always), prompt: "Search")
         .toolbar {
             ToolbarItem(placement: .topBarLeading) {
                 RootMenu {
@@ -118,7 +117,7 @@ public struct ClicksView: View {
     }
 
     private var showsRememberStrip: Bool {
-        selectedTab == .active && query.isEmpty && !model.core.isEmpty
+        selectedTab == .active && !model.core.isEmpty
     }
 
     private var rememberStrip: some View {
@@ -158,7 +157,7 @@ public struct ClicksView: View {
         switch selectedTab {
         case .active, .archived:
             let isArchived = selectedTab == .archived
-            let items = filtered(isArchived ? model.archived : model.active)
+            let items = isArchived ? model.archived : model.active
             if items.isEmpty, model.snapshot != nil {
                 emptyState(isArchived: isArchived)
             }
@@ -197,8 +196,8 @@ public struct ClicksView: View {
                 }
             }
         case .groups:
-            let groups = model.groups.filter { query.isEmpty || $0.name.localizedCaseInsensitiveContains(query) }
-            let hubs = model.hubs.filter { query.isEmpty || $0.name.localizedCaseInsensitiveContains(query) }
+            let groups = model.groups
+            let hubs = model.hubs
             if groups.isEmpty, hubs.isEmpty {
                 if let error = model.groupsError, !model.groupsLoaded {
                     ContentUnavailableView {
@@ -292,9 +291,7 @@ public struct ClicksView: View {
     @ViewBuilder
     private func emptyState(isArchived: Bool) -> some View {
         Group {
-            if !query.isEmpty {
-                ContentUnavailableView.search(text: query)
-            } else if isArchived {
+            if isArchived {
                 ContentUnavailableView(
                     "No archived Clicks",
                     systemImage: "archivebox",
@@ -337,16 +334,6 @@ public struct ClicksView: View {
         case .active: model.active.count
         case .groups: model.groups.count + model.hubs.count
         case .archived: model.archived.count
-        }
-    }
-
-    private func filtered(_ items: [ConnectionItem]) -> [ConnectionItem] {
-        let clean = query.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !clean.isEmpty else { return items }
-        return items.filter {
-            $0.displayName.localizedCaseInsensitiveContains(clean)
-                || $0.encounterLocation.localizedCaseInsensitiveContains(clean)
-                || model.previewText(for: $0).localizedCaseInsensitiveContains(clean)
         }
     }
 

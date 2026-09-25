@@ -26,7 +26,7 @@ struct GlobalSearchTests {
             #expect(!archived)
             #expect(reason == "Shared interest: Climbing")
         }
-        #expect(results[2].scopes == [.archived])
+        #expect(results[2].scope == .people)
         #expect(SearchIndex.local(query: "maya", active: [], archived: [], groups: [group], beacons: [], hubs: [], intents: []).count == 1)
         #expect(SearchIndex.local(query: "  ", active: [person("a", name: "A")], archived: [], groups: [], beacons: [], hubs: [], intents: []).isEmpty)
     }

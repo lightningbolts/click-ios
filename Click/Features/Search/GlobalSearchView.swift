@@ -1,14 +1,13 @@
 import SwiftUI
 
-/// Search scopes (KMP `SearchResultCategory`).
+/// Result filters.
 enum SearchScope: String, CaseIterable, Identifiable {
     case all = "All"
-    case active = "Active"
-    case archived = "Archived"
+    case people = "People"
+    case messages = "Messages"
     case groups = "Groups"
-    case nearby = "Nearby"
-    case beacons = "Beacons"
-    case intents = "Intents"
+    case events = "Events"
+    case hubs = "Hubs"
 
     var id: String { rawValue }
 }
@@ -21,6 +20,12 @@ enum SearchResult: Identifiable, Equatable {
     case hub(NearbyHub)
     case ownIntent(AvailabilityIntentPost)
     case message(MessageHit)
+    /// A message from the on-device store (includes end-to-end encrypted chats).
+    case storedMessage(StoredMessageHit)
+    /// Someone the viewer shares a group or hub with but hasn't Clicked with (server).
+    case sharedContextPerson(RemotePerson)
+    case remoteEvent(RemoteEvent)
+    case joinedHub(JoinedHub)
 
     var id: String {
         switch self {
@@ -30,19 +35,48 @@ enum SearchResult: Identifiable, Equatable {
         case .hub(let hub): "hub.\(hub.id)"
         case .ownIntent(let intent): "intent.\(intent.id)"
         case .message(let hit): "message.\(hit.messageID)"
+        case .storedMessage(let hit): "message.\(hit.messageID)"
+        case .sharedContextPerson(let person): "user.\(person.userID)"
+        case .remoteEvent(let event): "beacon.\(event.beaconID)"
+        case .joinedHub(let hub): "hub.\(hub.hubID)"
         }
     }
 
-    var scopes: Set<SearchScope> {
+    var scope: SearchScope {
         switch self {
-        case .person(_, let archived, _): [archived ? .archived : .active]
-        case .group: [.groups]
-        case .beacon: [.beacons, .nearby]
-        case .hub: [.nearby]
-        case .ownIntent: [.intents, .active]
-        case .message(let hit): hit.isHub ? [.nearby] : [.active]
+        case .person, .sharedContextPerson: .people
+        case .group: .groups
+        case .beacon, .remoteEvent, .ownIntent: .events
+        case .hub, .joinedHub: .hubs
+        case .message, .storedMessage: .messages
         }
     }
+}
+
+/// A match from the on-device message index, resolved to its conversation.
+struct StoredMessageHit: Equatable, Sendable {
+    let messageID: String
+    let conversationTitle: String
+    let snippet: String
+    let date: Date
+    let route: AppRoute
+    /// Set for hubs: the message focus is handed to the hub's chat when it opens.
+    var focusConversationID: String? = nil
+}
+
+struct RemotePerson: Equatable, Sendable {
+    let userID: String
+    let name: String
+    let avatarURL: String?
+    let context: String?
+}
+
+struct RemoteEvent: Equatable, Sendable {
+    let beaconID: String
+    let title: String
+    let locationName: String?
+    let start: Date?
+    let imageURL: String?
 }
 
 /// A server message hit (`GET /api/chat/search`). Only plaintext bodies can match server-side.
@@ -112,20 +146,37 @@ enum SearchIndex {
     }
 }
 
-/// Canonical cross-domain search (spec §21), presented from the root search controls.
-/// Local matches appear immediately; server message search is debounced, cancellable, and a
-/// server failure is shown as an error — never as "No results".
+/// Canonical cross-domain search (spec §21), the only search surface (presented by the shell).
+///
+/// Local-first: connections, groups, joined hubs, cached events and every stored message
+/// (including end-to-end encrypted chats, decrypted on this device) match on each keystroke.
+/// The server (`/api/search`) is the debounced fallback for what the device doesn't hold:
+/// people you share a group or hub with, public events, and plaintext message hits. A server
+/// failure is shown as an error, never as "No results".
 struct GlobalSearchView: View {
     @Environment(AppEnvironment.self) private var env
     @Environment(ConversationListModel.self) private var conversations
     @Environment(\.dismiss) private var dismiss
 
-    @State private var query = ""
+    @State private var query: String
     @State private var scope: SearchScope = .all
     @State private var beacons: [MapBeacon] = []
     @State private var hubs: [NearbyHub] = []
     @State private var intents: [AvailabilityIntentPost] = []
-    @State private var remote = ModuleState<[MessageHit]>()
+    @State private var stored: [StoredMessageHit] = []
+    @State private var remote = ModuleState<RemoteResults>()
+    /// Focuses the field when search opens (keyboard up immediately).
+    @State private var isFieldActive = false
+
+    struct RemoteResults: Equatable, Sendable {
+        var people: [RemotePerson] = []
+        var events: [RemoteEvent] = []
+        var hits: [MessageHit] = []
+    }
+
+    init(initialQuery: String = "") {
+        _query = State(initialValue: initialQuery)
+    }
 
     private var clean: String { query.trimmingCharacters(in: .whitespacesAndNewlines) }
 
@@ -138,13 +189,26 @@ struct GlobalSearchView: View {
             beacons: beacons,
             hubs: hubs,
             intents: intents
-        )
+        ) + conversations.hubs
+            .filter { hub in clean.count >= 1 && ([hub.name, hub.category ?? ""].contains { $0.localizedCaseInsensitiveContains(clean) }) }
+            .filter { hub in !hubs.contains { $0.id == hub.hubID } }
+            .map(SearchResult.joinedHub)
     }
 
     private var results: [SearchResult] {
-        let messages = (remote.value ?? []).map(SearchResult.message)
-        let all = localResults + messages
-        return scope == .all ? all : all.filter { $0.scopes.contains(scope) }
+        var seen = Set<String>()
+        var all: [SearchResult] = []
+        func add(_ items: [SearchResult]) {
+            for item in items where seen.insert(item.id).inserted { all.append(item) }
+        }
+        add(localResults)
+        add(stored.map(SearchResult.storedMessage))
+        if let remote = remote.value {
+            add(remote.people.map(SearchResult.sharedContextPerson))
+            add(remote.events.map(SearchResult.remoteEvent))
+            add(remote.hits.map(SearchResult.message))
+        }
+        return scope == .all ? all : all.filter { $0.scope == scope }
     }
 
     var body: some View {
@@ -170,12 +234,16 @@ struct GlobalSearchView: View {
             .listStyle(.plain)
             .navigationTitle("Search")
             .navigationBarTitleDisplayMode(.inline)
-            .searchable(text: $query, placement: .navigationBarDrawer(displayMode: .always), prompt: "People, groups, places, events")
+            .searchable(text: $query, isPresented: $isFieldActive, placement: .navigationBarDrawer(displayMode: .always), prompt: "People, messages, places, events")
+            .onAppear { isFieldActive = true }
             .toolbar {
                 ToolbarItem(placement: .topBarTrailing) { Button("Done") { dismiss() } }
             }
             .task { await loadLocalSources() }
-            .task(id: clean) { await searchMessages() }
+            .task(id: clean) {
+                await searchStoredMessages()
+                await searchServer()
+            }
         }
     }
 
@@ -185,43 +253,45 @@ struct GlobalSearchView: View {
             ContentUnavailableView {
                 Label("Search Click", systemImage: "magnifyingglass")
             } description: {
-                Text("Find people, groups, events, hubs, and your availability posts.")
+                Text("Find people, messages, groups, events, hubs, and your plans.")
             }
             .listRowSeparator(.hidden)
+        } else if scope == .all {
+            ForEach(SearchScope.allCases.dropFirst()) { section in
+                let rows = results.filter { $0.scope == section }
+                if !rows.isEmpty {
+                    Section(section.rawValue) {
+                        ForEach(rows.prefix(section == .messages ? 30 : 12)) { row($0) }
+                    }
+                }
+            }
+            serverStatus
         } else {
             ForEach(results) { row($0) }
-            messageStatus
+            serverStatus
         }
     }
 
-    /// Message-search state, kept distinct from "no results".
+    /// Server-search state, kept distinct from "no results".
     @ViewBuilder
-    private var messageStatus: some View {
-        if clean.count >= 2 {
-            if remote.isPending {
-                HStack(spacing: 8) {
-                    ProgressView()
-                    Text("Searching messages…").foregroundStyle(ClickColors.textSecondary)
-                }
-                .font(ClickTypography.supporting)
-            } else if let error = remote.errorMessage {
-                Button {
-                    Task { await searchMessages() }
-                } label: {
-                    Label("Couldn't search messages. \(error) Tap to retry.", systemImage: "exclamationmark.triangle")
-                        .font(ClickTypography.supporting)
-                        .foregroundStyle(ClickColors.textSecondary)
-                }
-            } else if results.isEmpty {
-                ContentUnavailableView.search(text: clean)
-                    .listRowSeparator(.hidden)
+    private var serverStatus: some View {
+        if clean.count >= 2, remote.isPending {
+            HStack(spacing: 8) {
+                ClickLoadingView(size: 18, fillsSpace: false).frame(width: 28)
+                Text("Searching Click…").foregroundStyle(ClickColors.textSecondary)
             }
-            if !remote.isPending {
-                Text("Encrypted messages can't be searched on the server; open a conversation to find text in it.")
-                    .font(ClickTypography.caption)
-                    .foregroundStyle(ClickColors.textTertiary)
-                    .listRowSeparator(.hidden)
+            .font(ClickTypography.supporting)
+            .listRowSeparator(.hidden)
+        } else if clean.count >= 2, let error = remote.errorMessage {
+            Button {
+                Task { await searchServer() }
+            } label: {
+                Label(results.isEmpty ? "Couldn't search. \(error) Tap to retry." : "Showing results on this device. Tap to retry the rest.",
+                      systemImage: "exclamationmark.triangle")
+                    .font(ClickTypography.supporting)
+                    .foregroundStyle(ClickColors.textSecondary)
             }
+            .listRowSeparator(.hidden)
         } else if results.isEmpty {
             ContentUnavailableView.search(text: clean)
                 .listRowSeparator(.hidden)
@@ -249,6 +319,13 @@ struct GlobalSearchView: View {
                     open(.userProfile(userID: item.userID, connectionID: item.connectionID))
                 }
             }
+        case .sharedContextPerson(let person):
+            resultRow(
+                title: person.name,
+                subtitle: person.context,
+                avatar: AnyView(AvatarView(imageURL: person.avatarURL, seed: person.userID,
+                                           initials: Phase3Repository.initials(from: person.name), size: 40))
+            ) { open(.publicProfile(userID: person.userID)) }
         case .group(let group, let reason):
             resultRow(
                 title: group.name,
@@ -262,12 +339,25 @@ struct GlobalSearchView: View {
                 subtitle: [beacon.kind.label, beacon.schedule.map { EventFormatting.when($0) }, beacon.locationName].compactMap { $0 }.joined(separator: " · "),
                 avatar: AnyView(EventVisual(seed: beacon.id, imageURL: beacon.imageURL, symbol: beacon.kind.systemImage).frame(width: 40, height: 40))
             ) { open(beacon.isEvent ? .event(beaconID: beacon.id) : .beacon(beaconID: beacon.id)) }
+        case .remoteEvent(let event):
+            resultRow(
+                title: event.title,
+                subtitle: ["Event", event.start?.formatted(.dateTime.weekday(.abbreviated).month(.abbreviated).day().hour().minute()), event.locationName]
+                    .compactMap { $0 }.joined(separator: " · "),
+                avatar: AnyView(EventVisual(seed: event.beaconID, imageURL: event.imageURL, symbol: "calendar").frame(width: 40, height: 40))
+            ) { open(.event(beaconID: event.beaconID)) }
         case .hub(let hub):
             resultRow(
                 title: hub.name,
                 subtitle: "Hub · \(hub.category)",
                 avatar: AnyView(EventVisual(seed: hub.id, symbol: "dot.radiowaves.left.and.right").frame(width: 40, height: 40))
             ) { open(.hub(hubID: hub.id)) }
+        case .joinedHub(let hub):
+            resultRow(
+                title: hub.name,
+                subtitle: ["Hub", hub.category].compactMap { $0 }.joined(separator: " · "),
+                avatar: AnyView(EventVisual(seed: hub.hubID, symbol: "dot.radiowaves.left.and.right").frame(width: 40, height: 40))
+            ) { open(.hub(hubID: hub.hubID)) }
         case .ownIntent(let intent):
             resultRow(
                 title: intent.tag,
@@ -277,26 +367,48 @@ struct GlobalSearchView: View {
                 dismiss()
                 env.router.selectTab(.home)
             }
+        case .storedMessage(let hit):
+            resultRow(
+                title: hit.conversationTitle,
+                subtitle: hit.snippet,
+                avatar: AnyView(Image(systemName: "text.bubble").frame(width: 40, height: 40)),
+                trailing: hit.date.formatted(.relative(presentation: .named))
+            ) {
+                if let conversationID = hit.focusConversationID {
+                    env.pendingMessageFocus = MessageFocus(conversationIDs: [conversationID], messageID: hit.messageID)
+                }
+                open(hit.route)
+            }
         case .message(let hit):
             resultRow(
                 title: hit.chatName,
                 subtitle: hit.snippet,
-                avatar: AnyView(Image(systemName: hit.isHub ? "dot.radiowaves.left.and.right" : "text.bubble").frame(width: 40, height: 40))
+                avatar: AnyView(Image(systemName: hit.isHub ? "dot.radiowaves.left.and.right" : "text.bubble").frame(width: 40, height: 40)),
+                trailing: hit.date?.formatted(.relative(presentation: .named))
             ) { openMessage(hit) }
         }
     }
 
-    private func resultRow(title: String, subtitle: String?, avatar: AnyView, action: @escaping () -> Void) -> some View {
+    private func resultRow(title: String, subtitle: String?, avatar: AnyView, trailing: String? = nil, action: @escaping () -> Void) -> some View {
         Button(action: action) {
             HStack(spacing: 12) {
                 avatar
                     .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
                     .foregroundStyle(ClickColors.accentForeground)
                 VStack(alignment: .leading, spacing: 2) {
-                    Text(title)
-                        .font(ClickTypography.bodyEmphasized)
-                        .foregroundStyle(ClickColors.textPrimary)
-                        .lineLimit(1)
+                    HStack(alignment: .firstTextBaseline) {
+                        Text(title)
+                            .font(ClickTypography.bodyEmphasized)
+                            .foregroundStyle(ClickColors.textPrimary)
+                            .lineLimit(1)
+                        Spacer(minLength: 4)
+                        if let trailing {
+                            Text(trailing)
+                                .font(ClickTypography.caption)
+                                .foregroundStyle(ClickColors.textTertiary)
+                                .lineLimit(1)
+                        }
+                    }
                     if let subtitle, !subtitle.isEmpty {
                         Text(subtitle)
                             .font(ClickTypography.supporting)
@@ -305,28 +417,24 @@ struct GlobalSearchView: View {
                     }
                 }
             }
+            .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
     }
 
     // MARK: - Routing
 
+    /// Closes search; the shell opens the route once the sheet is gone.
     private func open(_ route: AppRoute) {
-        dismiss()
-        env.router.navigate(to: route)
+        env.router.openFromSearch(route)
     }
 
     private func openMessage(_ hit: MessageHit) {
-        env.pendingMessageFocus = MessageFocus(conversationIDs: [hit.chatID, hit.connectionID, hit.hubID], messageID: hit.messageID)
         if hit.isHub, let hubID = hit.hubID {
+            env.pendingMessageFocus = MessageFocus(conversationIDs: [hubID], messageID: hit.messageID)
             open(.hub(hubID: hubID))
-        } else if let group = conversations.groups.first(where: { $0.chatID == hit.chatID }) {
-            open(.groupChat(group.chatRoute))
-        } else if let item = (conversations.active + conversations.archived).first(where: {
-            $0.chatID == hit.chatID || $0.connectionID == hit.connectionID
-        }) {
-            open(.chat(DirectChatRoute(chatID: hit.chatID, connectionID: item.connectionID, peerUserID: item.userID,
-                                       peerDisplayName: item.displayName, peerAvatarURL: item.avatarUrl)))
+        } else {
+            open(.conversation(chatID: hit.chatID, messageID: hit.messageID))
         }
     }
 
@@ -341,28 +449,79 @@ struct GlobalSearchView: View {
         intents = await env.me.cachedIntents(userID: userID) ?? []
     }
 
-    /// Debounced, cancelled by the next keystroke (`task(id:)`).
-    private func searchMessages() async {
+    /// Full-text search over every stored message; instant, on-device.
+    private func searchStoredMessages() async {
+        guard clean.count >= 2, let userID = env.session.currentSession?.userId else {
+            stored = []
+            return
+        }
+        let hits = await LocalStore.shared.searchMessages(clean, userID: userID, limit: 60)
+        guard !Task.isCancelled else { return }
+        stored = hits.compactMap(resolve)
+    }
+
+    /// Names the conversation a stored hit belongs to and how to open it.
+    private func resolve(_ hit: LocalStore.MessageHit) -> StoredMessageHit? {
+        let key = hit.conversation
+        let snippet = hit.senderName.isEmpty || hit.senderName == "You" ? hit.snippet : "\(hit.senderName): \(hit.snippet)"
+        if let group = conversations.groups.first(where: { $0.chatID == key }) {
+            return StoredMessageHit(messageID: hit.messageID, conversationTitle: group.name, snippet: snippet, date: hit.createdAt,
+                                    route: .conversation(chatID: key, messageID: hit.messageID))
+        }
+        if let item = (conversations.active + conversations.archived).first(where: { $0.chatID == key || $0.connectionID == key }) {
+            return StoredMessageHit(messageID: hit.messageID, conversationTitle: item.displayName, snippet: snippet, date: hit.createdAt,
+                                    route: .conversation(chatID: key, messageID: hit.messageID))
+        }
+        if let hub = conversations.hubs.first(where: { $0.hubID == key }) {
+            // Hubs open through the hub screen (access check, hub menu), focused on the message.
+            return StoredMessageHit(messageID: hit.messageID, conversationTitle: hub.name, snippet: snippet, date: hit.createdAt,
+                                    route: .hub(hubID: key), focusConversationID: key)
+        }
+        return nil
+    }
+
+    /// Debounced, cancelled by the next keystroke (`task(id:)`). Falls back to the older
+    /// message-only endpoint when the server doesn't have `/api/search` yet.
+    private func searchServer() async {
         guard clean.count >= 2 else {
             remote = ModuleState()
             return
         }
         remote.begin()
-        try? await Task.sleep(for: .milliseconds(300))
+        try? await Task.sleep(for: .milliseconds(250))
         guard !Task.isCancelled else { return }
         do {
-            let (data, _) = try await env.api.executeRaw(APIRequest(
-                path: "/api/chat/search",
-                method: .get,
-                queryItems: [URLQueryItem(name: "q", value: clean)]
-            ))
-            let root = try JSONFields.object(data)
-            guard root["hits"] != nil else { throw APIError.decoding }
+            let request = APIRequest(path: "/api/search", method: .get, queryItems: [URLQueryItem(name: "q", value: clean)])
+            let root: [String: Any]
+            do {
+                let (data, _) = try await env.api.executeRaw(request)
+                root = try JSONFields.object(data)
+            } catch APIError.notFound {
+                let (data, _) = try await env.api.executeRaw(APIRequest(path: "/api/chat/search", method: .get,
+                                                                        queryItems: [URLQueryItem(name: "q", value: clean)]))
+                root = try JSONFields.object(data)
+            }
             guard !Task.isCancelled else { return }
-            remote.succeed(JSONFields.rows(root["hits"]).compactMap(MessageHit.decode))
+            remote.succeed(Self.decodeRemote(root))
         } catch {
             guard !Task.isCancelled else { return }
             remote.fail(error)
         }
+    }
+
+    static func decodeRemote(_ root: [String: Any]) -> RemoteResults {
+        RemoteResults(
+            people: JSONFields.rows(root["people"]).compactMap { row in
+                guard let id = JSONFields.string(row["userId"]), let name = JSONFields.string(row["name"]) else { return nil }
+                return RemotePerson(userID: id, name: name, avatarURL: JSONFields.string(row["avatarUrl"]), context: JSONFields.string(row["context"]))
+            },
+            events: JSONFields.rows(root["events"]).compactMap { row in
+                guard let id = JSONFields.string(row["beaconId"]) else { return nil }
+                return RemoteEvent(beaconID: id, title: JSONFields.string(row["title"]) ?? "Event",
+                                   locationName: JSONFields.string(row["locationName"]),
+                                   start: JSONFields.date(row["startAt"]), imageURL: JSONFields.string(row["imageUrl"]))
+            },
+            hits: JSONFields.rows(root["hits"]).compactMap(MessageHit.decode)
+        )
     }
 }

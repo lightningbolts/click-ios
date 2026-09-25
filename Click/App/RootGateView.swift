@@ -199,6 +199,11 @@ public struct MainTabShellView: View {
             .environment(meTabAvatar)
             .environment(conversations)
         }
+        .sheet(item: $r.searchRequest, onDismiss: { r.searchDidDismiss() }) { request in
+            GlobalSearchView(initialQuery: request.query)
+                .environment(meTabAvatar)
+                .environment(conversations)
+        }
         .environment(meTabAvatar)
         .environment(conversations)
         .task(id: env.session.currentSession?.userId) {

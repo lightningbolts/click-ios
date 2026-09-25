@@ -98,3 +98,42 @@ struct TimelineTransportTests {
         #expect(!Transport.shouldRetryRefresh(APIError.offline))
     }
 }
+
+@Suite("Search routing")
+@MainActor
+struct SearchRoutingTests {
+    @Test("Search, chat and profile deep links parse")
+    func deepLinks() {
+        let router = AppRouter()
+        #expect(router.searchQuery(from: URL(string: "click://search?q=pizza")!) == "pizza")
+        #expect(router.searchQuery(from: URL(string: "https://joinclick.co/search?q=tacos")!) == "tacos")
+        #expect(router.searchQuery(from: URL(string: "click://hub/abc")!) == nil)
+        #expect(router.parseIncomingURL(URL(string: "click://chat/chat-1?m=msg-9")!) == .conversation(chatID: "chat-1", messageID: "msg-9"))
+        #expect(router.parseIncomingURL(URL(string: "click://profile/user-2")!) == .publicProfile(userID: "user-2"))
+    }
+
+    @Test("A route chosen in search opens only after the sheet dismisses")
+    func routeAfterDismiss() {
+        let router = AppRouter()
+        router.presentSearch(query: "x")
+        #expect(router.searchRequest?.query == "x")
+        router.openFromSearch(.hub(hubID: "h"))
+        #expect(router.searchRequest == nil)
+        #expect(router.homePath.isEmpty)
+        router.searchDidDismiss()
+        #expect(router.homePath == [.hub(hubID: "h")])
+    }
+
+    @Test("Unified search response decodes every domain")
+    func decode() {
+        let root: [String: Any] = [
+            "people": [["userId": "u", "name": "Lena", "context": "In a hub with you"]],
+            "events": [["beaconId": "b", "title": "Jazz night", "locationName": "Blue Moon"]],
+            "hits": [["messageId": "m", "chatId": "c", "snippet": "see you"]]
+        ]
+        let results = GlobalSearchView.decodeRemote(root)
+        #expect(results.people.map(\.name) == ["Lena"])
+        #expect(results.events.map(\.title) == ["Jazz night"])
+        #expect(results.hits.map(\.messageID) == ["m"])
+    }
+}

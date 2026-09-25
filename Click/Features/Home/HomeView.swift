@@ -12,7 +12,6 @@ public struct HomeView: View {
     @Environment(AppEnvironment.self) private var env
     @Environment(ConversationListModel.self) private var conversations
     @State private var model = HomeFeedModel()
-    @State private var isSearching = false
     @State private var isEditingAvailability = false
     @State private var reconnectTick = 0
     @State private var showsCompactTitle = false
@@ -89,7 +88,7 @@ public struct HomeView: View {
             }
             ToolbarItem(placement: .topBarTrailing) {
                 Button {
-                    isSearching = true
+                    env.router.presentSearch()
                 } label: {
                     Label("Search", systemImage: "magnifyingglass")
                 }
@@ -102,9 +101,6 @@ public struct HomeView: View {
         // Re-asks when the viewer's plans or their Clicks change.
         .task(id: [model.intents.value?.map(\.id).joined() ?? "", String(conversations.active.count)]) {
             await model.loadOverlaps(peerIDs: conversations.active.map(\.userID).filter { !$0.isEmpty })
-        }
-        .sheet(isPresented: $isSearching) {
-            GlobalSearchView()
         }
         .sheet(isPresented: $isEditingAvailability) {
             AvailabilitySheet {
@@ -126,26 +122,8 @@ public struct HomeView: View {
                 .font(ClickTypography.supporting)
                 .foregroundStyle(ClickColors.textTertiary)
 
-            Button {
-                ClickHaptics.selection()
-                isSearching = true
-            } label: {
-                HStack(spacing: 8) {
-                    Image(systemName: "magnifyingglass")
-                    Text("Search people, places, events")
-                        .lineLimit(1)
-                    Spacer(minLength: 0)
-                }
-                .font(ClickTypography.body)
-                .foregroundStyle(ClickColors.textTertiary)
-                .padding(.horizontal, 14)
-                .frame(minHeight: ClickMetrics.searchMinHeight)
-                .background(ClickColors.fillSubtle, in: Capsule())
-                .contentShape(Capsule())
-            }
-            .buttonStyle(.plain)
-            .padding(.top, 12)
-            .accessibilityLabel("Search people, places, events")
+            SearchLaunchField()
+                .padding(.top, 12)
 
             OfflineNotice(showing: "saved data", hasCachedValue: model.hasCachedData, refreshFailed: model.hasRefreshFailure) {
                 Task { await model.refresh() }

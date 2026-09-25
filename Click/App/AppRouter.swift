@@ -107,12 +107,15 @@ public enum AppRoute: Hashable, Sendable {
     case savedEvents
     case settings(SettingsRoute)
     case connectionInvocation(ConnectionInvocation)
+    /// A conversation known only by its chat ID (search hits, `click://chat/{id}`), resolved
+    /// against the inbox when opened, optionally focused on one message.
+    case conversation(chatID: String, messageID: String?)
 
     /// The tab whose stack hosts this route when it arrives from outside the app
     /// (deep links, notifications) rather than from in-app navigation.
     public var canonicalTab: MainTab {
         switch self {
-        case .chat, .userProfile, .publicProfile, .groupChat, .groupProfile:
+        case .chat, .userProfile, .publicProfile, .groupChat, .groupProfile, .conversation:
             .connections
         case .event, .eventChat, .beacon, .hub:
             .map
@@ -122,6 +125,12 @@ public enum AppRoute: Hashable, Sendable {
             .settings
         }
     }
+}
+
+/// A request to show global search, optionally pre-filled.
+public struct SearchRequest: Identifiable, Hashable, Sendable {
+    public let id = UUID()
+    public let query: String
 }
 
 /// A route presented as a sheet.
@@ -206,6 +215,30 @@ public final class AppRouter {
     /// Event and beacon details are sheets (medium/large) over whatever is on screen
     /// (interaction contract 3), owned by the shell — one modal owner.
     public var presentedSheet: SheetRoute?
+
+    /// The one global search surface. Every search control (Home, Clicks, Nearby, Map) opens
+    /// this, presented by the shell, so results route identically everywhere.
+    public var searchRequest: SearchRequest?
+    /// Where to go once the search sheet has finished dismissing (never two surfaces at once).
+    private var routeAfterSearch: AppRoute?
+
+    public func presentSearch(query: String = "") {
+        presentedSheet = nil
+        searchRequest = SearchRequest(query: query)
+    }
+
+    /// Closes search, then opens `route` after the sheet is gone.
+    public func openFromSearch(_ route: AppRoute) {
+        routeAfterSearch = route
+        searchRequest = nil
+    }
+
+    /// Called from the search sheet's `onDismiss`.
+    public func searchDidDismiss() {
+        guard let route = routeAfterSearch else { return }
+        routeAfterSearch = nil
+        navigate(to: route)
+    }
 
     /// Beacons deleted this session; map, lists and Home drop them before the next refresh.
     public private(set) var deletedBeaconIDs: Set<String> = []
@@ -299,6 +332,15 @@ public final class AppRouter {
             if host == "hub", let hubId = pathComponents.first {
                 return .hub(hubID: hubId)
             }
+            // click://chat/{chatId}?m={messageId}
+            if host == "chat", let chatID = pathComponents.first {
+                let messageID = components?.queryItems?.first { $0.name == "m" || $0.name == "message" }?.value
+                return .conversation(chatID: chatID, messageID: messageID)
+            }
+            // click://profile/{userId}
+            if host == "profile" || host == "u", let userID = pathComponents.first {
+                return .publicProfile(userID: userID)
+            }
             // Direct host commands
             if host == "myqr" { return .myQR }
             if host == "scan" { return .scanQR }
@@ -361,8 +403,21 @@ public final class AppRouter {
         return ISO8601DateFormatter().date(from: raw)
     }
 
+    /// `click://search?q=…` and `https://…/search?q=…` open global search.
+    public func searchQuery(from url: URL) -> String? {
+        let scheme = url.scheme?.lowercased()
+        let isSearch = (scheme == "click" && url.host?.lowercased() == "search")
+            || ((scheme == "https" || scheme == "http") && url.pathComponents.filter { $0 != "/" }.first == "search")
+        guard isSearch else { return nil }
+        return URLComponents(url: url, resolvingAgainstBaseURL: true)?.queryItems?.first { $0.name == "q" }?.value ?? ""
+    }
+
     /// Enqueues or immediately presents an incoming URL destination.
     public func handleIncomingURL(_ url: URL, isAuthenticated: Bool) {
+        if let query = searchQuery(from: url) {
+            if isAuthenticated { presentSearch(query: query) }
+            return
+        }
         guard let route = parseIncomingURL(url) else { return }
 
         if isAuthenticated {

@@ -83,24 +83,13 @@ struct NearbyListView: View {
     @Bindable var model: MapFeatureModel
     let pins: [ConnectionPin]
     let onOpen: (MapItem) -> Void
-    @FocusState private var isSearchFocused: Bool
 
     var body: some View {
         VStack(spacing: 0) {
             HStack(spacing: 8) {
-                Image(systemName: "magnifyingglass")
-                    .foregroundStyle(ClickColors.textTertiary)
-                TextField("Search nearby", text: $model.query)
-                    .focused($isSearchFocused)
-                    .submitLabel(.search)
-                if !model.query.isEmpty {
-                    Button {
-                        model.query = ""
-                    } label: {
-                        Image(systemName: "xmark.circle.fill")
-                            .foregroundStyle(ClickColors.textTertiary)
-                    }
-                    .accessibilityLabel("Clear search")
+                // Search opens the one global search (people, messages, places, events).
+                SearchLaunchField(prompt: "Search places, events, people") {
+                    model.isNearbyPresented = false
                 }
                 Button {
                     model.refresh()
@@ -111,9 +100,6 @@ struct NearbyListView: View {
                 }
                 .accessibilityLabel("Refresh nearby")
             }
-            .padding(.horizontal, 14)
-            .frame(minHeight: ClickMetrics.searchMinHeight)
-            .background(ClickColors.fillSubtle, in: Capsule())
             .padding(.horizontal, 20)
             .padding(.top, 16)
 
@@ -132,9 +118,6 @@ struct NearbyListView: View {
             .scrollIndicators(.hidden)
 
             list
-        }
-        .onChange(of: isSearchFocused) { _, focused in
-            if focused { model.nearbyDetent = .large }
         }
     }
 
@@ -207,7 +190,7 @@ struct NearbyListView: View {
             } else if model.discovery.value == nil {
                 ProgressView()
             } else {
-                Text(model.query.isEmpty ? "Nothing nearby" : "No matches for “\(model.query)”")
+                Text(model.filter == .people ? "No one from your network on the map yet" : "Nothing nearby")
                     .font(ClickTypography.bodyEmphasized)
                 Text("Try another filter or check back later.")
                     .font(ClickTypography.supporting)

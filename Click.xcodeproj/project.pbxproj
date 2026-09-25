@@ -33,6 +33,7 @@
 		192EE920791AE2337FBE0F96 /* OfflineNotice.swift in Sources */ = {isa = PBXBuildFile; fileRef = 30988D99C421B40B486F5134 /* OfflineNotice.swift */; };
 		19888E74E00427F4E1A940FF /* CliqueEligibility.swift in Sources */ = {isa = PBXBuildFile; fileRef = C59D32E74CB27DBDDC2CDD86 /* CliqueEligibility.swift */; };
 		1A5711493067F5BC9BDF30F1 /* ShellNavigationTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 79D81340C370C0FD0A7086EB /* ShellNavigationTests.swift */; };
+		1A9DBCEA76FD1F94E4F92DFE /* SearchLaunchField.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4C4D554431AED506420BE422 /* SearchLaunchField.swift */; };
 		1B134B977C322761A9BE9F57 /* ClipApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = DA511983FBEDC6F47528DD28 /* ClipApp.swift */; };
 		1B4617C370DCCBFD2032386E /* MeRepository.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2C12F5C06BB5F4AD618B53D7 /* MeRepository.swift */; };
 		1BB1A6936D5CD5CA154FE1B0 /* Round7Tests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3768AC3A65EACD0273F1F050 /* Round7Tests.swift */; };
@@ -128,6 +129,7 @@
 		9A29D8423432ACDEFEC6AD35 /* ContextTagPicker.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3F45F0FEE3AA9FAC0DF8A5CA /* ContextTagPicker.swift */; };
 		9A7DDCDDC70230ABCE0DBEC9 /* OnboardingHeaderView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2363F153118BAC82700FA97A /* OnboardingHeaderView.swift */; };
 		9AC749853721AF6DE61C1348 /* EmojiKeyboardPicker.swift in Sources */ = {isa = PBXBuildFile; fileRef = AAD7E291890A95117C367052 /* EmojiKeyboardPicker.swift */; };
+		9AE812C6606649A248A7CB4C /* ClickLoadingView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 07A5B48994F42AD467616F25 /* ClickLoadingView.swift */; };
 		9B5130FF9140BEAE3CCDE585 /* SavedEventsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8A25B36F7B43CDA3235FEFDD /* SavedEventsView.swift */; };
 		9BCC7EC969F64D6BDC9AB051 /* EventReminderScheduler.swift in Sources */ = {isa = PBXBuildFile; fileRef = FCB1638F35F178E0F0FE80F1 /* EventReminderScheduler.swift */; };
 		9FFE49B750AFD7B106E7F990 /* CreateBeaconSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1704BBFEC1035AD1234E1B8D /* CreateBeaconSheet.swift */; };
@@ -258,6 +260,7 @@
 		05BFAB76DC5E32C164D4C1F8 /* GuestListView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GuestListView.swift; sourceTree = "<group>"; };
 		060946110A08603E44DA7EE0 /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist; path = Info.plist; sourceTree = "<group>"; };
 		06A226829E2A5C6E96399ECB /* ChatConversationTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ChatConversationTests.swift; sourceTree = "<group>"; };
+		07A5B48994F42AD467616F25 /* ClickLoadingView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ClickLoadingView.swift; sourceTree = "<group>"; };
 		08AA20450324A4CA55FE6A68 /* GroupsHubsSettingsTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GroupsHubsSettingsTests.swift; sourceTree = "<group>"; };
 		0984317C23132C065F522391 /* ChatRealtimeManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ChatRealtimeManager.swift; sourceTree = "<group>"; };
 		09B254B0F4FB61FBD50BB520 /* HubInfoView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HubInfoView.swift; sourceTree = "<group>"; };
@@ -315,6 +318,7 @@
 		451FD8B02710D9DABAAF8BD5 /* PersonalityTaxonomy.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PersonalityTaxonomy.swift; sourceTree = "<group>"; };
 		464D8F9F85AB107124A0DFC4 /* ClickApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ClickApp.swift; sourceTree = "<group>"; };
 		4BA2A78AFE90FD55C2B3B50A /* RootMenu.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RootMenu.swift; sourceTree = "<group>"; };
+		4C4D554431AED506420BE422 /* SearchLaunchField.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SearchLaunchField.swift; sourceTree = "<group>"; };
 		4CEBB1A141A8A2E6040D2122 /* GroupRepository.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GroupRepository.swift; sourceTree = "<group>"; };
 		4D484160D6CF063EFF1BF5FD /* ContextTagTaxonomy.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ContextTagTaxonomy.swift; sourceTree = "<group>"; };
 		5014EBC6865CB5371A01F981 /* OnboardingFlowView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OnboardingFlowView.swift; sourceTree = "<group>"; };
@@ -465,6 +469,7 @@
 				175C5664D9E4177BB13BB80B /* AvatarView.swift */,
 				B67AD6209B5DAB6EC962D28A /* ButtonStyles.swift */,
 				7125294CCB8A33E80B3A394C /* ChatBackground.swift */,
+				07A5B48994F42AD467616F25 /* ClickLoadingView.swift */,
 				1AFAFEA28942252B4C8C3065 /* ClickLogo.swift */,
 				7706CFCC8974CFECA09912F7 /* EventVisual.swift */,
 				C8EA116736D43E0C9432BBF5 /* FlowLayout.swift */,
@@ -472,6 +477,7 @@
 				856572EA2FE8C0C700768A86 /* GroupAvatarView.swift */,
 				CEEFE47A4CBAB925D04FB0E9 /* GroupedSurface.swift */,
 				30988D99C421B40B486F5134 /* OfflineNotice.swift */,
+				4C4D554431AED506420BE422 /* SearchLaunchField.swift */,
 				2229C327502C1A82ABD17D9B /* StatusPill.swift */,
 			);
 			path = Components;
@@ -1305,6 +1311,7 @@
 				772DB2063A845310BCE94CBA /* ClickCryptoV2.swift in Sources */,
 				972C13760ACEC9B165E723CF /* ClickDropCameraView.swift in Sources */,
 				8A07FC1B9619FAE67BD81910 /* ClickDropFilter.swift in Sources */,
+				9AE812C6606649A248A7CB4C /* ClickLoadingView.swift in Sources */,
 				61EE65603B29E4220E02CBA5 /* ClickLog.swift in Sources */,
 				77E16A225B4E34C27CD1EC85 /* ClickLogo.swift in Sources */,
 				400758128DC990342F01CCF2 /* ClickMapView.swift in Sources */,
@@ -1402,6 +1409,7 @@
 				5EAF68E2372DE07743841C1E /* RootGateView.swift in Sources */,
 				E197A818076E9D0C8B49A2A2 /* RootMenu.swift in Sources */,
 				9B5130FF9140BEAE3CCDE585 /* SavedEventsView.swift in Sources */,
+				1A9DBCEA76FD1F94E4F92DFE /* SearchLaunchField.swift in Sources */,
 				81D284E168DA086F93011B91 /* SessionController.swift in Sources */,
 				7FEFF204089EB2AA4C53F687 /* SettingsPages.swift in Sources */,
 				E1A32FEA2DD05DDE9CC3991B /* SettingsStore.swift in Sources */,

@@ -84,7 +84,6 @@ final class MapFeatureModel {
     var layers: Set<MapLayer> = Set(MapLayer.allCases)
     /// Single-layer filter chosen from Nearby chips; applies to the map too.
     var filter: MapLayer?
-    var query = ""
     var selection: MapSelection?
     var isNearbyPresented = false
     var nearbyDetent: PresentationDetent = .medium
@@ -111,17 +110,16 @@ final class MapFeatureModel {
         let all = beacons.map { MapItem(kind: .beacon($0)) }
             + (discovery.value?.hubs ?? []).map { MapItem(kind: .hub($0)) }
             + pins.map { MapItem(kind: .person($0)) }
-        let clean = query.trimmingCharacters(in: .whitespacesAndNewlines)
         return all.filter { item in
             layers.contains(item.layer)
                 && (!applyingFilter || filter == nil || filter == item.layer)
-                && (clean.isEmpty || item.title.localizedCaseInsensitiveContains(clean) || placeText(item).localizedCaseInsensitiveContains(clean))
         }
     }
 
-    /// Discovery list: live events first, then by layer. People appear on the map only.
+    /// Discovery list: live events first, then by layer, then "My network" (the people whose
+    /// pins the map shows), nearest first — the same items the chip counts come from.
     func sections(pins: [ConnectionPin], now: Date = .now) -> [NearbySection] {
-        let visible = items(pins: [], now: now)
+        let visible = items(pins: pins, now: now)
         func beaconItems(_ predicate: (MapBeacon) -> Bool) -> [MapItem] {
             visible.filter { if case .beacon(let beacon) = $0.kind { return predicate(beacon) }; return false }
         }
@@ -138,7 +136,19 @@ final class MapFeatureModel {
             let items = beaconItems { !$0.isEvent && MapLayer(kind: $0.kind) == layer }
             sections.append(NearbySection(id: layer.rawValue, title: layer.label, items: items))
         }
+        let people = visible.filter { if case .person = $0.kind { return true }; return false }
+        sections.append(NearbySection(id: "people", title: MapLayer.people.label, items: sortedByDistance(people)))
         return sections.filter { !$0.items.isEmpty }
+    }
+
+    /// Nearest first when the user's location is known; otherwise alphabetical.
+    private func sortedByDistance(_ items: [MapItem]) -> [MapItem] {
+        guard let userCoordinate else { return items.sorted { $0.title.localizedCaseInsensitiveCompare($1.title) == .orderedAscending } }
+        let here = CLLocation(latitude: userCoordinate.latitude, longitude: userCoordinate.longitude)
+        func distance(_ item: MapItem) -> CLLocationDistance {
+            here.distance(from: CLLocation(latitude: item.coordinate.latitude, longitude: item.coordinate.longitude))
+        }
+        return items.sorted { distance($0) < distance($1) }
     }
 
     /// Real counts per layer for the filter chips (before the chip filter is applied).
@@ -157,8 +167,8 @@ final class MapFeatureModel {
         if discovery.value == nil {
             return discovery.errorMessage != nil ? "Couldn't load what's nearby" : "Looking around you…"
         }
-        let count = items(pins: []).count
-        let live = sections(pins: []).first { $0.id == "live" }?.items.count ?? 0
+        let count = items(pins: pins).count
+        let live = sections(pins: pins).first { $0.id == "live" }?.items.count ?? 0
         if count == 0 { return "Nothing nearby right now" }
         return live > 0 ? "\(count) nearby · \(live) live now" : "\(count) nearby"
     }
@@ -327,13 +337,6 @@ final class MapFeatureModel {
 
     // MARK: - Private
 
-    private func placeText(_ item: MapItem) -> String {
-        switch item.kind {
-        case .beacon(let beacon): beacon.locationName ?? beacon.formattedAddress ?? ""
-        case .hub(let hub): hub.category
-        case .person(let pin): pin.locationName ?? ""
-        }
-    }
 
     private func startDate(_ item: MapItem) -> Date {
         if case .beacon(let beacon) = item.kind { return beacon.schedule?.start ?? .distantFuture }
