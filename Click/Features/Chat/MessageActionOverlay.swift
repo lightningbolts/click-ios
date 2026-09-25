@@ -42,6 +42,7 @@ public struct MessageActionOverlay: View {
 
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @State private var appeared = false
+    @State private var isDismissing = false
 
     private static let quickEmojis = ["👍", "❤️", "😂", "😮", "😢", "🙏"]
     /// Height of the inline navigation bar the overlay must stay clear of.
@@ -165,6 +166,7 @@ public struct MessageActionOverlay: View {
             }
         }
         .ignoresSafeArea()
+        .allowsHitTesting(!isDismissing)
         .onAppear {
             withAnimation(.spring(response: 0.3, dampingFraction: 0.86)) {
                 appeared = true
@@ -172,8 +174,16 @@ public struct MessageActionOverlay: View {
         }
     }
 
+    /// Settles the bubble back into its row and fades the controls before removing the
+    /// overlay, so tapping away never makes it vanish in one frame.
     private func dismissOverlay() {
-        onDismiss()
+        guard !isDismissing else { return }
+        isDismissing = true
+        withAnimation(.spring(response: 0.28, dampingFraction: 0.9)) {
+            appeared = false
+        } completion: {
+            onDismiss()
+        }
     }
 
     private var reactionCapsule: some View {
@@ -227,8 +237,8 @@ public struct MessageActionOverlay: View {
         VStack(spacing: 0) {
             ForEach(Array(actions.enumerated()), id: \.element.id) { index, action in
                 Button {
-                    onDismiss()
                     action.perform()
+                    dismissOverlay()
                 } label: {
                     HStack(spacing: 12) {
                         Image(systemName: action.systemImage)

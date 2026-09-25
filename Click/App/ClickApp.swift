@@ -98,13 +98,13 @@ final class ClickAppDelegate: NSObject, UIApplicationDelegate, UNUserNotificatio
 
     nonisolated func userNotificationCenter(
         _ center: UNUserNotificationCenter,
-        willPresent notification: UNNotification,
-        withCompletionHandler completionHandler: @escaping (UNNotificationPresentationOptions) -> Void
-    ) {
-        // Realtime owns in-app timeline updates. System presentation remains available while the
-        // user is elsewhere; duplicate open-thread suppression can be decided synchronously by
-        // the coordinator once a full notification state service is introduced.
-        completionHandler([.banner, .sound, .badge])
+        willPresent notification: UNNotification
+    ) async -> UNNotificationPresentationOptions {
+        // Realtime owns the open conversation's timeline: a push for it would only repeat the
+        // message the reader is looking at. Everything else still shows while in the app.
+        let payload = Self.stringPayload(notification.request.content.userInfo)
+        let isOnScreen = await ClickNotificationCoordinator.shared.isForVisibleConversation(payload)
+        return isOnScreen ? [] : [.banner, .sound, .badge]
     }
 
     nonisolated func userNotificationCenter(
@@ -291,6 +291,22 @@ final class ClickNotificationCoordinator {
             return .connections
         default:
             return .none
+        }
+    }
+
+    /// True when the push is about the conversation currently on screen (direct chat, group
+    /// or hub), matched by chat, connection or hub ID.
+    func isForVisibleConversation(_ payload: [String: String]) -> Bool {
+        guard let environment, UIApplication.shared.applicationState == .active else { return false }
+        let onScreen = Set([environment.activeChatID, environment.activeConnectionID].compactMap { $0 })
+        guard !onScreen.isEmpty else { return false }
+        switch Self.tapRoute(for: payload) {
+        case let .chat(chatID, connectionID, _, _):
+            return [chatID, connectionID].contains { $0.map(onScreen.contains) ?? false }
+        case .route(.hub(let hubID)):
+            return onScreen.contains(hubID)
+        default:
+            return false
         }
     }
 

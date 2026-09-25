@@ -951,7 +951,7 @@ private struct SharedItemRow: View {
         HStack(spacing: 14) {
             Group {
                 if let beaconID = item.beaconID {
-                    EventVisual(seed: beaconID, symbol: "calendar")
+                    BeaconVisual(beaconID: beaconID, imageURL: item.beaconImageURL)
                 } else {
                     Image(systemName: symbol)
                         .foregroundStyle(ClickColors.accentForeground)

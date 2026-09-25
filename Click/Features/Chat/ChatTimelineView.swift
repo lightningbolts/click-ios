@@ -161,6 +161,8 @@ struct ChatTimelineView: UIViewRepresentable {
                 collectionView.layoutIfNeeded()
                 collectionView.contentOffset.y = collectionView.contentSize.height - distanceFromBottom
                 collectionView.isPreservingPosition = false
+            } else if hasPositionedInitially, wasAtBottom, let tail = Self.tailChange(old: previousRows, new: rows) {
+                applyAnimatedTail(snapshot, tail: tail)
             } else {
                 dataSource.apply(snapshot, animatingDifferences: false)
                 if !hasPositionedInitially {
@@ -171,6 +173,74 @@ struct ChatTimelineView: UIViewRepresentable {
                 }
             }
             requestOlderIfNeeded()
+        }
+
+        /// Rows added or removed at the end only (a message sent or received, typing shown or
+        /// hidden), or nil for any other change.
+        nonisolated static func tailChange(old: [ChatTimelineRow], new: [ChatTimelineRow]) -> (added: [ChatTimelineRow], removed: [ChatTimelineRow])? {
+            guard !old.isEmpty, old != new else { return nil }
+            let shared = zip(old, new).prefix { $0 == $1 }.count
+            let added = Array(new.dropFirst(shared))
+            let removed = Array(old.dropFirst(shared))
+            // Only the few newest rows may change; a larger change is a reload, not a message.
+            guard added.count <= 4, removed.count <= 1, removed.allSatisfy({ $0 == .typing }) else { return nil }
+            return (added, removed)
+        }
+
+        /// Messages-style arrival while the reader is at the bottom: the new bubble rises from
+        /// the composer as the rows above glide up by its height (and a departing typing
+        /// bubble fades), instead of everything jumping in one frame.
+        private func applyAnimatedTail(_ snapshot: NSDiffableDataSourceSnapshot<Int, ChatTimelineRow>,
+                                       tail: (added: [ChatTimelineRow], removed: [ChatTimelineRow])) {
+            guard let collectionView, let dataSource else { return }
+            let departing = tail.removed.compactMap { row -> UIView? in
+                guard let indexPath = dataSource.indexPath(for: row), let cell = collectionView.cellForItem(at: indexPath),
+                      let copy = cell.snapshotView(afterScreenUpdates: false) else { return nil }
+                copy.frame = cell.frame
+                return copy
+            }
+            let oldOffset = collectionView.contentOffset.y
+
+            dataSource.apply(snapshot, animatingDifferences: false)
+            collectionView.layoutIfNeeded()
+            scrollToBottom(animated: false)
+            collectionView.layoutIfNeeded()
+
+            let shift = collectionView.contentOffset.y - oldOffset
+            let added = Set(tail.added)
+            let reduceMotion = UIAccessibility.isReduceMotionEnabled
+            for indexPath in collectionView.indexPathsForVisibleItems {
+                guard let cell = collectionView.cellForItem(at: indexPath),
+                      let row = dataSource.itemIdentifier(for: indexPath) else { continue }
+                let content = cell.contentView
+                if added.contains(row) {
+                    // From just below its resting place (behind the composer).
+                    let rise = max(shift, cell.bounds.height * 0.6)
+                    content.transform = reduceMotion ? .identity : CGAffineTransform(translationX: 0, y: rise).scaledBy(x: 0.96, y: 0.96)
+                    content.alpha = 0
+                } else if !reduceMotion {
+                    content.transform = CGAffineTransform(translationX: 0, y: shift)
+                }
+            }
+            for copy in departing {
+                // Content coordinates: offset by the scroll change so it stays where it was on screen.
+                copy.frame.origin.y += shift
+                collectionView.addSubview(copy)
+            }
+
+            UIView.animate(withDuration: reduceMotion ? 0.2 : 0.42, delay: 0, usingSpringWithDamping: 0.86,
+                           initialSpringVelocity: 0, options: [.allowUserInteraction, .beginFromCurrentState]) {
+                for cell in collectionView.visibleCells {
+                    cell.contentView.transform = .identity
+                    cell.contentView.alpha = 1
+                }
+                for copy in departing {
+                    copy.alpha = 0
+                    copy.transform = CGAffineTransform(scaleX: 0.85, y: 0.85)
+                }
+            } completion: { _ in
+                departing.forEach { $0.removeFromSuperview() }
+            }
         }
 
         /// True when `new` is `old` with rows added only at the top.

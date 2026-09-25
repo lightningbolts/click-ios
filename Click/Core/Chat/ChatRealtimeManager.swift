@@ -576,7 +576,7 @@ public final class ChatRealtimeManager {
             timeCreated: Self.int64(record["time_created"]) ?? Int64(Date().timeIntervalSince1970 * 1000),
             isRead: record["is_read"] as? Bool ?? false,
             deliveredAt: Self.int64(record["delivered_at"]),
-            metadata: record["metadata"] as? [String: Any]
+            metadata: JSONFields.dictionary(record["metadata"])
         )
     }
 

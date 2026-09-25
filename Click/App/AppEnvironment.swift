@@ -37,6 +37,8 @@ public final class AppEnvironment {
     public let identities: IdentityCache
     /// The conversation currently on screen, so inbox realtime doesn't count it as unread.
     public var activeChatID: String?
+    /// The on-screen direct chat's connection ID (pushes may carry either ID).
+    public var activeConnectionID: String?
     /// The latest in-person Click Drop window (post-connect), so Drops sent in it carry the encounter.
     public var clickDropSession: ClickDropSession?
     /// A message to scroll to when its conversation next opens (search deep links).

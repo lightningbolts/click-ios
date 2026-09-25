@@ -24,9 +24,13 @@ public final class NotificationService: UNNotificationServiceExtension {
 
         switch category {
         case "chat_message", "new_message":
-            bestAttemptContent.title = bestAttemptContent.title.isEmpty ? "Click Message" : bestAttemptContent.title
-            let resolvedBody = resolveChatMessageBody(userInfo: userInfo, originalBody: bestAttemptContent.body)
-            bestAttemptContent.body = resolvedBody
+            // Messages-style: the sender is the title, the message (or its kind) the body.
+            if let sender = (userInfo["sender_name"] as? String)?.trimmingCharacters(in: .whitespacesAndNewlines), !sender.isEmpty {
+                bestAttemptContent.title = sender
+            } else if bestAttemptContent.title.isEmpty {
+                bestAttemptContent.title = "Click"
+            }
+            bestAttemptContent.body = resolveChatMessageBody(userInfo: userInfo)
         case "event_reminder":
             bestAttemptContent.title = "Event Reminder"
         case "reconnect_nudge":
@@ -46,9 +50,18 @@ public final class NotificationService: UNNotificationServiceExtension {
 
     // MARK: - Decryption Resolver
 
-    private func resolveChatMessageBody(userInfo: [AnyHashable: Any], originalBody: String) -> String {
-        // Same private copy the server uses for encrypted hub pushes (`notifyHubMessage.ts`).
-        let fallback = "Open Click to view it."
+    private func resolveChatMessageBody(userInfo: [AnyHashable: Any]) -> String {
+        // Attachments and shared events never show their (descriptor) content.
+        switch (userInfo["message_type"] as? String)?.lowercased() {
+        case "image", "photo": return "📷 Photo"
+        case "audio", "voice", "voice_note": return "🎤 Voice message"
+        case "file", "document": return "📎 File"
+        case "beacon": return "📍 Shared an event"
+        default: break
+        }
+
+        // Private copy whenever the text can't be decrypted here (the title names the sender).
+        let fallback = "Sent you a message"
 
         let encrypted = (userInfo["encrypted_content"] as? String) ?? ""
         let connectionId = (userInfo["connection_id"] as? String) ?? ""

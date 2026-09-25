@@ -554,7 +554,8 @@ struct HubInboxRow: View {
     var body: some View {
         Button(action: onOpen) {
             HStack(spacing: 12) {
-                EventVisual(seed: hub.hubID, symbol: hub.isEvent ? "calendar" : "house", cornerRadius: ClickMetrics.Avatar.conversation / 2)
+                BeaconVisual(beaconID: hub.eventBeaconID, seed: hub.hubID, symbol: hub.isEvent ? "calendar" : "house",
+                             cornerRadius: ClickMetrics.Avatar.conversation / 2)
                     .frame(width: ClickMetrics.Avatar.conversation, height: ClickMetrics.Avatar.conversation)
                 VStack(alignment: .leading, spacing: 3) {
                     HStack(alignment: .firstTextBaseline, spacing: 5) {

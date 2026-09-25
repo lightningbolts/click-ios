@@ -149,6 +149,8 @@ public struct SharedItem: Codable, Equatable, Identifiable, Sendable {
     /// Beacon shares carry the beacon ID in metadata.
     public let beaconID: String?
     public let beaconTitle: String?
+    /// The shared event's banner (same metadata keys as the chat's event card).
+    public var beaconImageURL: String? = nil
 
     static func decode(_ row: [String: Any]) -> SharedItem? {
         guard let id = JSONFields.string(row["id"]) else { return nil }
@@ -160,7 +162,8 @@ public struct SharedItem: Codable, Equatable, Identifiable, Sendable {
             messageType: JSONFields.string(row["message_type"]) ?? "",
             createdAt: JSONFields.date(row["time_created"]),
             beaconID: JSONFields.string(metadata, "beacon_id", "beaconId"),
-            beaconTitle: JSONFields.string(metadata, "beacon_title", "title")
+            beaconTitle: JSONFields.string(metadata, "beacon_title", "title"),
+            beaconImageURL: JSONFields.string(metadata, "album_art_url", "image_url", "cover_url")
         )
     }
 }

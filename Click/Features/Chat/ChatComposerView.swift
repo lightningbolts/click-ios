@@ -181,25 +181,7 @@ public struct ChatComposerView: View {
 
     public var body: some View {
         VStack(spacing: 0) {
-            if let editTarget {
-                contextStrip(
-                    title: "Editing message",
-                    content: editTarget.content,
-                    icon: "pencil",
-                    onCancel: onCancelEdit
-                )
-                .transition(.move(edge: .bottom).combined(with: .opacity))
-            } else if let replyTarget {
-                contextStrip(
-                    title: "Replying to \(replyTarget.senderName)",
-                    content: ConversationModel.quoteText(replyTarget),
-                    icon: "arrowshape.turn.up.left.fill",
-                    onCancel: onCancelReply,
-                    thumbnail: ReplyThumbnail.applies(to: replyTarget)
-                        ? AnyView(ReplyThumbnail(target: replyTarget, load: replyMediaLoader)) : nil
-                )
-                .transition(.move(edge: .bottom).combined(with: .opacity))
-            }
+            contextArea
 
             if !staged.isEmpty, editTarget == nil {
                 StagedAttachmentTray(items: staged, onRemove: onUnstage)
@@ -221,10 +203,56 @@ public struct ChatComposerView: View {
         }
         .onDisappear { recorder.cancel() }
         .animation(ClickMotion.press, value: trailingMode)
-        .animation(ClickMotion.selection, value: replyTarget?.id)
-        .animation(ClickMotion.selection, value: editTarget?.id)
         .animation(ClickMotion.content, value: staged.map(\.id))
         .animation(ClickMotion.selection, value: recorder.isLocked)
+    }
+
+    /// What the strip above the field shows: the message being edited, else the one being
+    /// replied to.
+    private struct ComposerContext: Equatable {
+        let item: ChatMessageItem
+        let isEdit: Bool
+    }
+
+    private var activeContext: ComposerContext? {
+        editTarget.map { ComposerContext(item: $0, isEdit: true) } ?? replyTarget.map { ComposerContext(item: $0, isEdit: false) }
+    }
+
+    /// The last context shown, kept while the strip collapses so it doesn't blank mid-animation.
+    @State private var lastContext: ComposerContext?
+
+    /// The reply/edit strip is always in the hierarchy and collapses to zero height when
+    /// unused. An inserted/removed strip relied on a removal transition, which could be left
+    /// stuck on screen after a send (the composer's safe-area inset resizing at the same
+    /// moment as the keyboard and the timeline); a collapse can't be.
+    private var contextArea: some View {
+        let isOpen = activeContext != nil
+        return Group {
+            if let shown = activeContext ?? lastContext {
+                if shown.isEdit {
+                    contextStrip(title: "Editing message", content: shown.item.content, icon: "pencil", onCancel: onCancelEdit)
+                } else {
+                    contextStrip(
+                        title: "Replying to \(shown.item.senderName)",
+                        content: ConversationModel.quoteText(shown.item),
+                        icon: "arrowshape.turn.up.left.fill",
+                        onCancel: onCancelReply,
+                        thumbnail: ReplyThumbnail.applies(to: shown.item)
+                            ? AnyView(ReplyThumbnail(target: shown.item, load: replyMediaLoader)) : nil
+                    )
+                }
+            }
+        }
+        .frame(maxWidth: .infinity)
+        .frame(height: isOpen ? nil : 0, alignment: .bottom)
+        .clipped()
+        .opacity(isOpen ? 1 : 0)
+        .allowsHitTesting(isOpen)
+        .accessibilityHidden(!isOpen)
+        .animation(ClickMotion.selection, value: activeContext)
+        .onChange(of: activeContext, initial: true) { _, context in
+            if let context { lastContext = context }
+        }
     }
 
     private var inputRow: some View {

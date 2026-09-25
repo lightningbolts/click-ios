@@ -989,6 +989,30 @@ public final class ConversationModel {
         saveToCache()
     }
 
+    /// Applies a realtime row change to a message already on screen. Receipt updates
+    /// (`delivered_at`, `is_read`) arrive right after every insert, and Postgres omits
+    /// unchanged large (TOASTed) columns from them, so a field the update lacks keeps its
+    /// current value instead of blanking the bubble (a photo collapsing to an empty message).
+    nonisolated static func merged(existing: ChatMessageItem, update: ChatMessageItem) -> ChatMessageItem {
+        var merged = update
+        if update.rawContent.isEmpty { merged.content = existing.content }
+        if merged.reactions.isEmpty { merged.reactions = existing.reactions }
+        merged.media = update.media ?? existing.media
+        merged.beacon = update.beacon ?? existing.beacon
+        merged.localMediaURL = existing.localMediaURL
+        merged.clientMessageID = update.clientMessageID ?? existing.clientMessageID
+        merged.replyToID = update.replyToID ?? existing.replyToID
+        merged.replyToSnippet = update.replyToSnippet ?? existing.replyToSnippet
+        merged.replyToSenderName = update.replyToSenderName ?? existing.replyToSenderName
+        merged.isEdited = update.isEdited || existing.isEdited
+        // Receipts only move forward (a late "delivered" never un-reads a message).
+        let rank: [MessageDeliveryStatus: Int] = [.sent: 1, .delivered: 2, .read: 3]
+        if rank[existing.deliveryStatus, default: 0] > rank[update.deliveryStatus, default: 0] {
+            merged.deliveryStatus = existing.deliveryStatus
+        }
+        return merged
+    }
+
     fileprivate func ingestRealtime(
         _ payload: RealtimeMessagePayload,
         replacingExisting: Bool
@@ -1012,17 +1036,13 @@ public final class ConversationModel {
                 if let local = items[index].localMediaURL { mediaURLs[decoded.id] = local }
                 items[index] = replacement
             } else if let index = items.firstIndex(where: { $0.id == decoded.id }) {
-                var replacement = decoded
-                if replacement.reactions.isEmpty {
-                    replacement.reactions = items[index].reactions
-                }
-                items[index] = replacement
+                items[index] = Self.merged(existing: items[index], update: decoded)
             } else if !replacingExisting {
                 items.append(decoded)
                 items.sort { $0.createdAt < $1.createdAt }
             }
             resolveReplyQuotes()
-            persist([decoded])
+            persist([items.first { $0.id == decoded.id } ?? decoded])
 
             if !replacingExisting, !decoded.isOutgoing, identity.supportsReceipts {
                 if !acknowledgedReceipts.contains(decoded.id) {

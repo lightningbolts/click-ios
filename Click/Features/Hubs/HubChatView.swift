@@ -47,7 +47,7 @@ struct HubChatView: View {
                 .navigationTitle(fallbackTitle ?? "Hub")
                 .navigationBarTitleDisplayMode(.inline)
             case .ready(let hub, let model):
-                ChatView(model: model, hubMenu: AnyView(hubMenuItems(hub)), onOpenHubInfo: { showingInfo = true })
+                ChatView(model: model, hub: hub, hubMenu: AnyView(hubMenuItems(hub)), onOpenHubInfo: { showingInfo = true })
                     .sheet(isPresented: $showingInfo) {
                         HubInfoView(hub: hub) { Task { await reload() } }
                     }

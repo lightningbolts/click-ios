@@ -178,6 +178,31 @@ public struct EventVisual: View {
     }
 }
 
+/// An event/beacon (or event hub) visual that uses the event's banner image when it has one:
+/// the given URL, else the beacon's own image (resolved once through the beacon cache), else
+/// the generated visual with its kind symbol.
+struct BeaconVisual: View {
+    @Environment(AppEnvironment.self) private var env: AppEnvironment?
+    /// Nil for things with no beacon behind them (community hubs): always the generated visual.
+    let beaconID: String?
+    /// Seed for the generated visual (defaults to the beacon ID).
+    var seed: String? = nil
+    var imageURL: String? = nil
+    var symbol: String? = "calendar"
+    var cornerRadius: CGFloat = ClickRadius.compact
+
+    @State private var resolvedURL: String?
+
+    var body: some View {
+        let url = imageURL?.nonEmptyTrimmed ?? resolvedURL
+        EventVisual(seed: seed ?? beaconID ?? "", imageURL: url, symbol: symbol, cornerRadius: cornerRadius)
+            .task(id: beaconID) {
+                guard imageURL?.nonEmptyTrimmed == nil, let beaconID, let env else { return }
+                resolvedURL = await env.beacons.imageURL(beaconID: beaconID)
+            }
+    }
+}
+
 /// Pattern ink over the generated gradient, matching web `cardVisualPattern.ts`
 /// (white at 14% alpha). Drawn once with `Canvas`; no per-frame work.
 private struct CardPatternLayer: View {

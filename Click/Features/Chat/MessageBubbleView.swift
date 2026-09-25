@@ -186,8 +186,8 @@ public struct MessageBubbleView: View {
                 .overlay { UploadStateOverlay(message: message, onRetry: onRetrySend, onDiscard: onDiscardFailed) }
                 HStack(spacing: 4) {
                     Text(message.formattedTime).monospacedDigit()
-                    if message.isOutgoing, showsReceipts || [.pending, .sending, .failed].contains(message.deliveryStatus) {
-                        animatedStatusIcon
+                    if showsStatus {
+                        animatedStatusIcon(readTint: ClickColors.accentForeground)
                     }
                 }
                 .font(ClickTypography.caption)
@@ -249,7 +249,8 @@ public struct MessageBubbleView: View {
         message.isOutgoing && (showsReceipts || [.pending, .sending, .failed].contains(message.deliveryStatus))
     }
 
-    /// Same characters as the visible meta row, used only to reserve its width.
+    /// Same characters as the visible meta row, used only to reserve its width. " ✓✓" is at
+    /// least as wide as the fixed receipt slot, whatever the receipt state.
     private var timePlaceholder: String {
         (message.isEdited ? "edited " : "") + message.formattedTime + (showsStatus ? " ✓✓" : "")
     }
@@ -258,7 +259,7 @@ public struct MessageBubbleView: View {
         HStack(spacing: 3) {
             if message.isEdited { Text("edited") }
             Text(message.formattedTime).monospacedDigit()
-            if showsStatus { animatedStatusIcon }
+            if showsStatus { animatedStatusIcon(readTint: Color(hex: "#7DD3FC")) }
         }
         .font(ClickTypography.caption)
         .foregroundStyle(message.isOutgoing ? ClickColors.messageOutgoingForeground.opacity(0.72) : ClickColors.textSecondary)
@@ -389,30 +390,43 @@ public struct MessageBubbleView: View {
         hasTriggeredReplyHaptic = false
     }
 
-    /// clock → ✓ → ✓✓ with a small pop on each step.
-    private var animatedStatusIcon: some View {
-        statusIcon
+    /// clock → ✓ → ◯✓ (delivered) → ●✓ (read, highlighted), with a small pop on each step.
+    /// Every state has the same fixed width, so a receipt changing never moves the time or
+    /// reflows the bubble (the same circle-check language as the inbox).
+    private func animatedStatusIcon(readTint: Color) -> some View {
+        statusIcon(readTint: readTint)
+            .frame(width: Self.statusIconWidth)
             .id(message.deliveryStatus)
             .transition(.scale(scale: 0.5).combined(with: .opacity))
             .animation(ClickMotion.press, value: message.deliveryStatus)
     }
 
+    /// Fixed receipt slot; the invisible time copy reserves the same width.
+    private static let statusIconWidth: CGFloat = 14
+
     @ViewBuilder
-    private var statusIcon: some View {
+    private func statusIcon(readTint: Color) -> some View {
         switch message.deliveryStatus {
         case .pending, .sending:
             Image(systemName: "clock")
                 .font(.system(size: 10, weight: .semibold))
+                .accessibilityLabel("Sending")
 
         case .sent:
             Image(systemName: "checkmark")
                 .font(.system(size: 10, weight: .bold))
+                .accessibilityLabel("Sent")
 
         case .delivered:
-            doubleCheck
+            Image(systemName: "checkmark.circle")
+                .font(.system(size: 11, weight: .semibold))
+                .accessibilityLabel("Delivered")
 
         case .read:
-            doubleCheck.foregroundStyle(Color(hex: "#7DD3FC"))
+            Image(systemName: "checkmark.circle.fill")
+                .font(.system(size: 11, weight: .semibold))
+                .foregroundStyle(readTint)
+                .accessibilityLabel("Read")
 
         case .failed:
             Button(action: BubbleTapGate.gated {
@@ -426,14 +440,6 @@ public struct MessageBubbleView: View {
             .buttonStyle(.plain)
             .accessibilityLabel("Message failed. Tap to retry.")
         }
-    }
-
-    private var doubleCheck: some View {
-        HStack(spacing: -5) {
-            Image(systemName: "checkmark")
-            Image(systemName: "checkmark")
-        }
-        .font(.system(size: 10, weight: .bold))
     }
 }
 

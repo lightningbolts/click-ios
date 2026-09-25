@@ -156,6 +156,13 @@ public actor BeaconRepository {
         }
     }
 
+    /// The beacon's banner image (`metadata.image_url`), from the detail cache when present
+    /// (stale is fine for a picture), else one detail read. Nil when it has none.
+    public func imageURL(beaconID: String) async -> String? {
+        if let cached = cachedBeacon(id: beaconID) { return cached.beacon.imageURL }
+        return try? await beacon(id: beaconID).beacon.imageURL
+    }
+
     /// Warms the detail cache when a card scrolls on screen; one request per ID at a time.
     public func prefetch(id: String) {
         guard cachedBeacon(id: id)?.isFresh != true, prefetching[id] == nil else { return }

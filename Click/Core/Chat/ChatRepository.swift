@@ -1006,6 +1006,8 @@ public actor ChatRepository: ChatRepositoryProtocol {
                 replyToSenderName: replyToSenderName,
                 reactions: [],
                 isEdited: payload.isEdited,
+                // Same as a fetched row (`mapHubRow`): a live photo must arrive as a photo.
+                media: MessageMedia.parse(messageType: payload.messageType, metadata: metadata, decryptedContent: "", chatID: hubID),
                 clientMessageID: clientMessageID
             )
         }

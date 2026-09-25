@@ -51,12 +51,14 @@ public struct ChatView: View {
         var id: URL { url }
     }
 
-    /// Hub-only extras: items for the options menu and the title tap (hub info).
+    /// Hub-only extras: the hub (header visual), items for the options menu and the title tap (hub info).
+    private let hub: HubInfo?
     private let hubMenu: AnyView?
     private let onOpenHubInfo: (() -> Void)?
 
-    public init(model: ConversationModel, hubMenu: AnyView? = nil, onOpenHubInfo: (() -> Void)? = nil) {
+    public init(model: ConversationModel, hub: HubInfo? = nil, hubMenu: AnyView? = nil, onOpenHubInfo: (() -> Void)? = nil) {
         self._model = State(initialValue: model)
+        self.hub = hub
         self.hubMenu = hubMenu
         self.onOpenHubInfo = onOpenHubInfo
     }
@@ -86,7 +88,7 @@ public struct ChatView: View {
             // and the keyboard state are untouched while actions are open.
             .overlay {
                 if let target = actionTarget {
-                    actionOverlay(for: target)
+                    actionOverlay(for: target).id(target.id)
                 }
             }
             .overlay(alignment: .top) {
@@ -174,12 +176,15 @@ public struct ChatView: View {
                 BeaconSharePicker { beacon in Task { await model.sendBeacon(beacon) } }
             }
             .onDisappear {
-                if env.activeChatID == model.identity.chatID { env.activeChatID = nil }
+                if env.activeChatID == model.identity.chatID {
+                    env.activeChatID = nil
+                    env.activeConnectionID = nil
+                }
                 model.onDisappear()
             }
-            .onChange(of: model.identity.chatID, initial: true) { _, chatID in
-                env.activeChatID = chatID
-            }
+            // Also on every re-appear (back from a profile pushed on top), not just the first.
+            .onAppear(perform: markOnScreen)
+            .onChange(of: model.identity.chatID) { markOnScreen() }
             // Only a new *latest* message matters here: the timeline keeps itself pinned while
             // the reader is at the bottom; our own sends always bring it into view.
             .onChange(of: model.items.last?.stableID) { oldID, newID in
@@ -206,6 +211,12 @@ public struct ChatView: View {
                 guard !Task.isCancelled else { return }
                 await showToast(next.isOutgoing ? "Your Click Drop developed" : "A Click Drop developed")
             }
+    }
+
+    /// Tells the inbox and push presentation which conversation the reader is looking at.
+    private func markOnScreen() {
+        env.activeChatID = model.identity.chatID
+        env.activeConnectionID = model.identity.connectionID
     }
 
     /// Rows for the timeline: day headers, the "New messages" divider, messages, typing.
@@ -375,7 +386,8 @@ public struct ChatView: View {
                 emojiPickerTarget = target.message
             },
             onDismiss: {
-                actionTarget = nil
+                // A settling overlay must not close one opened on another message meanwhile.
+                if actionTarget?.id == target.id { actionTarget = nil }
             }
         )
     }
@@ -683,12 +695,19 @@ public struct ChatView: View {
             }
         } label: {
             HStack(spacing: 8) {
-                AvatarView(
-                    imageURL: model.identity.peerAvatarURL,
-                    seed: model.identity.isDirect ? model.identity.peerUserID : model.identity.chatID,
-                    initials: model.identity.initials,
-                    size: ClickMetrics.Avatar.navigation
-                )
+                if let hub {
+                    // Event chats wear the event's banner, like their inbox row.
+                    BeaconVisual(beaconID: hub.eventBeaconID, seed: hub.id, symbol: hub.isEventHub ? "calendar" : "house",
+                                 cornerRadius: ClickMetrics.Avatar.navigation / 2)
+                        .frame(width: ClickMetrics.Avatar.navigation, height: ClickMetrics.Avatar.navigation)
+                } else {
+                    AvatarView(
+                        imageURL: model.identity.peerAvatarURL,
+                        seed: model.identity.isDirect ? model.identity.peerUserID : model.identity.chatID,
+                        initials: model.identity.initials,
+                        size: ClickMetrics.Avatar.navigation
+                    )
+                }
 
                 VStack(alignment: .leading, spacing: 0) {
                     Text(model.identity.peerDisplayName)
@@ -788,22 +807,40 @@ public struct ChatView: View {
 
     private var typingIndicator: some View {
         HStack {
-            HStack(spacing: 4) {
-                ForEach(0..<3, id: \.self) { index in
-                    Circle()
-                        .fill(ClickColors.textSecondary.opacity(0.85 - Double(index) * 0.2))
-                        .frame(width: 5, height: 5)
-                }
-            }
-            .padding(.horizontal, 12)
-            .padding(.vertical, 10)
-            .background(ClickColors.messageIncoming)
-            .clipShape(RoundedRectangle(cornerRadius: ClickRadius.messageBubble, style: .continuous))
+            TypingDots()
+                .padding(.horizontal, 14)
+                .padding(.vertical, 12)
+                .background(ClickColors.messageIncoming)
+                .clipShape(RoundedRectangle(cornerRadius: ClickRadius.messageBubble, style: .continuous))
+                .accessibilityLabel(statusText)
 
             Spacer()
         }
         .padding(.horizontal, 12)
         .padding(.vertical, 2)
+    }
+
+    /// Three dots pulsing in a wave (Messages-style), still under Reduce Motion.
+    private struct TypingDots: View {
+        @Environment(\.accessibilityReduceMotion) private var reduceMotion
+
+        var body: some View {
+            TimelineView(.animation(minimumInterval: 1 / 30, paused: reduceMotion)) { context in
+                let time = context.date.timeIntervalSinceReferenceDate
+                HStack(spacing: 5) {
+                    ForEach(0..<3, id: \.self) { index in
+                        // Each dot peaks a third of a cycle after the previous one.
+                        let wave = reduceMotion ? 0.5 : (sin((time * 2 * .pi / 1.2) - Double(index) * 0.9) + 1) / 2
+                        Circle()
+                            .fill(ClickColors.textSecondary.opacity(0.4 + 0.5 * wave))
+                            .frame(width: 7, height: 7)
+                            .scaleEffect(0.85 + 0.2 * wave)
+                            .offset(y: -2.5 * wave)
+                    }
+                }
+                .frame(height: 12)
+            }
+        }
     }
 
     fileprivate static func dateHeader(_ date: Date) -> some View {

@@ -72,6 +72,43 @@ struct TimelineTransportTests {
         #expect(ChatTimelineView.Coordinator.isPrepend(old: old + [.typing], new: [.message("4"), .message("5"), .message("6"), .typing]))
     }
 
+    @Test("Only rows arriving at the end (messages, typing) animate in")
+    func tailChange() {
+        let old: [ChatTimelineRow] = [.message("5"), .message("6"), .typing]
+        let arrived = ChatTimelineView.Coordinator.tailChange(old: old, new: [.message("5"), .message("6"), .message("7")])
+        #expect(arrived?.added == [.message("7")])
+        #expect(arrived?.removed == [.typing])
+        #expect(ChatTimelineView.Coordinator.tailChange(old: [.message("5")], new: [.message("5"), .typing])?.added == [.typing])
+        // Prepends, removals of messages and big reloads jump without animation.
+        #expect(ChatTimelineView.Coordinator.tailChange(old: [.message("5")], new: [.message("4"), .message("5")]) == nil)
+        #expect(ChatTimelineView.Coordinator.tailChange(old: [.message("5"), .message("6")], new: [.message("5")]) == nil)
+        #expect(ChatTimelineView.Coordinator.tailChange(old: [], new: [.message("5")]) == nil)
+    }
+
+    @Test("A receipt update never blanks a photo or un-reads a message")
+    @MainActor
+    func realtimeUpdateMerge() {
+        let media = MessageMedia(kind: .image, mimeType: "image/jpeg", fileName: nil, sizeBytes: nil, durationSeconds: nil,
+                                 remoteURL: "https://x/p.jpg", storagePath: nil, v2: nil, fileKey: nil, plaintextSha256: nil, isDisposable: false)
+        var existing = ChatMessageItem(id: "m1", chatID: "c", senderID: "peer", senderName: "Peer", content: "", messageType: .image,
+                                       deliveryStatus: .read, isOutgoing: false, replyToSnippet: "quote", media: media, clientMessageID: "client-1")
+        existing.reactions = [ReactionSummary(reactionType: "👍", count: 1, userReacted: true)]
+        // An UPDATE whose metadata/content were omitted (unchanged TOAST) and older receipt state.
+        let update = ChatMessageItem(id: "m1", chatID: "c", senderID: "peer", senderName: "Peer", content: "", rawContent: "",
+                                     messageType: .image, deliveryStatus: .delivered, isOutgoing: false)
+        let merged = ConversationModel.merged(existing: existing, update: update)
+        #expect(merged.media == media)
+        #expect(merged.stableID == "client-1")
+        #expect(merged.replyToSnippet == "quote")
+        #expect(merged.reactions.count == 1)
+        #expect(merged.deliveryStatus == .read)
+
+        // A real edit still lands.
+        let edit = ChatMessageItem(id: "m1", chatID: "c", senderID: "peer", senderName: "Peer", content: "new", rawContent: "e2e:x",
+                                   deliveryStatus: .read, isOutgoing: false, isEdited: true)
+        #expect(ConversationModel.merged(existing: existing, update: edit).content == "new")
+    }
+
     @Test("Realtime reconnects forever with capped backoff")
     func backoff() {
         #expect(ChatRealtimeManager.reconnectDelay(attempt: 1) == 0.5)

@@ -38,7 +38,7 @@ struct GroupSharedView: View {
                             if let id = item.beaconID { env.router.navigate(to: .event(beaconID: id)) }
                         } label: {
                             HStack(spacing: 12) {
-                                EventVisual(seed: item.beaconID ?? item.id, symbol: "calendar").frame(width: 44, height: 44)
+                                BeaconVisual(beaconID: item.beaconID, seed: item.beaconID ?? item.id, imageURL: item.beaconImageURL).frame(width: 44, height: 44)
                                 VStack(alignment: .leading, spacing: 2) {
                                     Text(item.beaconTitle ?? "Event").foregroundStyle(ClickColors.textPrimary)
                                     if let date = item.createdAt {
