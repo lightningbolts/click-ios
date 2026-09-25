@@ -128,6 +128,7 @@ public struct MessageBubbleView: View {
                 }
                 content
                     .frame(maxWidth: 320, alignment: message.isOutgoing ? .trailing : .leading)
+                    .onGeometryChange(for: CGRect.self) { $0.frame(in: .global) } action: { bubbleFrame = $0 }
                     // Reactions are an overlay, not another row. The small fixed clearance is
                     // always present, so the first reaction never changes this message's height.
                     .overlay(alignment: message.isOutgoing ? .bottomTrailing : .bottomLeading) {
@@ -148,7 +149,6 @@ public struct MessageBubbleView: View {
                         onChanged: swipeChanged,
                         onEnded: swipeEnded
                     ))
-                    .onGeometryChange(for: CGRect.self) { $0.frame(in: .global) } action: { bubbleFrame = $0 }
                     .gesture(PressAndHoldGesture {
                         ClickHaptics.impact(.medium)
                         onLongPress?(message, bubbleFrame)
