@@ -436,17 +436,18 @@ struct GroupMemberPickerSheet: View {
                         } label: {
                             HStack(spacing: 12) {
                                 AvatarView(imageURL: item.avatarUrl, seed: item.userID, initials: item.initials, size: 44)
+                                // One name line and one (always present) subtitle line, so rows
+                                // keep their height as eligibility changes with the selection.
                                 VStack(alignment: .leading, spacing: 2) {
-                                    Text(item.displayName).foregroundStyle(ClickColors.textPrimary)
-                                    if let reason {
-                                        Text(reason)
-                                            .font(ClickTypography.supporting)
-                                            .foregroundStyle(ClickColors.warning)
-                                    } else if let detail = Self.detail(item) {
-                                        Text(detail)
-                                            .font(ClickTypography.supporting)
-                                            .foregroundStyle(ClickColors.textSecondary)
-                                    }
+                                    Text(item.displayName)
+                                        .foregroundStyle(ClickColors.textPrimary)
+                                        .lineLimit(1)
+                                    Text(reason ?? Self.detail(item) ?? " ")
+                                        .font(ClickTypography.supporting)
+                                        .foregroundStyle(reason != nil ? ClickColors.warning : ClickColors.textSecondary)
+                                        .lineLimit(1)
+                                        .truncationMode(.tail)
+                                        .contentTransition(.opacity)
                                 }
                                 Spacer()
                                 Image(systemName: selected.contains(item.userID) ? "checkmark.circle.fill" : "circle")

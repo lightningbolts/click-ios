@@ -177,3 +177,78 @@ struct MessageOperationsTests {
         #expect(symbols.contains("🙏"))
     }
 }
+
+/// Serves a fixed history with the server's paging rules (`GET /api/chat/messages`).
+private final class HistoryRepo: ChatRepositoryProtocol, @unchecked Sendable {
+    let all: [ChatMessageItem]   // oldest first
+    init(_ all: [ChatMessageItem]) { self.all = all }
+
+    private func ms(_ item: ChatMessageItem) -> Int64 { Int64((item.createdAt.timeIntervalSince1970 * 1000).rounded()) }
+
+    func resolveCanonicalChatID(chatID: String, connectionID: String?) async throws -> String { chatID }
+    func fetchMessages(conversation: ConversationIdentity, currentUserID: String, cursor: Int64?, limit: Int) async throws -> [ChatMessageItem] {
+        let rows = all.filter { cursor == nil || ms($0) < cursor! }
+        return Array(rows.suffix(limit).reversed())
+    }
+    func fetchMessages(conversation: ConversationIdentity, currentUserID: String, since: Int64, limit: Int) async throws -> [ChatMessageItem] {
+        Array(all.filter { ms($0) > since }.prefix(limit).reversed())
+    }
+    func fetchMessages(around messageID: String, conversation: ConversationIdentity, currentUserID: String, limit: Int) async throws -> [ChatMessageItem] { [] }
+    func sendMessage(conversation: ConversationIdentity, currentUserID: String, currentUserName: String, content: String,
+                     replyToID: String?, replyToSnippet: String?, replyToSenderName: String?, clientMessageID: String) async throws -> ChatMessageItem {
+        throw APIError.decoding
+    }
+    func editMessage(message: ChatMessageItem, conversation: ConversationIdentity, currentUserID: String, newContent: String) async throws {}
+    func deleteMessage(messageID: String, conversation: ConversationIdentity) async throws {}
+    func setReaction(messageID: String, reactionType: String, adding: Bool, conversation: ConversationIdentity) async throws {}
+    func markRead(chatID: String, messageIDs: [String]) async throws {}
+    func markDelivered(chatID: String, messageIDs: [String]) async throws {}
+    func registerDevice() async throws {}
+    func decodeRealtimeMessage(_ payload: RealtimeMessagePayload, conversation: ConversationIdentity, currentUserID: String) async throws -> ChatMessageItem {
+        throw APIError.decoding
+    }
+}
+
+@Suite("Chat history pagination")
+@MainActor
+struct PaginationTests {
+    static func history(count: Int) -> [ChatMessageItem] {
+        var ms: Int64 = 1_772_673_398_805
+        return (0..<count).map { index in
+            ms += Int64(37_000 + (index * 7919) % 90_000_000)
+            return ChatMessageItem(id: "m\(index)", chatID: "chat-p", senderID: index % 2 == 0 ? "me" : "peer",
+                                   senderName: "x", content: "#\(index)", createdAt: Date(timeIntervalSince1970: Double(ms) / 1000),
+                                   deliveryStatus: .read, isOutgoing: index % 2 == 0)
+        }
+    }
+
+    @Test("Scrolling up reaches the first message (network only)")
+    func reachesStartWithoutStore() async {
+        let all = Self.history(count: 370)
+        let model = ConversationModel(identity: ConversationIdentity(chatID: "chat-p", peerUserID: "peer", peerDisplayName: "P"),
+                                      chatRepository: HistoryRepo(all), currentUserID: "me")
+        await model.loadMessages()
+        var guardCount = 0
+        while model.hasMoreHistory, guardCount < 50 { await model.loadOlder(); guardCount += 1 }
+        #expect(model.items.count == 370)
+        #expect(model.items.first?.id == "m0")
+    }
+
+    @Test("Scrolling up reaches the first message with the on-device store")
+    func reachesStartWithStore() async throws {
+        let all = Self.history(count: 370)
+        let user = "pagination-\(UUID().uuidString)"
+        let identity = ConversationIdentity(chatID: "chat-p", peerUserID: "peer", peerDisplayName: "P")
+        let first = ConversationModel(identity: identity, chatRepository: HistoryRepo(all), currentUserID: user, store: .shared)
+        await first.loadMessages()
+        for _ in 0..<3 { await first.loadOlder() }   // a partial scroll, persisted
+        try await Task.sleep(for: .milliseconds(200))
+        // Reopen: paints from disk, then scrolls to the start.
+        let second = ConversationModel(identity: identity, chatRepository: HistoryRepo(all), currentUserID: user, store: .shared)
+        await second.loadMessages()
+        var guardCount = 0
+        while second.hasMoreHistory, guardCount < 50 { await second.loadOlder(); guardCount += 1 }
+        #expect(second.items.count == 370)
+        #expect(second.items.first?.id == "m0")
+    }
+}

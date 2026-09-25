@@ -218,10 +218,9 @@ public struct MessageActionOverlay: View {
         }
         .padding(.horizontal, 8)
         .padding(.vertical, 6)
-        // Opaque: with no dimmed backdrop, the capsule must stay legible over any bubble.
-        .background(Capsule().fill(ClickColors.surfaceElevated))
-        .overlay(Capsule().stroke(ClickColors.separator.opacity(0.5), lineWidth: ClickMetrics.strokeWidth))
-        .shadow(color: .black.opacity(0.22), radius: 18, x: 0, y: 8)
+        // Liquid Glass on iOS 26 (material below), like the app's other floating controls.
+        .glassCircleBackground()
+        .shadow(color: .black.opacity(0.18), radius: 14, x: 0, y: 6)
     }
 
     private var actionPanel: some View {

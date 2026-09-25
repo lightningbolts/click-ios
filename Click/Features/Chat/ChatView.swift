@@ -406,8 +406,8 @@ public struct ChatView: View {
             })
         }
 
-        // Edit: if outgoing and not media
-        if item.isOutgoing && !item.isMedia {
+        // Edit: own text messages only (not media, event cards or call logs)
+        if item.isOutgoing && item.messageType == .text && !item.isMedia && item.beacon == nil {
             actions.append(MessageAction(id: "edit", title: "Edit", systemImage: "pencil") {
                 withAnimation(ClickMotion.selection) {
                     model.replyTarget = nil

@@ -1028,7 +1028,9 @@ public actor ChatRepository: ChatRepositoryProtocol {
         }
 
         if !conversation.isDirect { await resolveNames([payload.senderID]) }
-        let decrypted = decryptWireContent(payload.content, legacy: legacy, v2Session: v2Session)
+        let decrypted = payload.messageType == MessageType.callLog.rawValue
+            ? CallLogFormatting.label(metadata: payload.metadata, isOutgoing: isOutgoing)
+            : decryptWireContent(payload.content, legacy: legacy, v2Session: v2Session)
 
         return ChatMessageItem(
             id: payload.id,
@@ -1042,7 +1044,7 @@ public actor ChatRepository: ChatRepositoryProtocol {
             createdAt: Date(timeIntervalSince1970: Double(payload.timeCreated) / 1000.0),
             deliveryStatus: isOutgoing
                 ? (payload.isRead ? .read : (payload.deliveredAt == nil ? .sent : .delivered))
-                : .delivered,
+                : (payload.isRead ? .read : .delivered),
             isOutgoing: isOutgoing,
             replyToID: string(payload.metadata?["reply_to_id"]),
             replyToSnippet: string(payload.metadata?["reply_to_content"]) ?? string(payload.metadata?["reply_to_snippet"]),
@@ -1885,7 +1887,9 @@ public actor ChatRepository: ChatRepositoryProtocol {
         v2Session: V2Session?
     ) -> ChatMessageItem {
         let isOutgoing = raw.userID == currentUserID
-        let content = decryptWireContent(raw.content, legacy: legacy, v2Session: v2Session)
+        let content = raw.messageType == MessageType.callLog.rawValue
+            ? CallLogFormatting.label(metadata: metadata, isOutgoing: isOutgoing)
+            : decryptWireContent(raw.content, legacy: legacy, v2Session: v2Session)
         var reactions: [ReactionSummary] = []
         if let reactionMap = raw.reactions {
             reactions = reactionMap.map { emoji, entries in
@@ -1909,7 +1913,8 @@ public actor ChatRepository: ChatRepositoryProtocol {
                 deliveryStatus = .sent
             }
         } else {
-            deliveryStatus = .delivered
+            // Incoming rows carry whether this user has read them (drives the unread divider).
+            deliveryStatus = raw.isRead == true ? .read : .delivered
         }
 
         let isEdited = raw.metadata?.isEdited == true || raw.timeEdited != nil

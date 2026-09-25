@@ -112,9 +112,11 @@ public final class ConversationModel {
         }
     }
 
-    /// Writes server rows to the on-device timeline.
+    /// Writes server rows to the on-device timeline. The store holds one contiguous run back
+    /// from the latest message (history pages read it as gap-free), so a detached search
+    /// window is never written.
     private func persist(_ rows: [ChatMessageItem]) {
-        guard let store, !rows.isEmpty else { return }
+        guard let store, !rows.isEmpty, !isDetachedFromLatest else { return }
         store.upsertMessages(rows, conversation: identity.chatID, userID: currentUserID)
     }
 
@@ -334,6 +336,19 @@ public final class ConversationModel {
         guard identity.supportsReceipts, !unreadIDs.isEmpty else { return }
         for id in unreadIDs { acknowledgedReceipts.insert(id) }
         try? await chatRepository.markRead(chatID: identity.chatID, messageIDs: unreadIDs)
+        markLocallyRead(unreadIDs)
+    }
+
+    /// Records this user's read on the loaded and stored rows, so a later visit doesn't show
+    /// already-seen messages as new.
+    private func markLocallyRead(_ ids: [String]) {
+        let wanted = Set(ids)
+        var changed: [ChatMessageItem] = []
+        for index in items.indices where wanted.contains(items[index].id) && !items[index].isOutgoing && items[index].deliveryStatus != .read {
+            items[index].deliveryStatus = .read
+            changed.append(items[index])
+        }
+        persist(changed)
     }
 
     // MARK: - Sending / editing
@@ -884,9 +899,10 @@ public final class ConversationModel {
         do {
             let window = try await chatRepository.fetchMessages(around: messageID, conversation: identity, currentUserID: currentUserID, limit: 20)
             guard let target = window.first(where: { $0.id == messageID }) else { return nil }
-            persist(window)
             items = Self.mergeWindow(window, into: items)
-            if !items.contains(where: { $0.id == messageID }) {
+            if items.contains(where: { $0.id == messageID }) {
+                persist(window)
+            } else {
                 // Not contiguous with what's loaded: show the window alone until "latest".
                 isDetachedFromLatest = true
                 hasMoreHistory = true
@@ -935,7 +951,8 @@ public final class ConversationModel {
 
     /// Messages that can be forwarded: live text and non-Click-Drop media.
     public func canForward(_ item: ChatMessageItem) -> Bool {
-        guard !item.isDeleted, item.beacon == nil, item.deliveryStatus != .sending, item.deliveryStatus != .failed else { return false }
+        guard !item.isDeleted, item.beacon == nil, item.messageType != .callLog,
+              item.deliveryStatus != .sending, item.deliveryStatus != .failed else { return false }
         return !(item.media?.isDisposable ?? false)
     }
 
@@ -1020,6 +1037,7 @@ public final class ConversationModel {
                         chatID: identity.chatID,
                         messageIDs: [decoded.id]
                     )
+                    markLocallyRead([decoded.id])
                 }
             }
         } catch {

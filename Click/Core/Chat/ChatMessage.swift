@@ -12,6 +12,27 @@ public enum MessageType: String, Codable, Sendable {
     case callLog = "call_log"
 }
 
+/// Text for a `call_log` row. The caller writes the row (`metadata.call_state`: completed,
+/// missed, declined; `duration_seconds`), so "outgoing" means this user placed the call.
+enum CallLogFormatting {
+    static func label(metadata: [String: Any]?, isOutgoing: Bool) -> String {
+        switch JSONFields.string(metadata?["call_state"])?.lowercased() {
+        case "missed": return isOutgoing ? "No answer" : "Missed call"
+        case "declined": return isOutgoing ? "Call declined" : "Declined call"
+        default:
+            let seconds = JSONFields.int(metadata?["duration_seconds"]) ?? 0
+            guard seconds > 0 else { return isOutgoing ? "Outgoing call" : "Incoming call" }
+            let pattern: Duration.TimeFormatStyle.Pattern = seconds >= 3600 ? .hourMinuteSecond : .minuteSecond
+            return (isOutgoing ? "Outgoing call · " : "Incoming call · ") + Duration.seconds(seconds).formatted(.time(pattern: pattern))
+        }
+    }
+
+    /// Missed and declined calls are drawn in the alert color.
+    static func isUnanswered(_ label: String) -> Bool {
+        !label.hasPrefix("Outgoing call") && !label.hasPrefix("Incoming call")
+    }
+}
+
 public enum MessageDeliveryStatus: String, Codable, Sendable {
     case pending
     case sending

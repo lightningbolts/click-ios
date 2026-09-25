@@ -242,6 +242,37 @@ struct ReplyThumbnail: View {
 ///   vertically mid-swipe) and cancels touches underneath (a swipe never opens a photo).
 /// - The navigation back-swipe waits for it to fail, so a rightward swipe on an incoming bubble
 ///   replies instead of popping the chat. Touches in the leading 24 pt stay with the edge swipe.
+/// Press-and-hold that fires while the finger is still down, on every bubble kind. A SwiftUI
+/// long press on the bubble loses to child buttons (photos, event cards) and waits for the
+/// swipe-to-reply pan to fail, which only happens on release.
+struct PressAndHoldGesture: UIGestureRecognizerRepresentable {
+    var minimumDuration: TimeInterval = 0.3
+    var allowableMovement: CGFloat = 12
+    let onBegan: () -> Void
+
+    func makeUIGestureRecognizer(context: Context) -> UILongPressGestureRecognizer {
+        let recognizer = UILongPressGestureRecognizer()
+        recognizer.minimumPressDuration = minimumDuration
+        recognizer.allowableMovement = allowableMovement
+        // Once held, the press owns the touch: the photo/card under it must not open on release.
+        recognizer.cancelsTouchesInView = true
+        recognizer.delegate = context.coordinator
+        return recognizer
+    }
+
+    func handleUIGestureRecognizerAction(_ recognizer: UILongPressGestureRecognizer, context: Context) {
+        if recognizer.state == .began { onBegan() }
+    }
+
+    func makeCoordinator(converter: CoordinateSpaceConverter) -> Coordinator { Coordinator() }
+
+    final class Coordinator: NSObject, UIGestureRecognizerDelegate {
+        func gestureRecognizer(_ gestureRecognizer: UIGestureRecognizer, shouldRecognizeSimultaneouslyWith other: UIGestureRecognizer) -> Bool {
+            true
+        }
+    }
+}
+
 struct HorizontalSwipeGesture: UIGestureRecognizerRepresentable {
     var isEnabled = true
     /// Incoming bubbles swipe right (+1), outgoing swipe left (-1).

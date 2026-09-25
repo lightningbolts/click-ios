@@ -24,6 +24,14 @@ enum SoundtrackResolver {
         guard BeaconFormRules.isMusicLink(trimmed), let url = URL(string: trimmed) else { return nil }
         let host = url.host?.lowercased() ?? ""
         var terms: [String] = []
+        // When the iTunes catalog has no match, the service's own title and cover still make a
+        // recognizable soundtrack (no 30 s preview).
+        var fallback: SoundtrackMatch?
+        func remember(title: String?, thumbnail: Any?) {
+            guard fallback == nil, let title = title.map(cleaned), title.count >= 2 else { return }
+            let art = (thumbnail as? String).flatMap(URL.init(string:)).flatMap { $0.scheme == "https" ? $0.absoluteString : nil }
+            fallback = SoundtrackMatch(trackName: title, artistName: nil, previewURL: nil, artworkURL: art ?? linkThumbnail(trimmed))
+        }
         func push(_ term: String?) {
             guard let term = term?.replacingOccurrences(of: "\\s+", with: " ", options: .regularExpression)
                 .trimmingCharacters(in: .whitespaces), term.count >= 2 else { return }
@@ -41,6 +49,7 @@ enum SoundtrackResolver {
         if host.contains("spotify") {
             let oembed = await json("https://open.spotify.com/oembed?url=\(encoded(trimmed))")
             push((oembed?["title"] as? String).map(spotifyTerm))
+            remember(title: (oembed?["title"] as? String).map(spotifySongTitle), thumbnail: oembed?["thumbnail_url"])
         }
         if host.contains("youtu") {
             let watch = youtubeWatchURL(url) ?? trimmed
@@ -52,10 +61,12 @@ enum SoundtrackResolver {
                     push("\(author) \(title)")
                 }
                 push(title.replacingOccurrences(of: " - ", with: " "))
+                remember(title: title, thumbnail: oembed["thumbnail_url"])
             }
         }
         if host.hasSuffix("apple.com"), let oembed = await json("https://embed.music.apple.com/oembed?url=\(encoded(trimmed))") {
             push(oembed["title"] as? String)
+            remember(title: oembed["title"] as? String, thumbnail: oembed["thumbnail_url"])
         }
 
         for term in terms.prefix(4) {
@@ -64,7 +75,15 @@ enum SoundtrackResolver {
             let preferred = rows.first { ($0["previewUrl"] as? String)?.isEmpty == false } ?? rows.first
             if let preferred, let match = match(from: preferred) { return match }
         }
-        return nil
+        return fallback
+    }
+
+    /// Cover image derivable from the link alone (YouTube's video thumbnail), for soundtracks
+    /// saved without album art.
+    static func linkThumbnail(_ link: String?) -> String? {
+        guard let link, let url = URL(string: link.trimmingCharacters(in: .whitespacesAndNewlines)),
+              let id = youtubeVideoID(url) else { return nil }
+        return "https://i.ytimg.com/vi/\(id)/hqdefault.jpg"
     }
 
     // MARK: Artwork and trusted hosts
@@ -112,11 +131,23 @@ enum SoundtrackResolver {
     }
 
     private static func youtubeWatchURL(_ url: URL) -> String? {
+        youtubeVideoID(url).map { "https://www.youtube.com/watch?v=\($0)" }
+    }
+
+    private static func youtubeVideoID(_ url: URL) -> String? {
         let host = url.host?.lowercased() ?? ""
+        guard host.contains("youtu") else { return nil }
         let id = host == "youtu.be"
             ? url.pathComponents.dropFirst().first
             : URLComponents(url: url, resolvingAgainstBaseURL: false)?.queryItems?.first { $0.name == "v" }?.value
-        return id.map { "https://www.youtube.com/watch?v=\($0)" }
+        guard let id, id.count == 11, id.allSatisfy({ $0.isLetter || $0.isNumber || $0 == "-" || $0 == "_" }) else { return nil }
+        return id
+    }
+
+    /// "Song - song and lyrics by Artist | Spotify" → "Song".
+    private static func spotifySongTitle(_ title: String) -> String {
+        let t = title.replacingOccurrences(of: #"\s*\|\s*spotify\s*$"#, with: "", options: [.regularExpression, .caseInsensitive])
+        return t.components(separatedBy: " - song").first ?? t
     }
 
     /// "Song - song and lyrics by Artist | Spotify" → "Artist Song".

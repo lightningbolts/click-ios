@@ -109,6 +109,18 @@ public final class LocalStore: @unchecked Sendable {
             tokenize = 'unicode61 remove_diacritics 2'
         );
         """)
+        // v1: earlier builds stored detached search windows as islands (history pages then
+        // skipped the gap or stopped early). Messages are a cache: drop them once and refetch.
+        if userVersion() < 1 {
+            exec("DELETE FROM messages; DELETE FROM conv_meta;")
+            if hasFTS { exec("DELETE FROM messages_fts;") }
+            exec("PRAGMA user_version = 1;")
+        }
+    }
+
+    private func userVersion() -> Int64 {
+        guard let db, let statement = Statement(db, "PRAGMA user_version") else { return 0 }
+        return statement.step() ? statement.int64(0) : 0
     }
 
     // MARK: - SQLite helpers (queue only)

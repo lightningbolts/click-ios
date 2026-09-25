@@ -139,10 +139,10 @@ public struct MessageBubbleView: View {
                         onEnded: swipeEnded
                     ))
                     .onGeometryChange(for: CGRect.self) { $0.frame(in: .global) } action: { bubbleFrame = $0 }
-                    .onLongPressGesture(minimumDuration: 0.3, maximumDistance: 12) {
+                    .gesture(PressAndHoldGesture {
                         ClickHaptics.impact(.medium)
                         onLongPress?(message, bubbleFrame)
-                    }
+                    })
                     .accessibilityAction(named: "Message actions") {
                         onLongPress?(message, bubbleFrame)
                     }
@@ -207,7 +207,7 @@ public struct MessageBubbleView: View {
 
             // The bubble hugs its text: the timestamp sits in space reserved at the end of the
             // last line (an invisible copy), so short messages get short bubbles.
-            (Text(message.content)
+            (bodyText
                 + Text(verbatim: "\u{2003}" + timePlaceholder).font(ClickTypography.caption).foregroundColor(.clear))
                 .font(ClickTypography.body)
                 .foregroundStyle(foreground)
@@ -231,6 +231,15 @@ public struct MessageBubbleView: View {
             .fill(message.isOutgoing ? ClickColors.messageOutgoing : ClickColors.messageIncoming)
         }
         .contentShape(RoundedRectangle(cornerRadius: ClickRadius.messageBubble, style: .continuous))
+    }
+
+    /// The message text; a call log leads with its direction/outcome icon.
+    private var bodyText: Text {
+        guard message.messageType == .callLog else { return Text(message.content) }
+        let unanswered = CallLogFormatting.isUnanswered(message.content)
+        let symbol = unanswered ? "phone.down.fill" : (message.isOutgoing ? "phone.arrow.up.right.fill" : "phone.arrow.down.left.fill")
+        return Text(Image(systemName: symbol)).foregroundColor(unanswered ? ClickColors.destructive : foreground)
+            + Text(verbatim: " " + message.content)
     }
 
     private var foreground: Color {

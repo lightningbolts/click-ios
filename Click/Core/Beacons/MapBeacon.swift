@@ -179,7 +179,8 @@ public struct MapBeacon: Codable, Identifiable, Hashable, Sendable {
             // An uploaded photo wins; otherwise a soundtrack shows its album art (upscaled from
             // iTunes' 100 px thumbnail so the hero isn't blurry).
             imageURL: JSONFields.string(meta, "image_url", "cover_url")
-                ?? SoundtrackResolver.artwork(JSONFields.string(meta, "album_art_url", "artworkUrl100", "artwork_url")),
+                ?? SoundtrackResolver.artwork(JSONFields.string(meta, "album_art_url", "artworkUrl100", "artwork_url"))
+                ?? (kind == .soundtrack ? SoundtrackResolver.linkThumbnail(JSONFields.string(meta, "music_url", "original_url")) : nil),
             schedule: EventSchedule(
                 start: JSONFields.date(meta["event_start_at"] ?? meta["eventStartAt"]),
                 end: JSONFields.date(meta["event_end_at"] ?? meta["eventEndAt"])

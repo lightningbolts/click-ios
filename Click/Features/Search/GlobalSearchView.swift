@@ -232,6 +232,21 @@ struct GlobalSearchView: View {
                 content
             }
             .listStyle(.plain)
+            .overlay(alignment: .top) {
+                // Outside the list, top-anchored and keyboard-independent: showing or hiding
+                // the keyboard (or closing the field) never moves it.
+                if clean.isEmpty {
+                    ContentUnavailableView {
+                        Label("Search Click", systemImage: "magnifyingglass")
+                    } description: {
+                        Text("Find people, messages, groups, events, hubs, and your plans.")
+                    }
+                    .fixedSize(horizontal: false, vertical: true)   // intrinsic height, pinned to the top
+                    .padding(.top, 24)
+                    .ignoresSafeArea(.keyboard)
+                    .allowsHitTesting(false)
+                }
+            }
             .navigationTitle("Search")
             .navigationBarTitleDisplayMode(.inline)
             .searchable(text: $query, isPresented: $isFieldActive, placement: .navigationBarDrawer(displayMode: .always), prompt: "People, messages, places, events")
@@ -250,12 +265,7 @@ struct GlobalSearchView: View {
     @ViewBuilder
     private var content: some View {
         if clean.isEmpty {
-            ContentUnavailableView {
-                Label("Search Click", systemImage: "magnifyingglass")
-            } description: {
-                Text("Find people, messages, groups, events, hubs, and your plans.")
-            }
-            .listRowSeparator(.hidden)
+            EmptyView()   // the empty state is the list's overlay
         } else if scope == .all {
             ForEach(SearchScope.allCases.dropFirst()) { section in
                 let rows = results.filter { $0.scope == section }
