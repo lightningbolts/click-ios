@@ -7,7 +7,6 @@ import SwiftUI
 public struct ChatView: View {
     @Environment(AppEnvironment.self) private var env
     @State private var model: ConversationModel
-    @State private var isNearBottom = true
     /// Moves the UIKit timeline (jump to latest / to a message).
     @State private var timeline = TimelineController()
     /// Messages that arrived while the reader was scrolled up.
@@ -188,11 +187,11 @@ public struct ChatView: View {
                 if model.items.last?.isOutgoing == true {
                     timeline.scrollToBottom(animated: true)
                     unseenCount = 0
-                } else if !isNearBottom {
+                } else if !timeline.isNearBottom {
                     unseenCount += 1
                 }
             }
-            .onChange(of: isNearBottom) { _, nearBottom in
+            .onChange(of: timeline.isNearBottom) { _, nearBottom in
                 if nearBottom { unseenCount = 0 }
             }
             .onChange(of: highlightedID) { timeline.refreshVisibleRows() }
@@ -260,9 +259,6 @@ public struct ChatView: View {
             onNearTop: {
                 Task { await model.loadOlder() }
             },
-            onNearBottomChanged: { near in
-                withAnimation(ClickMotion.selection) { isNearBottom = near }
-            },
             onUserScroll: {
                 if actionTarget != nil { actionTarget = nil }
             }
@@ -287,7 +283,7 @@ public struct ChatView: View {
             return true
         }
         .overlay(alignment: .bottomTrailing) {
-            if !isNearBottom || model.isDetachedFromLatest, !model.items.isEmpty {
+            if !timeline.isNearBottom || model.isDetachedFromLatest, !model.items.isEmpty {
                 jumpToLatestButton
                     .padding(.trailing, 16)
                     .padding(.bottom, 12)

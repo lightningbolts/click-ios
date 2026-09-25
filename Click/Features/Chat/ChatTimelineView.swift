@@ -10,9 +10,17 @@ enum ChatTimelineRow: Hashable, Sendable {
 }
 
 /// Imperative handle ChatView uses to move the timeline (jump to latest, jump to a message).
+///
+/// Also publishes whether the reader is near the bottom. This lives here, not in `@State`,
+/// because UIKit scroll callbacks can fire while SwiftUI is updating the view, and writing
+/// `@State` then is undefined behavior.
 @MainActor
+@Observable
 final class TimelineController {
-    fileprivate weak var coordinator: ChatTimelineView.Coordinator?
+    @ObservationIgnored fileprivate weak var coordinator: ChatTimelineView.Coordinator?
+
+    /// True while the newest message is (nearly) in view.
+    fileprivate(set) var isNearBottom = true
 
     func scrollToBottom(animated: Bool) {
         coordinator?.scrollToBottom(animated: animated)
@@ -51,7 +59,6 @@ struct ChatTimelineView: UIViewRepresentable {
     let controller: TimelineController
     let rowContent: (ChatTimelineRow) -> AnyView
     let onNearTop: () -> Void
-    let onNearBottomChanged: (Bool) -> Void
     let onUserScroll: () -> Void
 
     func makeCoordinator() -> Coordinator { Coordinator() }
@@ -90,6 +97,7 @@ struct ChatTimelineView: UIViewRepresentable {
     final class Coordinator: NSObject, UICollectionViewDelegate {
         var parent: ChatTimelineView?
         private weak var collectionView: TimelineCollectionView?
+        private weak var controller: TimelineController?
         private var dataSource: UICollectionViewDiffableDataSource<Int, ChatTimelineRow>?
         private var currentRows: [ChatTimelineRow] = []
         private var contentVersion = -1
@@ -101,6 +109,7 @@ struct ChatTimelineView: UIViewRepresentable {
 
         func attach(_ view: TimelineCollectionView, controller: TimelineController) {
             collectionView = view
+            self.controller = controller
             controller.coordinator = self
             view.delegate = self
             view.onLayout = { [weak self] in self?.afterLayout() }
@@ -246,7 +255,8 @@ struct ChatTimelineView: UIViewRepresentable {
                 self.nearBottomReportScheduled = false
                 guard let pending = self.pendingNearBottom else { return }
                 self.pendingNearBottom = nil
-                self.parent?.onNearBottomChanged(pending)
+                guard let controller = self.controller, controller.isNearBottom != pending else { return }
+                withAnimation(ClickMotion.selection) { controller.isNearBottom = pending }
             }
         }
 
