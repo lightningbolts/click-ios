@@ -299,7 +299,7 @@ private struct ChatImageView: View {
     }
 
     /// One Core Image context for every Drop (creating one per call is expensive).
-    private nonisolated(unsafe) static let ciContext = CIContext()
+    private static let ciContext = CIContext()
 
     nonisolated static func pixelated(_ image: UIImage) -> UIImage? {
         guard let input = CIImage(image: image) else { return nil }
