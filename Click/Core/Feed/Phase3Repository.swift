@@ -22,7 +22,17 @@ public actor Phase3Repository {
     }
 
     public func cachedClicks(for userID: String) -> ClicksSnapshot? {
-        cached(ClicksSnapshot.self, key: "phase3.clicks.\(userID)")
+        guard defaults === UserDefaults.standard else {
+            return cached(ClicksSnapshot.self, key: "phase3.clicks.\(userID)")
+        }
+        if let stored = LocalStore.shared.load(ClicksSnapshot.self, key: "inbox.snapshot", userID: userID) {
+            return stored.value
+        }
+        // One-time move of the inbox snapshot out of UserDefaults.
+        guard let legacy = cached(ClicksSnapshot.self, key: "phase3.clicks.\(userID)") else { return nil }
+        LocalStore.shared.save(legacy, key: "inbox.snapshot", userID: userID)
+        defaults.removeObject(forKey: "phase3.clicks.\(userID)")
+        return legacy
     }
 
     /// Builds the Clicks inbox in three requests regardless of inbox size: the connections
@@ -52,11 +62,25 @@ public actor Phase3Repository {
 
         async let identitiesTask = fetchIdentities(userIDs: peerIDs)
         async let previewsTask = fetchInboxPreviews(currentUserID: userID)
-        let identities = await identitiesTask
-        let previews = await previewsTask
+        var (identities, identitiesFailed) = await identitiesTask
+        var previewsResult = await previewsTask
+        // Enrichments get one quiet retry: without previews, rows lose their chat IDs and unread
+        // counts, which also breaks realtime's in-place updates.
+        if previewsResult == nil {
+            try? await Task.sleep(for: .milliseconds(600))
+            previewsResult = await fetchInboxPreviews(currentUserID: userID)
+        }
+        if identitiesFailed {
+            let retry = await fetchIdentities(userIDs: peerIDs.filter { identities[$0] == nil })
+            identities.merge(retry.0) { _, new in new }
+            identitiesFailed = retry.1
+        }
+        let previews = previewsResult ?? [:]
+        let previous = cachedClicks(for: userID)
+        let previousByID = Dictionary(((previous?.connections ?? []) + (previous?.archived ?? [])).map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first })
 
         func items(_ rows: [[String: Any]], archived: Bool) -> [ConnectionItem] {
-            Self.inboxItems(
+            let built = Self.inboxItems(
                 rows: rows,
                 currentUserID: userID,
                 identities: identities,
@@ -65,6 +89,11 @@ public actor Phase3Repository {
                 archived: archived,
                 now: Date()
             )
+            guard identitiesFailed || previewsResult == nil else { return built }
+            return built.map {
+                $0.filling(from: previousByID[$0.id], identityMissing: identities[$0.userID] == nil, previewMissing: previewsResult == nil)
+            }
+            .sorted { ($0.lastActivityAt ?? .distantPast) > ($1.lastActivityAt ?? .distantPast) }
         }
 
         let snapshot = ClicksSnapshot(
@@ -73,7 +102,11 @@ public actor Phase3Repository {
             groups: [],
             mapPins: Self.mapPins(rows: mapRows, currentUserID: userID, identities: identities, coreIDs: coreIDs)
         )
-        store(snapshot, key: "phase3.clicks.\(userID)")
+        if defaults === UserDefaults.standard {
+            LocalStore.shared.save(snapshot, key: "inbox.snapshot", userID: userID)
+        } else {
+            store(snapshot, key: "phase3.clicks.\(userID)")
+        }
         return snapshot
     }
 
@@ -104,12 +137,14 @@ public actor Phase3Repository {
     }
 
     /// Batched display names and avatar URLs (`POST /api/users/display-names`, ≤100 per call).
-    private func fetchIdentities(userIDs: [String]) async -> [String: InboxIdentity] {
+    /// Returns the identities fetched and whether any chunk failed.
+    private func fetchIdentities(userIDs: [String]) async -> ([String: InboxIdentity], Bool) {
         var result: [String: InboxIdentity] = [:]
+        var failed = false
         for chunk in stride(from: 0, to: userIDs.count, by: 100).map({ Array(userIDs[$0..<min($0 + 100, userIDs.count)]) }) {
             do {
                 let body = try JSONSerialization.data(withJSONObject: ["userIds": chunk])
-                let request = APIRequest(path: "/api/users/display-names", method: .post, body: body, requiresAuth: true)
+                let request = APIRequest(path: "/api/users/display-names", method: .post, body: body, requiresAuth: true, idempotent: true)
                 let (data, _) = try await api.executeRaw(request)
                 let root = try Self.jsonObject(data)
                 let names = root["names"] as? [String: Any] ?? [:]
@@ -118,27 +153,32 @@ public actor Phase3Repository {
                     result[id] = InboxIdentity(name: Self.string(names[id]), avatarURL: Self.string(images[id]))
                 }
             } catch {
-                // Rows fall back to "Click user" with generated avatars; the next refresh retries.
+                // Rows keep the previously known name/avatar (or "Click user"); retried later.
+                ClickLog.net.error("display-names enrichment failed: \(String(describing: error), privacy: .public)")
+                failed = true
                 continue
             }
         }
-        return result
+        return (result, failed)
     }
 
     /// Latest message and unread count per direct chat via the approved, RLS-scoped
     /// `get_inbox_previews` RPC shared with the Android and web clients.
-    private func fetchInboxPreviews(currentUserID: String) async -> [String: InboxPreviewRow] {
+    /// nil when the RPC failed (distinct from "no previews"), so callers keep previous values.
+    private func fetchInboxPreviews(currentUserID: String) async -> [String: InboxPreviewRow]? {
         guard let supabaseURL, !supabaseAnonKey.isEmpty else { return [:] }
         let request = APIRequest.supabaseRPC("get_inbox_previews", baseURL: supabaseURL, anonKey: supabaseAnonKey, body: Data("{}".utf8))
-        guard
-            let (data, _) = try? await api.executeRaw(request),
-            let rows = try? JSONSerialization.jsonObject(with: data) as? [[String: Any]]
-        else {
-            // Without previews the inbox still lists every connection; unread badges resume
-            // on the next successful refresh.
-            return [:]
+        do {
+            let (data, _) = try await api.executeRaw(request)
+            guard let rows = try JSONSerialization.jsonObject(with: data) as? [[String: Any]] else {
+                ClickLog.net.error("get_inbox_previews returned an unexpected shape: \(ClickLog.excerpt(data), privacy: .private)")
+                return nil
+            }
+            return Self.inboxPreviews(from: rows, currentUserID: currentUserID)
+        } catch {
+            ClickLog.net.error("get_inbox_previews failed: \(String(describing: error), privacy: .public)")
+            return nil
         }
-        return Self.inboxPreviews(from: rows, currentUserID: currentUserID)
     }
 
     struct InboxIdentity: Sendable {
@@ -363,7 +403,8 @@ public actor Phase3Repository {
     }
 
     private nonisolated static func jsonObject(_ data: Data) throws -> [String: Any] {
-        guard let object = try JSONSerialization.jsonObject(with: data) as? [String: Any] else {
+        guard let object = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else {
+            ClickLog.net.error("connections bundle is not a JSON object: \(ClickLog.excerpt(data), privacy: .private)")
             throw APIError.decoding
         }
         return object

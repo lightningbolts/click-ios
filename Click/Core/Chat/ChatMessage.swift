@@ -37,7 +37,7 @@ public struct ReactionSummary: Identifiable, Hashable, Codable, Sendable {
     }
 }
 
-public struct ChatMessageItem: Identifiable, Hashable, Sendable {
+public struct ChatMessageItem: Identifiable, Hashable, Sendable, Codable {
     public let id: String
     public let chatID: String
     public let senderID: String
@@ -67,6 +67,14 @@ public struct ChatMessageItem: Identifiable, Hashable, Sendable {
     public var uploadProgress: MediaUploadProgress?
     /// "Message deleted" placeholder (server tombstone or a realtime delete seen live).
     public var isDeleted = false
+
+    /// Persisted fields (LocalStore). The local media path and upload progress are
+    /// device/session-specific and never stored.
+    private enum CodingKeys: String, CodingKey {
+        case id, chatID, senderID, senderName, senderAvatarURL, content, rawContent, messageType
+        case createdAt, deliveryStatus, isOutgoing, replyToID, replyToSnippet, replyToSenderName
+        case reactions, isEdited, media, beacon, clientMessageID, isDeleted
+    }
 
     /// The placeholder that replaces a deleted message in place.
     public func tombstoned() -> ChatMessageItem {
@@ -210,7 +218,7 @@ public struct ConversationIdentity: Hashable, Sendable {
 
 /// Card data for a shared beacon/event (KMP `toBeaconChatMetadata`). The card metadata is
 /// plaintext by design (public beacon fields only).
-public struct SharedBeacon: Hashable, Sendable {
+public struct SharedBeacon: Hashable, Sendable, Codable {
     public let beaconID: String
     public let kind: BeaconKind
     public let title: String

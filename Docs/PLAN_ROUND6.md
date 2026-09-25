@@ -1,549 +1,398 @@
-# Click iOS — Round 6 fix plan
+# Click iOS — Round 6 plan (revision 2: corrections after the first implementation)
 
-Scope: the five open bugs from device testing (items 3, 4, 5, 7, 10), plus deploying one server change. Items 1, 2, 6, 8, 9 and 11 are resolved. **Don't touch them.**
+The first implementation of this plan was commit `e45aace`, on the old `round5-parity` branch. It fixed the timeline and mostly fixed Nearby. It also caused these regressions:
+
+| # | Symptom on the phone | Verified root cause in `e45aace` |
+|---|---|---|
+| R1 | Some Click Drops, photos and files never load, inconsistently | `ChatView` passes closures to rows through a `ChatRowActions` object that is only filled in `.onAppear` (`setupRowActions`), **after** the first render. `MessageBubbleView` reads `mediaLoader` at init, so it's `nil` on the first pass and the bubble renders as plain text. `MessageRow.==` ignores the actions object, so the row is **never re-rendered** afterwards. |
+| R2 | Messages bounce on chat open | The same rows first render as text bubbles. Whenever a row does re-render later (any item change), it turns into a media bubble with a different height. The chat-wide `.transaction { disablesAnimations }` also fights the initial layout. |
+| R3 | The tab bar shows inside chats | `.toolbar(.hidden, for: .tabBar)` was removed and replaced with a UIKit swizzle (`TabBarPushPolicy`). **Verified in the simulator:** SwiftUI's `NavigationStack` *does* call `pushViewController`, and the swizzle *did* set `hidesBottomBarWhenPushed = true`, but SwiftUI's `TabView` ignores that flag and keeps the bar visible. No UIKit-flag approach can work. |
+| R4 | Choosing an emoji not in the bar opens two dialogs | The **+** button dismisses the full-screen overlay **and** presents a second `.sheet` from `ChatView` at the same moment: a clear 60 pt sheet plus the keyboard, or the fallback sheet. Two presentations race. |
+| R5 | Nearby only "somewhat" fixed | The structure is right (lip plus native sheet). Missing pieces: list scrolling at medium resizes the sheet, search doesn't expand it, and there's no check for the lip's tap target or for re-opening. |
 
 Follow the steps **in order**. Each step lists:
 - the files to change,
 - the exact change,
 - what *not* to do,
-- a **Done when** check you must confirm before moving on.
+- a **Done when** check.
 
-If a Done-when check fails, stop and fix it. Never mark a step done on the strength of a green build alone.
+**A green build proves nothing about these bugs.** Check every Done-when on the phone and report what you saw.
 
 ---
 
-## 0. Ground rules (read first)
+## 0. Ground rules
 
-**Repos and branches**
-- `click-ios` is on branch `round5-parity`; commit there.
-- `click-web` is on branch `feat/ios-round5`.
-- Never commit to `main`.
+**Branches**
+- `click-ios`: work on **`feat/ios-round6`**, which is `main` plus this plan. Never commit to `main`.
+- `click-web`: branch **`feat/ios-round6`** already has the server auth commit (`d4d1e34`, "verify mobile bearer tokens locally against Supabase JWKS").
 
-**Build and test commands** (from `click-ios/`):
+**Build, install and log commands** (from `click-ios/`):
 ```
 xcodegen generate
-# unit tests (the iPhone 17 simulator hangs; use the iPhone 18 Pro simulator)
 xcodebuild test -scheme ClickTests -destination 'platform=iOS Simulator,id=72F1B726-931E-4450-9617-919CEE1EFABA' \
   CODE_SIGN_IDENTITY=- CODE_SIGN_STYLE=Manual DEVELOPMENT_TEAM= PROVISIONING_PROFILE_SPECIFIER= \
   -derivedDataPath /tmp/claude-501/click-dd -collect-test-diagnostics never
-# build + install on the owner's iPhone (cable)
 xcodebuild build -scheme Click -configuration Debug -destination 'id=00008120-00025DA90E84C01E' \
   -derivedDataPath /tmp/claude-501/click-dd-dev -allowProvisioningUpdates
 xcrun devicectl device install app --device 00008120-00025DA90E84C01E /tmp/claude-501/click-dd-dev/Build/Products/Debug-iphoneos/Click.app
-# launch with console (prints [net] request timings and [auth] state changes in Debug builds)
 xcrun devicectl device process launch --console --terminate-existing --device 00008120-00025DA90E84C01E compose.project.click.click
 ```
-If the simulator is stuck "Shutting Down", run `xcrun simctl shutdown all` and `killall -9 com.apple.CoreSimulator.CoreSimulatorService`, then boot it again.
+- If the simulator is stuck "Shutting Down": `xcrun simctl shutdown all; killall -9 com.apple.CoreSimulator.CoreSimulatorService`, then boot it again.
+- Simulator UI checks: install the build, then launch with `xcrun simctl launch 72F1B726-931E-4450-9617-919CEE1EFABA compose.project.click.click -preview-shell`. That argument shows the real tab shell without a session, which is enough for tab-bar checks.
 
-**Swift 6 rules this codebase already follows**
-- Static helpers that tests or pure code call from inside `@MainActor` types must be `nonisolated`.
-- Never pass `[String: Any]` into actors.
-- iOS 26-only APIs go behind `#if compiler(>=6.2)` plus `#available`.
-- The deployment target is iOS 18.2, so `UIGestureRecognizerRepresentable`, `onScrollGeometryChange` and `onScrollPhaseChange` are all available.
+**Never do these** (each one caused a regression above):
+1. Never fill closures, loaders or any input a view needs for its **first** render in `.onAppear`, `.task` or `init` side effects of another view. Everything a row needs must be passed in the same `body` pass that creates it.
+2. Never write an `Equatable` view whose `==` ignores an input the view renders with. Don't add `.equatable()` to chat rows at all in this round.
+3. Never present a second sheet or cover while another presentation from the same screen is showing or being dismissed. One presented surface at a time.
+4. Never swizzle UIKit methods. Never use `hidesBottomBarWhenPushed`; it doesn't work with SwiftUI's `TabView` (verified).
+5. Never apply `.transaction { $0.disablesAnimations = true }` or a blanket `.animation(nil)` to the whole chat screen.
+6. Never remove `.toolbar(.hidden, for: .tabBar)` unless step 5's replacement is in place in the same commit.
+7. Don't delete or rewrite code outside the files a step names.
 
-**Code rules**
-- DRY: one implementation per behavior; delete code you replace.
-- Match the surrounding comment density and naming.
-- No new third-party dependencies in iOS.
-- Tests: add **only** the tests named in each step. The owner asked for minimal testing this round.
+**Tests:** add only the tests named in a step; the owner asked for minimal testing.
 
-**Ledger**
-- Append one row per item to `Docs/PARITY_LEDGER.md`, before the `## Phase 4 Direct Chat merge gate` heading, in the same column format as rows F88–F111.
-- Device-only checks stay "Pending" unless the owner confirmed them.
+**Ledger:** one row per item in `Docs/PARITY_LEDGER.md`, before `## Phase 4 Direct Chat merge gate`, in the format of rows F88–F111. Device checks stay "Pending" unless the owner confirmed them.
 
 ---
 
-## Step 1 — Deploy the server auth speedup (click-web)
+## Step 1 — Bring in the first implementation, then remove its broken parts
 
-Already implemented and committed on `feat/ios-round5` (commit `7c28c9f`, "verify mobile bearer tokens locally against Supabase JWKS"):
-- `lib/server/verifyBearerJwt.ts` verifies ES256 access tokens locally against `https://lrgcwnmcscimkmslihxp.supabase.co/auth/v1/.well-known/jwks.json`.
-- `lib/server/supabaseRouteAuth.ts` uses that check first and falls back to `supabase.auth.getUser` only when it can't decide.
+1. From `feat/ios-round6`: run `git cherry-pick e45aace`. It applies cleanly (verified).
+2. Delete these files and every reference to them:
+   - `Click/App/TabBarPushPolicy.swift`
+   - The line `TabBarPushPolicy.install()` in `Click/App/ClickApp.swift`
+   - Every `.hidesTabBarWhenPushed()` call (it's defined in `TabBarPushPolicy.swift`; search the project with `grep -rn "hidesTabBarWhenPushed" Click`)
+3. In `Click/Features/Chat/ChatView.swift`, delete the `.transaction { transaction in if actionTarget != nil { transaction.disablesAnimations = true } }` modifier.
+4. Run `xcodegen generate` and build. Fix only compile errors caused by these removals.
 
-Remaining work:
-1. Open a PR from `feat/ios-round5` to `main` in click-web and let the owner merge and deploy. **Don't merge it yourself.**
-2. After deployment, measure on the phone: launch with `--console` and read the `[net]` lines.
-
-**Done when:** authenticated `/api/...` calls in the console log average **< 600 ms**; before this change they took 1,000–1,900 ms. Record before and after numbers in the ledger row.
+**Done when:** it builds, and `grep -rn "TabBarPushPolicy\|hidesTabBarWhenPushed\|disablesAnimations = true" Click/Features/Chat Click/App` returns nothing.
 
 ---
 
-## Step 2 — Item 4: chat jumps to the top, laggy fast scrolling, and reloading on re-entry
+## Step 2 — R1 and R2: chat rows render media on the first pass and never bounce
 
-All three symptoms have known root causes. Fix all of them in `Click/Features/Chat/ChatView.swift` and `Click/Features/Chat/ConversationModel.swift`, with one small new type.
+File: `Click/Features/Chat/ChatView.swift`.
 
-### 2a. Jump to the top: root cause
-Last round, `ChatView.timeline` switched to an **eager** `VStack` for chats of ≤150 messages (`TimelineStack(lazy: model.items.count > Self.eagerRowLimit)`).
-
-1. In an eager `VStack`, **every** row's `onAppear` fires immediately, including the top "older history" sentinel (the `ProgressView` with `.onAppear { isTopSentinelVisible = true; requestOlderHistory(proxy:) }`).
-2. That loads older pages at once.
-3. `requestOlderHistory` then calls `proxy.scrollTo(anchor, anchor: .top)`, where `anchor = topVisibleID ?? model.items.first?.stableID`. That is the **first (oldest) message**, so the chat jumps to months ago.
-
-Fix:
-1. **Delete** `TimelineStack` (the private struct at the bottom of `ChatView.swift`) and `eagerRowLimit`. Go back to a plain `LazyVStack(spacing: 2)`. Keep the photo aspect-ratio cache (`MediaAspectCache`); it stays useful.
-2. **Delete** the sentinel's `onAppear` / `onDisappear` and the `isTopSentinelVisible` state. Keep the `ProgressView` row itself, shown only while `model.isLoadingOlder`.
-3. Trigger older history from **scroll geometry**, and only after the user has scrolled:
+1. **Delete** the `private final class ChatRowActions`, the `private struct MessageRow`, the `rowActions` state, `setupRowActions(proxy:)` and the `.onAppear { setupRowActions(proxy: proxy) }` call.
+2. Replace the `ForEach` body in `timeline(proxy:)` with the inline row below. It is the row from `main` (commit `58c6d15`, `ChatView.swift` lines 241–303) minus the old `onMoreReactions` argument and plus `onLongPress`. Keep the `byID` dictionary computed once at the top of `timeline(proxy:)`.
    ```swift
-   @State private var userHasScrolled = false
-   // on the ScrollView:
-   .onScrollPhaseChange { _, phase in
-       if phase == .interacting { userHasScrolled = true }
-   }
-   .onScrollGeometryChange(for: Bool.self) { geometry in
-       geometry.contentOffset.y + geometry.contentInsets.top < 600   // within 600 pt of the top
-   } action: { _, nearTop in
-       if nearTop, userHasScrolled { requestOlderHistory(proxy: proxy) }
+   ForEach(Array(model.items.enumerated()), id: \.element.stableID) { index, item in
+       if shouldShowDateHeader(at: index) {
+           Self.dateHeader(item.createdAt)
+       }
+       if item.id == model.firstUnreadID {
+           UnreadDivider().id("unread-divider")
+       }
+       MessageBubbleView(
+           message: item,
+           onReply: { target in
+               withAnimation(ClickMotion.selection) {
+                   model.editTarget = nil
+                   model.replyTarget = target
+               }
+           },
+           onEdit: { target in
+               withAnimation(ClickMotion.selection) {
+                   model.replyTarget = nil
+                   model.editTarget = target
+                   model.composerText = target.content
+               }
+           },
+           onDelete: { target in Task { await model.deleteMessage(item: target) } },
+           onToggleReaction: { target, emoji in Task { await model.toggleReaction(item: target, reactionType: emoji) } },
+           onRetrySend: { target in Task { await model.retrySend(item: target) } },
+           showsSenderName: !model.identity.isDirect && startsSenderRun(at: index),
+           showsReceipts: model.identity.supportsReceipts,
+           mediaLoader: { message in try await model.mediaURL(for: message) },   // never nil
+           onOpenMedia: { url, kind in
+               if kind == .image { viewerURL = ViewerURL(url: url) } else { quickLookURL = url }
+           },
+           onOpenBeacon: { beacon in
+               env.router.navigate(to: beacon.isEvent ? .event(beaconID: beacon.beaconID) : .beacon(beaconID: beacon.beaconID))
+           },
+           onDiscardFailed: { target in withAnimation(ClickMotion.content) { model.discardFailed(item: target) } },
+           onForward: conversations != nil && model.canForward(item) ? { forwarding = $0 } : nil,
+           onSaveMedia: { target in Task { await saveOrShare(target) } },
+           onShowReactions: { target, reaction in reactorsFor = ReactorsTarget(message: target, reaction: reaction) },
+           replyTarget: item.replyToID.flatMap { byID[$0] },
+           onTapReplyQuote: { id in Task { await jump(to: id, proxy: proxy) } },
+           onLongPress: { message, frame in actionTarget = ActionTarget(message: message, frame: frame) }
+       )
+       .background {
+           if highlightedID == item.stableID {
+               ClickColors.accentForeground.opacity(0.14).transition(.opacity)
+           }
+       }
+       .id(item.stableID)
+       .transition(.asymmetric(
+           insertion: .move(edge: .bottom).combined(with: .scale(scale: 0.92, anchor: item.isOutgoing ? .bottomTrailing : .bottomLeading)).combined(with: .opacity),
+           removal: .opacity
+       ))
    }
    ```
-   Keep the existing near-bottom `onScrollGeometryChange` as a **separate** modifier.
-4. In `requestOlderHistory`:
-   - Remove the `isTopSentinelVisible` guard.
-   - Keep the 300 ms debounce and the `hasMoreHistory` / `!isLoadingOlder` guards.
-   - Take the anchor from the visible-rows box (2b). **Never** fall back to `model.items.first`. If no anchor is known, don't call `scrollTo` at all.
-5. Delete the `.onAppear` of the "unread divider" scroll if any remains. The divider row stays; the chat must **always** open at the bottom.
+3. **Keep** from `e45aace` (these are correct and fix the lag):
+   - the plain `LazyVStack(spacing: 2)`
+   - the removal of `.scrollPosition(id:)`
+   - the `VisibleRows` reference box with `.onScrollTargetVisibilityChange`
+   - the `userHasScrolled` + `onScrollGeometryChange` near-top trigger
+   - `ChatBackground(...).equatable()` with the `Canvas` `.drawingGroup()`
+   - the per-conversation model registry in `AppEnvironment`
+4. `MessageBubbleView.swift`: change `mediaLoader` from optional to **required** (`let mediaLoader: (ChatMessageItem) async throws -> URL`, no default). The media branch becomes `else if let media = message.media { … MessageMediaContent(…, load: { try await mediaLoader(message) }, …) }`. The compiler then shows every call site that could render media without a loader. Fix each by passing `{ try await model.mediaURL(for: $0) }`, including the lifted copy in `MessageActionOverlay` (step 4). Where no model exists, pass `{ _ in throw ChatRepositoryError.mediaUnavailable }`.
+5. Opening a chat must never move the timeline:
+   - Keep `.defaultScrollAnchor(.bottom)`.
+   - The only programmatic scroll on open is the existing `.onChange(of: model.phase)` handler, and it must run **only** when the phase changes *to* `.loaded` from `.initial`/`.loading`. Guard it with `guard oldPhase != .loaded, newPhase == .loaded`, using the two-parameter `onChange` closure.
+   - A reused model that is already `.loaded` doesn't scroll at all.
+   - Don't add any other `scrollTo` on appear.
 
-### 2b. Laggy fast scrolling: root cause
-`.scrollPosition(id: $topVisibleID, anchor: .top)` writes `@State topVisibleID` on every row change while scrolling. That re-runs the whole `ChatView.body`, including every `MessageBubbleView` and the `Canvas` in `ChatBackground`, many times per second.
+**Tests (only this one):** none new. Run the existing suite.
 
-Fix:
-1. **Delete** `.scrollPosition(id: $topVisibleID, anchor: .top)` and `@State topVisibleID`.
-2. Add a non-observed reference box, so writes never re-render:
-   ```swift
-   /// Rows currently on screen, updated while scrolling without invalidating the view.
-   private final class VisibleRows { var topID: String? }
-   @State private var visibleRows = VisibleRows()
-   // on the ScrollView (the LazyVStack keeps .scrollTargetLayout()):
-   .onScrollTargetVisibilityChange(idType: String.self, threshold: 0.2) { ids in
-       visibleRows.topID = ids.first
-   }
-   ```
-   `requestOlderHistory` reads `visibleRows.topID` as its anchor.
-3. Make each row equatable, so SwiftUI skips unchanged rows when `body` does re-run (new message, typing indicator, and so on):
-   - Create `private struct MessageRow: View, Equatable` in `ChatView.swift`. It renders the date header (if any), the unread divider (if any), and the `MessageBubbleView`, with the highlight background and `.id(item.stableID)`.
-   - **Stored value inputs:**
-     - `item: ChatMessageItem`
-     - `showsDateHeader: Bool`
-     - `isFirstUnread: Bool`
-     - `showsSenderName: Bool`
-     - `showsReceipts: Bool`
-     - `isHighlighted: Bool`
-     - `replyTarget: ChatMessageItem?`
-     - `canForward: Bool`
-   - **Closures** go in one reference type created once per `ChatView`: `final class ChatRowActions`, holding `onReply`, `onEdit`, `onDelete`, and so on, assigned in `.onAppear`.
-   - `static func ==` compares **only the value inputs**, never the actions object.
-   - Use it as `MessageRow(...).equatable()` inside the `ForEach`.
-4. Make the background static:
-   - In `DesignSystem/Components/ChatBackground.swift`, conform `ChatBackground` to `Equatable` (compare `seed`).
-   - Use `.equatable()` where `ChatView` builds it.
-   - Add `.drawingGroup()` to the `Canvas`, so the dot pattern rasterizes once.
-5. `ForEach(Array(model.items.enumerated()), …)` stays. The `byID` dictionary stays, but compute it once per `body`, not per row.
+**Done when:** on the phone, check each of these message types in a direct chat, a group and a hub (hub: photo and Click Drop only):
+- text
+- photo
+- locked Click Drop (pixelated with the "develops in" label)
+- developed Click Drop
+- voice note (plays)
+- file (opens Quick Look)
+- event card
+- a reply quoting a photo (thumbnail shows)
 
-### 2c. "Loading conversation" on every re-entry: root cause
-`AppEnvironment.conversationModel(for:)` builds a **new** `ConversationModel` for every push.
-
-A new model starts with no decrypted media URLs, no `firstUnreadID`, `hasMoreHistory = true`, and a fresh `loadMessages()`. The timeline cache only keeps 80 messages, and `HubChatView` always shows "Opening hub…" while it re-resolves the hub over the network.
-
-Fix: keep one live model per conversation for the session, the same pattern as `PeerProfileModel.registry` (`Click/Features/Profile/PeerProfileModel.swift`, lines 44–62).
-1. In `AppEnvironment` (`Click/App/AppEnvironment.swift`):
-   ```swift
-   /// One live model per conversation for the session: re-entering a chat shows exactly what was
-   /// on screen (timeline, decrypted media, older pages) and refreshes in place.
-   private var conversationModels: [String: ConversationModel] = [:]
-
-   public func conversationModel(for identity: ConversationIdentity) -> ConversationModel {
-       let key = identity.hubID ?? identity.connectionID ?? identity.chatID
-       if let existing = conversationModels[key] { return existing }
-       let model = ConversationModel(/* existing arguments, unchanged */)
-       conversationModels[key] = model
-       return model
-   }
-   ```
-   Also clear `conversationModels` in `clearSessionCaches()`.
-2. In `ConversationModel`, make the lifecycle safe for reuse:
-   - `onAppear`: if `phase == .loaded` and `items` isn't empty, **don't** set `phase = .loading`. Still re-subscribe realtime and call `loadMessages()`, which merges in place (it already does).
-   - `onDisappear`: keep realtime teardown and `saveToCache()`. **Don't** clear `items`, `mediaURLs`, `hasMoreHistory` or `firstUnreadID`.
-   - `firstUnreadID`: reset `hasCapturedUnread = false` and `firstUnreadID = nil` in `onDisappear`, so the next visit recomputes it.
-   - The `reveal` / `isDetachedFromLatest` state: call `await returnToLatest()` at the start of `onAppear` if `isDetachedFromLatest`.
-3. `HubChatView` (`Click/Features/Hubs/HubChatView.swift`):
-   - Keep the resolved `HubInfo` in a static `[hubID: HubInfo]` cache.
-   - When a cached `HubInfo` exists, set `phase = .ready(cachedHub, env.conversationModel(for: identity))` **immediately**, then re-resolve in the background and update only if something changed.
-   - On a background failure with `.ended` or `.accessDenied`, fall back to the current failure UI.
-4. `ChatView` initial scroll:
-   - The existing `.onChange(of: model.phase)` scroll-to-bottom runs only when the phase *changes* to `.loaded`.
-   - For a reused model that is already `.loaded`, rely on `.defaultScrollAnchor(.bottom)` and add **no** extra `scrollTo`.
-
-**Tests (only these):** in `Tests/ClickTests/MessageOperationsTests.swift`, add one test: the same identity returns the same `ConversationModel` instance from `AppEnvironment.conversationModel(for:)`. Use `AppEnvironment(network: NetworkMonitor(start: false))`.
-
-**Done when:** all of these pass on the phone:
-1. Open a group with more than 150 messages 10 times: it opens at the latest message every time, with no visible jump.
-2. Fling-scroll quickly from bottom to top and back in that chat: no visible stutter. Older pages load only when you get near the top.
-3. Go back to the list and reopen the chat: messages and photos appear instantly, with no spinner and no "Loading conversation…".
-4. Reopen a hub: no "Opening hub…" screen.
+Each must render correctly on **every** one of 10 consecutive opens of the same chat. On each open, the timeline appears at the latest message with **no visible movement**. Record a screen capture of 3 opens and confirm frame by frame that nothing shifts.
 
 ---
 
-## Step 3 — Item 3: WhatsApp-style reactions (a separate bar above the message)
+## Step 3 — Scroll performance check (no new code unless it fails)
 
-Target, from the owner's WhatsApp screenshot:
-- On long-press, the background dims and blurs.
-- The message is lifted and shown sharp.
-- A **separate floating capsule** of reactions sits directly **above** the message: 👍 ❤️ 😂 😮 😢 🙏, then a round **+** button.
-- The **action menu** is a separate rounded panel directly **below** the message: Reply, Forward, Copy, Edit, Save/Share, Delete in red.
-- **+** opens a picker with the **entire** emoji set, including search, categories and skin tones.
-
-SwiftUI's `.contextMenu` can't host a separate bar above the preview, so this replaces `.contextMenu` for message bubbles.
-
-### 3a. Remove the old menu
-In `Click/Features/Chat/MessageBubbleView.swift`:
-- Delete the whole `.contextMenu { … }` block and its `ControlGroup` / `.controlGroupStyle(.palette)`.
-- Keep the `.confirmationDialog("Delete for everyone?")`.
-- Delete `EmojiPickerSheet` from `Click/Features/Chat/ChatMessageSheets.swift` and its `.sheet(item: $reactingTo)` in `ChatView`.
-
-### 3b. The long-press trigger
-In `MessageBubbleView`:
-- Add `var onLongPress: ((ChatMessageItem, CGRect) -> Void)?`.
-- Track the bubble's global frame: `.onGeometryChange(for: CGRect.self) { $0.frame(in: .global) } action: { bubbleFrame = $0 }`, with `@State private var bubbleFrame: CGRect = .zero`.
-- Add `.onLongPressGesture(minimumDuration: 0.35) { ClickHaptics.impact(.medium); onLongPress?(message, bubbleFrame) }`. Attach it to `content`, in the same place the context menu was.
-- It must not break scrolling or the swipe gesture: `onLongPressGesture` fails as soon as the finger moves, so scrolling still wins.
-- Accessibility: add `.accessibilityAction(named: "Message actions") { onLongPress?(message, bubbleFrame) }`.
-
-### 3c. The overlay component
-Create `Click/Features/Chat/MessageActionOverlay.swift`:
-```swift
-/// WhatsApp-style actions for one message: dimmed, blurred backdrop; the message lifted in place;
-/// a reaction capsule above it; an action panel below it. Tapping the backdrop dismisses.
-struct MessageActionOverlay: View {
-    let message: ChatMessageItem
-    let sourceFrame: CGRect          // bubble frame in global coordinates
-    let bubble: AnyView              // a non-interactive copy of the bubble to show lifted
-    let actions: [MessageAction]     // built by ChatView (only the ones that apply)
-    let onReact: (String) -> Void
-    let onMoreReactions: () -> Void
-    let onDismiss: () -> Void
-}
-
-struct MessageAction: Identifiable {
-    let id: String
-    let title: String
-    let systemImage: String
-    var isDestructive = false
-    let perform: () -> Void
-}
-```
-Layout rules. Use a `GeometryReader` filling the screen and `.ignoresSafeArea()`:
-
-1. **Backdrop:** `Rectangle().fill(.ultraThinMaterial)` plus `Color.black.opacity(0.35)`, full screen, `.onTapGesture(perform: onDismiss)`.
-2. **Bubble copy:** placed at `sourceFrame` with `.position(x: sourceFrame.midX, y: clampedMidY)`, `.allowsHitTesting(false)`.
-   - `clampedMidY` shifts the bubble so that reaction bar (56 pt) + 8 pt gap + bubble + 8 pt gap + menu height fits between the top safe area + 8 and the bottom safe area − 8.
-   - If the bubble is taller than the available space, cap its visible height at 40% of the screen with `.frame(maxHeight:)` and `.clipped()`, as WhatsApp does with long messages.
-3. **Reaction capsule:** directly above the bubble copy.
-   - Width `min(screenWidth − 32, 7 × 48 + 56)`.
-   - Aligned to the bubble's leading edge for incoming messages and trailing edge for outgoing, clamped inside the screen with 16 pt margins.
-   - Contents: `HStack(spacing: 4)` of the six quick emojis (`["👍", "❤️", "😂", "😮", "😢", "🙏"]`) as `Button`s, each `Text(emoji).font(.system(size: 30))` in a 44×44 frame. Mark the emoji(s) the current user already reacted with using a `ClickColors.selectionTint` circle behind it (`message.reactions.first { $0.reactionType == emoji }?.userReacted`).
-   - Last: a 40×40 circular **+** button (`Image(systemName: "plus")` on `ClickColors.fillStrong`).
-   - Background: `.glassCircleBackground()`, the existing helper, which renders a capsule.
-   - Tapping an emoji calls `onReact(emoji)` then `onDismiss()`. **+** calls `onMoreReactions()`.
-4. **Action panel:** directly below the bubble copy.
-   - Width 250, aligned like the capsule.
-   - `VStack(spacing: 0)` of rows: `HStack { Image(systemName:) 22 pt wide; Text(title) }` in `ClickTypography.body`, 48 pt minimum height, 16 pt horizontal padding.
-   - A `Divider` between rows.
-   - Destructive rows use `ClickColors.destructive`.
-   - Background: `RoundedRectangle(cornerRadius: 22, style: .continuous).fill(.regularMaterial)`.
-   - Each row calls `onDismiss()` **then** `perform()`.
-5. **Appearance:** the backdrop fades in over 0.2 s; the capsule and panel scale from 0.9 to 1.0 anchored toward the bubble. With `accessibilityReduceMotion`, use opacity only.
-
-The overlay must present **above everything, including the nav bar and tab bar**:
-- `ChatView` holds `@State private var actionTarget: (message: ChatMessageItem, frame: CGRect)?` (wrap it in a small `Identifiable` struct).
-- Present it with `.fullScreenCover(item:)` using `.presentationBackground(.clear)`, wrapped in `withTransaction(Transaction(animation: nil))` so the system cover slide is disabled. The fade comes from step 5.
-- **Alternative if the cover animation can't be suppressed:** attach it to `ChatView`'s outermost view as `.overlay { if let target = actionTarget { MessageActionOverlay(...) } }` with `.toolbar(actionTarget == nil ? .visible : .hidden, for: .navigationBar)`.
-
-**Don't** reimplement bubble layout for the copy. Pass the same `MessageBubbleView(message:…)` with no-op closures, wrapped in `AnyView`.
-
-### 3d. Actions list (built in `ChatView`)
-Build the list in this order, including only the entries that apply:
-- **Reply:** always.
-- **Forward:** if `model.canForward(item)` and `conversations != nil`.
-- **Copy:** if not media.
-- **Edit:** if outgoing and not media.
-- **Save to Photos / Share…:** if media and not locked. Reuse `saveOrShare`.
-- **Delete:** if outgoing; destructive. Opens the existing delete confirmation, so move `confirmingDelete` up to `ChatView` state.
-
-This reuses every existing closure; add **no new message operations**.
-
-### 3e. The full emoji picker ("+")
-Use the **system emoji keyboard**. It is the complete, current Unicode set with search, categories, skin tones and recents, and it is what the owner means by "the entire emoji list".
-
-Create `Click/Features/Chat/EmojiKeyboardPicker.swift`:
-```swift
-/// Presents the system emoji keyboard; the first emoji typed becomes the reaction.
-struct EmojiKeyboardPicker: UIViewRepresentable {
-    let onPick: (String) -> Void
-
-    func makeUIView(context: Context) -> EmojiTextField {
-        let field = EmojiTextField()
-        field.delegate = context.coordinator
-        field.tintColor = .clear
-        DispatchQueue.main.async { field.becomeFirstResponder() }
-        return field
-    }
-    func updateUIView(_ uiView: EmojiTextField, context: Context) {}
-    func makeCoordinator() -> Coordinator { Coordinator(onPick: onPick) }
-
-    final class Coordinator: NSObject, UITextFieldDelegate {
-        let onPick: (String) -> Void
-        init(onPick: @escaping (String) -> Void) { self.onPick = onPick }
-        func textField(_ textField: UITextField, shouldChangeCharactersIn range: NSRange, replacementString string: String) -> Bool {
-            if let emoji = string.first, emoji.unicodeScalars.contains(where: { $0.properties.isEmoji && $0.value > 0x238C }) {
-                onPick(String(emoji))
-            }
-            return false
-        }
-    }
-}
-
-final class EmojiTextField: UITextField {
-    // Opens straight to the emoji keyboard.
-    override var textInputContextIdentifier: String? { "click.emoji" }
-    override var textInputMode: UITextInputMode? {
-        UITextInputMode.activeInputModes.first { $0.primaryLanguage == "emoji" } ?? super.textInputMode
-    }
-}
-```
-Present it from `ChatView` as a sheet with `.presentationDetents([.height(60)])` and `.presentationBackground(.clear)`, containing `EmojiKeyboardPicker { emoji in … toggleReaction … dismiss }` in a 1×1 frame. The keyboard rises from the bottom with the sheet.
-
-**Fallback** when `UITextInputMode.activeInputModes` has no `"emoji"` mode, because the user removed the emoji keyboard:
-- Show a sheet with a full emoji grid generated at runtime from Unicode:
-  - Iterate scalars in `0x1F300...0x1FAFF`, `0x2600...0x27BF` and `0x1F000...0x1F2FF`.
-  - Keep those where `scalar.properties.isEmojiPresentation`.
-  - Build `String(Character(scalar))`.
-  - Include a `.searchable` field that filters by `scalar.properties.name?.lowercased()`.
-- Put the generator in a `nonisolated static func allEmoji() -> [(emoji: String, name: String)]`, computed once and cached in a `static let`.
-
-**Tests (only these):** in `Tests/ClickTests/MessageOperationsTests.swift`:
-- `EmojiKeyboardPicker`'s fallback list has more than 1,000 entries.
-- It contains "👍", "🫶" and "🙏".
-
-**Done when:** all of these pass on the phone:
-1. Long-press a message: the backdrop dims, the message stays sharp, the reaction capsule sits **above** it as a separate element, and the action panel sits **below** it, matching the screenshot's arrangement.
-2. Tapping 😂 adds the reaction and dismisses.
-3. **+** opens the system emoji keyboard; choosing any emoji (for example a flag) reacts with it.
-4. Long-press still doesn't block scrolling, and swipe-to-reply still works.
+After step 2, fling-scroll a group with 150+ messages from bottom to top and back.
+- **Done when:** there's no visible stutter, and older pages load only near the top.
+- **If it stutters:** attach Instruments ("SwiftUI" template) and report the top body-evaluation counts. **Don't** reintroduce `Equatable` rows.
 
 ---
 
-## Step 4 — Item 7: tab bar must slide back with the pop, like WhatsApp
+## Step 4 — R4: reactions bar with a full emoji picker on ONE surface
 
-Current behavior: `ChatView` uses `.toolbar(.hidden, for: .tabBar)`. SwiftUI hides the bar on push, but on pop it re-shows the bar **only after** the transition, with no animation.
+Keep `MessageActionOverlay` from `e45aace`: the blurred backdrop, the lifted bubble, the capsule above and the action panel below. The owner confirmed the separate bar is right. Change only how **+** works.
 
-Last round's attempt, `DesignSystem/Components/HidesTabBarWhenPushed.swift`, set `hidesBottomBarWhenPushed` after the push had already begun, so UIKit ignored it. **Delete that file and its `.hidesTabBarWhenPushed()` call** in `ChatView`.
+### 4a. Remove the second presentation
+In `ChatView.swift`, delete:
+- `@State private var moreReactionsTarget`
+- the whole `.sheet(item: $moreReactionsTarget) { … }`
+- the `onMoreReactions:` argument passed to `MessageActionOverlay`
 
-Implement **Option A**. Do Option B only if A's Done-when check fails.
-
-### Option A (keeps the native tab bar): set `hidesBottomBarWhenPushed` *before* UIKit pushes
-Create `Click/App/TabBarPushPolicy.swift`:
-```swift
-import UIKit
-
-/// Screens marked with `.hidesTabBarWhenPushed()` must hide the tab bar the UIKit way, set on
-/// the pushed controller *before* the push begins. That's the only way UIKit animates the bar
-/// out and back in with the navigation transition, including an interactive back swipe.
-enum TabBarPushPolicy {
-    static func install() {
-        swap(#selector(UINavigationController.pushViewController(_:animated:)),
-             #selector(UINavigationController.click_pushViewController(_:animated:)))
-        swap(#selector(UINavigationController.setViewControllers(_:animated:)),
-             #selector(UINavigationController.click_setViewControllers(_:animated:)))
-    }
-
-    private static func swap(_ original: Selector, _ replacement: Selector) {
-        guard let a = class_getInstanceMethod(UINavigationController.self, original),
-              let b = class_getInstanceMethod(UINavigationController.self, replacement) else { return }
-        method_exchangeImplementations(a, b)
-    }
-
-    /// True when the controller hosts a view marked `.hidesTabBarWhenPushed()`.
-    static func wantsHiddenTabBar(_ controller: UIViewController) -> Bool {
-        controller.loadViewIfNeeded()
-        controller.view.setNeedsLayout()
-        controller.view.layoutIfNeeded()   // builds the SwiftUI hierarchy so the marker exists
-        return controller.view.containsTabBarHidingMarker
-    }
-}
-
-extension UINavigationController {
-    @objc func click_pushViewController(_ controller: UIViewController, animated: Bool) {
-        if TabBarPushPolicy.wantsHiddenTabBar(controller) { controller.hidesBottomBarWhenPushed = true }
-        click_pushViewController(controller, animated: animated)   // calls the original (swapped)
-    }
-
-    @objc func click_setViewControllers(_ controllers: [UIViewController], animated: Bool) {
-        for controller in controllers where !viewControllers.contains(controller) {
-            if TabBarPushPolicy.wantsHiddenTabBar(controller) { controller.hidesBottomBarWhenPushed = true }
-        }
-        click_setViewControllers(controllers, animated: animated)
-    }
-}
-```
-The marker is a tiny `UIViewRepresentable`:
-- Its `UIView` subclass is `TabBarHidingMarkerView`, 0×0 with `isUserInteractionEnabled = false`.
-- The view modifier `.hidesTabBarWhenPushed()` puts it in a `.background`.
-- `UIView.containsTabBarHidingMarker` walks the subviews recursively looking for that class.
-
-Wiring:
-1. Call `TabBarPushPolicy.install()` **once** at launch (`ClickApp.init`).
-2. In `ChatView`, **remove** `.toolbar(.hidden, for: .tabBar)` and add `.hidesTabBarWhenPushed()`.
-3. Do the same for `HubChatView` and `EventChatView` if they don't go through `ChatView`. They do, so only `ChatView` needs it.
-
-**Verification to run first:** in a Debug build, temporarily add
-`print("[tabbar] push \(type(of: controller)) hide=\(controller.hidesBottomBarWhenPushed)")`
-in both swizzled methods. Open a chat and confirm one line prints with `hide=true`. Then remove the print.
-
-**Done when:** on the phone:
-1. Opening a chat slides the tab bar away **with** the push.
-2. Tapping Back slides the Clicks list and the tab bar back in **together**.
-3. A **slow interactive back swipe** shows the tab bar tracking the finger. Cancel the swipe halfway: the tab bar hides again smoothly.
-
-If any of these fail, revert Option A completely and do Option B.
-
-### Option B (fallback, fully deterministic): the tab bar lives on each tab's root screen
-1. In `MainTabShellView` (`Click/App/RootGateView.swift`), apply `.toolbar(.hidden, for: .tabBar)` to **every** tab's root view, so the system bar is never shown.
-2. Create `Click/App/ClickTabBar.swift`: a `View` with the five items (Home, Add Click, Clicks, Map, Me).
-   - Same SF Symbols as today.
-   - The Me tab uses `meTabAvatar.image` like today.
-   - Clicks shows an unread badge from `conversations.unreadTotal`.
-   - Add Click is always purple, with the medium-impact haptic. Keep today's behavior.
-   - Selection calls `env.router.selectTab(_:)`.
-   - Style: 64 pt tall capsule, `.glassCircleBackground()`, 16 pt horizontal margins, sitting on the bottom safe area.
-3. Attach it to each tab's **root** view only, the first view inside each `NavigationStack`, via `.safeAreaInset(edge: .bottom) { ClickTabBar() }`. Pushed screens don't have it, so it slides away and back with the root screen during push and pop, including interactive back, with WhatsApp's parallax.
-4. Remove `.toolbar(.hidden, for: .tabBar)` from `ChatView` (no longer needed).
-
-The same Done-when as Option A applies. Also check that the Map tab's Nearby lip (step 5) sits above the custom bar.
-
----
-
-## Step 5 — Item 5: Nearby becomes a real bottom sheet (rounded, over the tab bar, half and full height)
-
-Owner's requirement: it must behave like the app's other bottom dialogs (New Group, event detail):
-- A native sheet, rounded, that rises **over** the tab bar.
-- A half-height (medium) and a full-height (large) detent.
-- No sharp edge anywhere.
-
-Design:
-- The **collapsed lip** stays an in-map floating card above the tab bar.
-- Tapping it, or dragging it up, presents a **native `.sheet`** with the list.
-- Dismissing the sheet returns to the lip.
-
-The custom drag and offset code is deleted.
-
-1. `Click/Features/Map/NearbySheet.swift`:
-   1. Split the file into two views:
-      - `NearbyLip`: the current `header` only. It shows "Nearby", the summary and the preview visuals, in a floating card with all four corners rounded:
-        - 30 pt radius
-        - `.padding(.horizontal, 8)` and `.padding(.bottom, 8)`
-        - `.regularMaterial` background and the same shadow as today
-      - `NearbyListView`: the current `content` (search field, chips, list). It gets **no** height or offset logic.
-   2. `NearbyLip`: `.onTapGesture { model.isNearbyPresented = true }`, plus a `DragGesture(minimumDistance: 10, coordinateSpace: .global)` whose `.onEnded` presents the sheet when `translation.height < -30`.
-   3. Delete all of the following:
-      - `liveHeight`, `dragStartHeight`, `height(for:available:)`, `contentOpacity`, `settledDetent`
-      - the `offset` / `frame(height:)` code
-      - `availableHeight`
-      - the clipped `Color.clear` host in `ClickMapView`
-   4. `NearbyListView` keeps `@FocusState` for search. It must **not** force a detent change on focus; the sheet expands with the keyboard natively.
-2. `MapFeatureModel` (`Click/Features/Map/MapFeatureModel.swift`):
-   - Replace `sheetDetent` / `settledDetent` with:
+### 4b. Pick emoji inside the overlay
+In `Click/Features/Chat/MessageActionOverlay.swift`:
+1. Remove the `onMoreReactions` property and its init parameter.
+2. Add `@State private var pickingEmoji = false`.
+3. The **+** button sets `pickingEmoji = true`. It **must not** call `onDismiss()`.
+4. When `pickingEmoji` is true:
+   - Hide the action panel (`.opacity(0)` and `.allowsHitTesting(false)`).
+   - Move the bubble copy and reaction capsule to the top: bubble center y = `safeAreaTop + 16 + 56 + 8 + bubbleHeight / 2`, so they stay visible above the keyboard.
+   - Add, inside the overlay's `ZStack`:
      ```swift
-     var isNearbyPresented = false
-     var nearbyDetent: PresentationDetent = .medium
-     ```
-   - Update every use:
-     - line 290 (`sheetDetent = .medium`) → `isNearbyPresented = true; nearbyDetent = .medium`
-     - line 304 (`sheetDetent = .lip`) → `isNearbyPresented = false`
-     - `ClickMapView` line 68 menu "Open Nearby list" → `isNearbyPresented = true`
-     - the floating controls' `.opacity(model.settledDetent == .expanded ? 0 : 1)` → delete; the sheet covers them
-     - the controls' `.padding(.bottom, NearbySheet.height(...) + 12)` → `.padding(.bottom, 84 + 12)`, the lip height plus spacing
-3. `ClickMapView`:
-   - Put `NearbyLip` at the bottom of the `ZStack`.
-   - Present the list:
-     ```swift
-     .sheet(isPresented: $model.isNearbyPresented) {
-         NearbyListView(model: model, pins: pins) { item in
-             model.isNearbyPresented = false
-             Task { try? await Task.sleep(for: .milliseconds(350)); open(item) }   // after the sheet leaves
+     if EmojiKeyboardPicker.hasSystemEmojiKeyboard {
+         EmojiKeyboardPicker { emoji in
+             onReact(emoji)
+             onDismiss()
          }
-         .presentationDetents([.medium, .large], selection: $model.nearbyDetent)
-         .presentationDragIndicator(.visible)
-         .presentationBackgroundInteraction(.enabled(upThrough: .medium))   // map stays usable at half height
-         .presentationBackground(.regularMaterial)
-         .presentationCornerRadius(38)
+         .frame(width: 1, height: 1)
+         .opacity(0.01)                 // invisible field; the system emoji keyboard is the picker
+     } else {
+         EmojiFallbackPanel { emoji in   // see 4c
+             onReact(emoji)
+             onDismiss()
+         }
+         .frame(maxHeight: geometry.size.height * 0.45)
+         .frame(maxHeight: .infinity, alignment: .bottom)
+         .transition(.move(edge: .bottom))
      }
      ```
-   - Dismiss the sheet when leaving the map: `.onDisappear { model.isNearbyPresented = false }` on the Map root, and when `env.router.selectedTab` changes away from `.map`.
-4. `Tests/ClickTests/NearbyMapTests.swift`:
-   - Delete the `contentOpacity` and `settledDetent` tests; those functions no longer exist.
-   - Add no replacement tests.
+5. Tapping the backdrop while picking dismisses everything:
+   - Call `onDismiss()`.
+   - The keyboard resigns automatically when the overlay's view is removed. If it doesn't, call `UIApplication.shared.sendAction(#selector(UIResponder.resignFirstResponder), to: nil, from: nil, for: nil)` first.
+
+### 4c. Fallback panel and emoji filter
+In `Click/Features/Chat/EmojiKeyboardPicker.swift`:
+- Rename `EmojiFallbackSheet` to `EmojiFallbackPanel`.
+- Make it a plain `View`, not something that's presented: a rounded-top `.regularMaterial` panel with a `.searchable`-style `TextField` at the top and a `LazyVGrid` of every entry from `EmojiKeyboardPicker.allEmoji()`.
+- Replace the coordinator's emoji check with:
+  ```swift
+  /// Any emoji the keyboard can produce: single emoji, flags, keycaps, ZWJ sequences, skin tones.
+  nonisolated static func isEmoji(_ character: Character) -> Bool {
+      character.unicodeScalars.contains { $0.properties.isEmojiPresentation }
+          || character.unicodeScalars.contains { $0.value == 0xFE0F }
+  }
+  ```
+  Use it as `if let first = string.first, Self.isEmoji(first) { onPick(String(first)) }`.
+
+**Tests (only these):** in `Tests/ClickTests/MessageOperationsTests.swift`:
+- `isEmoji` is true for "👍", "🇺🇸", "1️⃣", "👩🏽‍💻" and false for "a" and "1".
+- `allEmoji().count > 1000`.
 
 **Done when:** on the phone:
-1. The Map tab shows the rounded lip above the tab bar.
-2. Tap it: a native sheet rises **over** the tab bar at half height, rounded, with a grabber.
-3. Drag it up: full height. Drag it down: half, then dismissed back to the lip.
-4. At half height the map can still be panned.
-5. There's no flicker or sharp edge at any point; the motion is identical to the New Group sheet.
+1. Long-press a message: one overlay appears.
+2. Tap **+**: the action panel hides, the message and bar move up, and the **system emoji keyboard** rises. There's **exactly one** surface; no sheet slides up.
+3. Pick "🇺🇸": the reaction is added and everything closes in one motion.
+4. Repeat, but tap the backdrop instead: everything closes and the keyboard goes away.
+5. Quick reactions (👍 and so on) still work with one tap.
 
 ---
 
-## Step 6 — Item 10: timeline encounters as colorful pills (KMP style)
+## Step 5 — R3: tab bar slides away and back with chats (WhatsApp parallax)
 
-Reference: KMP `ui/components/ProfileTimelineMetrics.kt`, lines 300–426 (`OurTimelineSection`), and `TimelineMetricPill` at line 219.
+**Verified in the simulator** with a prototype on the Me tab:
+- `.toolbar(.hidden, for: .tabBar)` applied to the **`NavigationStack`** hides the system bar on the root *and* on every pushed screen.
+- A bar placed in the **root view's** `.safeAreaInset(edge: .bottom)` belongs to the root screen. It leaves with the root when a screen is pushed and returns with it on pop, including the interactive back swipe.
 
-Each encounter row in KMP shows:
-1. Small muted "when" line: `Tue, Sep 22, 2026 · 7:30 PM`.
-2. Bold place line: `Place • Neighbourhood, City`, or "Unknown place".
-3. (Event only) the event title in the accent color, the schedule line, and "View on map".
-4. **Context tag pills:** sparkle icon tinted accent, label from `ContextTagTaxonomy`.
-5. **Metric pills, each its own colorful pill with a symbol, in this order:**
+That is WhatsApp's behavior. Implement it for all five tabs.
 
-   | KMP label function | SF Symbol | Icon tint | Label format |
-   |---|---|---|---|
-   | condition | `cloud` | `#B0BEC5` | e.g. "Clear" |
-   | temperature | `thermometer.medium` | `#FFCC80` | `68°F (20°C)` |
-   | wind | `wind` | `#81D4FA` | `12 km/h NE` |
-   | noise | `waveform` | `#69F0AE` | "Quiet" (category only, no dB) |
-   | elevation | `mountain.2` | `#90CAF9` | `Elevated · 12 m` |
-   | compass | `safari` | `#B39DDB` | `45°` |
+### 5a. The bar
+Create `Click/App/ClickTabBar.swift`:
+```swift
+import SwiftUI
 
-   Pill style:
-   - Capsule; horizontal padding 8, vertical padding 4.
-   - Background `ClickColors.fillSubtle`; stroke `ClickColors.separator`, 1 pt.
-   - 14 pt icon in its tint, 4 pt spacing.
-   - Text in `ClickTypography.caption.weight(.medium)`, `ClickColors.textPrimary`, `lineLimit(1)`.
-   - Pills wrap using the existing `FlowLayout` (`DesignSystem/Components/FlowLayout.swift`) with 6 pt spacing.
+/// The app's tab bar, attached to each tab's *root* screen so it slides out and back in with
+/// navigation pushes and pops (including interactive back), like WhatsApp. The system tab bar
+/// is hidden; `TabView` still owns tab state and per-tab navigation stacks.
+struct ClickTabBar: View {
+    @Environment(AppEnvironment.self) private var env
+    @Environment(ConversationListModel.self) private var conversations
+    @Environment(MeTabAvatarModel.self) private var meTabAvatar
+    @State private var keyboardVisible = false
 
-   No lux, motion or battery (the owner asked for that last round).
+    var body: some View {
+        Group {
+            if !keyboardVisible {
+                HStack(spacing: 0) {
+                    item(.home, title: "Home") { Image(systemName: "house.fill") }
+                    item(.addClick, title: "Add Click") {
+                        Image(systemName: "plus.circle.fill").foregroundStyle(ClickColors.accentForeground)   // always purple
+                    }
+                    item(.connections, title: "Clicks", badge: conversations.unreadTotal) { Image(systemName: "person.2.fill") }
+                    item(.map, title: "Map") { Image(systemName: "location.fill") }
+                    item(.settings, title: "Me") {
+                        if let avatar = meTabAvatar.image {
+                            Image(uiImage: avatar).resizable().scaledToFill().frame(width: 26, height: 26).clipShape(Circle())
+                        } else {
+                            Image(systemName: "person.crop.circle.fill")
+                        }
+                    }
+                }
+                .padding(.horizontal, 8)
+                .frame(height: 64)
+                .glassCircleBackground()
+                .padding(.horizontal, 16)
+                .padding(.bottom, 4)
+            }
+        }
+        .onReceive(NotificationCenter.default.publisher(for: UIResponder.keyboardWillShowNotification)) { _ in keyboardVisible = true }
+        .onReceive(NotificationCenter.default.publisher(for: UIResponder.keyboardWillHideNotification)) { _ in keyboardVisible = false }
+    }
 
-Changes:
-1. `Click/Core/Profile/ProfileRepository.swift`, in `enum EncounterLabels`:
-   - Add `nonisolated static func metricPills(for encounter: Encounter) -> [MetricPill]`, returning the rows above in that order and skipping missing values.
-   - `struct MetricPill: Hashable { let symbol: String; let tintHex: String; let text: String }`.
-   - Reuse the existing `compass(_:)`, `noise(_:)` and `elevation(_:)` helpers. **Delete** `weatherLine`, `noiseLine` and `barometricLine` once nothing uses them.
-   - Change `lines(for:)` to return only the "when" and "place" lines, which become the two text lines. Update `Tests/ClickTests/RevisionTests.swift` expectations for `lines` accordingly.
-2. `Click/Features/Profile/ProfileView.swift`, in `TimelineRow.content`, `.encounter` case, replace the compact `details` `Text` from last round with:
-   - `Text(whenLine)` in `ClickTypography.caption`, `ClickColors.textSecondary`.
-   - The title: event title, or "First Clicked at …" / "Reconnected at …", as today.
-   - `Text(placeLine)` if it differs from the title.
-   - The context tag pills (sparkle, `ClickColors.accentForeground`), replacing the current `TagFlow` of chips.
-   - `FlowLayout(spacing: 6) { ForEach(metricPills) { TimelineMetricPill(pill: $0) } }`.
-   - The vibe quote and "Edit tags", unchanged.
-   - Put `TimelineMetricPill` as a `private struct` in `ProfileView.swift`.
+    private func item<Icon: View>(_ tab: MainTab, title: String, badge: Int = 0, @ViewBuilder icon: () -> Icon) -> some View {
+        let selected = env.router.selectedTab == tab
+        return Button {
+            if tab == .addClick { ClickHaptics.impact(.medium) } else { ClickHaptics.selection() }
+            env.router.selectTab(tab)   // re-tapping the current tab pops to its root
+        } label: {
+            VStack(spacing: 3) {
+                icon()
+                    .font(.system(size: 21, weight: .semibold))
+                    .frame(height: 26)
+                    .overlay(alignment: .topTrailing) {
+                        if badge > 0 {
+                            Text(badge > 99 ? "99+" : "\(badge)")
+                                .font(.caption2.weight(.bold)).foregroundStyle(.white)
+                                .padding(.horizontal, 5).frame(minWidth: 18, minHeight: 18)
+                                .background(Color.red, in: Capsule())
+                                .offset(x: 12, y: -6)
+                        }
+                    }
+                Text(title).font(.caption2.weight(.medium))
+            }
+            .foregroundStyle(selected ? ClickColors.accentForeground : ClickColors.textSecondary)
+            .frame(maxWidth: .infinity, minHeight: 56)
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .accessibilityLabel(badge > 0 ? "\(title), \(badge) unread" : title)
+        .accessibilityAddTraits(selected ? .isSelected : [])
+    }
+}
+```
+Check that `MeTabAvatarModel` is injected with `.environment(meTabAvatar)` in `MainTabShellView` (it is) and that it's `@Observable`. If it isn't observable, pass `meTabAvatar.image` in as a parameter instead.
 
-**Tests (only these):** in `RevisionTests.swift`, one test that an encounter with temperature, condition, wind, noise, elevation and compass produces 6 pills in the table order with the exact texts.
+### 5b. Wire it into the shell
+In `Click/App/RootGateView.swift` → `MainTabShellView`, for **each** of the five tabs:
+1. Add `.toolbar(.hidden, for: .tabBar)` to the `NavigationStack`, next to the existing `.tabFadeIn(…)`.
+2. Add `.safeAreaInset(edge: .bottom, spacing: 0) { ClickTabBar() }` to the tab's **root view**, the first view inside the `NavigationStack` (`HomeView()`, `AddClickView()`, `ClicksView(model:)`, `ClickMapView()`, `MeView()`). Put it right after that root view, **before** `.appRouteDestinations()`.
+3. Keep the `Tab(...)` labels; they're harmless and keep VoiceOver tab semantics for the hidden bar.
+4. Delete the now-unused `addClickIcon` static and the haptic in the `selection` binding setter. The bar does both now.
 
-**Done when:** on the phone, a profile timeline encounter shows the when line, place, tag pills and colorful metric pills. Each value is fully readable, nothing is truncated into one crowded line, and it visually matches the KMP app's timeline.
+### 5c. Screens
+- `ChatView`: remove any `.toolbar(.hidden, for: .tabBar)` or `.toolbar(.visible, …)`. Pushed screens never show a bar.
+- `ClickMapView`: its `GeometryReader` now sits above the custom bar via the safe-area inset, so `NearbyLip` automatically sits above the bar. Don't add manual offsets.
+- Any other screen that calls `.toolbar(... for: .tabBar)`: find them with `grep -rn "for: .tabBar" Click`. Remove every call except the five `NavigationStack` ones from 5b.
+
+**Done when:**
+- *In the simulator with `-preview-shell`:* the system bar is never visible; the custom bar shows on all five tab roots; the Clicks badge shows; the Me avatar shows.
+- *On the phone:*
+  1. Opening a chat slides the bar left and away **with** the Clicks list.
+  2. Tapping Back slides the list **and** the bar back in together.
+  3. A slow interactive back swipe shows the bar tracking the finger. Cancel the swipe halfway: the bar goes back smoothly.
+  4. Re-tapping Clicks while in a chat pops to the list.
+  5. Add Click is purple with a haptic.
+  6. Typing in Home search or the Nearby search hides the bar while the keyboard is up.
 
 ---
 
-## Step 7 — Wrap-up
-1. Run the full unit suite once. Everything must pass; the 205 tests from last round, minus the deleted Nearby tests, plus the new ones.
-2. Build Release: `xcodebuild build -scheme Click -configuration Release -destination 'generic/platform=iOS Simulator'` with the same signing flags.
-3. Install on the phone and walk every Done-when list above. Report each one as confirmed, or not, with what you saw.
-4. Add ledger rows (Step 0 format), one per item: 3, 4, 5, 7, 10, and the server change.
-5. Commit on `round5-parity` with a message listing the five items, ending with the attribution line required by the environment.
-6. **Don't** push or open PRs for click-ios unless the owner asks. The click-web PR (step 1) is the only PR.
+## Step 6 — R5: Nearby polish
+
+Keep `NearbyLip`, `NearbyListView` and the native `.sheet` from `e45aace`. Add the following to the `.sheet` in `Click/Features/Map/ClickMapView.swift`:
+1. `.presentationContentInteraction(.scrolls)`, so scrolling the list at half height scrolls the list instead of resizing the sheet.
+2. In `NearbyListView`, when the search field gains focus, set `model.nearbyDetent = .large`: `.onChange(of: isSearchFocused) { _, focused in if focused { model.nearbyDetent = .large } }`.
+3. `NearbyLip`:
+   - The whole card is the tap target: `.contentShape(RoundedRectangle(cornerRadius: 30, style: .continuous))` **before** the tap and drag gestures.
+   - Minimum height 64.
+   - Accessibility: `.accessibilityAddTraits(.isButton)` and `.accessibilityHint("Opens the Nearby list")`.
+4. When the sheet is dismissed by dragging down, `model.nearbyDetent` resets to `.medium`, so the next open starts at half height: `.onChange(of: model.isNearbyPresented) { _, open in if !open { model.nearbyDetent = .medium } }`.
+
+**Done when:** on the phone:
+1. Tapping anywhere on the lip opens the sheet at half height, rounded, over the tab bar.
+2. At half height, the list scrolls without the sheet moving; dragging the grabber changes the height.
+3. Tapping search goes to full height with the keyboard.
+4. Tapping a place closes the sheet and shows its callout on the map.
+5. Reopening starts at half height.
+6. Switching tabs while it's open closes it.
+
+**If the owner reports a different Nearby problem, fix that and add it to this list.**
+
+---
+
+## Step 7 — Server auth speedup (click-web)
+
+1. Open a PR from click-web `feat/ios-round6` to `main`. **Don't merge**; the owner merges and deploys.
+2. After deployment: launch the app on the phone with `--console` and read the `[net]` lines.
+
+**Done when:** authenticated `/api/...` calls average **< 600 ms** (they were 1,000–1,900 ms). Record the numbers in the ledger.
+
+---
+
+## Step 8 — Wrap-up
+1. Run the full unit suite once; everything passes.
+2. Build Release (`-configuration Release -destination 'generic/platform=iOS Simulator'`, same signing flags).
+3. Install on the phone and walk **every** Done-when above. Report each one as ✅ or ❌ with what you saw. Don't summarize without the list.
+4. Ledger rows: one each for R1–R5 and the server change.
+5. Commit on `feat/ios-round6`, ending the message with the attribution line required by the environment. Don't push unless the owner asks.
+
+---
+
+## Round 7 decision: tab bar (final — do not flip again)
+
+The custom `ClickTabBar` (root `safeAreaInset`) and the per-tab `tabFadeIn` opacity were removed.
+The shell uses the **system `TabView` bar** (Liquid Glass). Pushed screens hide it with
+`.toolbar(.hidden, for: .tabBar)` in `AppRouteDestination` only, and `TabBarTransitionFader`
+(`Click/App/TabBarTransitionFader.swift`) drives `tabBar.alpha` through
+`transitionCoordinator.animate(alongsideTransition:)`, so the bar fades in tracking an interactive
+back-swipe (and fades back out if the swipe is cancelled), like WhatsApp. Verified on the iOS 27
+simulator mid-gesture. Add Click stays purple via a pre-tinted `.alwaysOriginal` image, and the
+haptic fires in the `TabView` selection binding. Never set opacity on a `NavigationStack`: glass
+and collapsed large-title bars don't render under a partially transparent ancestor.

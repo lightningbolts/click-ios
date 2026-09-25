@@ -110,8 +110,9 @@ struct HomeEventHighlight: Equatable, Identifiable {
 @MainActor
 final class HomeFeedModel {
     private(set) var firstName: String?
-    private(set) var intents = ModuleState<[AvailabilityIntentPost]>()
-    private(set) var savedEvents = ModuleState<[SavedEvent]>()
+    /// Shared with Me and the editors (one copy, so edits show everywhere without a reload).
+    var intents: ModuleState<[AvailabilityIntentPost]> { environment?.selfData.intents ?? ModuleState() }
+    var savedEvents: ModuleState<[SavedEvent]> { environment?.selfData.savedEvents ?? ModuleState() }
     private(set) var nudges = ModuleState<[InboxNudge]>()
     private(set) var discovery = ModuleState<NearbyDiscovery>()
     private(set) var recaps: [ActivityRecap.Window: ModuleState<ActivityRecap>] = [:]
@@ -136,7 +137,7 @@ final class HomeFeedModel {
     /// A module is showing cached data because its last refresh failed (not cancelled).
     /// Whether that reads as "Offline" is decided by `NetworkMonitor`, not by this flag.
     var hasRefreshFailure: Bool {
-        [intents.isStale, savedEvents.isStale, nudges.isStale, discovery.isStale, recap.isStale].contains(true)
+        intents.isStale || savedEvents.isStale
     }
 
     var hasCachedData: Bool {
@@ -251,8 +252,7 @@ final class HomeFeedModel {
         if let cached = await environment.me.cachedSelfProfile(userID: userID) {
             firstName = cached.firstName.nonEmptyTrimmed ?? Self.firstName(cached.displayName)
         }
-        intents.seed(await environment.me.cachedIntents(userID: userID))
-        savedEvents.seed(await environment.beacons.cachedBookmarks(userID: userID))
+        await environment.selfData.seedIfNeeded()
         nudges.seed(await environment.me.cachedNudges(userID: userID))
         for window in ActivityRecap.Window.allCases {
             var state = ModuleState<ActivityRecap>()
@@ -282,23 +282,11 @@ final class HomeFeedModel {
     }
 
     private func loadIntents() async {
-        guard let environment, let userID else { return }
-        intents.begin()
-        do {
-            intents.succeed(try await environment.me.availabilityIntents(userID: userID))
-        } catch {
-            intents.fail(error)
-        }
+        await environment?.selfData.loadIntents(force: true)
     }
 
     private func loadSavedEvents() async {
-        guard let environment, let userID else { return }
-        savedEvents.begin()
-        do {
-            savedEvents.succeed(try await environment.beacons.bookmarks(userID: userID))
-        } catch {
-            savedEvents.fail(error)
-        }
+        await environment?.selfData.loadSavedEvents(force: true)
     }
 
     private func loadNudges() async {

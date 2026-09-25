@@ -234,27 +234,42 @@ struct ReplyThumbnail: View {
     }
 }
 
-/// Horizontal-only pan for swipe-to-reply. It begins only when the finger moves clearly
-/// sideways, so vertical drags fall through to the timeline's scroll view; once it begins it
-/// cancels touches underneath, so a swipe never also opens an attachment.
+/// Horizontal-only pan for swipe-to-reply.
+///
+/// - Begins only when the first movement is sideways *in the reply direction*; anything else
+///   fails immediately so the timeline scrolls and the back-swipe works untouched.
+/// - Once it begins, it cancels the enclosing scroll view's pan (so the timeline doesn't drift
+///   vertically mid-swipe) and cancels touches underneath (a swipe never opens a photo).
+/// - The navigation back-swipe waits for it to fail, so a rightward swipe on an incoming bubble
+///   replies instead of popping the chat. Touches in the leading 24 pt stay with the edge swipe.
 struct HorizontalSwipeGesture: UIGestureRecognizerRepresentable {
     var isEnabled = true
+    /// Incoming bubbles swipe right (+1), outgoing swipe left (-1).
+    var direction: CGFloat = 1
     let onChanged: (CGFloat) -> Void
     let onEnded: () -> Void
 
     func makeUIGestureRecognizer(context: Context) -> UIPanGestureRecognizer {
         let recognizer = UIPanGestureRecognizer()
         recognizer.delegate = context.coordinator
+        recognizer.cancelsTouchesInView = true
+        recognizer.delaysTouchesBegan = false
+        recognizer.maximumNumberOfTouches = 1
         recognizer.isEnabled = isEnabled
+        context.coordinator.direction = direction
         return recognizer
     }
 
     func updateUIGestureRecognizer(_ recognizer: UIPanGestureRecognizer, context: Context) {
         recognizer.isEnabled = isEnabled
+        context.coordinator.direction = direction
     }
 
     func handleUIGestureRecognizerAction(_ recognizer: UIPanGestureRecognizer, context: Context) {
         switch recognizer.state {
+        case .began:
+            context.coordinator.cancelEnclosingScroll(from: recognizer.view)
+            onChanged(recognizer.translation(in: recognizer.view).x)
         case .changed: onChanged(recognizer.translation(in: recognizer.view).x)
         case .ended, .cancelled, .failed: onEnded()
         default: break
@@ -264,46 +279,58 @@ struct HorizontalSwipeGesture: UIGestureRecognizerRepresentable {
     func makeCoordinator(converter: CoordinateSpaceConverter) -> Coordinator { Coordinator() }
 
     final class Coordinator: NSObject, UIGestureRecognizerDelegate {
+        var direction: CGFloat = 1
+
+        func gestureRecognizer(_ gestureRecognizer: UIGestureRecognizer, shouldReceive touch: UITouch) -> Bool {
+            guard let window = touch.window else { return true }
+            let x = touch.location(in: window).x
+            // Leave the screen edges to the system back gesture.
+            return x > 24 && x < window.bounds.width - 12
+        }
+
         func gestureRecognizerShouldBegin(_ gestureRecognizer: UIGestureRecognizer) -> Bool {
             guard let pan = gestureRecognizer as? UIPanGestureRecognizer else { return false }
             let velocity = pan.velocity(in: pan.view)
-            return abs(velocity.x) > abs(velocity.y) * 1.2
+            let translation = pan.translation(in: pan.view)
+            // Velocity is noisy on the first sample; fall back to the translation so far.
+            let dx = abs(velocity.x) + abs(velocity.y) > 1 ? velocity.x : translation.x
+            let dy = abs(velocity.x) + abs(velocity.y) > 1 ? velocity.y : translation.y
+            return dx * direction > 0 && abs(dx) > abs(dy)
         }
-    }
-}
 
-/// "More reactions": a larger emoji set in a grid.
-struct EmojiPickerSheet: View {
-    @Environment(\.dismiss) private var dismiss
-    let onPick: (String) -> Void
+        func gestureRecognizer(_ gestureRecognizer: UIGestureRecognizer, shouldRecognizeSimultaneouslyWith other: UIGestureRecognizer) -> Bool {
+            // Only the timeline's own pan may run alongside until this one takes over.
+            other.view is UIScrollView && other is UIPanGestureRecognizer && !Self.isPopGesture(other, near: gestureRecognizer.view)
+        }
 
-    static let emojis = [
-        "👍", "❤️", "😂", "😮", "😢", "😡", "🔥", "🎉", "👏", "🙏", "😍", "🥰", "😎", "🤔", "😅", "🤣",
-        "😭", "😬", "🙌", "💯", "✨", "👀", "🤝", "💪", "🥳", "😴", "🤯", "😇", "🫶", "👋", "✅", "❌",
-        "☕️", "🍕", "🍻", "🎶", "⚽️", "🏀", "📍", "🌅", "💜", "💀", "🤷", "🙃", "😏", "🤩", "😳", "🫡"
-    ]
+        func gestureRecognizer(_ gestureRecognizer: UIGestureRecognizer, shouldBeRequiredToFailBy other: UIGestureRecognizer) -> Bool {
+            Self.isPopGesture(other, near: gestureRecognizer.view)
+        }
 
-    var body: some View {
-        NavigationStack {
-            ScrollView {
-                LazyVGrid(columns: Array(repeating: GridItem(.flexible(), spacing: 8), count: 8), spacing: 12) {
-                    ForEach(Self.emojis, id: \.self) { emoji in
-                        Button {
-                            ClickHaptics.impact(.light)
-                            onPick(emoji)
-                            dismiss()
-                        } label: {
-                            Text(emoji).font(.system(size: 30))
-                        }
-                        .buttonStyle(.plain)
-                    }
+        func cancelEnclosingScroll(from view: UIView?) {
+            var current = view?.superview
+            while let candidate = current {
+                if let scroll = candidate as? UIScrollView, scroll.panGestureRecognizer.state != .possible {
+                    // Toggling cancels an in-flight pan without disabling future scrolling.
+                    scroll.panGestureRecognizer.isEnabled = false
+                    scroll.panGestureRecognizer.isEnabled = true
+                    return
                 }
-                .padding(16)
+                current = candidate.superview
             }
-            .navigationTitle("React")
-            .navigationBarTitleDisplayMode(.inline)
-            .toolbar { ToolbarItem(placement: .cancellationAction) { Button("Cancel") { dismiss() } } }
         }
-        .presentationDetents([.medium])
+
+        private static func isPopGesture(_ recognizer: UIGestureRecognizer, near view: UIView?) -> Bool {
+            var responder: UIResponder? = view
+            while let current = responder {
+                if let navigation = current as? UINavigationController {
+                    if recognizer === navigation.interactivePopGestureRecognizer { return true }
+                    if #available(iOS 26.0, *), recognizer === navigation.interactiveContentPopGestureRecognizer { return true }
+                    return false
+                }
+                responder = current.next
+            }
+            return false
+        }
     }
 }

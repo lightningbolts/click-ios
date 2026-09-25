@@ -42,21 +42,23 @@ final class AudioPlaybackService: NSObject, AVAudioPlayerDelegate {
 
     func isActive(_ messageID: String) -> Bool { activeMessageID == messageID }
 
-    func play(url: URL, messageID: String) throws {
+    func play(url: URL, messageID: String) async throws {
         if activeMessageID == messageID, let player {
-            try AVAudioSession.sharedInstance().setCategory(.playback, mode: .spokenAudio)
-            try AVAudioSession.sharedInstance().setActive(true)
+            try await AudioSessionController.shared.activate(.playback)
             player.play()
             isPlaying = true
             startTicker()
             return
         }
-        stop()
-        try AVAudioSession.sharedInstance().setCategory(.playback, mode: .spokenAudio)
-        try AVAudioSession.sharedInstance().setActive(true)
-        let next = try AVAudioPlayer(contentsOf: url)
+        stop(releasingSession: false)
+        try await AudioSessionController.shared.activate(.playback)
+        // Reading and parsing the file is disk I/O; keep it off the main actor.
+        let next = try await Task.detached(priority: .userInitiated) {
+            let player = try AVAudioPlayer(contentsOf: url)
+            player.prepareToPlay()
+            return UncheckedPlayer(player: player)
+        }.value.player
         next.delegate = self
-        next.prepareToPlay()
         player = next
         activeMessageID = messageID
         duration = next.duration
@@ -79,13 +81,18 @@ final class AudioPlaybackService: NSObject, AVAudioPlayerDelegate {
     }
 
     func stop() {
+        stop(releasingSession: true)
+    }
+
+    private func stop(releasingSession: Bool) {
+        let wasPlaying = player != nil
         player?.stop()
         player = nil
         activeMessageID = nil
         isPlaying = false
         currentTime = 0
         ticker?.invalidate()
-        try? AVAudioSession.sharedInstance().setActive(false, options: .notifyOthersOnDeactivation)
+        if releasingSession, wasPlaying { AudioSessionController.shared.deactivate() }
     }
 
     private func startTicker() {
@@ -106,6 +113,9 @@ final class AudioPlaybackService: NSObject, AVAudioPlayerDelegate {
         }
     }
 }
+
+/// Carries a freshly prepared player out of a detached task (it is handed over, never shared).
+private struct UncheckedPlayer: @unchecked Sendable { let player: AVAudioPlayer }
 
 // MARK: - Voice note recording
 
@@ -139,9 +149,7 @@ final class VoiceNoteRecorder {
         }
         AudioPlaybackService.shared.stop()
         do {
-            let session = AVAudioSession.sharedInstance()
-            try session.setCategory(.playAndRecord, mode: .spokenAudio, options: [.defaultToSpeaker])
-            try session.setActive(true)
+            try await AudioSessionController.shared.activate(.voiceRecording)
             let url = FileManager.default.temporaryDirectory.appendingPathComponent("voice-\(UUID().uuidString).m4a")
             let settings: [String: Any] = [
                 AVFormatIDKey: kAudioFormatMPEG4AAC,
@@ -165,13 +173,20 @@ final class VoiceNoteRecorder {
     }
 
     /// Stops and returns the recording as an upload-ready draft (nil when too short).
-    func finish() -> MediaDraft? {
+    func finish() async -> MediaDraft? {
         guard case .recording(let startedAt) = state, let recorder, let fileURL else { return nil }
         recorder.stop()
         let seconds = Int(Date.now.timeIntervalSince(startedAt).rounded())
         reset()
-        defer { try? FileManager.default.removeItem(at: fileURL) }
-        guard seconds >= 1, let data = try? Data(contentsOf: fileURL), !data.isEmpty else { return nil }
+        guard seconds >= 1 else {
+            try? FileManager.default.removeItem(at: fileURL)
+            return nil
+        }
+        let data = await Task.detached(priority: .userInitiated) { () -> Data? in
+            defer { try? FileManager.default.removeItem(at: fileURL) }
+            return try? Data(contentsOf: fileURL)
+        }.value
+        guard let data, !data.isEmpty else { return nil }
         var draft = MediaDraft(kind: .audio, data: data, mimeType: "audio/mp4", fileName: nil, durationSeconds: seconds)
         draft.waveform = VoiceWaveform.bins(from: capturedLevels)
         return draft
@@ -195,6 +210,8 @@ final class VoiceNoteRecorder {
     }
 
     func cancel() {
+        // Closing a chat calls this even when nothing was recorded: nothing to release then.
+        guard recorder != nil || state != .idle else { return }
         recorder?.stop()
         recorder?.deleteRecording()
         reset()
@@ -210,7 +227,7 @@ final class VoiceNoteRecorder {
         recorder = nil
         fileURL = nil
         state = .idle
-        try? AVAudioSession.sharedInstance().setActive(false, options: .notifyOthersOnDeactivation)
+        AudioSessionController.shared.deactivate()
     }
 }
 
@@ -268,6 +285,8 @@ private struct ChatImageView: View {
     let onOpen: (URL) -> Void
 
     @State private var image: UIImage?
+    /// The Click Drop's pixelated rendition, made once off the main actor (not per render).
+    @State private var pixelatedImage: UIImage?
     @State private var url: URL?
     @State private var failed = false
     /// Bumped when the reveal time passes so the Drop develops on screen.
@@ -279,13 +298,16 @@ private struct ChatImageView: View {
         return media.revealAt ?? .distantFuture
     }
 
-    static func pixelated(_ image: UIImage) -> UIImage? {
+    /// One Core Image context for every Drop (creating one per call is expensive).
+    private nonisolated(unsafe) static let ciContext = CIContext()
+
+    nonisolated static func pixelated(_ image: UIImage) -> UIImage? {
         guard let input = CIImage(image: image) else { return nil }
         let filter = CIFilter(name: "CIPixellate")
         filter?.setValue(input, forKey: kCIInputImageKey)
         filter?.setValue(max(image.size.width, image.size.height) / 12, forKey: kCIInputScaleKey)
         guard let output = filter?.outputImage?.cropped(to: input.extent),
-              let cg = CIContext().createCGImage(output, from: input.extent) else { return nil }
+              let cg = ciContext.createCGImage(output, from: input.extent) else { return nil }
         return UIImage(cgImage: cg)
     }
 
@@ -300,7 +322,7 @@ private struct ChatImageView: View {
             if let image, let url {
                 if let revealAt = lockedUntil {
                     // Click Drop: heavily pixelated for everyone until 24 h after it was taken.
-                    Image(uiImage: Self.pixelated(image) ?? image)
+                    Image(uiImage: pixelatedImage ?? image)
                         .resizable()
                         .interpolation(.none)
                         .aspectRatio(image.size, contentMode: .fit)
@@ -360,15 +382,18 @@ private struct ChatImageView: View {
         do {
             let fileURL = try await load()
             // A bubble-sized thumbnail, not the full 2048 px photo: faster and lighter to scroll.
-            let decoded = await Task.detached(priority: .userInitiated) { () -> UIImage? in
+            let isLocked = message.media?.isLocked() == true
+            let decoded = await Task.detached(priority: .userInitiated) { () -> (UIImage, UIImage?)? in
                 guard let image = UIImage(contentsOfFile: fileURL.path) else { return nil }
                 let scale = min(1, 720 / max(image.size.width, image.size.height))
-                return image.preparingThumbnail(of: CGSize(width: image.size.width * scale, height: image.size.height * scale)) ?? image
+                let thumbnail = image.preparingThumbnail(of: CGSize(width: image.size.width * scale, height: image.size.height * scale)) ?? image
+                return (thumbnail, isLocked ? Self.pixelated(thumbnail) : nil)
             }.value
             guard let decoded else { throw ChatRepositoryError.mediaUnavailable }
-            MediaAspectCache.remember(decoded.size, for: message)
+            MediaAspectCache.remember(decoded.0.size, for: message)
             url = fileURL
-            image = decoded
+            pixelatedImage = decoded.1
+            image = decoded.0
         } catch {
             failed = true
         }
@@ -459,7 +484,7 @@ private struct ChatAudioView: View {
         defer { isLoading = false }
         do {
             let url = try await load()
-            try player.play(url: url, messageID: message.id)
+            try await player.play(url: url, messageID: message.id)
             errorText = nil
         } catch {
             errorText = "Couldn't play"
@@ -1095,7 +1120,8 @@ private struct StagedAttachmentChip: View {
             try? item.draft.data.write(to: url, options: .completeFileProtection)
             previewURL = url
         }
-        try? player.play(url: url, messageID: previewID)
+        let id = previewID
+        Task { try? await player.play(url: url, messageID: id) }
     }
 
     static func duration(_ seconds: Int) -> String {

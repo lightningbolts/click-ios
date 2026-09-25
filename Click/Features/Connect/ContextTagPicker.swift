@@ -6,22 +6,35 @@ struct ContextTagPicker: View {
     @Binding var selected: [String]
     @Binding var custom: String
     let suggestions: [ContextTag]
-    @State private var showsAll = false
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 12) {
+        VStack(alignment: .leading, spacing: 14) {
+            if !suggestions.isEmpty {
+                Text("Suggested")
+                    .font(ClickTypography.supportingEmphasized)
+                    .foregroundStyle(ClickColors.textSecondary)
+                FlowLayout(spacing: 8) {
+                    ForEach(suggestions) { tag in
+                        chip("\(tag.emoji) \(tag.label)", id: tag.id)
+                    }
+                }
+            }
+
+            Text("All tags")
+                .font(ClickTypography.supportingEmphasized)
+                .foregroundStyle(ClickColors.textSecondary)
             FlowLayout(spacing: 8) {
-                ForEach(showsAll ? ContextTagTaxonomy.all : suggestions) { tag in
+                ForEach(ContextTagTaxonomy.all) { tag in
                     chip("\(tag.emoji) \(tag.label)", id: tag.id)
                 }
-                ForEach(selected.filter { id in !(showsAll ? ContextTagTaxonomy.all : suggestions).contains { $0.id == id } }, id: \.self) { id in
+                ForEach(selected.filter { id in !ContextTagTaxonomy.all.contains { $0.id == id } }, id: \.self) { id in
                     chip(ContextTagTaxonomy.label(for: id), id: id)
                 }
             }
-            Button(showsAll ? "Fewer tags" : "All tags") {
-                withAnimation(ClickMotion.content) { showsAll.toggle() }
-            }
-            .font(ClickTypography.supportingEmphasized)
+
+            Text("Custom activity")
+                .font(ClickTypography.supportingEmphasized)
+                .foregroundStyle(ClickColors.textSecondary)
             TextField("Something else (\(ContextTagTaxonomy.maxCustomLength) characters)", text: $custom)
                 .textInputAutocapitalization(.sentences)
                 .onChange(of: custom) { _, value in

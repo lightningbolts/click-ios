@@ -49,19 +49,11 @@ public struct ClickMapView: View {
                         .accessibilityLabel("Create beacon or event")
                         }
                     }
-                    .opacity(model.settledDetent == .expanded ? 0 : 1)
                 }
                 .padding(.horizontal, ClickSpacing.screenGutter)
-                .padding(.bottom, NearbySheet.height(for: model.sheetDetent, available: proxy.size.height) + 12)
+                .padding(.bottom, 84 + 12)
 
-                // Clipped at the map's bottom edge: the full-height card slides behind it.
-                Color.clear
-                    .overlay(alignment: .bottom) {
-                        NearbySheet(model: model, pins: pins, availableHeight: proxy.size.height) { item in
-                            open(item)
-                        }
-                    }
-                    .clipped()
+                NearbyLip(model: model, pins: pins)
             }
         }
         // The map is full-bleed: no title bar, just floating glass controls (prototype Map root).
@@ -70,7 +62,7 @@ public struct ClickMapView: View {
                 RootMenu(floating: true, includesAccountItems: false) {
                     Button("Center on me", systemImage: "location") { Task { await model.requestLocation() } }
                     Button("Refresh nearby", systemImage: "arrow.clockwise") { model.refresh() }
-                    Button("Open Nearby list", systemImage: "list.bullet") { model.sheetDetent = .medium }
+                    Button("Open Nearby list", systemImage: "list.bullet") { model.isNearbyPresented = true }
                     Button("Saved events", systemImage: "bookmark") { env.router.navigate(to: .savedEvents) }
                     if model.filter != nil || model.layers.count != MapLayer.allCases.count {
                         Button("Show everything", systemImage: "square.3.layers.3d") {
@@ -84,7 +76,6 @@ public struct ClickMapView: View {
             }
             .padding(.horizontal, ClickSpacing.screenGutter)
             .padding(.top, 4)
-            .opacity(model.settledDetent == .expanded ? 0 : 1)
         }
         .navigationTitle("Map")
         .toolbar(.hidden, for: .navigationBar)
@@ -98,8 +89,12 @@ public struct ClickMapView: View {
         }
         .onAppear { env.friction.beginSession() }
         .onDisappear {
+            model.isNearbyPresented = false
             model.stopLocation()
             Task { await env.friction.endSession() }
+        }
+        .onChange(of: env.router.selectedTab) { _, tab in
+            if tab != .map { model.isNearbyPresented = false }
         }
         .onChange(of: model.userCoordinate?.latitude) { _, _ in
             if let coordinate = model.userCoordinate {
@@ -127,6 +122,37 @@ public struct ClickMapView: View {
                 Task { await env.friction.endSession() }
             }
         }
+        .sheet(isPresented: $model.isNearbyPresented) {
+            NearbyListView(model: model, pins: pins) { item in
+                model.isNearbyPresented = false
+                Task { try? await Task.sleep(for: .milliseconds(350)); open(item) }
+            }
+            .presentationDetents([.medium, .large], selection: $model.nearbyDetent)
+            .presentationDragIndicator(.visible)
+            .presentationContentInteraction(.scrolls)
+            .presentationBackgroundInteraction(.enabled(upThrough: .medium))
+            .presentationBackground(.regularMaterial)
+            .presentationCornerRadius(38)
+        }
+        .onChange(of: model.isNearbyPresented) { _, open in
+            if !open { model.nearbyDetent = .medium }
+        }
+        .sheet(isPresented: Binding(get: { !model.overlapChoices.isEmpty }, set: { if !$0 { model.overlapChoices = [] } })) {
+            OverlappingPinsChooser(items: model.overlapChoices) { item in
+                model.overlapChoices = []
+                Task {
+                    try? await Task.sleep(for: .milliseconds(300))
+                    if case .person = item.kind {
+                        openProfile(for: item)
+                    } else {
+                        model.chosenFromStack = item.id
+                        model.selection = item.id
+                    }
+                }
+            }
+            .presentationDetents([.medium])
+            .presentationDragIndicator(.visible)
+        }
         .sheet(isPresented: $creating) {
             CreateBeaconSheet(fallback: mapCenter) { beacon in
                 model.refresh()
@@ -147,7 +173,7 @@ public struct ClickMapView: View {
     private var map: some View {
         Map(position: $model.camera, selection: $model.selection) {
             UserAnnotation()
-            ForEach(MapFeatureModel.clusters(model.items(pins: pins), latitudeDelta: model.visibleLatitudeDelta)) { cluster in
+            ForEach(MapFeatureModel.clusters(model.items(pins: pins), zoom: model.renderZoom)) { cluster in
                 if cluster.items.count == 1, let item = cluster.items.first {
                     Annotation(item.title, coordinate: item.coordinate, anchor: .bottom) {
                         MapPinView(item: item, isSelected: model.selection == item.id) {
@@ -231,18 +257,26 @@ public struct ClickMapView: View {
         env.router.navigate(to: .userProfile(userID: pin.userID, connectionID: pin.connectionID))
     }
 
-    /// Zooms to fit a cluster's members.
+    /// Zooms into a cluster far enough that its members draw as pins (KMP cluster tap).
     private func zoom(into cluster: MapCluster) {
-        let lats = cluster.items.map(\.coordinate.latitude)
-        let lons = cluster.items.map(\.coordinate.longitude)
-        guard let minLat = lats.min(), let maxLat = lats.max(), let minLon = lons.min(), let maxLon = lons.max() else { return }
-        let span = MKCoordinateSpan(
-            latitudeDelta: max((maxLat - minLat) * 1.6, MapFeatureModel.clusteringSpan * 0.6),
-            longitudeDelta: max((maxLon - minLon) * 1.6, MapFeatureModel.clusteringSpan * 0.6)
-        )
+        let target = MapFeatureModel.zoomToFit(cluster)
+        model.noteClusterTap(targetZoom: target)
+        let delta = MapFeatureModel.latitudeDelta(forZoom: target)
         withAnimation(ClickMotion.content) {
-            model.camera = .region(MKCoordinateRegion(center: cluster.coordinate, span: span))
+            model.camera = .region(MKCoordinateRegion(center: cluster.coordinate,
+                                                      span: MKCoordinateSpan(latitudeDelta: delta, longitudeDelta: delta)))
         }
+    }
+
+    /// Pins stacked under the tap: more than one opens the "Which pin?" chooser instead of
+    /// guessing (KMP `onMapPinTapped`).
+    private func stackedChoices(for selection: MapSelection) -> [MapItem]? {
+        let drawn = MapFeatureModel.clusters(model.items(pins: pins), zoom: model.renderZoom)
+            .filter { $0.items.count == 1 }
+            .compactMap(\.items.first)
+        guard let tapped = drawn.first(where: { $0.id == selection }) else { return nil }
+        let stack = MapFeatureModel.overlapping(tapped, in: drawn, zoom: model.renderZoom)
+        return stack.count > 1 ? stack : nil
     }
 
     /// Spec §71.1 "grass nudge": a long, aimless map session gets a gentle prompt.
@@ -270,6 +304,13 @@ public struct ClickMapView: View {
 
     private func handleSelection(_ selection: MapSelection?) {
         if selection != nil { env.friction.recordMeaningfulAction() }
+        if let selection, selection == model.chosenFromStack {
+            model.chosenFromStack = nil
+        } else if let selection, model.overlapChoices.isEmpty, let stack = stackedChoices(for: selection) {
+            model.selection = nil
+            model.overlapChoices = stack
+            return
+        }
         switch selection {
         case .beacon(let id):
             let isEvent = model.items(pins: pins, applyingFilter: false).contains {
@@ -303,18 +344,28 @@ private struct MapPinView: View {
             case .person(let pin):
                 if isSelected {
                     Button(action: onOpenCallout) {
-                        HStack(spacing: 4) {
-                            Text(pin.displayName).font(ClickTypography.supportingEmphasized)
-                            Text("· \(pin.locationName.map { "first met at \($0)" } ?? "first met here")")
-                                .font(ClickTypography.supporting)
+                        // Compact two-line bubble with a hard width cap: long names and venue
+                        // names truncate instead of stretching across the map.
+                        HStack(spacing: 6) {
+                            VStack(alignment: .leading, spacing: 0) {
+                                Text(pin.displayName)
+                                    .font(ClickTypography.supportingEmphasized)
+                                    .foregroundStyle(ClickColors.textPrimary)
+                                Text(pin.locationName.map { "Met at \($0)" } ?? "First met here")
+                                    .font(ClickTypography.caption)
+                                    .foregroundStyle(ClickColors.textSecondary)
+                            }
+                            .lineLimit(1)
+                            .truncationMode(.tail)
+                            Image(systemName: "chevron.right")
+                                .font(.caption2.weight(.semibold))
                                 .foregroundStyle(ClickColors.textSecondary)
-                            Image(systemName: "chevron.right").font(.caption2.weight(.semibold))
                         }
-                        .lineLimit(1)
-                        .foregroundStyle(ClickColors.textPrimary)
                         .padding(.horizontal, 10)
                         .padding(.vertical, 6)
-                        .background(.regularMaterial, in: Capsule())
+                        .frame(maxWidth: 180)
+                        .fixedSize(horizontal: false, vertical: true)
+                        .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 12, style: .continuous))
                     }
                     .buttonStyle(.plain)
                     .transition(.scale(scale: 0.8, anchor: .bottom).combined(with: .opacity))
@@ -343,5 +394,67 @@ private struct MapPinView: View {
         .accessibilityElement(children: isSelected ? .contain : .ignore)
         .accessibilityLabel(item.title)
         .accessibilityAddTraits(.isButton)
+    }
+}
+
+/// "Which pin?": pins stacked at one spot (people met at the same venue), so the viewer picks
+/// instead of the map guessing (KMP `OverlappingMapPinsChooser`).
+private struct OverlappingPinsChooser: View {
+    let items: [MapItem]
+    let onPick: (MapItem) -> Void
+
+    var body: some View {
+        NavigationStack {
+            List(items) { item in
+                Button {
+                    ClickHaptics.selection()
+                    onPick(item)
+                } label: {
+                    HStack(spacing: 12) {
+                        switch item.kind {
+                        case .person(let pin):
+                            AvatarView(imageURL: pin.avatarURL, seed: pin.userID, initials: pin.initials, size: 44)
+                        case .beacon(let beacon):
+                            EventVisual(seed: beacon.id, imageURL: beacon.imageURL, symbol: beacon.kind.systemImage, cornerRadius: 10)
+                                .frame(width: 44, height: 44)
+                        case .hub(let hub):
+                            EventVisual(seed: hub.id, symbol: MapLayer.hubs.systemImage, cornerRadius: 22)
+                                .frame(width: 44, height: 44)
+                        }
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text(item.title)
+                                .font(ClickTypography.bodyEmphasized)
+                                .foregroundStyle(ClickColors.textPrimary)
+                                .lineLimit(2)
+                            Text(subtitle(item))
+                                .font(ClickTypography.supporting)
+                                .foregroundStyle(ClickColors.textSecondary)
+                                .lineLimit(1)
+                        }
+                    }
+                    .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+            }
+            .listStyle(.plain)
+            .navigationTitle("Which pin?")
+            .navigationBarTitleDisplayMode(.inline)
+            .safeAreaInset(edge: .top) {
+                Text("A few pins are stacked here — pick the one you meant.")
+                    .font(ClickTypography.supporting)
+                    .foregroundStyle(ClickColors.textSecondary)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .padding(.horizontal, ClickSpacing.screenGutter)
+                    .padding(.bottom, 4)
+            }
+        }
+    }
+
+    private func subtitle(_ item: MapItem) -> String {
+        switch item.kind {
+        case .person(let pin): pin.locationName.map { "Met at \($0)" } ?? "My network"
+        case .beacon(let beacon): beacon.kind.label
+        case .hub: "Hub"
+        }
     }
 }

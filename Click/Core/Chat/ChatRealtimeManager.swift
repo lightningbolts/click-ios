@@ -58,11 +58,18 @@ public enum RealtimeStream: Sendable {
     case groupMembers
 }
 
-/// Realtime coordinator for one active chat.
+/// Realtime coordinator for one channel (a chat, a hub, the inbox, or group membership).
 ///
 /// The manager keeps transport state independent from ConversationModel so a token/socket failure
 /// never mutates the timeline itself. It understands both current Supabase postgres-change /
 /// broadcast envelopes and the legacy INSERT/UPDATE event form during rollout.
+///
+/// Staying live for hours (the "conversations need reloading" bug) needs all of:
+/// - a fresh JWT on every (re)join, from `tokenProvider`, never one captured at subscribe time;
+/// - pushing refreshed tokens to joined channels (`access_token`), before the old one expires;
+/// - treating `phx_close` / `phx_error` / `system` errors on our topic as a disconnect;
+/// - heartbeat acknowledgements: an unanswered heartbeat means a half-open socket;
+/// - reconnecting forever with capped backoff, and immediately when the network path changes.
 @Observable
 @MainActor
 public final class ChatRealtimeManager {
@@ -75,27 +82,72 @@ public final class ChatRealtimeManager {
     public var onTypingChanged: (@Sendable (Set<String>) -> Void)?
     /// Any row change on a non-message stream (`groupMembers`).
     public var onRowChanged: (@Sendable () -> Void)?
+    /// Called after a reconnect re-joins the channel: events may have been missed while the
+    /// socket was down, so owners run a delta sync.
+    public var onRejoined: (@MainActor () -> Void)?
+
+    /// Supplies a valid (refreshed when near expiry) access token for each join. Set once by
+    /// `AppEnvironment`; falls back to the token passed to `subscribe`.
+    public static var tokenProvider: (@MainActor () async -> String?)?
 
     private struct ConnectionContext {
         let chatID: String
         let stream: RealtimeStream
         let supabaseURL: URL
         let anonKey: String
-        let authToken: String?
+        var authToken: String?
     }
 
     private var context: ConnectionContext?
     private var urlSession: URLSession?
     private var webSocketTask: URLSessionWebSocketTask?
-    private var heartbeatTimer: Timer?
+    private var heartbeatTask: Task<Void, Never>?
+    private var connectTask: Task<Void, Never>?
     private var typingDecayTimers: [String: Timer] = [:]
     private var reconnectTask: Task<Void, Never>?
     private var reconnectAttempt = 0
-    private let maxReconnectAttempts = 5
+    private var joinRef: String?
+    private var pendingHeartbeatRef: String?
+    private var hasJoinedOnce = false
 
-    public init() {}
+    nonisolated static let heartbeatInterval: Duration = .seconds(25)
+
+    public init() {
+        Self.registry.add(self)
+        NetworkPathObserver.shared.start()
+    }
+
+    // MARK: Shared token + network fan-out
+
+    private final class WeakBox { weak var value: ChatRealtimeManager?; init(_ v: ChatRealtimeManager) { value = v } }
+    private final class Registry {
+        private var boxes: [WeakBox] = []
+        func add(_ manager: ChatRealtimeManager) {
+            boxes.removeAll { $0.value == nil }
+            boxes.append(WeakBox(manager))
+        }
+        var live: [ChatRealtimeManager] { boxes.compactMap(\.value) }
+    }
+    private static let registry = Registry()
+
+    /// The session refreshed its JWT: tell every joined channel before the old one expires.
+    public static func accessTokenDidChange(_ token: String) {
+        for manager in registry.live { manager.pushAccessToken(token) }
+    }
+
+    /// The device regained (or switched) network: sockets opened on the old path are dead.
+    static func networkPathDidChange() {
+        for manager in registry.live where manager.context != nil {
+            manager.reconnectNow()
+        }
+    }
+
+    // MARK: Public API
 
     public func subscribe(to chatID: String, stream: RealtimeStream = .chat, supabaseURL: URL, anonKey: String, authToken: String?) {
+        if context?.chatID == chatID, context?.stream == stream, health == .connected || health == .connecting {
+            return
+        }
         let next = ConnectionContext(
             chatID: chatID,
             stream: stream,
@@ -103,17 +155,27 @@ public final class ChatRealtimeManager {
             anonKey: anonKey,
             authToken: authToken
         )
-        if context?.chatID == chatID, health == .connected {
-            return
-        }
         context = next
         reconnectAttempt = 0
-        connect(next, isReconnect: false)
+        hasJoinedOnce = false
+        connect(isReconnect: false)
+    }
+
+    /// Foreground return: sockets may have been silently dropped while suspended. Rejoins
+    /// unless a heartbeat was acknowledged very recently.
+    public func ensureLive() {
+        guard context != nil else { return }
+        if health == .connected, pendingHeartbeatRef == nil, let last = lastAckAt, Date().timeIntervalSince(last) < 30 {
+            return
+        }
+        reconnectNow()
     }
 
     public func teardown() {
         reconnectTask?.cancel()
         reconnectTask = nil
+        connectTask?.cancel()
+        connectTask = nil
         context = nil
         tearDownTransport()
         reconnectAttempt = 0
@@ -141,10 +203,32 @@ public final class ChatRealtimeManager {
         sendJSON(message, task: task)
     }
 
-    private func connect(_ context: ConnectionContext, isReconnect: Bool) {
+    // MARK: Transport
+
+    private var lastAckAt: Date?
+
+    private func reconnectNow() {
+        reconnectTask?.cancel()
+        reconnectTask = nil
+        reconnectAttempt = 0
+        connect(isReconnect: true)
+    }
+
+    private func connect(isReconnect: Bool) {
         tearDownTransport(preserveTyping: isReconnect)
         health = isReconnect ? .reconnecting : .connecting
+        connectTask?.cancel()
+        connectTask = Task { [weak self] in
+            // Always join with a fresh token: a captured one may expire minutes later, and
+            // Supabase then closes the channel while heartbeats keep succeeding.
+            let token = await Self.tokenProvider?()
+            guard let self, !Task.isCancelled, var context = self.context else { return }
+            if let token, !token.isEmpty { context.authToken = token; self.context = context }
+            self.openSocket(context)
+        }
+    }
 
+    private func openSocket(_ context: ConnectionContext) {
         guard var components = URLComponents(url: context.supabaseURL, resolvingAgainstBaseURL: true) else {
             health = .failed
             return
@@ -160,7 +244,9 @@ public final class ChatRealtimeManager {
             return
         }
 
-        let session = URLSession(configuration: .default)
+        let configuration = URLSessionConfiguration.default
+        configuration.waitsForConnectivity = false
+        let session = URLSession(configuration: configuration)
         let task = session.webSocketTask(with: wsURL)
         urlSession = session
         webSocketTask = task
@@ -168,7 +254,7 @@ public final class ChatRealtimeManager {
 
         listen(task: task)
         joinChannel(context: context, task: task)
-        startHeartbeat()
+        startHeartbeat(task: task)
     }
 
     private func joinChannel(context: ConnectionContext, task: URLSessionWebSocketTask) {
@@ -182,14 +268,30 @@ public final class ChatRealtimeManager {
         if let token = context.authToken, !token.isEmpty {
             payload["access_token"] = token
         }
-
+        let ref = "join-\(UUID().uuidString)"
+        joinRef = ref
         let join: [String: Any] = [
             "topic": topic(for: context),
             "event": "phx_join",
             "payload": payload,
-            "ref": "join-\(UUID().uuidString)"
+            "ref": ref,
+            "join_ref": ref
         ]
         sendJSON(join, task: task)
+    }
+
+    private func pushAccessToken(_ token: String) {
+        guard var context else { return }
+        context.authToken = token
+        self.context = context
+        guard let task = webSocketTask, health == .connected else { return }
+        sendJSON([
+            "topic": topic(for: context),
+            "event": "access_token",
+            "payload": ["access_token": token],
+            "ref": UUID().uuidString,
+            "join_ref": joinRef ?? ""
+        ], task: task)
     }
 
     private func topic(for context: ConnectionContext) -> String {
@@ -248,14 +350,41 @@ public final class ChatRealtimeManager {
               let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
               let event = json["event"] as? String else { return }
 
+        let ref = json["ref"] as? String
+        let messageTopic = json["topic"] as? String
+        let ourTopic = context.map(topic(for:))
+
         switch event {
         case "phx_reply":
             guard let payload = json["payload"] as? [String: Any],
                   let status = payload["status"] as? String else { return }
+            if let ref, ref == pendingHeartbeatRef {
+                pendingHeartbeatRef = nil
+                lastAckAt = .now
+                return
+            }
+            guard ref == nil || ref == joinRef else { return }
             if status == "ok" {
+                let isRejoin = hasJoinedOnce
                 health = .connected
                 reconnectAttempt = 0
+                lastAckAt = .now
+                hasJoinedOnce = true
+                // Anything sent while we were disconnected must be fetched.
+                if isRejoin { onRejoined?() }
             } else {
+                handleDisconnection()
+            }
+
+        case "phx_close", "phx_error":
+            // The server closed our channel (commonly: the JWT expired). Heartbeats on the
+            // socket would keep succeeding, so this must be treated as a disconnect.
+            if messageTopic == ourTopic { handleDisconnection() }
+
+        case "system":
+            if messageTopic == ourTopic,
+               let payload = json["payload"] as? [String: Any],
+               (payload["status"] as? String) == "error" {
                 handleDisconnection()
             }
 
@@ -352,52 +481,51 @@ public final class ChatRealtimeManager {
         onTypingChanged?(typingUserIDs)
     }
 
-    private func startHeartbeat() {
-        heartbeatTimer?.invalidate()
-        heartbeatTimer = Timer.scheduledTimer(withTimeInterval: 25.0, repeats: true) { [weak self] _ in
-            Task { @MainActor [weak self] in
-                guard let self,
-                      let task = self.webSocketTask,
-                      self.health == .connected else { return }
-                self.sendJSON(
-                    [
-                        "topic": "phoenix",
-                        "event": "heartbeat",
-                        "payload": [:],
-                        "ref": UUID().uuidString
-                    ],
-                    task: task
-                )
+    /// Heartbeats run on a task (a `Timer` stalls while a list is being scrolled). If the
+    /// previous heartbeat was never acknowledged, the socket is half-open: reconnect.
+    private func startHeartbeat(task: URLSessionWebSocketTask) {
+        heartbeatTask?.cancel()
+        pendingHeartbeatRef = nil
+        heartbeatTask = Task { [weak self, weak task] in
+            while !Task.isCancelled {
+                try? await Task.sleep(for: Self.heartbeatInterval)
+                guard !Task.isCancelled, let self, let task, self.webSocketTask === task else { return }
+                if self.pendingHeartbeatRef != nil {
+                    self.handleDisconnection()
+                    return
+                }
+                let ref = "hb-\(UUID().uuidString)"
+                self.pendingHeartbeatRef = ref
+                self.sendJSON(["topic": "phoenix", "event": "heartbeat", "payload": [:], "ref": ref], task: task)
             }
         }
     }
 
+    /// Reconnects forever (KMP `RealtimeCoordinator`): 0.5 s × attempt, capped at 30 s.
     private func handleDisconnection() {
         guard context != nil, health != .idle else { return }
         tearDownTransport(preserveTyping: true)
 
-        guard reconnectAttempt < maxReconnectAttempts else {
-            health = .failed
-            return
-        }
-
         reconnectAttempt += 1
         health = .reconnecting
-        let delaySeconds = Double(min(1 << reconnectAttempt, 12))
+        let delay = Self.reconnectDelay(attempt: reconnectAttempt)
         reconnectTask?.cancel()
         reconnectTask = Task { [weak self] in
-            try? await Task.sleep(for: .seconds(delaySeconds))
-            guard !Task.isCancelled else { return }
-            await MainActor.run {
-                guard let self, let context = self.context, self.health == .reconnecting else { return }
-                self.connect(context, isReconnect: true)
-            }
+            try? await Task.sleep(for: .seconds(delay))
+            guard !Task.isCancelled, let self, self.context != nil, self.health == .reconnecting else { return }
+            self.connect(isReconnect: true)
         }
     }
 
+    nonisolated static func reconnectDelay(attempt: Int) -> Double {
+        min(30, 0.5 * Double(max(1, attempt)))
+    }
+
     private func tearDownTransport(preserveTyping: Bool = false) {
-        heartbeatTimer?.invalidate()
-        heartbeatTimer = nil
+        heartbeatTask?.cancel()
+        heartbeatTask = nil
+        pendingHeartbeatRef = nil
+        joinRef = nil
 
         webSocketTask?.cancel(with: .goingAway, reason: nil)
         webSocketTask = nil

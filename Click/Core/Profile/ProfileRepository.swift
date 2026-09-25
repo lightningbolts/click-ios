@@ -165,7 +165,7 @@ public struct SharedItem: Codable, Equatable, Identifiable, Sendable {
     }
 }
 
-public struct SharedTabs: Equatable, Sendable {
+public struct SharedTabs: Equatable, Sendable, Codable {
     public let chatID: String
     public let media: [SharedItem]
     public let files: [SharedItem]
@@ -330,13 +330,25 @@ public actor ProfileRepository {
 /// Human labels for encounter context chips (prototype: "Outdoors / Nature", "61°F · Clear",
 /// "Lively", "+14 m") — never raw enum values like `BELOW_GROUND`.
 enum EncounterLabels {
+    public struct MetricPill: Hashable, Sendable {
+        public let symbol: String
+        public let tintHex: String
+        public let text: String
+
+        public init(symbol: String, tintHex: String, text: String) {
+            self.symbol = symbol
+            self.tintHex = tintHex
+            self.text = text
+        }
+    }
+
     /// Context tags as chips (KMP labels with emoji; custom tags as written).
     nonisolated static func chips(for encounter: Encounter) -> [String] {
         var seen = Set<String>()
         return encounter.contextTags.map(tag).filter { seen.insert($0.lowercased()).inserted }
     }
 
-    /// Secondary lines under the title, in KMP `ProfileConnectionMoment` order.
+    /// Secondary lines under the title, returning only when and place lines.
     nonisolated static func lines(for encounter: Encounter, timeZone: TimeZone = .current) -> [(symbol: String, text: String)] {
         var rows: [(String, String)] = [("clock", whenLine(encounter.date, timeZone: timeZone))]
         if let place = placeLine(locationName: encounter.locationName ?? encounter.venue,
@@ -344,12 +356,44 @@ enum EncounterLabels {
                                  neighbourhood: encounter.neighbourhood) {
             rows.append(("mappin", place))
         }
-        if let weather = weatherLine(encounter) { rows.append(("cloud.sun", weather)) }
-        if let noise = noiseLine(category: encounter.noiseLevel, decibels: encounter.noiseDecibels) { rows.append(("waveform", noise)) }
-        if let floor = barometricLine(category: encounter.elevation, meters: encounter.relativeAltitudeMeters ?? encounter.barometricElevationMeters) {
-            rows.append(("building.2", floor))
-        }
         return rows
+    }
+
+    /// Colorful metric pills in KMP order: condition, temperature, wind, noise, elevation, compass.
+    nonisolated static func metricPills(for encounter: Encounter) -> [MetricPill] {
+        var pills: [MetricPill] = []
+
+        if let condition = encounter.weatherCondition?.trimmingCharacters(in: .whitespaces), !condition.isEmpty {
+            pills.append(MetricPill(symbol: "cloud", tintHex: "#B0BEC5", text: condition))
+        }
+
+        if let celsius = encounter.temperatureCelsius, celsius.isFinite {
+            let fahrenheit = Int((celsius * 9 / 5 + 32).rounded())
+            let c = Int(celsius.rounded())
+            pills.append(MetricPill(symbol: "thermometer.medium", tintHex: "#FFCC80", text: "\(fahrenheit)°F (\(c)°C)"))
+        }
+
+        if let wind = encounter.windKph, wind.isFinite {
+            let direction = encounter.windDirectionDegrees.map { " " + compass($0) } ?? ""
+            pills.append(MetricPill(symbol: "wind", tintHex: "#81D4FA", text: "\(Int(wind.rounded())) km/h\(direction)"))
+        }
+
+        if let noiseCat = encounter.noiseLevel.flatMap(noise) {
+            pills.append(MetricPill(symbol: "waveform", tintHex: "#69F0AE", text: noiseCat))
+        }
+
+        let elevCat = encounter.elevation.flatMap(elevation)
+        let elevM = (encounter.relativeAltitudeMeters ?? encounter.barometricElevationMeters).flatMap { $0.isFinite ? "\(Int($0.rounded())) m" : nil }
+        let elevParts = [elevCat, elevM].compactMap { $0 }
+        if !elevParts.isEmpty {
+            pills.append(MetricPill(symbol: "mountain.2", tintHex: "#90CAF9", text: elevParts.joined(separator: " · ")))
+        }
+
+        if let azimuth = encounter.compassAzimuth, azimuth.isFinite {
+            pills.append(MetricPill(symbol: "safari", tintHex: "#B39DDB", text: "\(Int(azimuth.rounded()))°"))
+        }
+
+        return pills
     }
 
     nonisolated static func whenLine(_ date: Date, timeZone: TimeZone = .current) -> String {
@@ -376,34 +420,6 @@ enum EncounterLabels {
         case let (name?, nil, display?) where name != display: return "\(name) · \(display)"
         default: return display ?? name ?? area
         }
-    }
-
-    /// "61°F (16°C) · Clear · 7 km/h NE".
-    nonisolated static func weatherLine(_ encounter: Encounter) -> String? {
-        var parts: [String] = []
-        if let celsius = encounter.temperatureCelsius, celsius.isFinite {
-            parts.append("\(Int((celsius * 9 / 5 + 32).rounded()))°F (\(Int(celsius.rounded()))°C)")
-        }
-        if let condition = encounter.weatherCondition?.trimmingCharacters(in: .whitespaces), !condition.isEmpty {
-            parts.append(condition)
-        }
-        if let wind = encounter.windKph, wind.isFinite {
-            let direction = encounter.windDirectionDegrees.map { " " + compass($0) } ?? ""
-            parts.append("\(Int(wind.rounded())) km/h\(direction)")
-        }
-        return parts.isEmpty ? nil : parts.joined(separator: " · ")
-    }
-
-    /// "Moderate · 58 dB".
-    nonisolated static func noiseLine(category: String?, decibels: Double?) -> String? {
-        let parts = [category.flatMap(noise), decibels.flatMap { $0.isFinite ? "\(Int($0.rounded())) dB" : nil }].compactMap { $0 }
-        return parts.isEmpty ? nil : parts.joined(separator: " · ")
-    }
-
-    /// "Below ground · 12 m".
-    nonisolated static func barometricLine(category: String?, meters: Double?) -> String? {
-        let parts = [category.flatMap(elevation), meters.flatMap { $0.isFinite ? "\(Int($0.rounded())) m" : nil }].compactMap { $0 }
-        return parts.isEmpty ? nil : parts.joined(separator: " · ")
     }
 
     nonisolated static func compass(_ degrees: Double) -> String {

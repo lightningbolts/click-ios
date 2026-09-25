@@ -11,7 +11,7 @@ struct AvailabilitySheet: View {
     /// Called after any successful change so the presenter can refresh its module.
     let onChanged: () -> Void
 
-    @State private var intents = ModuleState<[AvailabilityIntentPost]>()
+    private var intents: ModuleState<[AvailabilityIntentPost]> { env.selfData.intents }
     @State private var tag = ""
     @State private var duration: AvailabilityDuration = .serverDefault
     @State private var isSharing = false
@@ -104,7 +104,7 @@ struct AvailabilitySheet: View {
             }
         } else if intents.isPending {
             Section("Active now") {
-                ProgressView()
+                ClickLoadingView(size: 26, fillsSpace: false)
             }
         } else if let message = intents.errorMessage {
             Section("Active now") {
@@ -119,15 +119,10 @@ struct AvailabilitySheet: View {
         tag.trimmingCharacters(in: .whitespacesAndNewlines)
     }
 
+    /// Shared with Home and Me, so a post shared or removed here shows on both at once.
     private func load() async {
-        guard let userID = env.session.currentSession?.userId else { return }
-        intents.seed(await env.me.cachedIntents(userID: userID))
-        intents.begin()
-        do {
-            intents.succeed(try await env.me.availabilityIntents(userID: userID))
-        } catch {
-            intents.fail(error)
-        }
+        await env.selfData.seedIfNeeded()
+        await env.selfData.loadIntents(force: true)
     }
 
     private func share() async {
@@ -153,6 +148,7 @@ struct AvailabilitySheet: View {
         defer { removingID = nil }
         do {
             try await env.me.deleteIntent(id: intent.id)
+            env.selfData.apply(intents: (intents.value ?? []).filter { $0.id != intent.id })
             onChanged()
             await load()
         } catch {

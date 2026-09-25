@@ -17,13 +17,10 @@ final class UltrasonicService {
     private var player: AVAudioPlayer?
     private var recorder: AVAudioRecorder?
 
-    func activateSession() throws {
+    func activateSession() async throws {
         guard AVAudioApplication.shared.recordPermission == .granted else { throw Failure.microphoneDenied }
-        let session = AVAudioSession.sharedInstance()
         do {
-            // Measurement mode disables voice processing that would filter near-ultrasonic tones.
-            try session.setCategory(.playAndRecord, mode: .measurement, options: [.defaultToSpeaker, .mixWithOthers])
-            try session.setActive(true)
+            try await AudioSessionController.shared.activate(.measurement)
         } catch {
             throw Failure.sessionUnavailable
         }
@@ -80,7 +77,7 @@ final class UltrasonicService {
         player = nil
         recorder?.stop()
         recorder = nil
-        try? AVAudioSession.sharedInstance().setActive(false, options: .notifyOthersOnDeactivation)
+        AudioSessionController.shared.deactivate()
     }
 
     private nonisolated static func readSamples(_ url: URL) -> [Int16]? {

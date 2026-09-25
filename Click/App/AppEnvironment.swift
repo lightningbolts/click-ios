@@ -28,6 +28,8 @@ public final class AppEnvironment {
     public let friction: FrictionTelemetry
     public let joinedHubs = JoinedHubStore()
     public let timelineCache = ConversationTimelineCache()
+    /// The user's own profile, plans and saved events, shared by every screen that shows them.
+    let selfData = SelfDataStore()
     public let network: NetworkMonitor
     /// Optimistic sends and uploads that outlive the chat screen.
     public let pendingSends = PendingSendStore()
@@ -40,17 +42,72 @@ public final class AppEnvironment {
     /// A message to scroll to when its conversation next opens (search deep links).
     public var pendingMessageFocus: MessageFocus?
 
-    /// The one way screens build a conversation model, so every chat shares caches and resolvers.
+    /// One live model per conversation for the session: re-entering a chat shows exactly what was
+    /// on screen (timeline, decrypted media, older pages) and refreshes in place.
+    private var conversationModels: [String: ConversationModel] = [:]
+
     public func conversationModel(for identity: ConversationIdentity) -> ConversationModel {
-        ConversationModel(
+        if let hubID = identity.hubID, let existing = conversationModels[hubID] {
+            return existing
+        }
+        if let connID = identity.connectionID, let existing = conversationModels[connID] {
+            return existing
+        }
+        if !identity.chatID.isEmpty, let existing = conversationModels[identity.chatID] {
+            return existing
+        }
+        if let existing = conversationModels.values.first(where: { model in
+            (identity.connectionID != nil && model.identity.connectionID == identity.connectionID)
+            || (!identity.chatID.isEmpty && model.identity.chatID == identity.chatID)
+            || (identity.hubID != nil && model.identity.hubID == identity.hubID)
+        }) {
+            if let connID = identity.connectionID { conversationModels[connID] = existing }
+            if !identity.chatID.isEmpty { conversationModels[identity.chatID] = existing }
+            return existing
+        }
+
+        let model = ConversationModel(
             identity: identity,
             chatRepository: chat,
             currentUserID: session.currentSession?.userId ?? "",
             currentUserName: "You",
             timelineCache: timelineCache,
             pendingSends: pendingSends,
-            identities: identities
+            identities: identities,
+            store: .shared
         )
+        model.onLocalSend = { [weak self] chatID, messageID, content, type, date in
+            self?.inbox?.applyLocalSend(chatID: chatID, messageID: messageID, content: content, messageType: type, date: date)
+        }
+        model.onForwarded = { [weak self] target, sent in
+            self?.liveModel(chatID: sent.chatID.isEmpty ? target.chatID : sent.chatID)?.appendExternal(sent)
+        }
+        if let connID = identity.connectionID { conversationModels[connID] = model }
+        if !identity.chatID.isEmpty { conversationModels[identity.chatID] = model }
+        if let hubID = identity.hubID { conversationModels[hubID] = model }
+        return model
+    }
+
+    /// The Clicks inbox model owned by the shell (weak: the shell owns it).
+    weak var inbox: ConversationListModel?
+
+    private func liveModel(chatID: String) -> ConversationModel? {
+        conversationModels[chatID] ?? conversationModels.values.first { $0.identity.chatID == chatID }
+    }
+
+    /// The inbox channel saw a new message: an open chat whose own channel is down applies it.
+    func forwardInboxInsert(_ payload: RealtimeMessagePayload) {
+        guard let model = liveModel(chatID: payload.chatID), model.isVisible else { return }
+        Task { await model.receiveInboxInsert(payload) }
+    }
+
+    /// Foreground return: the chat on screen (if any) re-checks its socket and catches up.
+    func resumeLiveConversations() {
+        // Models are stored under several keys (chat, connection, hub): resume each once.
+        var seen = Set<ObjectIdentifier>()
+        for model in conversationModels.values where model.isVisible && seen.insert(ObjectIdentifier(model)).inserted {
+            Task { await model.resume() }
+        }
     }
 
     public init(
@@ -70,6 +127,11 @@ public final class AppEnvironment {
         self.permissions = permissions
         self.avatarService = avatarService
         self.location = location
+
+        // Every realtime (re)join asks for a fresh token instead of reusing a captured one.
+        ChatRealtimeManager.tokenProvider = { [weak session] in
+            await session?.validAccessToken()
+        }
 
         let resolvedAPI = api ?? ClickAPIClient(
             baseURL: AppConfig.shared.apiBaseURL,
@@ -139,6 +201,7 @@ public final class AppEnvironment {
         session.onSignOut = { [weak self] in
             await self?.clearSessionCaches()
         }
+        selfData.attach(self)
         session.onPostAuthResolved = { [weak self] in
             self?.handlePostAuthResolved()
         }
@@ -153,6 +216,7 @@ public final class AppEnvironment {
         await telemetryQueue.removeAll()
         await EventReminderScheduler.cancelAll()
         onboardingCoordinators.removeAll()
+        conversationModels.removeAll()
     }
 
     private var onboardingCoordinators: [String: OnboardingCoordinator] = [:]

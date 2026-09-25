@@ -73,11 +73,6 @@ final class MapFeatureModel {
         case precise
     }
 
-    enum SheetDetent: CaseIterable {
-        case lip
-        case medium
-        case expanded
-    }
 
     var camera: MapCameraPosition = .automatic
     private(set) var userCoordinate: CLLocationCoordinate2D?
@@ -89,11 +84,9 @@ final class MapFeatureModel {
     var layers: Set<MapLayer> = Set(MapLayer.allCases)
     /// Single-layer filter chosen from Nearby chips; applies to the map too.
     var filter: MapLayer?
-    var query = ""
     var selection: MapSelection?
-    var sheetDetent: SheetDetent = .lip
-    /// `sheetDetent` once its snap animation finished; drives tab-bar and chrome visibility.
-    var settledDetent: SheetDetent = .lip
+    var isNearbyPresented = false
+    var nearbyDetent: PresentationDetent = .medium
 
     private var environment: AppEnvironment?
     private var locationTask: Task<Void, Never>?
@@ -117,17 +110,16 @@ final class MapFeatureModel {
         let all = beacons.map { MapItem(kind: .beacon($0)) }
             + (discovery.value?.hubs ?? []).map { MapItem(kind: .hub($0)) }
             + pins.map { MapItem(kind: .person($0)) }
-        let clean = query.trimmingCharacters(in: .whitespacesAndNewlines)
         return all.filter { item in
             layers.contains(item.layer)
                 && (!applyingFilter || filter == nil || filter == item.layer)
-                && (clean.isEmpty || item.title.localizedCaseInsensitiveContains(clean) || placeText(item).localizedCaseInsensitiveContains(clean))
         }
     }
 
-    /// Discovery list: live events first, then by layer. People appear on the map only.
+    /// Discovery list: live events first, then by layer, then "My network" (the people whose
+    /// pins the map shows), nearest first — the same items the chip counts come from.
     func sections(pins: [ConnectionPin], now: Date = .now) -> [NearbySection] {
-        let visible = items(pins: [], now: now)
+        let visible = items(pins: pins, now: now)
         func beaconItems(_ predicate: (MapBeacon) -> Bool) -> [MapItem] {
             visible.filter { if case .beacon(let beacon) = $0.kind { return predicate(beacon) }; return false }
         }
@@ -144,7 +136,19 @@ final class MapFeatureModel {
             let items = beaconItems { !$0.isEvent && MapLayer(kind: $0.kind) == layer }
             sections.append(NearbySection(id: layer.rawValue, title: layer.label, items: items))
         }
+        let people = visible.filter { if case .person = $0.kind { return true }; return false }
+        sections.append(NearbySection(id: "people", title: MapLayer.people.label, items: sortedByDistance(people)))
         return sections.filter { !$0.items.isEmpty }
+    }
+
+    /// Nearest first when the user's location is known; otherwise alphabetical.
+    private func sortedByDistance(_ items: [MapItem]) -> [MapItem] {
+        guard let userCoordinate else { return items.sorted { $0.title.localizedCaseInsensitiveCompare($1.title) == .orderedAscending } }
+        let here = CLLocation(latitude: userCoordinate.latitude, longitude: userCoordinate.longitude)
+        func distance(_ item: MapItem) -> CLLocationDistance {
+            here.distance(from: CLLocation(latitude: item.coordinate.latitude, longitude: item.coordinate.longitude))
+        }
+        return items.sorted { distance($0) < distance($1) }
     }
 
     /// Real counts per layer for the filter chips (before the chip filter is applied).
@@ -163,8 +167,8 @@ final class MapFeatureModel {
         if discovery.value == nil {
             return discovery.errorMessage != nil ? "Couldn't load what's nearby" : "Looking around you…"
         }
-        let count = items(pins: []).count
-        let live = sections(pins: []).first { $0.id == "live" }?.items.count ?? 0
+        let count = items(pins: pins).count
+        let live = sections(pins: pins).first { $0.id == "live" }?.items.count ?? 0
         if count == 0 { return "Nothing nearby right now" }
         return live > 0 ? "\(count) nearby · \(live) live now" : "\(count) nearby"
     }
@@ -240,9 +244,36 @@ final class MapFeatureModel {
     /// Coalesces viewport changes: refetches only when the center moved ~1 km from the last fetch.
     /// Latitude span of the visible region; clustering kicks in when zoomed out.
     private(set) var visibleLatitudeDelta: Double = 0.05
+    /// Pin mode stays on until the zoom clearly drops (hysteresis), and a cluster tap sets a
+    /// floor so the zoom it lands on is always shown as individual pins.
+    private var stickyPinMode = false
+    private var pinRenderZoomFloor: Double?
+    /// Pins stacked under a tap, shown in the "Which pin?" chooser.
+    var overlapChoices: [MapItem] = []
+    /// The item just picked from the chooser: its selection must not reopen the chooser.
+    var chosenFromStack: MapSelection?
+
+    /// The zoom clustering renders at (with hysteresis and the post-tap floor applied).
+    var renderZoom: Double {
+        let zoom = Self.zoom(forLatitudeDelta: visibleLatitudeDelta)
+        if let floor = pinRenderZoomFloor { return max(zoom, floor) }
+        return stickyPinMode ? max(zoom, Self.clusterThresholdZoom) : zoom
+    }
+
+    func noteClusterTap(targetZoom: Double) {
+        pinRenderZoomFloor = max(Self.clusterThresholdZoom + 0.25, targetZoom)
+    }
 
     func cameraSettled(center: CLLocationCoordinate2D, latitudeDelta: Double? = nil) {
-        if let latitudeDelta { visibleLatitudeDelta = latitudeDelta }
+        if let latitudeDelta {
+            visibleLatitudeDelta = latitudeDelta
+            let zoom = Self.zoom(forLatitudeDelta: latitudeDelta)
+            if zoom >= Self.clusterThresholdZoom { stickyPinMode = true }
+            if zoom < Self.pinModeExitZoom {
+                stickyPinMode = false
+                pinRenderZoomFloor = nil
+            }
+        }
         guard userCoordinate == nil || locationState == .denied else { return }
         fetchIfMoved(to: center)
     }
@@ -287,7 +318,8 @@ final class MapFeatureModel {
         case .layer(let layer):
             filter = layer
             layers.insert(layer)
-            sheetDetent = .medium
+            isNearbyPresented = true
+            nearbyDetent = .medium
         case .hub(let id):
             if let hub = discovery.value?.hubs.first(where: { $0.id == id }) {
                 select(.hub(id), at: hub.coordinate)
@@ -301,7 +333,7 @@ final class MapFeatureModel {
                 focusedBeacons.append(beacon)
             }
             layers.insert(MapLayer(kind: beacon.kind))
-            sheetDetent = .lip
+            isNearbyPresented = false
             withAnimation {
                 camera = .region(MKCoordinateRegion(center: beacon.coordinate, latitudinalMeters: 1200, longitudinalMeters: 1200))
             }
@@ -319,7 +351,7 @@ final class MapFeatureModel {
 
     func select(_ selection: MapSelection, at coordinate: CLLocationCoordinate2D) {
         self.selection = selection
-        sheetDetent = .lip
+        isNearbyPresented = false
         withAnimation {
             camera = .region(MKCoordinateRegion(center: coordinate, latitudinalMeters: 1200, longitudinalMeters: 1200))
         }
@@ -332,13 +364,6 @@ final class MapFeatureModel {
 
     // MARK: - Private
 
-    private func placeText(_ item: MapItem) -> String {
-        switch item.kind {
-        case .beacon(let beacon): beacon.locationName ?? beacon.formattedAddress ?? ""
-        case .hub(let hub): hub.category
-        case .person(let pin): pin.locationName ?? ""
-        }
-    }
 
     private func startDate(_ item: MapItem) -> Date {
         if case .beacon(let beacon) = item.kind { return beacon.schedule?.start ?? .distantFuture }
@@ -353,32 +378,109 @@ struct MapCluster: Identifiable {
     let items: [MapItem]
 }
 
+/// Clustering and overlap rules ported from the Kotlin app (`MapUtils.kt`,
+/// `MapViewModelCamera.kt`, `MapViewModelInteractions.kt`) so both clients group pins alike.
 extension MapFeatureModel {
-    /// Clustering starts above this latitude span (~9 km); closer in, every pin is drawn.
+    /// At or above this zoom every pin is drawn individually.
+    nonisolated static let clusterThresholdZoom: Double = 12
+    /// Pin mode, once entered, holds until the zoom drops below this (no flicker at the edge).
+    nonisolated static let pinModeExitZoom: Double = clusterThresholdZoom - 0.75
+    /// Kept for callers that size zooms relative to the old span threshold (~9 km).
     nonisolated static let clusteringSpan: Double = 0.08
 
-    /// Grid clustering: items in the same cell (a tenth of the visible span) merge into one
-    /// bubble. Deterministic and cheap, so panning never reshuffles pins.
-    nonisolated static func clusters(_ items: [MapItem], latitudeDelta: Double) -> [MapCluster] {
-        guard latitudeDelta > clusteringSpan else {
-            return items.map { MapCluster(id: "\($0.id)", coordinate: $0.coordinate, items: [$0]) }
+    /// Web-Mercator zoom for a visible latitude span.
+    nonisolated static func zoom(forLatitudeDelta delta: Double) -> Double {
+        log2(360 / max(delta, 0.000_01))
+    }
+
+    nonisolated static func latitudeDelta(forZoom zoom: Double) -> Double {
+        360 / pow(2, zoom)
+    }
+
+    /// Radius within which pins merge, stepped by zoom (KMP `determineMapRenderData`).
+    nonisolated static func clusterRadiusMeters(zoom: Double) -> Double {
+        switch zoom {
+        case ..<6: 10_000
+        case ..<8: 5_000
+        case ..<10: 1_000
+        default: 500
         }
-        let cell = latitudeDelta / 10
-        var buckets: [String: [MapItem]] = [:]
-        var order: [String] = []
-        for item in items {
-            let key = "\(Int((item.coordinate.latitude / cell).rounded(.down))):\(Int((item.coordinate.longitude / cell).rounded(.down)))"
-            if buckets[key] == nil { order.append(key) }
-            buckets[key, default: []].append(item)
+    }
+
+    /// Kinds that are always drawn on their own (KMP: soundtrack, hazard, SOS, utility, event).
+    nonisolated static func neverClusters(_ item: MapItem) -> Bool {
+        guard case .beacon(let beacon) = item.kind else { return false }
+        switch beacon.kind {
+        case .soundtrack, .hazard, .sos, .utility, .event: return true
+        default: return false
         }
-        return order.compactMap { key in
-            guard let members = buckets[key] else { return nil }
-            if members.count == 1 {
-                return MapCluster(id: "\(members[0].id)", coordinate: members[0].coordinate, items: members)
+    }
+
+    nonisolated static func distanceMeters(_ a: CLLocationCoordinate2D, _ b: CLLocationCoordinate2D) -> Double {
+        let r = 6_371_000.0
+        let dLat = (b.latitude - a.latitude) * .pi / 180
+        let dLon = (b.longitude - a.longitude) * .pi / 180
+        let h = sin(dLat / 2) * sin(dLat / 2)
+            + cos(a.latitude * .pi / 180) * cos(b.latitude * .pi / 180) * sin(dLon / 2) * sin(dLon / 2)
+        return 2 * r * asin(min(1, sqrt(h)))
+    }
+
+    /// Greedy single-pass clustering in input order (KMP `clusterUnifiedMembers`). Below the
+    /// threshold zoom, members within the zoom's radius of a seed merge into one bubble.
+    nonisolated static func clusters(_ items: [MapItem], zoom: Double) -> [MapCluster] {
+        let singles = { (item: MapItem) in MapCluster(id: "\(item.id)", coordinate: item.coordinate, items: [item]) }
+        guard zoom < clusterThresholdZoom else { return items.map(singles) }
+        let radius = clusterRadiusMeters(zoom: zoom)
+        var result: [MapCluster] = items.filter(neverClusters).map(singles)
+        let members = items.filter { !neverClusters($0) }
+        var assigned = Set<MapSelection>()
+        for seed in members where !assigned.contains(seed.id) {
+            let nearby = members.filter { !assigned.contains($0.id) && distanceMeters(seed.coordinate, $0.coordinate) <= radius }
+            for member in nearby { assigned.insert(member.id) }
+            if nearby.count == 1 {
+                result.append(singles(nearby[0]))
+                continue
             }
-            let lat = members.map(\.coordinate.latitude).reduce(0, +) / Double(members.count)
-            let lon = members.map(\.coordinate.longitude).reduce(0, +) / Double(members.count)
-            return MapCluster(id: "cluster.\(key)", coordinate: CLLocationCoordinate2D(latitude: lat, longitude: lon), items: members)
+            let lat = nearby.map(\.coordinate.latitude).reduce(0, +) / Double(nearby.count)
+            let lon = nearby.map(\.coordinate.longitude).reduce(0, +) / Double(nearby.count)
+            let key = nearby.map { "\($0.id)" }.sorted().joined(separator: "|")
+            result.append(MapCluster(id: "cluster.\(key.hashValue)", coordinate: CLLocationCoordinate2D(latitude: lat, longitude: lon), items: nearby))
         }
+        return result
+    }
+
+    /// Metres covered by one pin at this zoom and latitude (44 pt pin × 0.85, clamped 12–90 m),
+    /// KMP `mapPinOverlapRadiusMeters`.
+    nonisolated static func overlapRadiusMeters(latitude: Double, zoom: Double, pinDiameter: Double = 44) -> Double {
+        let clampedZoom = min(max(zoom, 2), 22)
+        let clampedLat = min(max(latitude, -85), 85)
+        let metersPerPoint = 156_543.033_92 * cos(clampedLat * .pi / 180) / pow(2, clampedZoom)
+        return min(max(pinDiameter * 0.85 * metersPerPoint, 12), 90)
+    }
+
+    /// Every drawn pin stacked under the tapped one (itself included), for the "Which pin?"
+    /// chooser (KMP `overlappingMapPins`).
+    nonisolated static func overlapping(_ tapped: MapItem, in items: [MapItem], zoom: Double) -> [MapItem] {
+        let radius = overlapRadiusMeters(latitude: tapped.coordinate.latitude, zoom: zoom)
+        var seen = Set<MapSelection>()
+        return ([tapped] + items.filter { distanceMeters(tapped.coordinate, $0.coordinate) <= radius })
+            .filter { seen.insert($0.id).inserted }
+    }
+
+    /// Zoom a cluster tap lands on: fits the members, never short of pin mode (KMP step table).
+    nonisolated static func zoomToFit(_ cluster: MapCluster) -> Double {
+        let lats = cluster.items.map(\.coordinate.latitude)
+        let lons = cluster.items.map(\.coordinate.longitude)
+        let span = max((lats.max() ?? 0) - (lats.min() ?? 0), (lons.max() ?? 0) - (lons.min() ?? 0))
+        let fit: Double = switch span {
+        case 10...: 4
+        case 5...: 6
+        case 1...: 8
+        case 0.1...: 10
+        case 0.01...: 12
+        case 0.001...: 14
+        default: 16
+        }
+        return max(clusterThresholdZoom + 1, fit)
     }
 }

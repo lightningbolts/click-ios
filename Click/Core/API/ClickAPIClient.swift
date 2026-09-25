@@ -1,31 +1,58 @@
 import Foundation
+import Synchronization
 
 /// Primary typed networking client for Click backend APIs.
 public actor ClickAPIClient {
     public let baseURL: URL
-    private let session: URLSession
+    private var session: URLSession
+    /// Whether the session was injected (tests) and must never be replaced.
+    private let ownsSession: Bool
+    private var sessionGeneration = 0
     private let tokenProvider: (@Sendable () async -> String?)?
     private let tokenRefresher: (@Sendable () async throws -> String)?
 
     public init(
         baseURL: URL,
-        session: URLSession = ClickAPIClient.makeSession(),
+        session: URLSession? = nil,
         tokenProvider: (@Sendable () async -> String?)? = nil,
         tokenRefresher: (@Sendable () async throws -> String)? = nil
     ) {
         self.baseURL = baseURL
-        self.session = session
+        self.session = session ?? Self.makeSession()
+        self.ownsSession = session == nil
         self.tokenProvider = tokenProvider
         self.tokenRefresher = tokenRefresher
     }
 
-    /// Dedicated API session: waits briefly for connectivity instead of failing instantly,
-    /// bounds each request at 20 s, and never serves API responses from an HTTP cache.
+    nonisolated static let resourceTimeout: TimeInterval = 30
+
+    /// Bumped when the network path changes or the app returns from background: connections
+    /// pooled before then are usually dead and would fail the next request with -1005.
+    private nonisolated static let poolGeneration = Mutex(0)
+
+    public nonisolated static func resetConnectionPools() {
+        poolGeneration.withLock { $0 += 1 }
+    }
+
+    /// Replaces the session (dropping its connection pool) after `resetConnectionPools()`.
+    private func currentSession() -> URLSession {
+        let generation = Self.poolGeneration.withLock { $0 }
+        if ownsSession, generation != sessionGeneration {
+            sessionGeneration = generation
+            session.finishTasksAndInvalidate()
+            session = Self.makeSession()
+        }
+        return session
+    }
+
+    /// Dedicated API session: fails fast when offline (the UI shows cached data and an offline
+    /// notice) rather than hanging, bounds each request at 15 s, and never serves API responses
+    /// from an HTTP cache.
     public static func makeSession() -> URLSession {
         let config = URLSessionConfiguration.ephemeral
-        config.waitsForConnectivity = true
-        config.timeoutIntervalForRequest = 20
-        config.timeoutIntervalForResource = 60
+        config.waitsForConnectivity = false
+        config.timeoutIntervalForRequest = 15
+        config.timeoutIntervalForResource = resourceTimeout
         config.urlCache = nil
         config.requestCachePolicy = .reloadIgnoringLocalCacheData
         return URLSession(configuration: config)
@@ -48,6 +75,7 @@ public actor ClickAPIClient {
             decoder.keyDecodingStrategy = .useDefaultKeys
             return try decoder.decode(T.self, from: data)
         } catch {
+            ClickLog.net.error("decode \(request.path, privacy: .public) as \(String(describing: T.self), privacy: .public) failed: \(String(describing: error), privacy: .public) body: \(ClickLog.excerpt(data), privacy: .private)")
             throw APIError.decoding
         }
     }
@@ -87,11 +115,20 @@ public actor ClickAPIClient {
             print("[net] \(request.method.rawValue) \(request.path) \(result.1.statusCode) \(Int(Date().timeIntervalSince(started) * 1000))ms")
             return result
         } catch {
-            print("[net] \(request.method.rawValue) \(request.path) FAILED \(error) \(Int(Date().timeIntervalSince(started) * 1000))ms")
+            if !error.isCancellation {
+                ClickLog.net.error("\(request.method.rawValue, privacy: .public) \(request.path, privacy: .public) FAILED \(String(describing: error), privacy: .public) \(Int(Date().timeIntervalSince(started) * 1000))ms")
+            }
             throw error
         }
         #else
-        return try await performRawUntimed(request, uploadProgress: uploadProgress)
+        do {
+            return try await performRawUntimed(request, uploadProgress: uploadProgress)
+        } catch {
+            if !error.isCancellation {
+                ClickLog.net.error("\(request.method.rawValue, privacy: .public) \(request.path, privacy: .public) FAILED \(String(describing: error), privacy: .public)")
+            }
+            throw error
+        }
         #endif
     }
 
@@ -124,6 +161,9 @@ public actor ClickAPIClient {
             } catch let error as APIError {
                 switch error {
                 case .offline, .timeout, .cancelled:
+                    throw error
+                case .server(_, Transport.connectionFailedCode, _), .server(-1, _, _), .server(500...599, _, _):
+                    // Couldn't reach auth: a network problem, not a revoked session.
                     throw error
                 default:
                     throw APIError.unauthorized
@@ -210,7 +250,7 @@ public actor ClickAPIClient {
 
     private func send(_ urlRequest: URLRequest, idempotent: Bool = false, uploadProgress: (@Sendable (Double) -> Void)? = nil) async throws -> (Data, HTTPURLResponse) {
         if Task.isCancelled { throw APIError.cancelled }
-        let session = self.session
+        let session = currentSession()
         let (data, response): (Data, URLResponse)
         do {
             (data, response) = try await Transport.withRetry(idempotent: idempotent) {
@@ -223,6 +263,10 @@ public actor ClickAPIClient {
             }
         } catch let error as APIError {
             throw error
+        } catch is CancellationError {
+            throw APIError.cancelled
+        } catch let urlError as URLError where urlError.code == .cancelled {
+            throw APIError.cancelled
         } catch {
             throw APIError.server(status: -1, code: nil, message: error.localizedDescription)
         }

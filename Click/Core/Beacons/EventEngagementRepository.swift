@@ -80,13 +80,31 @@ public actor EventEngagementRepository {
         self.api = api
     }
 
+    private var rsvpCache: [String: RSVPState] = [:]
+    private var engagementCache: [String: EventEngagement] = [:]
+    private var directoryCache: [String: EventDirectory] = [:]
+
+    public func cachedRSVP(beaconID: String) -> RSVPState? {
+        rsvpCache[beaconID]
+    }
+
+    public func cachedEngagement(beaconID: String) -> EventEngagement? {
+        engagementCache[beaconID]
+    }
+
+    public func cachedDirectory(beaconID: String) -> EventDirectory? {
+        directoryCache[beaconID]
+    }
+
     public func rsvpState(beaconID: String) async throws -> RSVPState {
         let root = try await object("/api/beacons/\(beaconID)/rsvp", .get)
-        return RSVPState(
+        let state = RSVPState(
             isGoing: JSONFields.bool(root["current_user_signed_up"]) ?? false,
             request: JSONFields.string(root["request_status"]).flatMap(RSVPState.Request.init(rawValue:)),
             count: JSONFields.int(root["rsvp_count"]) ?? JSONFields.rows(root["attendees"]).count
         )
+        rsvpCache[beaconID] = state
+        return state
     }
 
     /// RSVP or request to join; the response decides between going, pending, and waitlisted.
@@ -94,7 +112,10 @@ public actor EventEngagementRepository {
         do {
             let body = try JSONSerialization.data(withJSONObject: ["source": "event_detail", "platform": "ios"])
             let root = try await object("/api/beacons/\(beaconID)/rsvp", .post, body: body)
-            return JSONFields.string(root["request_status"]).flatMap(RSVPState.Request.init(rawValue:))
+            let req = JSONFields.string(root["request_status"]).flatMap(RSVPState.Request.init(rawValue:))
+            let prevCount = rsvpCache[beaconID]?.count ?? 0
+            rsvpCache[beaconID] = RSVPState(isGoing: req == nil, request: req, count: prevCount + 1)
+            return req
         } catch APIError.forbidden {
             throw RSVPError.notAllowed
         } catch APIError.conflict {
@@ -104,15 +125,19 @@ public actor EventEngagementRepository {
 
     public func cancelRSVP(beaconID: String) async throws {
         _ = try await object("/api/beacons/\(beaconID)/rsvp", .delete)
+        let prevCount = rsvpCache[beaconID]?.count ?? 1
+        rsvpCache[beaconID] = RSVPState(isGoing: false, request: nil, count: max(0, prevCount - 1))
     }
 
     public func engagement(beaconID: String) async throws -> EventEngagement {
         let root = try await object("/api/beacons/\(beaconID)/engagement", .get)
-        return EventEngagement(
+        let eng = EventEngagement(
             bookmarked: JSONFields.bool(root["bookmarked"]) ?? false,
             checkedIn: JSONFields.bool(root["checked_in"]) ?? false,
             checkInCount: JSONFields.int(root["check_in_count"]) ?? 0
         )
+        engagementCache[beaconID] = eng
+        return eng
     }
 
     /// Returns the server's bookmark value (the only value the UI may show as saved).
@@ -120,6 +145,11 @@ public actor EventEngagementRepository {
         let body = try JSONSerialization.data(withJSONObject: ["bookmarked": bookmarked])
         let root = try await object("/api/beacons/\(beaconID)/bookmark", .put, body: body)
         guard let confirmed = JSONFields.bool(root["bookmarked"]) else { throw APIError.decoding }
+        if let existing = engagementCache[beaconID] {
+            engagementCache[beaconID] = EventEngagement(bookmarked: confirmed, checkedIn: existing.checkedIn, checkInCount: existing.checkInCount)
+        } else {
+            engagementCache[beaconID] = EventEngagement(bookmarked: confirmed, checkedIn: false, checkInCount: 0)
+        }
         return confirmed
     }
 
@@ -132,7 +162,11 @@ public actor EventEngagementRepository {
         }
         do {
             let root = try await object("/api/beacons/\(beaconID)/check-in", .post, body: try JSONSerialization.data(withJSONObject: payload))
-            return JSONFields.int(root["check_in_count"]) ?? 0
+            let count = JSONFields.int(root["check_in_count"]) ?? 0
+            if let existing = engagementCache[beaconID] {
+                engagementCache[beaconID] = EventEngagement(bookmarked: existing.bookmarked, checkedIn: true, checkInCount: count)
+            }
+            return count
         } catch {
             throw Self.checkInError(error)
         }
@@ -140,6 +174,9 @@ public actor EventEngagementRepository {
 
     public func checkOut(beaconID: String) async throws {
         _ = try await object("/api/beacons/\(beaconID)/check-in", .delete)
+        if let existing = engagementCache[beaconID] {
+            engagementCache[beaconID] = EventEngagement(bookmarked: existing.bookmarked, checkedIn: false, checkInCount: max(0, existing.checkInCount - 1))
+        }
     }
 
     public func directory(beaconID: String) async throws -> EventDirectory {
@@ -159,7 +196,9 @@ public actor EventEngagementRepository {
                 signedUpAt: JSONFields.date(row["signed_up_at"])
             )
         }
-        return EventDirectory(attendees: attendees, mutualsUnlocked: JSONFields.bool(root["mutuals_section_unlocked"]) ?? false)
+        let dir = EventDirectory(attendees: attendees, mutualsUnlocked: JSONFields.bool(root["mutuals_section_unlocked"]) ?? false)
+        directoryCache[beaconID] = dir
+        return dir
     }
 
     /// Creator-only (the server enforces it).

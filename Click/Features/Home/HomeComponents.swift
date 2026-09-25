@@ -67,7 +67,7 @@ struct HomeLoadingRow: View {
     var body: some View {
         HStack {
             Spacer()
-            ProgressView()
+            ClickLoadingView(size: 26, fillsSpace: false)
             Spacer()
         }
         .frame(minHeight: ClickMetrics.rowMinHeight)

@@ -11,9 +11,10 @@ public struct MeView: View {
     @Environment(ConversationListModel.self) private var conversations
     @Environment(\.openURL) private var openURL
 
-    @State private var profile = ModuleState<SelfProfile>()
-    @State private var intents = ModuleState<[AvailabilityIntentPost]>()
-    @State private var savedEvents = ModuleState<[SavedEvent]>()
+    /// Shared with Home and the settings editors: an edit anywhere shows here without a reload.
+    private var profile: ModuleState<SelfProfile> { env.selfData.profile }
+    private var intents: ModuleState<[AvailabilityIntentPost]> { env.selfData.intents }
+    private var savedEvents: ModuleState<[SavedEvent]> { env.selfData.savedEvents }
     @State private var pendingFree: Bool?
     @State private var alertMessage: String?
     @State private var isEditingAvailability = false
@@ -367,55 +368,29 @@ public struct MeView: View {
 
     private var userID: String? { env.session.currentSession?.userId }
 
+    /// Paints the shared copy instantly; refetches only what is older than a minute, so
+    /// returning to Me doesn't cost three requests every time.
     private func bootstrap() async {
-        guard let userID else { return }
-        profile.seed(await env.me.cachedSelfProfile(userID: userID))
-        intents.seed(await env.me.cachedIntents(userID: userID))
-        savedEvents.seed(await env.beacons.cachedBookmarks(userID: userID))
+        await env.selfData.seedIfNeeded()
         if let cached = profile.value {
             meTabAvatar?.update(avatarURL: cached.avatarURL)
         }
-        await refresh()
+        await env.selfData.refresh()
+        if let fresh = profile.value { meTabAvatar?.update(avatarURL: fresh.avatarURL) }
     }
 
     private func refresh() async {
-        async let profileLoad: Void = loadProfile()
-        async let intentsLoad: Void = loadIntents()
-        async let savedLoad: Void = loadSaved()
-        _ = await (profileLoad, intentsLoad, savedLoad)
+        await env.selfData.refresh(force: true)
+        if let fresh = profile.value { meTabAvatar?.update(avatarURL: fresh.avatarURL) }
     }
 
     private func loadProfile() async {
-        guard let userID else { return }
-        profile.begin()
-        do {
-            let fresh = try await env.me.selfProfile(userID: userID)
-            profile.succeed(fresh)
-            meTabAvatar?.update(avatarURL: fresh.avatarURL)
-            if let free = fresh.isFreeCurrently { env.settings.freeThisWeek = free }
-        } catch {
-            profile.fail(error)
-        }
+        await env.selfData.loadProfile(force: true)
+        if let fresh = profile.value { meTabAvatar?.update(avatarURL: fresh.avatarURL) }
     }
 
     private func loadIntents() async {
-        guard let userID else { return }
-        intents.begin()
-        do {
-            intents.succeed(try await env.me.availabilityIntents(userID: userID))
-        } catch {
-            intents.fail(error)
-        }
-    }
-
-    private func loadSaved() async {
-        guard let userID else { return }
-        savedEvents.begin()
-        do {
-            savedEvents.succeed(try await env.beacons.bookmarks(userID: userID))
-        } catch {
-            savedEvents.fail(error)
-        }
+        await env.selfData.loadIntents(force: true)
     }
 
     private func setFreeCurrently(_ value: Bool) async {
@@ -425,7 +400,7 @@ public struct MeView: View {
         defer { pendingFree = nil }
         do {
             let saved = try await env.me.setFreeCurrently(value)
-            profile.succeed(current.with(isFreeCurrently: saved))
+            env.selfData.apply(profile: current.with(isFreeCurrently: saved))
             env.settings.freeThisWeek = saved
         } catch {
             alertMessage = "\"Free currently\" wasn't changed. \(error.userFacingMessage)"

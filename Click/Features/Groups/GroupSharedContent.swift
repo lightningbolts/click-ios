@@ -26,7 +26,7 @@ struct GroupSharedView: View {
         ScrollView {
             VStack(alignment: .leading, spacing: 12) {
                 if !loaded {
-                    ProgressView().frame(maxWidth: .infinity).padding(40)
+                    ClickLoadingView(size: 32, fillsSpace: false).padding(28)
                 } else if let error {
                     Button("Couldn't load. \(error) Retry") { Task { await load() } }.padding()
                 } else if kind == .beacons {
@@ -120,7 +120,7 @@ struct GroupCommonInterests: View {
     var body: some View {
         Group {
             if !loaded {
-                ProgressView().frame(maxWidth: .infinity)
+                ClickLoadingView(size: 26, fillsSpace: false)
             } else if counts.isEmpty {
                 Text("No interests in common yet.").foregroundStyle(ClickColors.textTertiary)
             } else {

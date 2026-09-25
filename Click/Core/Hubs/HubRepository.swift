@@ -1,7 +1,7 @@
 import Foundation
 
 /// A community or event hub as the server describes it (`GET /api/hub/{id}`).
-public struct HubInfo: Equatable, Sendable {
+public struct HubInfo: Equatable, Sendable, Codable {
     public let id: String
     public let name: String
     public let category: String?

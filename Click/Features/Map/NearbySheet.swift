@@ -1,85 +1,12 @@
 import SwiftUI
+import CoreLocation
 
-/// The Map root's Nearby discovery surface: collapsed lip → medium → expanded (spec §49, §63).
-///
-/// A narrowly scoped container rather than a system `.sheet`: a presented sheet would cover the
-/// native tab bar on the Map root. Only the header drags or taps between detents, so the list
-/// scrolls with native physics and never competes with the sheet gesture, and the map stays
-/// pannable everywhere outside the surface.
-struct NearbySheet: View {
+/// The Map root's floating collapsed lip: tapping or dragging up presents the native Nearby sheet.
+struct NearbyLip: View {
     @Bindable var model: MapFeatureModel
     let pins: [ConnectionPin]
-    let availableHeight: CGFloat
-    let onOpen: (MapItem) -> Void
-
-    /// The sheet's height while a finger is on it (nil when resting on a detent). One value
-    /// drives the frame; there is no second implicit animation fighting the finger.
-    @State private var liveHeight: CGFloat?
-    @State private var dragStartHeight: CGFloat = 0
-    @FocusState private var isSearchFocused: Bool
-    @Environment(\.accessibilityReduceMotion) private var reduceMotion
-
-    nonisolated static let lipHeight: CGFloat = 84
-
-    nonisolated static func height(for detent: MapFeatureModel.SheetDetent, available: CGFloat) -> CGFloat {
-        switch detent {
-        case .lip: lipHeight
-        case .medium: max(lipHeight, available * 0.46)
-        case .expanded: max(lipHeight, available - 8)
-        }
-    }
-
-    private var baseHeight: CGFloat { Self.height(for: model.sheetDetent, available: availableHeight) }
-
-    /// Content fades in over the first 60 pt above the lip instead of mounting mid-drag.
-    nonisolated static func contentOpacity(height: CGFloat) -> Double {
-        Double(min(1, max(0, (height - lipHeight) / 60)))
-    }
-
-    /// Nearest detent to where the gesture would come to rest (uses fling velocity).
-    nonisolated static func settledDetent(projectedHeight: CGFloat, available: CGFloat) -> MapFeatureModel.SheetDetent {
-        MapFeatureModel.SheetDetent.allCases.min {
-            abs(height(for: $0, available: available) - projectedHeight) < abs(height(for: $1, available: available) - projectedHeight)
-        } ?? .lip
-    }
 
     var body: some View {
-        let maxHeight = Self.height(for: .expanded, available: availableHeight)
-        let height = min(max(liveHeight ?? baseHeight, Self.lipHeight), maxHeight)
-        // The card is always laid out at full height and only *moved* (offset) — a transform,
-        // not a relayout — so dragging and snapping never re-measure the list, material or
-        // shadow. The host clips it at the map's bottom edge.
-        VStack(spacing: 0) {
-            header
-            content
-                .opacity(Self.contentOpacity(height: height))
-                .allowsHitTesting(model.sheetDetent != .lip && liveHeight == nil)
-                .accessibilityHidden(model.sheetDetent == .lip)
-        }
-        .frame(maxWidth: .infinity)
-        .frame(height: maxHeight, alignment: .top)
-        .background(.regularMaterial, in: UnevenRoundedRectangle(topLeadingRadius: 30, topTrailingRadius: 30, style: .continuous))
-        .clipShape(UnevenRoundedRectangle(topLeadingRadius: 30, topTrailingRadius: 30, style: .continuous))
-        .overlay(
-            UnevenRoundedRectangle(topLeadingRadius: 30, topTrailingRadius: 30, style: .continuous)
-                .stroke(Color.white.opacity(0.08), lineWidth: 0.5)
-        )
-        .shadow(color: .black.opacity(0.22), radius: 18, y: 4)
-        .padding(.horizontal, 8)
-        .offset(y: maxHeight - height)
-        .animation(liveHeight == nil && !reduceMotion ? .spring(response: 0.45, dampingFraction: 0.86) : nil, value: model.sheetDetent)
-        .onChange(of: model.sheetDetent) { _, detent in
-            // Tab bar and floating map controls change only once the snap has finished.
-            Task {
-                try? await Task.sleep(for: .milliseconds(reduceMotion ? 0 : 420))
-                if model.sheetDetent == detent { model.settledDetent = detent }
-            }
-        }
-    }
-
-    // MARK: - Header (the only drag target)
-
-    private var header: some View {
         VStack(spacing: 8) {
             Capsule()
                 .fill(ClickColors.textTertiary.opacity(0.5))
@@ -100,44 +27,40 @@ struct NearbySheet: View {
                     Button("Turn on") { Task { await model.requestLocation() } }
                         .font(ClickTypography.supportingEmphasized)
                         .foregroundStyle(ClickColors.accentForeground)
-                } else if model.sheetDetent != .lip {
-                    Button {
-                        model.refresh()
-                    } label: {
-                        Image(systemName: "arrow.clockwise")
-                            .frame(width: 36, height: 36)
-                            .background(ClickColors.fillSubtle, in: Circle())
-                    }
-                    .accessibilityLabel("Refresh nearby")
                 } else {
                     previewVisuals
                 }
             }
             .padding(.horizontal, 20)
-            .padding(.bottom, model.sheetDetent == .lip ? 12 : 4)
+            .padding(.bottom, 12)
         }
-        .contentShape(Rectangle())
+        .frame(maxWidth: .infinity, minHeight: 64)
+        .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 30, style: .continuous))
+        .clipShape(RoundedRectangle(cornerRadius: 30, style: .continuous))
+        .overlay(
+            RoundedRectangle(cornerRadius: 30, style: .continuous)
+                .stroke(Color.white.opacity(0.08), lineWidth: 0.5)
+        )
+        .shadow(color: .black.opacity(0.22), radius: 18, y: 4)
+        .padding(.horizontal, 8)
+        .padding(.bottom, 8)
+        .contentShape(RoundedRectangle(cornerRadius: 30, style: .continuous))
         .onTapGesture {
-            model.sheetDetent = model.sheetDetent == .lip ? .medium : .lip
+            model.isNearbyPresented = true
         }
         .gesture(
-            // Global space: the header moves with the card, so local translation would feed back.
-            DragGesture(minimumDistance: 6, coordinateSpace: .global)
-                .onChanged { value in
-                    var transaction = Transaction(animation: nil)
-                    transaction.disablesAnimations = true
-                    withTransaction(transaction) {
-                        if liveHeight == nil { dragStartHeight = baseHeight }
-                        liveHeight = dragStartHeight - value.translation.height
-                    }
-                }
+            DragGesture(minimumDistance: 10, coordinateSpace: .global)
                 .onEnded { value in
-                    settle(projectedHeight: dragStartHeight - value.predictedEndTranslation.height)
+                    if value.translation.height < -30 {
+                        model.isNearbyPresented = true
+                    }
                 }
         )
         .accessibilityElement(children: .contain)
-        .accessibilityAction(named: model.sheetDetent == .lip ? "Expand Nearby" : "Collapse Nearby") {
-            model.sheetDetent = model.sheetDetent == .lip ? .medium : .lip
+        .accessibilityAddTraits(.isButton)
+        .accessibilityHint("Opens the Nearby list")
+        .accessibilityAction(named: "Open Nearby list") {
+            model.isNearbyPresented = true
         }
     }
 
@@ -153,43 +76,32 @@ struct NearbySheet: View {
         }
         .accessibilityHidden(true)
     }
+}
 
-    private func settle(projectedHeight: CGFloat) {
-        let target = Self.settledDetent(projectedHeight: projectedHeight, available: availableHeight)
-        withAnimation(reduceMotion ? .easeOut(duration: 0.2) : .interpolatingSpring(mass: 1, stiffness: 260, damping: 30)) {
-            model.sheetDetent = target
-            liveHeight = nil
-        }
-        if target == .lip { isSearchFocused = false }
-    }
+/// The Nearby sheet content shown inside the native sheet modal (medium and large detents).
+struct NearbyListView: View {
+    @Bindable var model: MapFeatureModel
+    let pins: [ConnectionPin]
+    let onOpen: (MapItem) -> Void
 
-    // MARK: - Content
-
-    private var content: some View {
+    var body: some View {
         VStack(spacing: 0) {
             HStack(spacing: 8) {
-                Image(systemName: "magnifyingglass")
-                    .foregroundStyle(ClickColors.textTertiary)
-                TextField("Search nearby", text: $model.query)
-                    .focused($isSearchFocused)
-                    .submitLabel(.search)
-                if !model.query.isEmpty {
-                    Button {
-                        model.query = ""
-                    } label: {
-                        Image(systemName: "xmark.circle.fill")
-                            .foregroundStyle(ClickColors.textTertiary)
-                    }
-                    .accessibilityLabel("Clear search")
+                // Search opens the one global search (people, messages, places, events).
+                SearchLaunchField(prompt: "Search places, events, people") {
+                    model.isNearbyPresented = false
                 }
+                Button {
+                    model.refresh()
+                } label: {
+                    Image(systemName: "arrow.clockwise")
+                        .frame(width: 36, height: 36)
+                        .background(ClickColors.fillSubtle, in: Circle())
+                }
+                .accessibilityLabel("Refresh nearby")
             }
-            .padding(.horizontal, 14)
-            .frame(minHeight: ClickMetrics.searchMinHeight)
-            .background(ClickColors.fillSubtle, in: Capsule())
             .padding(.horizontal, 20)
-            .onChange(of: isSearchFocused) { _, focused in
-                if focused { model.sheetDetent = .expanded }
-            }
+            .padding(.top, 16)
 
             ScrollView(.horizontal) {
                 HStack(spacing: 8) {
@@ -233,8 +145,6 @@ struct NearbySheet: View {
     @ViewBuilder
     private var list: some View {
         let sections = model.sections(pins: pins)
-        // The part of the full-height card hidden below the edge at the current detent.
-        let hidden = Self.height(for: .expanded, available: availableHeight) - baseHeight
         ScrollView {
             LazyVStack(alignment: .leading, spacing: 20) {
                 if sections.isEmpty {
@@ -265,7 +175,6 @@ struct NearbySheet: View {
             .padding(.horizontal, ClickSpacing.screenGutter)
             .padding(.bottom, 40)
         }
-        .contentMargins(.bottom, max(0, hidden), for: .scrollContent)
         .scrollDismissesKeyboard(.interactively)
     }
 
@@ -279,9 +188,9 @@ struct NearbySheet: View {
                     .font(ClickTypography.supportingEmphasized)
                     .padding(.top, 4)
             } else if model.discovery.value == nil {
-                ProgressView()
+                ClickLoadingView(size: 30, fillsSpace: false)
             } else {
-                Text(model.query.isEmpty ? "Nothing nearby" : "No matches for “\(model.query)”")
+                Text(model.filter == .people ? "No one from your network on the map yet" : "Nothing nearby")
                     .font(ClickTypography.bodyEmphasized)
                 Text("Try another filter or check back later.")
                     .font(ClickTypography.supporting)

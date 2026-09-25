@@ -188,9 +188,10 @@ struct CreateBeaconSheet: View {
                 EventVisual(seed: editing?.id ?? "", imageURL: existingImageURL, cornerRadius: 12)
                     .aspectRatio(4 / 3, contentMode: .fit)
             }
+            let hasPhoto = photo != nil || (existingImageURL != nil && !removeExistingImage)
             HStack {
                 PhotosPicker(selection: $photoItem, matching: .images) {
-                    Label(photo == nil && (existingImageURL == nil || removeExistingImage) ? "Photo Library" : "Replace", systemImage: "photo.on.rectangle")
+                    Label(hasPhoto ? "Replace" : "Photo Library", systemImage: "photo.on.rectangle")
                 }
                 if UIImagePickerController.isSourceTypeAvailable(.camera) {
                     Spacer()

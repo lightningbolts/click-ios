@@ -13,8 +13,21 @@ public actor ImagePipeline {
     private let memory = MemoryCache()
     private var inFlight: [String: Task<UIImage?, Never>] = [:]
 
-    public init(session: URLSession = .shared) {
+    public init(session: URLSession = ImagePipeline.makeSession()) {
         self.session = session
+    }
+
+    /// Public images only (avatars, event covers): a dedicated 256 MB disk cache that honours
+    /// HTTP caching, so repeat launches serve images from disk and unchanged images revalidate
+    /// with a bodyless 304 instead of re-downloading (less Supabase egress).
+    public static func makeSession() -> URLSession {
+        let directory = FileManager.default.urls(for: .cachesDirectory, in: .userDomainMask)[0]
+            .appendingPathComponent("PublicImages", isDirectory: true)
+        let config = URLSessionConfiguration.default
+        config.urlCache = URLCache(memoryCapacity: 16 * 1024 * 1024, diskCapacity: 256 * 1024 * 1024, directory: directory)
+        config.requestCachePolicy = .useProtocolCachePolicy
+        config.httpMaximumConnectionsPerHost = 6
+        return URLSession(configuration: config)
     }
 
     /// Synchronous memory-cache lookup so views can render a cached image on their first frame.

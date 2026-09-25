@@ -25,7 +25,10 @@ public final class ConversationModel {
     /// Older history paging (`cursor` = oldest `time_created`).
     public private(set) var isLoadingOlder = false
     public private(set) var hasMoreHistory = true
-    private static let pageSize = 50
+    /// Network page for the latest window and for older history.
+    static let pageSize = 40
+    /// Rows painted from disk on open (enough to fill two screens).
+    static let initialPaintSize = 60
     public var composerText = ""
     public var replyTarget: ChatMessageItem?
     public var editTarget: ChatMessageItem?
@@ -42,6 +45,8 @@ public final class ConversationModel {
 
     private let chatRepository: ChatRepositoryProtocol
     private let timelineCache: ConversationTimelineCache?
+    /// On-device timeline (nil in tests and previews).
+    private let store: LocalStore?
     private let realtimeManager: ChatRealtimeManager
     private let currentUserID: String
     private let currentUserName: String
@@ -53,6 +58,11 @@ public final class ConversationModel {
     private var pendingSendCount = 0
     private var typingActive = false
     private var typingStopTask: Task<Void, Never>?
+    private var acknowledgedReceipts = Set<String>()
+    /// True between the chat screen's appear and disappear.
+    public private(set) var isVisible = false
+    /// Reports this user's own sends so the inbox row updates immediately (set by AppEnvironment).
+    var onLocalSend: ((_ chatID: String, _ messageID: String, _ content: String, _ messageType: String, _ date: Date) -> Void)?
 
     public init(
         identity: ConversationIdentity,
@@ -63,8 +73,10 @@ public final class ConversationModel {
         initialItems: [ChatMessageItem]? = nil,
         timelineCache: ConversationTimelineCache? = nil,
         pendingSends: PendingSendStore? = nil,
-        identities: IdentityCache? = nil
+        identities: IdentityCache? = nil,
+        store: LocalStore? = nil
     ) {
+        self.store = currentUserID.isEmpty ? nil : store
         self.identities = identities
         self.timelineCache = timelineCache
         self.pendingSends = pendingSends ?? PendingSendStore()
@@ -83,7 +95,27 @@ public final class ConversationModel {
             // Paint the last-seen timeline immediately; loadMessages refreshes it in place.
             self.items = cached
             self.phase = .loaded
+        } else if let store = self.store {
+            // First open this launch: paint from disk (a few rows, synchronous) so the chat
+            // opens on its latest messages with no spinner; loadMessages then syncs.
+            for key in [identity.chatID, identity.connectionID ?? ""] where !key.isEmpty {
+                let stored = store.latestMessages(conversation: key, userID: currentUserID, limit: Self.initialPaintSize)
+                if !stored.isEmpty {
+                    self.items = stored
+                    self.phase = .loaded
+                    break
+                }
+            }
         }
+        if let store = self.store {
+            hasMoreHistory = !store.reachedStart(conversation: identity.chatID, userID: currentUserID)
+        }
+    }
+
+    /// Writes server rows to the on-device timeline.
+    private func persist(_ rows: [ChatMessageItem]) {
+        guard let store, !rows.isEmpty else { return }
+        store.upsertMessages(rows, conversation: identity.chatID, userID: currentUserID)
     }
 
     public var realtimeHealth: SubscriptionHealth {
@@ -93,14 +125,27 @@ public final class ConversationModel {
     // MARK: - Lifecycle
 
     public func onAppear(supabaseURL: URL?, anonKey: String?, authToken: String?) async {
+        isVisible = true
+        if isDetachedFromLatest {
+            await returnToLatest()
+        }
         setupRealtimeCallbacks()
 
         if identity.hubID == nil {
             do {
+                let requested = identity.chatID
                 identity.chatID = try await chatRepository.resolveCanonicalChatID(
                     chatID: identity.chatID,
                     connectionID: identity.connectionID
                 )
+                store?.link(aliases: [requested, identity.connectionID ?? ""], to: identity.chatID, userID: currentUserID)
+                if items.isEmpty, let store {
+                    let stored = store.latestMessages(conversation: identity.chatID, userID: currentUserID, limit: Self.initialPaintSize)
+                    if !stored.isEmpty {
+                        items = stored
+                        phase = .loaded
+                    }
+                }
             } catch {
                 if items.isEmpty, !error.isCancellation {
                     phase = .failed(error.userFacingMessage)
@@ -161,6 +206,7 @@ public final class ConversationModel {
     }
 
     public func onDisappear() {
+        isVisible = false
         saveToCache()
         pendingSends.detach(self, chatID: identity.chatID)
         typingStopTask?.cancel()
@@ -170,40 +216,64 @@ public final class ConversationModel {
         }
         typingActive = false
         realtimeManager.teardown()
+        hasCapturedUnread = false
+        firstUnreadID = nil
+    }
+
+    /// Foreground return while this chat is on screen: the socket may have died while
+    /// suspended, and anything sent meanwhile must be fetched.
+    public func resume() async {
+        guard isVisible else { return }
+        realtimeManager.ensureLive()
+        await syncNewer()
+    }
+
+    /// A message from the always-on inbox channel. Applied only while this chat's own channel
+    /// is down (otherwise it already delivered it); duplicates are ignored by ID either way.
+    public func receiveInboxInsert(_ payload: RealtimeMessagePayload) async {
+        guard isVisible, identity.hubID == nil, payload.chatID == identity.chatID,
+              realtimeManager.health != .connected,
+              !items.contains(where: { $0.id == payload.id }) else { return }
+        await ingestRealtime(payload, replacingExisting: false)
     }
 
     // MARK: - Data loading
 
-    public func loadMessages() async {
+    public private(set) var lastFetchDate: Date?
+
+    /// Always fetches: a cached timeline is painted first and updated in place, so this never
+    /// shows a spinner once anything is on screen. (A time-based skip here left messages that
+    /// arrived while the chat was closed missing until it expired.)
+    public func loadMessages(force: Bool = false) async {
         let hadItems = !items.isEmpty
         if !hadItems {
             phase = .loading
         }
 
         do {
+            let newestKnown = items.last { $0.deliveryStatus != .sending && $0.deliveryStatus != .failed && !$0.isDeleted }?.createdAt
             let fetched = try await chatRepository.fetchMessages(
                 conversation: identity,
                 currentUserID: currentUserID,
                 cursor: nil,
                 limit: Self.pageSize
             )
-            hasMoreHistory = fetched.count >= Self.pageSize
-            items = mergeFetched(fetched)
+            var rows = fetched
+            // The latest page doesn't reach back to what we had: fill the gap with deltas so
+            // the stored timeline stays contiguous (no silently missing messages).
+            if let newestKnown, let oldestFetched = fetched.filter({ !$0.isDeleted }).map(\.createdAt).min(),
+               fetched.count >= Self.pageSize, oldestFetched > newestKnown {
+                rows += try await fetchDeltas(after: newestKnown, until: oldestFetched)
+            }
+            if !hadItems { hasMoreHistory = fetched.count >= Self.pageSize && hasMoreHistory }
+            items = mergeFetched(rows)
             resolveReplyQuotes()
             phase = .loaded
+            lastFetchDate = Date()
+            persist(rows)
             saveToCache()
             operationError = nil
-            if !hasCapturedUnread, identity.supportsReceipts {
-                hasCapturedUnread = true
-                firstUnreadID = items.first { !$0.isOutgoing && !$0.isDeleted && $0.deliveryStatus != .read }?.id
-            }
-
-            let unreadIDs = items
-                .filter { !$0.isOutgoing && $0.deliveryStatus != .read }
-                .map(\.id)
-            if identity.supportsReceipts, !unreadIDs.isEmpty {
-                try? await chatRepository.markRead(chatID: identity.chatID, messageIDs: unreadIDs)
-            }
+            await captureUnreadAndMarkRead()
         } catch {
             if error.isCancellation {
                 if phase == .loading { phase = items.isEmpty ? .initial : .loaded }
@@ -213,6 +283,57 @@ public final class ConversationModel {
                 operationError = error.userFacingMessage
             }
         }
+    }
+
+    /// Everything created after `after` (and before `until`, when given), in pages of 200.
+    private func fetchDeltas(after: Date, until: Date? = nil) async throws -> [ChatMessageItem] {
+        var collected: [ChatMessageItem] = []
+        var since = Int64(after.timeIntervalSince1970 * 1000)
+        for _ in 0..<5 {
+            let page = try await chatRepository.fetchMessages(conversation: identity, currentUserID: currentUserID, since: since, limit: 200)
+            collected += page
+            let live = page.filter { !$0.isDeleted }
+            guard live.count >= 200, let newest = live.map(\.createdAt).max() else { break }
+            if let until, newest >= until { break }
+            since = Int64(newest.timeIntervalSince1970 * 1000)
+        }
+        return collected
+    }
+
+    /// Catch-up after a reconnect or foreground: only what's new since the newest row.
+    public func syncNewer() async {
+        guard let newest = items.last(where: { $0.deliveryStatus != .sending && $0.deliveryStatus != .failed && !$0.isDeleted })?.createdAt else {
+            await loadMessages()
+            return
+        }
+        do {
+            let rows = try await fetchDeltas(after: newest)
+            guard !rows.isEmpty else { return }
+            items = mergeFetched(rows)
+            // Tombstones for older rows replace them in place.
+            for tomb in rows where tomb.isDeleted {
+                if let index = items.firstIndex(where: { $0.id == tomb.id }) { items[index] = items[index].tombstoned() }
+            }
+            resolveReplyQuotes()
+            persist(rows)
+            saveToCache()
+            await captureUnreadAndMarkRead()
+        } catch {
+            if !error.isCancellation { ClickLog.net.error("chat delta sync failed: \(String(describing: error), privacy: .public)") }
+        }
+    }
+
+    private func captureUnreadAndMarkRead() async {
+        if !hasCapturedUnread, identity.supportsReceipts {
+            hasCapturedUnread = true
+            firstUnreadID = items.first { !$0.isOutgoing && !$0.isDeleted && $0.deliveryStatus != .read }?.id
+        }
+        let unreadIDs = items
+            .filter { !$0.isOutgoing && $0.deliveryStatus != .read && !acknowledgedReceipts.contains($0.id) }
+            .map(\.id)
+        guard identity.supportsReceipts, !unreadIDs.isEmpty else { return }
+        for id in unreadIDs { acknowledgedReceipts.insert(id) }
+        try? await chatRepository.markRead(chatID: identity.chatID, messageIDs: unreadIDs)
     }
 
     // MARK: - Sending / editing
@@ -342,6 +463,7 @@ public final class ConversationModel {
                 )
             }
             store.finish(clientID: clientID, chatID: chatID, serverItem: server)
+            onLocalSend?(chatID, server.id, Self.quoteText(server), server.messageType.rawValue, server.createdAt)
             operationError = nil
         } catch {
             store.update(clientID: clientID, chatID: chatID) {
@@ -370,27 +492,44 @@ public final class ConversationModel {
 
     // MARK: - Media (spec §37)
 
-    /// Loads the page before the oldest loaded message; keeps the visual anchor (the view
-    /// prepends without jumping because rows keep stable IDs).
+    /// Loads the page before the oldest loaded message: from disk first (instant, no egress),
+    /// then the network once the stored history runs out. Hubs page by `cursor` too.
     public func loadOlder() async {
-        guard hasMoreHistory, !isLoadingOlder, identity.hubID == nil, let oldest = items.first(where: { $0.deliveryStatus != .sending && $0.deliveryStatus != .failed }) else { return }
+        guard hasMoreHistory, !isLoadingOlder,
+              let oldest = items.first(where: { $0.deliveryStatus != .sending && $0.deliveryStatus != .failed }) else { return }
         isLoadingOlder = true
         defer { isLoadingOlder = false }
+
+        if let store {
+            let local = await store.messages(conversation: identity.chatID, userID: currentUserID, before: oldest.createdAt, limit: Self.pageSize)
+            let known = Set(items.map(\.id))
+            let fresh = local.filter { !known.contains($0.id) }
+            if !fresh.isEmpty {
+                items = (fresh + items).sorted { $0.createdAt < $1.createdAt }
+                resolveReplyQuotes()
+            }
+            if local.count >= Self.pageSize { return }
+        }
+
+        guard let networkOldest = items.first(where: { $0.deliveryStatus != .sending && $0.deliveryStatus != .failed }) else { return }
         do {
             let older = try await chatRepository.fetchMessages(
                 conversation: identity,
                 currentUserID: currentUserID,
-                cursor: Int64(oldest.createdAt.timeIntervalSince1970 * 1000),
+                cursor: Int64(networkOldest.createdAt.timeIntervalSince1970 * 1000),
                 limit: Self.pageSize
             )
             let known = Set(items.map(\.id))
-            let fresh = older.filter { !known.contains($0.id) }
-            hasMoreHistory = older.count >= Self.pageSize
+            let fresh = older.filter { !known.contains($0.id) && $0.createdAt <= networkOldest.createdAt }
+            // A short page, or a server that ignored the cursor (nothing new), is the start.
+            hasMoreHistory = older.count >= Self.pageSize && !fresh.isEmpty
+            if !hasMoreHistory { store?.setReachedStart(true, conversation: identity.chatID, userID: currentUserID) }
             guard !fresh.isEmpty else { return }
+            persist(fresh)
             items = (fresh + items).sorted { $0.createdAt < $1.createdAt }
             resolveReplyQuotes()
         } catch {
-            operationError = error.userFacingMessage
+            if !error.isCancellation { operationError = error.userFacingMessage }
         }
     }
 
@@ -529,6 +668,7 @@ public final class ConversationModel {
                 currentUserID: currentUserID,
                 newContent: newContent
             )
+            if let current = items.first(where: { $0.id == target.id }) { persist([current]) }
             operationError = nil
         } catch {
             if let currentIndex = items.firstIndex(where: { $0.id == target.id }) {
@@ -545,6 +685,7 @@ public final class ConversationModel {
 
         do {
             try await chatRepository.deleteMessage(messageID: item.id, conversation: identity)
+            if let current = items.first(where: { $0.id == item.id }) { persist([current]) }
             operationError = nil
         } catch {
             if let current = items.firstIndex(where: { $0.id == item.id }) { items[current] = original }
@@ -573,6 +714,7 @@ public final class ConversationModel {
                 adding: adding,
                 conversation: identity
             )
+            if let current = items.first(where: { $0.id == item.id }) { persist([current]) }
             operationError = nil
         } catch {
             if let currentIndex = items.firstIndex(where: { $0.id == item.id }) {
@@ -662,6 +804,9 @@ public final class ConversationModel {
     // MARK: - Realtime
 
     private func setupRealtimeCallbacks() {
+        realtimeManager.onRejoined = { [weak self] in
+            Task { await self?.syncNewer() }
+        }
         realtimeManager.onMessageInserted = { [weak self] payload in
             Task { @MainActor in
                 await self?.ingestRealtime(payload, replacingExisting: false)
@@ -679,6 +824,7 @@ public final class ConversationModel {
                 // Shown as "Message deleted" in place rather than vanishing mid-read.
                 guard let self, let index = self.items.firstIndex(where: { $0.id == messageID }) else { return }
                 self.items[index] = self.items[index].tombstoned()
+                self.persist([self.items[index]])
             }
         }
 
@@ -738,11 +884,12 @@ public final class ConversationModel {
         do {
             let window = try await chatRepository.fetchMessages(around: messageID, conversation: identity, currentUserID: currentUserID, limit: 20)
             guard let target = window.first(where: { $0.id == messageID }) else { return nil }
+            persist(window)
             items = Self.mergeWindow(window, into: items)
             if !items.contains(where: { $0.id == messageID }) {
                 // Not contiguous with what's loaded: show the window alone until "latest".
                 isDetachedFromLatest = true
-                hasMoreHistory = identity.hubID == nil
+                hasMoreHistory = true
                 items = (window + items.filter { $0.deliveryStatus == .sending || $0.deliveryStatus == .failed })
                     .sorted { $0.createdAt < $1.createdAt }
             }
@@ -796,21 +943,36 @@ public final class ConversationModel {
     /// target from the decrypted local copy (ciphertext never crosses chats), with a fresh client ID.
     public func forward(_ item: ChatMessageItem, to target: ConversationIdentity) async throws {
         let clientID = UUID().uuidString.lowercased()
+        let sent: ChatMessageItem
         if let media = item.media {
             let url = try await mediaURL(for: item)
             var draft = MediaDraft(kind: media.kind, data: try Data(contentsOf: url), mimeType: media.mimeType,
                                    fileName: media.fileName, durationSeconds: media.durationSeconds)
             draft.waveform = media.waveform
-            _ = try await chatRepository.sendMedia(conversation: target, currentUserID: currentUserID, currentUserName: currentUserName,
-                                                   draft: draft, replyToID: nil, clientMessageID: clientID)
+            sent = try await chatRepository.sendMedia(conversation: target, currentUserID: currentUserID, currentUserName: currentUserName,
+                                                      draft: draft, replyToID: nil, clientMessageID: clientID)
         } else {
-            _ = try await chatRepository.sendMessage(conversation: target, currentUserID: currentUserID, currentUserName: currentUserName,
-                                                     content: item.content, replyToID: nil, replyToSnippet: nil, replyToSenderName: nil,
-                                                     clientMessageID: clientID)
+            sent = try await chatRepository.sendMessage(conversation: target, currentUserID: currentUserID, currentUserName: currentUserName,
+                                                        content: item.content, replyToID: nil, replyToSnippet: nil, replyToSenderName: nil,
+                                                        clientMessageID: clientID)
         }
+        onLocalSend?(sent.chatID.isEmpty ? target.chatID : sent.chatID, sent.id, Self.quoteText(sent), sent.messageType.rawValue, sent.createdAt)
+        onForwarded?(target, sent)
     }
 
-    private func ingestRealtime(
+    /// Lets the environment append a forwarded message to the target chat's live model.
+    var onForwarded: ((ConversationIdentity, ChatMessageItem) -> Void)?
+
+    /// Adds a message sent from elsewhere in the app (a forward) to this open timeline.
+    func appendExternal(_ item: ChatMessageItem) {
+        guard !items.contains(where: { $0.id == item.id }) else { return }
+        persist([item])
+        items.append(item)
+        items.sort { $0.createdAt < $1.createdAt }
+        saveToCache()
+    }
+
+    fileprivate func ingestRealtime(
         _ payload: RealtimeMessagePayload,
         replacingExisting: Bool
     ) async {
@@ -843,16 +1005,22 @@ public final class ConversationModel {
                 items.sort { $0.createdAt < $1.createdAt }
             }
             resolveReplyQuotes()
+            persist([decoded])
 
-            if !decoded.isOutgoing, identity.supportsReceipts {
-                try? await chatRepository.markDelivered(
-                    chatID: identity.chatID,
-                    messageIDs: [decoded.id]
-                )
-                try? await chatRepository.markRead(
-                    chatID: identity.chatID,
-                    messageIDs: [decoded.id]
-                )
+            if !replacingExisting, !decoded.isOutgoing, identity.supportsReceipts {
+                if !acknowledgedReceipts.contains(decoded.id) {
+                    acknowledgedReceipts.insert(decoded.id)
+                    if decoded.deliveryStatus != .delivered && decoded.deliveryStatus != .read {
+                        try? await chatRepository.markDelivered(
+                            chatID: identity.chatID,
+                            messageIDs: [decoded.id]
+                        )
+                    }
+                    try? await chatRepository.markRead(
+                        chatID: identity.chatID,
+                        messageIDs: [decoded.id]
+                    )
+                }
             }
         } catch {
             operationError = error.userFacingMessage
@@ -923,25 +1091,47 @@ extension ConversationModel {
             )
         ]
 
+        // A long history so paging and scroll anchoring can be exercised (`-preview-chat`).
+        let lines = ["Sounds good!", "Where are you now?", "Just got to the venue 🎉", "Haha yes",
+                     "Did you see the talk on SwiftUI performance? It went deep into layout and identity, and honestly explained a lot about why lists stutter.",
+                     "On my way", "👍", "Let's grab food after", "The line is long lol", "Saving you a seat near the front, left side by the windows."]
+        let history: [ChatMessageItem] = (0..<300).map { index in
+            let outgoing = index % 3 == 0
+            return ChatMessageItem(
+                id: "hist-\(index)",
+                chatID: "preview-chat-1",
+                senderID: outgoing ? "user-self" : "user-maya",
+                senderName: outgoing ? "You" : "Maya Lin",
+                content: "\(lines[index % lines.count]) (#\(index))",
+                createdAt: Date().addingTimeInterval(TimeInterval(-86_400 * 3 + index * 800)),
+                deliveryStatus: .read,
+                isOutgoing: outgoing
+            )
+        }
+        let all = history + initial
         return ConversationModel(
             identity: identity,
-            chatRepository: PreviewChatRepo(initial: initial),
+            chatRepository: PreviewChatRepo(initial: initial, all: all),
             currentUserID: "user-self",
             currentUserName: "Alex",
-            initialItems: initial
+            initialItems: Array(all.suffix(40))
         )
     }
 }
 
 private struct PreviewChatRepo: ChatRepositoryProtocol {
     let initial: [ChatMessageItem]
+    var all: [ChatMessageItem] = []
 
     func resolveCanonicalChatID(chatID: String, connectionID: String?) async throws -> String {
         chatID
     }
 
     func fetchMessages(conversation: ConversationIdentity, currentUserID: String, cursor: Int64?, limit: Int) async throws -> [ChatMessageItem] {
-        initial
+        guard !all.isEmpty else { return initial }
+        try? await Task.sleep(for: .milliseconds(450))   // simulated network
+        let bound = cursor.map { Date(timeIntervalSince1970: Double($0) / 1000) } ?? .distantFuture
+        return Array(all.filter { $0.createdAt < bound }.suffix(limit))
     }
 
     func sendMessage(
@@ -1002,6 +1192,7 @@ extension ConversationModel: PendingSendReceiver {
     public func pendingSendFinished(clientID: String, serverItem: ChatMessageItem) {
         if let local = mediaURLs[clientID] { mediaURLs[serverItem.id] = serverItem.localMediaURL ?? local }
         replaceOptimistic(clientID, with: serverItem)
+        if let stored = items.first(where: { $0.id == serverItem.id }) { persist([stored]) }
         saveToCache()
     }
 }

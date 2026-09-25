@@ -55,3 +55,39 @@ public final class NetworkMonitor {
         return refreshFailed ? .refreshFailed : .none
     }
 }
+
+/// Watches for network path changes that invalidate open sockets and pooled connections
+/// (Wi-Fi ↔ cellular handoff, regaining connectivity). Realtime reconnects immediately and the
+/// API client drops its dead connection pool instead of failing the next request with -1005.
+@MainActor
+final class NetworkPathObserver {
+    static let shared = NetworkPathObserver()
+
+    private var monitor: NWPathMonitor?
+    private let queue = DispatchQueue(label: "click.network-path")
+    private var lastSignature: String?
+
+    func start() {
+        guard monitor == nil else { return }
+        let monitor = NWPathMonitor()
+        self.monitor = monitor
+        monitor.pathUpdateHandler = { path in
+            let interfaces = path.availableInterfaces.map { "\($0.type)" }.joined(separator: ",")
+            let signature = "\(path.status == .satisfied)|\(interfaces)"
+            let satisfied = path.status == .satisfied
+            Task { @MainActor in
+                NetworkPathObserver.shared.pathChanged(signature: signature, satisfied: satisfied)
+            }
+        }
+        monitor.start(queue: queue)
+    }
+
+    private func pathChanged(signature: String, satisfied: Bool) {
+        defer { lastSignature = signature }
+        // The first callback reports the current path; only real changes matter.
+        guard let lastSignature, lastSignature != signature, satisfied else { return }
+        ClickLog.net.info("network path changed; reconnecting realtime and resetting connections")
+        ClickAPIClient.resetConnectionPools()
+        ChatRealtimeManager.networkPathDidChange()
+    }
+}

@@ -16,9 +16,8 @@ struct EncounterLabelTests {
         #expect(chips.contains("📚 Study Session"))
         #expect(chips.contains("Met face to face"))
         let lines = EncounterLabels.lines(for: encounter).map(\.text)
-        #expect(lines.contains("Loud"))
-        #expect(lines.contains("Below ground · 14 m"))
-        #expect(lines.contains("61°F (16°C) · Clear"))
+        #expect(lines.count == 2)
+        #expect(lines[1] == "Gas Works Park")
         #expect(!(chips + lines).contains { $0.contains("_") })
         #expect(encounter.placeName == "Gas Works Park")
         #expect(EncounterLabels.elevation("GROUND_LEVEL") == "Ground level")
@@ -35,12 +34,34 @@ struct EncounterLabelTests {
         #expect(EncounterLabels.whenLine(date, timeZone: utc) == "Tue, Sep 22, 2026 · 7:04 PM")
         #expect(EncounterLabels.placeLine(locationName: "Gas Works Park", displayLocation: "Seattle", neighbourhood: "Wallingford") == "Gas Works Park • Wallingford, Seattle")
         #expect(EncounterLabels.placeLine(locationName: "Cafe", displayLocation: "Seattle", neighbourhood: nil) == "Cafe · Seattle")
-        #expect(EncounterLabels.noiseLine(category: "MODERATE", decibels: 58.2) == "Moderate · 58 dB")
-        #expect(EncounterLabels.barometricLine(category: "BELOW_GROUND", meters: 12.4) == "Below ground · 12 m")
-        let windy = Encounter(id: "w", date: .now, place: nil, eventTitle: nil, eventBeaconID: nil, contextTags: [],
-                              noiseLevel: nil, elevation: nil, temperatureCelsius: 16, weatherCondition: "Clear",
-                              windKph: 7, windDirectionDegrees: 45)
-        #expect(EncounterLabels.weatherLine(windy) == "61°F (16°C) · Clear · 7 km/h NE")
+    }
+
+    @Test("An encounter with 6 metrics produces 6 pills in table order with exact texts")
+    func metricPills() {
+        let encounter = Encounter(
+            id: "e6",
+            date: .now,
+            place: "Gas Works Park",
+            eventTitle: nil,
+            eventBeaconID: nil,
+            contextTags: [],
+            noiseLevel: "QUIET",
+            elevation: "ELEVATED",
+            temperatureCelsius: 20,
+            weatherCondition: "Clear",
+            relativeAltitudeMeters: 12,
+            windKph: 12,
+            windDirectionDegrees: 45,
+            compassAzimuth: 45
+        )
+        let pills = EncounterLabels.metricPills(for: encounter)
+        #expect(pills.count == 6)
+        #expect(pills[0] == EncounterLabels.MetricPill(symbol: "cloud", tintHex: "#B0BEC5", text: "Clear"))
+        #expect(pills[1] == EncounterLabels.MetricPill(symbol: "thermometer.medium", tintHex: "#FFCC80", text: "68°F (20°C)"))
+        #expect(pills[2] == EncounterLabels.MetricPill(symbol: "wind", tintHex: "#81D4FA", text: "12 km/h NE"))
+        #expect(pills[3] == EncounterLabels.MetricPill(symbol: "waveform", tintHex: "#69F0AE", text: "Quiet"))
+        #expect(pills[4] == EncounterLabels.MetricPill(symbol: "mountain.2", tintHex: "#90CAF9", text: "Elevated · 12 m"))
+        #expect(pills[5] == EncounterLabels.MetricPill(symbol: "safari", tintHex: "#B39DDB", text: "45°"))
     }
 
     @Test("Without a venue, the place is the first address component")

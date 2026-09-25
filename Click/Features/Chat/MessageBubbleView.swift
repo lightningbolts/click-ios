@@ -14,8 +14,8 @@ public struct MessageBubbleView: View {
     let showsSenderName: Bool
     /// Hubs have no delivery/read receipts; only pending/failed state is shown.
     let showsReceipts: Bool
-    /// Decrypted-media provider and opener; nil renders media as an unavailable label.
-    let mediaLoader: ((ChatMessageItem) async throws -> URL)?
+    /// Decrypted-media provider and opener; cannot be nil.
+    let mediaLoader: (ChatMessageItem) async throws -> URL
     let onOpenMedia: ((URL, MessageMedia.Kind) -> Void)?
     let onOpenBeacon: ((SharedBeacon) -> Void)?
     /// Removes a failed outgoing row (✕ on a failed attachment).
@@ -24,27 +24,30 @@ public struct MessageBubbleView: View {
     var onForward: ((ChatMessageItem) -> Void)?
     var onSaveMedia: ((ChatMessageItem) -> Void)?
     var onShowReactions: ((ChatMessageItem, String) -> Void)?
-    var onMoreReactions: ((ChatMessageItem) -> Void)?
+    /// Renders only the bubble itself (no row spacing, name, reactions or gestures): the copy
+    /// lifted by the message action overlay, which must match the on-screen bubble exactly.
+    var isLiftedCopy = false
+    /// Hides the bubble (keeping its space) while the action overlay shows its lifted copy.
+    var isBubbleHidden = false
     /// The message this one replies to (for its thumbnail) and a tap on the quote.
     var replyTarget: ChatMessageItem?
     var onTapReplyQuote: ((String) -> Void)?
+    var onLongPress: ((ChatMessageItem, CGRect) -> Void)?
 
-    @State private var confirmingDelete = false
     @State private var dragOffset: CGFloat = 0
     @State private var hasTriggeredReplyHaptic = false
-
-    private let quickEmojis = ["👍", "❤️", "😂", "😮", "😢", "😡"]
+    @State private var bubbleFrame: CGRect = .zero
 
     public init(
         message: ChatMessageItem,
-        onReply: @escaping (ChatMessageItem) -> Void,
-        onEdit: @escaping (ChatMessageItem) -> Void,
-        onDelete: @escaping (ChatMessageItem) -> Void,
-        onToggleReaction: @escaping (ChatMessageItem, String) -> Void,
+        onReply: @escaping (ChatMessageItem) -> Void = { _ in },
+        onEdit: @escaping (ChatMessageItem) -> Void = { _ in },
+        onDelete: @escaping (ChatMessageItem) -> Void = { _ in },
+        onToggleReaction: @escaping (ChatMessageItem, String) -> Void = { _, _ in },
         onRetrySend: ((ChatMessageItem) -> Void)? = nil,
         showsSenderName: Bool = false,
         showsReceipts: Bool = true,
-        mediaLoader: ((ChatMessageItem) async throws -> URL)? = nil,
+        mediaLoader: @escaping (ChatMessageItem) async throws -> URL,
         onOpenMedia: ((URL, MessageMedia.Kind) -> Void)? = nil,
         onOpenBeacon: ((SharedBeacon) -> Void)? = nil,
         onDiscardFailed: ((ChatMessageItem) -> Void)? = nil,
@@ -53,9 +56,13 @@ public struct MessageBubbleView: View {
         onShowReactions: ((ChatMessageItem, String) -> Void)? = nil,
         replyTarget: ChatMessageItem? = nil,
         onTapReplyQuote: ((String) -> Void)? = nil,
-        onMoreReactions: ((ChatMessageItem) -> Void)? = nil
+        isLiftedCopy: Bool = false,
+        onLongPress: ((ChatMessageItem, CGRect) -> Void)? = nil,
+        isBubbleHidden: Bool = false
     ) {
-        self.onMoreReactions = onMoreReactions
+        self.isBubbleHidden = isBubbleHidden
+        self.onLongPress = onLongPress
+        self.isLiftedCopy = isLiftedCopy
         self.replyTarget = replyTarget
         self.onTapReplyQuote = onTapReplyQuote
         self.onForward = onForward
@@ -76,7 +83,10 @@ public struct MessageBubbleView: View {
     }
 
     public var body: some View {
-        if message.isDeleted {
+        if isLiftedCopy {
+            content
+                .frame(maxWidth: 320, alignment: message.isOutgoing ? .trailing : .leading)
+        } else if message.isDeleted {
             deletedPlaceholder
         } else {
             liveBubble
@@ -119,78 +129,22 @@ public struct MessageBubbleView: View {
                 content
                     .frame(maxWidth: 320, alignment: message.isOutgoing ? .trailing : .leading)
                     .offset(x: dragOffset)
+                    .opacity(isBubbleHidden ? 0 : 1)
                     .overlay(alignment: message.isOutgoing ? .trailing : .leading) { replyHint }
                     // A voice note's seek slider must win over swipe-to-reply (spec §37.6).
-                    .gesture(HorizontalSwipeGesture(isEnabled: message.media?.kind != .audio, onChanged: swipeChanged, onEnded: swipeEnded))
-                    .contextMenu {
-                        // One horizontal reaction row, separate from the actions below.
-                        ControlGroup {
-                            ForEach(quickEmojis, id: \.self) { emoji in
-                                Button {
-                                    ClickHaptics.impact(.light)
-                                    onToggleReaction(message, emoji)
-                                } label: {
-                                    Text(emoji)
-                                }
-                            }
-                            if let onMoreReactions {
-                                Button { onMoreReactions(message) } label: {
-                                    Label("More reactions", systemImage: "plus")
-                                }
-                            }
-                        }
-                        .controlGroupStyle(.palette)
-
-                        Button {
-                            ClickHaptics.impact(.medium)
-                            onReply(message)
-                        } label: {
-                            Label("Reply", systemImage: "arrowshape.turn.up.left")
-                        }
-
-                        if !message.isMedia {
-                            Button {
-                                UIPasteboard.general.string = message.content
-                                ClickHaptics.success()
-                            } label: {
-                                Label("Copy", systemImage: "doc.on.doc")
-                            }
-                        }
-
-                        if let onForward {
-                            Button { onForward(message) } label: {
-                                Label("Forward", systemImage: "arrowshape.turn.up.right")
-                            }
-                        }
-
-                        if let onSaveMedia, let media = message.media, !media.isLocked() {
-                            Button { onSaveMedia(message) } label: {
-                                media.kind == .image
-                                    ? Label("Save to Photos", systemImage: "square.and.arrow.down")
-                                    : Label("Share…", systemImage: "square.and.arrow.up")
-                            }
-                        }
-
-                        if message.isOutgoing {
-                            if !message.isMedia {
-                                Button {
-                                    onEdit(message)
-                                } label: {
-                                    Label("Edit", systemImage: "pencil")
-                                }
-                            }
-
-                            Button(role: .destructive) {
-                                confirmingDelete = true
-                            } label: {
-                                Label("Delete", systemImage: "trash")
-                            }
-                        }
+                    .gesture(HorizontalSwipeGesture(
+                        isEnabled: message.media?.kind != .audio && message.deliveryStatus != .sending,
+                        direction: message.isOutgoing ? -1 : 1,
+                        onChanged: swipeChanged,
+                        onEnded: swipeEnded
+                    ))
+                    .onGeometryChange(for: CGRect.self) { $0.frame(in: .global) } action: { bubbleFrame = $0 }
+                    .onLongPressGesture(minimumDuration: 0.3, maximumDistance: 12) {
+                        ClickHaptics.impact(.medium)
+                        onLongPress?(message, bubbleFrame)
                     }
-                    .confirmationDialog("Delete for everyone?", isPresented: $confirmingDelete, titleVisibility: .visible) {
-                        Button("Delete", role: .destructive) { onDelete(message) }
-                    } message: {
-                        Text("Everyone in this chat will see \"Message deleted\" instead.")
+                    .accessibilityAction(named: "Message actions") {
+                        onLongPress?(message, bubbleFrame)
                     }
 
                 if !message.reactions.isEmpty {
@@ -212,7 +166,7 @@ public struct MessageBubbleView: View {
             BeaconMessageCard(beacon: beacon, time: message.formattedTime, isOutgoing: message.isOutgoing) {
                 onOpenBeacon?(beacon)
             }
-        } else if let media = message.media, let mediaLoader {
+        } else if let media = message.media {
             VStack(alignment: message.isOutgoing ? .trailing : .leading, spacing: 4) {
                 if let snippet = message.replyToSnippet, !snippet.isEmpty {
                     replyQuote(snippet: snippet)

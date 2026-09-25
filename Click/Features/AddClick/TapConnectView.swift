@@ -39,7 +39,6 @@ struct TapConnectView: View {
         }
         .navigationTitle("Tap to Connect")
         .navigationBarTitleDisplayMode(.inline)
-        .toolbar(.hidden, for: .tabBar)
         .task { model.attach(env) }
         .onDisappear { model.cancel() }
         .onChange(of: scenePhase) { _, phase in
