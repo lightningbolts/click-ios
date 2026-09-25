@@ -40,6 +40,8 @@ Authoritative ledger of backend HTTP endpoints, authorization requirements, and 
 | `/api/qr` | GET | Bearer JWT | QR | `{ data: { qrPayload, expiresAt(ms) } }` — 90 s single-use token |
 | `/api/hub/messages` | GET `?hubId&limit≤120` | Bearer JWT | Hub chat | `{messages, reactions, participant_ids, sender_profiles_visible, occupant_count, channel}`; 403 `NOT_A_PARTICIPANT`/`EVENT_HUB_ACCESS_DENIED`, 410 `HUB_EXPIRED` |
 | `/api/hub/messages` | POST `{hub_id, body, message_type, metadata, user_lat?, user_long?}` | Bearer JWT | Hub chat | 201 `{message}`; 400 `OUT_OF_BOUNDS` / coordinates required (standalone hubs); v2 body required once the hub is upgraded |
+| `/api/hub/media` | POST multipart `{hub_id, object_path, file, mime_type, user_lat?, user_long?, e2ee_v2_envelope?, media_ciphertext_sha256?, epoch?, sender_device_id?, client_message_id?}` | Bearer JWT | Hub chat | ≤25 MiB; 201 `{path, bucket:"hub-media", url, ttl_seconds:300}`; path must be `{uid}/hub/{hubId}/…`; v2 digest checked; 429 `RATE_LIMITED` |
+| `/api/hub/media` | GET `?hub_id&path` | Bearer JWT | Hub chat | Fresh signed URL (re-checks hub access) |
 | `/api/hub/messages/{id}` | PATCH `{hubId, body, metadata, userLat?, userLong?}` · DELETE `{hubId, userLat?, userLong?}` | Bearer JWT | Hub chat | Edit / delete own hub message |
 | `/api/hub/reactions` | POST/DELETE `{hubId, messageId, reactionType, userLat?, userLong?}` | Bearer JWT | Hub chat | Toggle reaction |
 | `/api/hub/devices` · `/api/hub/epochs` | GET `?hub_id` · GET `?hub_id&device_id` / POST `{hub_id, epoch, sender_device_id, membership_fingerprint, envelopes}` | Bearer JWT | Hub E2EE v2 | Hub envelopes bind to the hub ID as `chatId` |

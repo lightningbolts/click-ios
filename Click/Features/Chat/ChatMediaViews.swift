@@ -606,6 +606,7 @@ struct ComposerAttachmentButton: View {
     let onError: (String) -> Void
     var onVoice: (() -> Void)?
     var onShareBeacon: (() -> Void)?
+    var allowsFiles = true
 
     private enum Camera: Identifiable {
         case photo, clickDrop
@@ -637,7 +638,9 @@ struct ComposerAttachmentButton: View {
             if let onShareBeacon {
                 Button("Share Event or Beacon", systemImage: "mappin.and.ellipse") { onShareBeacon() }
             }
-            Button("File", systemImage: "doc") { showingFiles = true }
+            if allowsFiles {
+                Button("File", systemImage: "doc") { showingFiles = true }
+            }
         } label: {
             ComposerCircleLabel(systemImage: "plus")
         }

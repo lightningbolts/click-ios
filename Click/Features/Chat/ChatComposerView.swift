@@ -11,8 +11,10 @@ public struct ChatComposerView: View {
     let onCancelEdit: () -> Void
     let onSend: () -> Void
     let onTypingChanged: (Bool) -> Void
-    /// Nil hides attachments and voice notes (hub chats).
+    /// Nil hides attachments and voice notes.
     let onDraft: ((MediaDraft) -> Void)?
+    /// Hubs take photos and Click Drops only (KMP parity): no voice notes or files.
+    let photosOnly: Bool
     let onAttachmentError: (String) -> Void
     let onShareBeacon: (() -> Void)?
     /// Attachments waiting to be sent; the send button sends them, then the text as a caption.
@@ -37,8 +39,10 @@ public struct ChatComposerView: View {
         onAttachmentError: @escaping (String) -> Void = { _ in },
         onShareBeacon: (() -> Void)? = nil,
         staged: [StagedAttachment] = [],
-        onUnstage: @escaping (UUID) -> Void = { _ in }
+        onUnstage: @escaping (UUID) -> Void = { _ in },
+        photosOnly: Bool = false
     ) {
+        self.photosOnly = photosOnly
         self.staged = staged
         self.onUnstage = onUnstage
         self.onShareBeacon = onShareBeacon
@@ -64,7 +68,7 @@ public struct ChatComposerView: View {
     private var trailingMode: TrailingMode {
         if editTarget != nil { return canSend ? .save : .disabled }
         if canSend { return .send }
-        return onDraft != nil ? .mic : .disabled
+        return onDraft != nil && !photosOnly ? .mic : .disabled
     }
 
     /// One control that morphs between mic, send and save, so it keeps its identity (and
@@ -231,8 +235,9 @@ public struct ChatComposerView: View {
                     ComposerAttachmentButton(
                         onDraft: onDraft,
                         onError: onAttachmentError,
-                        onVoice: { beginRecording(locked: true) },
-                        onShareBeacon: onShareBeacon
+                        onVoice: photosOnly ? nil : { beginRecording(locked: true) },
+                        onShareBeacon: onShareBeacon,
+                        allowsFiles: !photosOnly
                     )
                 }
                 textField

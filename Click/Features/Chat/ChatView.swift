@@ -303,7 +303,6 @@ public struct ChatView: View {
         }
         .scrollPosition(id: $topVisibleID, anchor: .top)
         .dropDestination(for: Data.self) { payloads, _ in
-            guard model.supportsMedia else { return false }
             Task {
                 for data in payloads.prefix(ConversationModel.maxStaged) {
                     if let draft = await MediaDraftBuilder.image(from: data) {
@@ -395,7 +394,7 @@ public struct ChatView: View {
             onTypingChanged: { hasText in
                 model.noteTypingActivity(hasText: hasText)
             },
-            onDraft: model.supportsMedia ? { draft in
+            onDraft: { draft in
                 // Click Drops go straight out from the camera; everything else is reviewed first.
                 if draft.isClickDrop {
                     var drop = draft
@@ -404,11 +403,12 @@ public struct ChatView: View {
                 } else {
                     model.stage(draft)
                 }
-            } : nil,
+            },
             onAttachmentError: { message in model.operationError = message },
-            onShareBeacon: model.supportsMedia ? { sharingBeacon = true } : nil,
+            onShareBeacon: model.identity.hubID == nil ? { sharingBeacon = true } : nil,
             staged: model.staged,
-            onUnstage: { id in model.unstage(id) }
+            onUnstage: { id in model.unstage(id) },
+            photosOnly: model.identity.hubID != nil
         )
         // Dialogs hang off the composer so the main body stays type-checkable.
         .modifier(OptionalConversationActionDialogs(model: conversations, pending: $pendingAction) {

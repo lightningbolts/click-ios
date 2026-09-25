@@ -370,8 +370,6 @@ public final class ConversationModel {
 
     // MARK: - Media (spec §37)
 
-    public var supportsMedia: Bool { identity.hubID == nil }
-
     /// Loads the page before the oldest loaded message; keeps the visual anchor (the view
     /// prepends without jumping because rows keep stable IDs).
     public func loadOlder() async {

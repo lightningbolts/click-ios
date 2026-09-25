@@ -80,7 +80,9 @@ public struct MessageMedia: Hashable, Sendable {
         switch type {
         case "image", "photo", "audio", "voice", "voice_note":
             let url = JSONFields.string(meta, "media_url", "mediaUrl")
-            guard url != nil || (v2 != nil && v2Path != nil) else { return nil }
+            // Hub photos store only a path in the `hub-media` bucket (signed on demand).
+            let isHubPath = v2Path != nil && JSONFields.string(meta["media_bucket"]) == "hub-media"
+            guard url != nil || (v2 != nil && v2Path != nil) || isHubPath else { return nil }
             let isImage = type == "image" || type == "photo"
             return MessageMedia(
                 kind: isImage ? .image : .audio,

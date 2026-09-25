@@ -158,7 +158,7 @@ public enum ChatRepositoryError: Error, LocalizedError, Sendable {
     public var errorDescription: String? {
         switch self {
         case .mediaUnsupported:
-            return "Media in hub chats isn't available on iOS yet."
+            return "This conversation doesn't accept that kind of attachment."
         case .mediaTooLarge:
             return "This file is too large to send."
         case .mediaTypeNotAllowed:
@@ -1084,11 +1084,14 @@ public actor ChatRepository: ChatRepositoryProtocol {
         clientMessageID: String,
         progress: (@Sendable (MediaUploadProgress) -> Void)?
     ) async throws -> ChatMessageItem {
-        guard conversation.hubID == nil else { throw ChatRepositoryError.mediaUnsupported }
         switch MediaValidator.validate(draft) {
         case .tooLarge?: throw ChatRepositoryError.mediaTooLarge
         case .typeNotAllowed?, .empty?: throw ChatRepositoryError.mediaTypeNotAllowed
         case nil: break
+        }
+        if let hubID = conversation.hubID {
+            return try await sendHubMedia(hubID: hubID, currentUserID: currentUserID, currentUserName: currentUserName, draft: draft,
+                                          replyToID: replyToID, clientMessageID: clientMessageID, progress: progress)
         }
         progress?(.encrypting)
         let chatID = try await canonicalChatID(conversation)
@@ -1180,12 +1183,7 @@ public actor ChatRepository: ChatRepositoryProtocol {
         case .image, .audio:
             metadata["original_mime_type"] = draft.mimeType
             metadata["is_encrypted_media"] = true
-            if draft.isClickDrop {
-                // KMP Click Drop: reveal is always 24 hours after send.
-                metadata["disposable_roll"] = true
-                metadata["collaboration_ttl"] = ISO8601DateFormatter().string(from: Date().addingTimeInterval(86_400))
-                if let encounterID = draft.encounterID { metadata["encounter_id"] = encounterID }
-            }
+            metadata.merge(Self.clickDropMetadata(draft)) { _, new in new }
             if let duration = draft.durationSeconds { metadata["duration_seconds"] = duration }
             if draft.kind == .audio, let waveform = draft.waveform { metadata["waveform"] = VoiceWaveform.wire(waveform) }
         case .file:
@@ -1292,7 +1290,9 @@ public actor ChatRepository: ChatRepositoryProtocol {
         if let cached = await ChatMediaVault.shared.cachedURL(messageID: message.id, fileExtension: media.fileExtension) {
             return cached
         }
-        guard conversation.hubID == nil else { throw ChatRepositoryError.mediaUnsupported }
+        if let hubID = conversation.hubID {
+            return try await loadHubMedia(media, messageID: message.id, hubID: hubID)
+        }
 
         let plain: Data
         if let v2 = media.v2 {
@@ -1525,6 +1525,165 @@ public actor ChatRepository: ChatRepositoryProtocol {
         )
     }
 
+    // MARK: - Hub media (spec §62; KMP `HubChatViewModel.sendHubImageFromPicker/sendHubDisposableRoll`)
+
+    /// Photos and Click Drops only (KMP parity). New uploads are always v2: the ciphertext goes
+    /// to `POST /api/hub/media` (multipart), then an `image` message carries the path.
+    private func sendHubMedia(
+        hubID: String,
+        currentUserID: String,
+        currentUserName: String,
+        draft: MediaDraft,
+        replyToID: String?,
+        clientMessageID: String,
+        progress: (@Sendable (MediaUploadProgress) -> Void)?
+    ) async throws -> ChatMessageItem {
+        guard draft.kind == .image else { throw ChatRepositoryError.mediaTypeNotAllowed }
+        progress?(.encrypting)
+        guard let session = try await resolveV2Session(scope: .hub(hubID), participantUserIDs: hubParticipants[hubID] ?? [], allowUpgrade: true) else {
+            throw ChatRepositoryError.encryptionUnavailable
+        }
+        guard let epochKey = session.epochKeys[session.currentEpoch] else { throw ChatRepositoryError.currentEpochKeyUnavailable }
+        let encrypted = try ClickCryptoV2.encryptMedia(
+            metadata: .init(chatId: hubID, epoch: session.currentEpoch, senderDeviceId: session.deviceID,
+                            clientMessageId: clientMessageID, mediaCiphertextSha256: ""),
+            epochKey: epochKey,
+            plaintext: draft.data,
+            replayGuard: messageReplayGuard
+        )
+        let location = await hubLocationFields(camelCase: false)
+        let path = try await uploadHubMedia(
+            hubID: hubID,
+            objectPath: Self.hubMediaObjectPath(userID: currentUserID, hubID: hubID),
+            bytes: encrypted.uploadedBytes,
+            fields: location.mapValues { "\($0)" }.merging([
+                "e2ee_v2_envelope": encrypted.authorizationEnvelope,
+                "media_ciphertext_sha256": encrypted.mediaCiphertextSha256,
+                "epoch": String(session.currentEpoch),
+                "sender_device_id": session.deviceID,
+                "client_message_id": clientMessageID
+            ]) { _, new in new },
+            progress: progress
+        )
+
+        let label = draft.isClickDrop ? "Click Drop" : "Photo"
+        let body = try encryptV2(label, chatID: hubID, session: session, clientMessageID: clientMessageID)
+        var metadata: [String: Any] = [
+            "media_path": path,
+            "media_bucket": "hub-media",
+            "is_encrypted_media": true,
+            "original_mime_type": draft.mimeType,
+            "media_chat_id": hubID,
+            "media_epoch": session.currentEpoch,
+            "media_sender_device_id": session.deviceID,
+            "media_client_message_id": clientMessageID,
+            "media_ciphertext_sha256": encrypted.mediaCiphertextSha256,
+            "media_authorization_envelope": encrypted.authorizationEnvelope
+        ]
+        metadata.merge(body.metadata) { current, _ in current }
+        metadata.merge(Self.clickDropMetadata(draft)) { _, new in new }
+        if let replyToID { metadata["reply_to_id"] = replyToID }
+
+        var post = location
+        post["hub_id"] = hubID
+        post["body"] = body.wireContent
+        post["message_type"] = "image"
+        post["metadata"] = metadata
+        let data: Data
+        do {
+            (data, _) = try await apiClient.executeRaw(APIRequest(
+                path: "/api/hub/messages", method: .post, body: try JSONSerialization.data(withJSONObject: post)
+            ))
+        } catch {
+            throw HubChatError.map(error)
+        }
+        let root = try JSONFields.object(data)
+        let row = JSONFields.dictionary(root["message"]) ?? root
+        guard let id = JSONFields.string(row["id"]) else { throw ChatRepositoryError.invalidServerPayload }
+        let media = MessageMedia.parse(messageType: "image", metadata: metadata, decryptedContent: "", chatID: hubID)
+        let local = try? await ChatMediaVault.shared.store(draft.data, messageID: id, fileExtension: media?.fileExtension ?? "jpg")
+        return ChatMessageItem(
+            id: id, chatID: hubID, senderID: currentUserID, senderName: currentUserName, content: label,
+            rawContent: body.wireContent, messageType: .image, createdAt: JSONFields.date(row["created_at"]) ?? .now,
+            deliveryStatus: .sent, isOutgoing: true, replyToID: replyToID, media: media, localMediaURL: local
+        )
+    }
+
+    /// `{uid}/hub/{hubId}/<20 random alphanumerics>.bin`, the layout the route enforces.
+    nonisolated static func hubMediaObjectPath(userID: String, hubID: String) -> String {
+        let alphabet = Array("abcdefghijklmnopqrstuvwxyz0123456789")
+        let leaf = String((0..<20).map { _ in alphabet.randomElement()! })
+        return "\(userID)/hub/\(hubID)/\(leaf).bin"
+    }
+
+    private func uploadHubMedia(
+        hubID: String,
+        objectPath: String,
+        bytes: Data,
+        fields: [String: String],
+        progress: (@Sendable (MediaUploadProgress) -> Void)?
+    ) async throws -> String {
+        var form = MultipartForm()
+        form.add("hub_id", hubID)
+        form.add("object_path", objectPath)
+        form.add("mime_type", "application/octet-stream")
+        for (name, value) in fields.sorted(by: { $0.key < $1.key }) { form.add(name, value) }
+        form.addFile("file", fileName: "media.bin", mimeType: "application/octet-stream", data: bytes)
+        progress?(.uploading(fraction: 0))
+        let data: Data
+        do {
+            (data, _) = try await apiClient.executeRaw(
+                .multipart(path: "/api/hub/media", form: form),
+                uploadProgress: progress.map { report in { @Sendable fraction in report(.uploading(fraction: fraction)) } }
+            )
+        } catch {
+            throw HubChatError.map(error)
+        }
+        guard let path = JSONFields.string(try JSONFields.object(data)["path"]) else { throw ChatRepositoryError.invalidServerPayload }
+        return path
+    }
+
+    /// Hub media stores a path, not a bearer URL: re-sign it right before download so the server
+    /// enforces current access (KMP `resolveHubMediaUrl`). v2 decrypts with the hub epoch; older
+    /// hub photos use the legacy hub keys (read-only).
+    private func loadHubMedia(_ media: MessageMedia, messageID: String, hubID: String) async throws -> URL {
+        let raw: Data
+        if let path = media.storagePath {
+            let (data, _) = try await apiClient.executeRaw(APIRequest(
+                path: "/api/hub/media",
+                queryItems: [URLQueryItem(name: "hub_id", value: hubID), URLQueryItem(name: "path", value: path)]
+            ))
+            guard let signed = JSONFields.string(try JSONFields.object(data)["url"]), let url = URL(string: signed) else {
+                throw ChatRepositoryError.mediaUnavailable
+            }
+            raw = Self.normalizedMediaPayload(try await Self.fetch(url))
+        } else {
+            raw = Self.normalizedMediaPayload(try await downloadMedia(media))
+        }
+        let plain: Data
+        if let v2 = media.v2 {
+            guard
+                let session = try await resolveV2Session(scope: .hub(hubID), participantUserIDs: hubParticipants[hubID] ?? [], allowUpgrade: false),
+                let key = session.epochKeys[v2.epoch]
+            else { throw ChatRepositoryError.currentEpochKeyUnavailable }
+            plain = try ClickCryptoV2.decryptMedia(metadata: v2, epochKey: key, uploadedBytes: raw, replayGuard: messageReplayGuard)
+        } else {
+            plain = try ClickCryptoV1.decryptMediaBytes(raw, keys: ClickCryptoV1.deriveKeysForHub(hubID: hubID))
+        }
+        return try await ChatMediaVault.shared.store(plain, messageID: messageID, fileExtension: media.fileExtension)
+    }
+
+    /// KMP Click Drop fields: reveal is always 24 hours after send, plus the encounter if any.
+    static func clickDropMetadata(_ draft: MediaDraft, now: Date = .now) -> [String: Any] {
+        guard draft.isClickDrop else { return [:] }
+        var metadata: [String: Any] = [
+            "disposable_roll": true,
+            "collaboration_ttl": ISO8601DateFormatter().string(from: now.addingTimeInterval(86_400))
+        ]
+        if let encounterID = draft.encounterID { metadata["encounter_id"] = encounterID }
+        return metadata
+    }
+
     /// v2 when the hub is (or can now be) upgraded; plaintext only for never-upgraded hubs.
     /// A v2 hub whose key this device lacks throws rather than falling back.
     private func encryptHubText(
@@ -1597,7 +1756,9 @@ public actor ChatRepository: ChatRepositoryProtocol {
             replyToSnippet: string(metadata["reply_to_content"]) ?? string(metadata["reply_to_snippet"]),
             replyToSenderName: string(metadata["reply_to_sender_name"]),
             reactions: summaries,
-            isEdited: JSONFields.string(row["edited_at"]) != nil
+            isEdited: JSONFields.string(row["edited_at"]) != nil,
+            media: MessageMedia.parse(messageType: JSONFields.string(row["message_type"]) ?? "text", metadata: metadata,
+                                      decryptedContent: "", chatID: hubID)
         )
     }
 

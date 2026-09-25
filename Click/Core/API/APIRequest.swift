@@ -46,3 +46,35 @@ public struct APIRequest: Sendable {
     /// Cheap authenticated reachability probe (same route the KMP client uses).
     public static let ping = APIRequest(path: "/api/ping")
 }
+
+/// A `multipart/form-data` body: text fields in order, then one file part.
+public struct MultipartForm: Sendable {
+    public let boundary: String
+    public private(set) var body = Data()
+
+    public init(boundary: String = "click-\(UUID().uuidString.lowercased())") {
+        self.boundary = boundary
+    }
+
+    public var contentType: String { "multipart/form-data; boundary=\(boundary)" }
+
+    public mutating func add(_ name: String, _ value: String) {
+        body.append(Data("--\(boundary)\r\nContent-Disposition: form-data; name=\"\(name)\"\r\n\r\n\(value)\r\n".utf8))
+    }
+
+    public mutating func addFile(_ name: String, fileName: String, mimeType: String, data: Data) {
+        body.append(Data("--\(boundary)\r\nContent-Disposition: form-data; name=\"\(name)\"; filename=\"\(fileName)\"\r\nContent-Type: \(mimeType)\r\n\r\n".utf8))
+        body.append(data)
+        body.append(Data("\r\n".utf8))
+    }
+
+    /// The finished body with the closing boundary.
+    public var encoded: Data { body + Data("--\(boundary)--\r\n".utf8) }
+}
+
+extension APIRequest {
+    /// POST with a multipart body; the header overrides the client's JSON content type.
+    public static func multipart(path: String, form: MultipartForm) -> APIRequest {
+        APIRequest(path: path, method: .post, headers: ["Content-Type": form.contentType], body: form.encoded)
+    }
+}
