@@ -156,6 +156,7 @@ public struct MessageBubbleView: View {
 
                 if !message.reactions.isEmpty {
                     reactionsStrip
+                        .transition(.scale(scale: 0.92).combined(with: .opacity))
                 }
             }
 
@@ -312,7 +313,7 @@ public struct MessageBubbleView: View {
             ForEach(message.reactions) { reaction in
                 Button {
                     ClickHaptics.impact(.light)
-                    onToggleReaction(message, reaction.reactionType)
+                    onShowReactions?(message, reaction.reactionType)
                 } label: {
                     HStack(spacing: 3) {
                         Text(reaction.reactionType)
@@ -344,13 +345,8 @@ public struct MessageBubbleView: View {
                     }
                 }
                 .buttonStyle(.plain)
-                // Long press lists who reacted.
-                .simultaneousGesture(LongPressGesture(minimumDuration: 0.4).onEnded { _ in
-                    guard let onShowReactions else { return }
-                    ClickHaptics.impact(.medium)
-                    onShowReactions(message, reaction.reactionType)
-                })
                 .accessibilityLabel("\(reaction.reactionType), \(reaction.count)\(reaction.userReacted ? ", including you" : "")")
+                .accessibilityHint("Shows who reacted")
                 .accessibilityAction(named: "Show who reacted") { onShowReactions?(message, reaction.reactionType) }
             }
         }
