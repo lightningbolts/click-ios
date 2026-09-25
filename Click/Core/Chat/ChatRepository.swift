@@ -206,6 +206,11 @@ public actor ChatRepository: ChatRepositoryProtocol {
     private var v1KeyCache: [String: ClickCryptoV1.DerivedKeys] = [:]
     private var groupMasterCache: [String: Data] = [:]
     private var v2SessionCache: [String: V2Session] = [:]
+    /// When each cached session was resolved; writes reuse one for `sendSessionReuse` seconds.
+    private var v2SessionResolvedAt: [String: Date] = [:]
+    private static let sendSessionReuse: TimeInterval = 60
+    /// Canonical chat UUIDs for connections resolved this install (never changes once created).
+    private var canonicalChatIDs: [String: String] = UserDefaults.standard.dictionary(forKey: "click.chat.canonical-ids") as? [String: String] ?? [:]
     private var hubParticipants: [String: [String]] = [:]
     /// Actor-local mirror of `identities` so synchronous mapping can read resolved names.
     private var senderNames: [String: (name: String, avatarURL: String?)] = [:]
@@ -245,6 +250,7 @@ public actor ChatRepository: ChatRepositoryProtocol {
             guard !proposed.isEmpty else { throw ChatRepositoryError.unresolvedChat }
             return proposed
         }
+        if let known = canonicalChatIDs[connection] { return known }
 
         let request = APIRequest(
             path: "/api/connections/\(connection)/tabs",
@@ -256,6 +262,8 @@ public actor ChatRepository: ChatRepositoryProtocol {
         let decoded = try JSONDecoder().decode(ChatResolutionResponse.self, from: data)
         let resolved = decoded.chatId.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !resolved.isEmpty else { throw ChatRepositoryError.unresolvedChat }
+        canonicalChatIDs[connection] = resolved
+        UserDefaults.standard.set(canonicalChatIDs, forKey: "click.chat.canonical-ids")
         return resolved
     }
 
@@ -269,6 +277,13 @@ public actor ChatRepository: ChatRepositoryProtocol {
     public func registerDevice() async throws {
         guard !deviceRegistered else { return }
         let identity = try vault.loadOrCreate()
+        // Registered on an earlier launch: skip the round trip. Discovery re-registers if the
+        // server doesn't list this device (see `resolveV2Session`).
+        let registeredKey = "click.v2.registered.\(identity.info.deviceID)"
+        if UserDefaults.standard.bool(forKey: registeredKey) {
+            deviceRegistered = true
+            return
+        }
         let body = try JSONSerialization.data(
             withJSONObject: [
                 "device_id": identity.info.deviceID,
@@ -289,6 +304,7 @@ public actor ChatRepository: ChatRepositoryProtocol {
             // Registration is idempotent from the client's perspective.
         }
         deviceRegistered = true
+        UserDefaults.standard.set(true, forKey: registeredKey)
     }
 
     /// Where a v2 epoch lives: chat routes (direct + group) or hub routes. Hub envelopes bind to
@@ -336,18 +352,27 @@ public actor ChatRepository: ChatRepositoryProtocol {
         allowUpgrade: Bool,
         didRetryDiscovery: Bool = false
     ) async throws -> V2Session? {
-        if !allowUpgrade, let cached = v2SessionCache[scope.cacheKey] {
-            return cached
+        if let cached = v2SessionCache[scope.cacheKey] {
+            // Reads always reuse; writes reuse a recent session (direct chats and freshly
+            // opened groups/hubs), otherwise re-check membership and rotation.
+            let fresh = v2SessionResolvedAt[scope.cacheKey].map { Date().timeIntervalSince($0) < Self.sendSessionReuse } ?? false
+            if !allowUpgrade || fresh { return cached }
         }
 
         let identity = try vault.loadOrCreate()
         try await registerDevice()
 
-        let devices = try await discoverDevices(scope)
+        // Independent reads: fetch the device list and this device's epoch envelopes together.
+        async let devicesTask = discoverDevices(scope)
+        async let stateTask = fetchEpochState(scope, deviceID: identity.info.deviceID)
+        let devices = try await devicesTask
         guard let ownDevice = devices.first(where: { $0.deviceID == identity.info.deviceID }) else {
-            // Registration and discovery are separate authenticated requests. Refresh once in case
-            // the just-created row was not visible to the first read.
+            _ = try? await stateTask
+            // Registration and discovery are separate authenticated requests. Register again
+            // (a remembered registration may be for another account) and refresh once.
             guard !didRetryDiscovery else { throw ChatRepositoryError.currentDeviceNotRegistered }
+            deviceRegistered = false
+            UserDefaults.standard.removeObject(forKey: "click.v2.registered.\(identity.info.deviceID)")
             return try await resolveV2Session(
                 scope: scope,
                 participantUserIDs: participantUserIDs,
@@ -356,7 +381,7 @@ public actor ChatRepository: ChatRepositoryProtocol {
             )
         }
 
-        var state = try await fetchEpochState(scope, deviceID: identity.info.deviceID)
+        var state = try await stateTask
         let participants = Set(
             participantUserIDs
                 .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
@@ -434,6 +459,7 @@ public actor ChatRepository: ChatRepositoryProtocol {
             epochKeys: epochKeys
         )
         v2SessionCache[scope.cacheKey] = session
+        v2SessionResolvedAt[scope.cacheKey] = Date()
         return session
     }
 
@@ -450,6 +476,7 @@ public actor ChatRepository: ChatRepositoryProtocol {
     /// new epoch could not be established — callers must not report the change as complete.
     public func reconcileMembershipEpoch(chatID: String, participantUserIDs: [String]) async throws -> EpochReconciliation {
         v2SessionCache[chatID] = nil
+        v2SessionResolvedAt[chatID] = nil
         guard let session = try await resolveV2Session(
             scope: .chat(chatID),
             participantUserIDs: participantUserIDs,

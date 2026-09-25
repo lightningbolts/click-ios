@@ -497,6 +497,7 @@ public final class ConversationModel {
 
     /// Text for a reply quote, never exposing attachment envelopes.
     static func quoteText(_ item: ChatMessageItem) -> String {
+        if let beacon = item.beacon { return beacon.title }
         if let media = item.media { return media.kind == .file ? "📎 \(media.displayName)" : media.displayName }
         return item.content
     }

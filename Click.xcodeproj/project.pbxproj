@@ -63,6 +63,7 @@
 		4A68B024FDEF49BCAA019EDD /* ActivityShareSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3C7452B96DAD3F83C3B030DB /* ActivityShareSheet.swift */; };
 		4B24696C76DA27D9F45A29E6 /* GroupAvatarView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 856572EA2FE8C0C700768A86 /* GroupAvatarView.swift */; };
 		4D7E0DB5A728A3859C52C4D7 /* HomeFeedModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8BE0A7042C675D3713023C20 /* HomeFeedModel.swift */; };
+		4DB4238C84B8794BE6594D62 /* HidesTabBarWhenPushed.swift in Sources */ = {isa = PBXBuildFile; fileRef = CE8E2F813C2C36ED0FB06D8A /* HidesTabBarWhenPushed.swift */; };
 		4FF734BB5DB5B1FDAB2EDFAA /* ChatMedia.swift in Sources */ = {isa = PBXBuildFile; fileRef = DC15CEB319B08A9727F91D25 /* ChatMedia.swift */; };
 		50024DD402AC701EE16BDD1C /* JSONFields.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7B2A63B6D14A5828F75C3A23 /* JSONFields.swift */; };
 		5644CD79052856D5EBB5002A /* ClickCryptoV1.swift in Sources */ = {isa = PBXBuildFile; fileRef = DF1EEA7316772A0B9800A223 /* ClickCryptoV1.swift */; };
@@ -393,6 +394,7 @@
 		C6233093B7CC58508DF4534E /* BLEProximityService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BLEProximityService.swift; sourceTree = "<group>"; };
 		C8EA116736D43E0C9432BBF5 /* FlowLayout.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FlowLayout.swift; sourceTree = "<group>"; };
 		CAC6727608A5C61CD9DC9BCD /* ProximityRepository.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ProximityRepository.swift; sourceTree = "<group>"; };
+		CE8E2F813C2C36ED0FB06D8A /* HidesTabBarWhenPushed.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HidesTabBarWhenPushed.swift; sourceTree = "<group>"; };
 		CEEFE47A4CBAB925D04FB0E9 /* GroupedSurface.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GroupedSurface.swift; sourceTree = "<group>"; };
 		CEFB1BA8BE902D3D92C87CCD /* ProximityCodec.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ProximityCodec.swift; sourceTree = "<group>"; };
 		CFDEEB947FE11EAC6206E3B0 /* ChatMessageSheets.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ChatMessageSheets.swift; sourceTree = "<group>"; };
@@ -455,6 +457,7 @@
 				C0EEFAB074A9D2D9EB6AA5B9 /* GlassCircle.swift */,
 				856572EA2FE8C0C700768A86 /* GroupAvatarView.swift */,
 				CEEFE47A4CBAB925D04FB0E9 /* GroupedSurface.swift */,
+				CE8E2F813C2C36ED0FB06D8A /* HidesTabBarWhenPushed.swift */,
 				30988D99C421B40B486F5134 /* OfflineNotice.swift */,
 				2229C327502C1A82ABD17D9B /* StatusPill.swift */,
 			);
@@ -1315,6 +1318,7 @@
 				8D75F15C30FE0E789CC024BD /* GroupedSurface.swift in Sources */,
 				BD15C469A9C372102E428997 /* GuestListView.swift in Sources */,
 				081AA9386D6FCC4DC3B03DA0 /* Haptics.swift in Sources */,
+				4DB4238C84B8794BE6594D62 /* HidesTabBarWhenPushed.swift in Sources */,
 				BBA0C506BD5F9CA0033D890F /* HomeComponents.swift in Sources */,
 				4D7E0DB5A728A3859C52C4D7 /* HomeFeedModel.swift in Sources */,
 				8DD8D0AEB2396A470B9CBC66 /* HomeView.swift in Sources */,

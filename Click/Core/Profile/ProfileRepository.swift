@@ -352,23 +352,6 @@ enum EncounterLabels {
         return rows
     }
 
-    /// Light, motion, compass and battery: small muted badges, not chips.
-    nonisolated static func badges(for encounter: Encounter) -> [(symbol: String, text: String)] {
-        var out: [(String, String)] = []
-        if let lux = encounter.lux, lux.isFinite, lux >= 0 { out.append(("sun.max", "\(Int(lux.rounded())) lx")) }
-        if let motion = encounter.motionVariance, motion.isFinite, motion >= 0 {
-            out.append(("figure.walk", String(format: "%.2f", motion)))
-        }
-        if let azimuth = encounter.compassAzimuth, azimuth.isFinite {
-            var degrees = azimuth.truncatingRemainder(dividingBy: 360)
-            if degrees < 0 { degrees += 360 }
-            out.append(("location.north.line", "\(Int(degrees.rounded()))°"))
-        }
-        if let battery = encounter.batteryLevel, (0...100).contains(battery) { out.append(("battery.50", "\(battery)%")) }
-        return out
-    }
-
-    /// "Tue, Sep 22, 2026 · 7:04 PM" (KMP `formatEncounterTimelineWhenLine`).
     nonisolated static func whenLine(_ date: Date, timeZone: TimeZone = .current) -> String {
         let formatter = DateFormatter()
         formatter.locale = Locale(identifier: "en_US_POSIX")

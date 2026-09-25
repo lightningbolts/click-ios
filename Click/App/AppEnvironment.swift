@@ -181,16 +181,25 @@ public final class AppEnvironment {
     private func resolveOnboarding(for userId: String, coordinator: OnboardingCoordinator) {
         Task { [weak self, weak coordinator] in
             guard let self, let coordinator else { return }
-            do {
-                let resolved = try await self.onboardingRepository.resolveOnboardingState(for: userId)
-                coordinator.hydrate(resolved.state, hasAvatar: resolved.hasAvatar)
-                self.handlePostAuthResolved()
-            } catch {
-                // A cached completion already admitted the user; a failed background re-check
-                // must not bounce them back to onboarding.
-                guard coordinator.step != .complete else { return }
-                coordinator.markLoadFailed("We couldn't load your onboarding state. Check your connection and try again.")
+            var prefetched = self.session.takeRecentProfile(for: userId)
+            // Transient failures retry quietly (the launch screen stays up) before any error.
+            for attempt in 0..<3 {
+                do {
+                    let resolved = try await self.onboardingRepository.resolveOnboardingState(for: userId, prefetchedProfile: prefetched)
+                    coordinator.hydrate(resolved.state, hasAvatar: resolved.hasAvatar)
+                    self.handlePostAuthResolved()
+                    return
+                } catch {
+                    prefetched = nil
+                    // A cached completion already admitted the user; a failed background
+                    // re-check must not bounce them back to onboarding.
+                    guard coordinator.step != .complete else { return }
+                    if attempt < 2 { try? await Task.sleep(for: .seconds(attempt == 0 ? 1 : 3)) }
+                }
             }
+            coordinator.markLoadFailed(self.network.isOnline
+                ? "Click couldn't finish setting up. Try again in a moment."
+                : "You're offline. Connect to the internet and try again.")
         }
     }
 

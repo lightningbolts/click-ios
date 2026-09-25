@@ -54,9 +54,14 @@ public struct ClickMapView: View {
                 .padding(.horizontal, ClickSpacing.screenGutter)
                 .padding(.bottom, NearbySheet.height(for: model.sheetDetent, available: proxy.size.height) + 12)
 
-                NearbySheet(model: model, pins: pins, availableHeight: proxy.size.height) { item in
-                    open(item)
-                }
+                // Clipped at the map's bottom edge: the full-height card slides behind it.
+                Color.clear
+                    .overlay(alignment: .bottom) {
+                        NearbySheet(model: model, pins: pins, availableHeight: proxy.size.height) { item in
+                            open(item)
+                        }
+                    }
+                    .clipped()
             }
         }
         // The map is full-bleed: no title bar, just floating glass controls (prototype Map root).
@@ -84,7 +89,7 @@ public struct ClickMapView: View {
         .navigationTitle("Map")
         .toolbar(.hidden, for: .navigationBar)
         // Fully expanded, Nearby takes over the screen including the tab bar area.
-        .toolbar(model.settledDetent == .expanded ? .hidden : .visible, for: .tabBar)
+        // The tab bar stays put: hiding it resizes the map area mid-snap and made the sheet flicker.
         .task {
             model.attach(env)
             await model.loadCached()

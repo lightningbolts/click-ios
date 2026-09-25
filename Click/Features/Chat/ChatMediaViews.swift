@@ -290,7 +290,10 @@ private struct ChatImageView: View {
     }
 
     /// Reserved box until the image decodes, so the timeline doesn't jump (spec §37.4).
-    private let placeholderSize = CGSize(width: 240, height: 200)
+    /// The box the photo will occupy: its remembered aspect ratio, else a neutral 6:5.
+    private var placeholderSize: CGSize {
+        MediaAspectCache.displaySize(aspect: MediaAspectCache.aspect(for: message) ?? 1.2)
+    }
 
     var body: some View {
         Group {
@@ -356,11 +359,14 @@ private struct ChatImageView: View {
         guard image == nil else { return }
         do {
             let fileURL = try await load()
+            // A bubble-sized thumbnail, not the full 2048 px photo: faster and lighter to scroll.
             let decoded = await Task.detached(priority: .userInitiated) { () -> UIImage? in
-                guard let data = try? Data(contentsOf: fileURL) else { return nil }
-                return UIImage(data: data)?.preparingForDisplay()
+                guard let image = UIImage(contentsOfFile: fileURL.path) else { return nil }
+                let scale = min(1, 720 / max(image.size.width, image.size.height))
+                return image.preparingThumbnail(of: CGSize(width: image.size.width * scale, height: image.size.height * scale)) ?? image
             }.value
             guard let decoded else { throw ChatRepositoryError.mediaUnavailable }
+            MediaAspectCache.remember(decoded.size, for: message)
             url = fileURL
             image = decoded
         } catch {
@@ -1094,5 +1100,38 @@ private struct StagedAttachmentChip: View {
 
     static func duration(_ seconds: Int) -> String {
         String(format: "%d:%02d", seconds / 60, seconds % 60)
+    }
+}
+
+/// Remembered photo aspect ratios (by message and client ID) so a bubble reserves its real size
+/// before the image decodes and the timeline never shifts when it lands.
+enum MediaAspectCache {
+    private static let key = "click.media.aspects"
+    private static let lock = NSLock()
+    nonisolated(unsafe) private static var aspects: [String: Double] = UserDefaults.standard.dictionary(forKey: key) as? [String: Double] ?? [:]
+
+    static func aspect(for message: ChatMessageItem) -> Double? {
+        lock.lock()
+        defer { lock.unlock() }
+        return aspects[message.id] ?? message.clientMessageID.flatMap { aspects[$0] }
+    }
+
+    static func remember(_ size: CGSize, for message: ChatMessageItem) {
+        guard size.width > 0, size.height > 0 else { return }
+        let aspect = Double(size.width / size.height)
+        lock.lock()
+        let changed = aspects[message.id] != aspect
+        aspects[message.id] = aspect
+        if let client = message.clientMessageID { aspects[client] = aspect }
+        if aspects.count > 2000 { aspects = Dictionary(uniqueKeysWithValues: aspects.suffix(1500).map { ($0.key, $0.value) }) }
+        let snapshot = aspects
+        lock.unlock()
+        if changed { UserDefaults.standard.set(snapshot, forKey: key) }
+    }
+
+    /// Same box `ChatImageView` gives a photo (fit within 240 × 320).
+    static func displaySize(aspect: Double) -> CGSize {
+        let width = min(240, 320 * aspect)
+        return CGSize(width: width, height: width / aspect)
     }
 }

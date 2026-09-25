@@ -531,7 +531,7 @@ struct SelfProfileLoadingView: View {
     var body: some View {
         if let message = state.errorMessage {
             ContentUnavailableView {
-                Label("Couldn't load your profile", systemImage: "wifi.exclamationmark")
+                Label("Couldn't load your profile", systemImage: "exclamationmark.arrow.circlepath")
             } description: {
                 Text(message)
             } actions: {

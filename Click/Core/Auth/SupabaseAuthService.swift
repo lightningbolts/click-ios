@@ -294,19 +294,15 @@ public actor SupabaseAuthService {
 
         let data: Data
         let response: URLResponse
+        let session = self.session
         do {
-            (data, response) = try await session.data(for: request)
-        } catch let urlError as URLError {
-            switch urlError.code {
-            case .notConnectedToInternet, .networkConnectionLost:
-                throw APIError.offline
-            case .timedOut:
-                throw APIError.timeout
-            case .cancelled:
-                throw APIError.cancelled
-            default:
-                throw APIError.server(status: urlError.errorCode, code: nil, message: urlError.localizedDescription)
+            // Auth calls are not idempotent (refresh tokens rotate), so only connection failures
+            // that never reached Supabase are retried.
+            (data, response) = try await Transport.withRetry(idempotent: false) {
+                try await session.data(for: request)
             }
+        } catch let error as APIError {
+            throw error
         } catch {
             throw APIError.server(status: -1, code: nil, message: error.localizedDescription)
         }

@@ -146,6 +146,8 @@ final class ClickNotificationCoordinator {
     private let tokenVault = PushTokenVault()
     private let installIDKey = "click.standard_apns.install_id"
     private var lastObservedUserID: String?
+    private var uploadedTokenKey: String?
+    private var uploadingTokenKey: String?
 
     private init() {}
 
@@ -227,6 +229,11 @@ final class ClickNotificationCoordinator {
            pendingScope != session.userId {
             return
         }
+        // Several launch triggers flush at once; one upload per user/token per launch is enough.
+        let key = session.userId + "|" + token
+        guard uploadedTokenKey != key, uploadingTokenKey != key else { return }
+        uploadingTokenKey = key
+        defer { uploadingTokenKey = nil }
 
         let body: [String: Any] = [
             "token": token,
@@ -247,6 +254,7 @@ final class ClickNotificationCoordinator {
                 requiresAuth: true
             )
             _ = try await environment.api.executeRaw(request)
+            uploadedTokenKey = key
             tokenVault.writeUserScope(session.userId)
         } catch {
             // Keep the token securely queued. The next session/foreground registration retries it.

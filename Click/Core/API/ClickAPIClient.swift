@@ -80,11 +80,34 @@ public actor ClickAPIClient {
     }
 
     private func performRaw(_ request: APIRequest, uploadProgress: (@Sendable (Double) -> Void)?) async throws -> (Data, HTTPURLResponse) {
+        #if DEBUG
+        let started = Date()
+        do {
+            let result = try await performRawUntimed(request, uploadProgress: uploadProgress)
+            print("[net] \(request.method.rawValue) \(request.path) \(result.1.statusCode) \(Int(Date().timeIntervalSince(started) * 1000))ms")
+            return result
+        } catch {
+            print("[net] \(request.method.rawValue) \(request.path) FAILED \(error) \(Int(Date().timeIntervalSince(started) * 1000))ms")
+            throw error
+        }
+        #else
+        return try await performRawUntimed(request, uploadProgress: uploadProgress)
+        #endif
+    }
+
+    private func performRawUntimed(_ request: APIRequest, uploadProgress: (@Sendable (Double) -> Void)?) async throws -> (Data, HTTPURLResponse) {
         var urlRequest = try buildURLRequest(from: request)
+        #if DEBUG
+        let tokenStart = Date()
+        #endif
 
         // Add authentication header if required
         if request.requiresAuth, let tokenProvider = tokenProvider {
             if let token = await tokenProvider() {
+                #if DEBUG
+                let waited = Int(Date().timeIntervalSince(tokenStart) * 1000)
+                if waited > 50 { print("[net] token wait \(waited)ms for \(request.path)") }
+                #endif
                 urlRequest.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
             } else {
                 throw APIError.unauthorized
@@ -154,50 +177,52 @@ public actor ClickAPIClient {
         return urlRequest
     }
 
-    /// Sends once; an idempotent request that hits a transient failure (timeout, dropped
-    /// connection, 5xx) is retried exactly once after a short jittered delay.
+    /// Identical GETs already in flight share one request (launch fans out the same reads).
+    private var inFlightGETs: [String: Task<(Data, HTTPURLResponse), Error>] = [:]
+
+    /// Sends with the shared transport retry policy; an idempotent 5xx is retried once.
     private func sendRetryingOnce(_ urlRequest: URLRequest, idempotent: Bool, uploadProgress: (@Sendable (Double) -> Void)? = nil) async throws -> (Data, HTTPURLResponse) {
-        guard idempotent else { return try await send(urlRequest, uploadProgress: uploadProgress) }
-        do {
-            let result = try await send(urlRequest)
-            guard (500...599).contains(result.1.statusCode) else { return result }
-        } catch let error as APIError where Self.isRetryable(error) {
-            // fall through to the single retry
+        if urlRequest.httpMethod == "GET", uploadProgress == nil, let key = Self.coalescingKey(urlRequest) {
+            if let running = inFlightGETs[key] { return try await running.value }
+            let task = Task { try await self.sendWithPolicy(urlRequest, idempotent: idempotent, uploadProgress: nil) }
+            inFlightGETs[key] = task
+            defer { inFlightGETs[key] = nil }
+            return try await task.value
         }
+        return try await sendWithPolicy(urlRequest, idempotent: idempotent, uploadProgress: uploadProgress)
+    }
+
+    nonisolated static func coalescingKey(_ request: URLRequest) -> String? {
+        guard let url = request.url?.absoluteString else { return nil }
+        return url + "|" + (request.value(forHTTPHeaderField: "Authorization") ?? "")
+    }
+
+    private func sendWithPolicy(_ urlRequest: URLRequest, idempotent: Bool, uploadProgress: (@Sendable (Double) -> Void)?) async throws -> (Data, HTTPURLResponse) {
+        let first = try await send(urlRequest, idempotent: idempotent, uploadProgress: uploadProgress)
+        guard idempotent, (500...599).contains(first.1.statusCode) else { return first }
         do {
             try await Task.sleep(for: .milliseconds(Int.random(in: 300...800)))
         } catch {
             throw APIError.cancelled
         }
-        return try await send(urlRequest)
+        return try await send(urlRequest, idempotent: idempotent, uploadProgress: uploadProgress)
     }
 
-    private func send(_ urlRequest: URLRequest, uploadProgress: (@Sendable (Double) -> Void)? = nil) async throws -> (Data, HTTPURLResponse) {
+    private func send(_ urlRequest: URLRequest, idempotent: Bool = false, uploadProgress: (@Sendable (Double) -> Void)? = nil) async throws -> (Data, HTTPURLResponse) {
         if Task.isCancelled { throw APIError.cancelled }
-        let data: Data
-        let response: URLResponse
-
+        let session = self.session
+        let (data, response): (Data, URLResponse)
         do {
-            if let uploadProgress, let body = urlRequest.httpBody {
-                var uploadRequest = urlRequest
-                uploadRequest.httpBody = nil
-                (data, response) = try await session.upload(for: uploadRequest, from: body, delegate: UploadProgressDelegate(uploadProgress))
-            } else {
-                (data, response) = try await session.data(for: urlRequest)
+            (data, response) = try await Transport.withRetry(idempotent: idempotent) {
+                if let uploadProgress, let body = urlRequest.httpBody {
+                    var uploadRequest = urlRequest
+                    uploadRequest.httpBody = nil
+                    return try await session.upload(for: uploadRequest, from: body, delegate: UploadProgressDelegate(uploadProgress))
+                }
+                return try await session.data(for: urlRequest)
             }
-        } catch let urlError as URLError {
-            switch urlError.code {
-            case .notConnectedToInternet, .networkConnectionLost:
-                throw APIError.offline
-            case .timedOut:
-                throw APIError.timeout
-            case .cancelled:
-                throw APIError.cancelled
-            default:
-                throw APIError.server(status: urlError.errorCode, code: nil, message: urlError.localizedDescription)
-            }
-        } catch is CancellationError {
-            throw APIError.cancelled
+        } catch let error as APIError {
+            throw error
         } catch {
             throw APIError.server(status: -1, code: nil, message: error.localizedDescription)
         }

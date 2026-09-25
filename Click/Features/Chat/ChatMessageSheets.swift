@@ -181,3 +181,129 @@ struct SayHiPanel: View {
         Icebreakers.prompts(context: context, seed: "\(seed)#\(shuffle)")
     }
 }
+
+/// Small visual for the message a reply quotes: the photo itself, the event image, or a kind
+/// icon for voice notes and files. Shared by bubble quotes and the composer's reply strip.
+struct ReplyThumbnail: View {
+    let target: ChatMessageItem
+    var load: ((ChatMessageItem) async throws -> URL)?
+    var size: CGFloat = 36
+    @State private var image: UIImage?
+
+    var body: some View {
+        Group {
+            if let beacon = target.beacon {
+                EventVisual(seed: beacon.beaconID, imageURL: beacon.imageURL, symbol: beacon.kind.systemImage, cornerRadius: 6)
+            } else if let media = target.media {
+                switch media.kind {
+                case .image:
+                    if let image, !media.isLocked() {
+                        Image(uiImage: image).resizable().scaledToFill()
+                    } else {
+                        icon(media.isLocked() ? "hourglass" : "photo")
+                    }
+                case .audio: icon("mic.fill")
+                case .file: icon("doc.fill")
+                }
+            }
+        }
+        .frame(width: size, height: size)
+        .clipShape(RoundedRectangle(cornerRadius: 6, style: .continuous))
+        .accessibilityHidden(true)
+        .task(id: target.id) {
+            guard target.media?.kind == .image, target.media?.isLocked() == false, image == nil else { return }
+            let url = target.localMediaURL.flatMap { FileManager.default.fileExists(atPath: $0.path) ? $0 : nil }
+            var file = url
+            if file == nil, let load { file = try? await load(target) }
+            guard let file else { return }
+            let side = size * 3
+            image = await Task.detached { UIImage(contentsOfFile: file.path)?.preparingThumbnail(of: CGSize(width: side, height: side)) }.value
+        }
+    }
+
+    /// Whether the quoted message has anything visual to show.
+    static func applies(to target: ChatMessageItem?) -> Bool {
+        target?.beacon != nil || target?.media != nil
+    }
+
+    private func icon(_ name: String) -> some View {
+        ZStack {
+            ClickColors.fillSubtle
+            Image(systemName: name).font(.system(size: size * 0.4, weight: .semibold)).foregroundStyle(ClickColors.textSecondary)
+        }
+    }
+}
+
+/// Horizontal-only pan for swipe-to-reply. It begins only when the finger moves clearly
+/// sideways, so vertical drags fall through to the timeline's scroll view; once it begins it
+/// cancels touches underneath, so a swipe never also opens an attachment.
+struct HorizontalSwipeGesture: UIGestureRecognizerRepresentable {
+    var isEnabled = true
+    let onChanged: (CGFloat) -> Void
+    let onEnded: () -> Void
+
+    func makeUIGestureRecognizer(context: Context) -> UIPanGestureRecognizer {
+        let recognizer = UIPanGestureRecognizer()
+        recognizer.delegate = context.coordinator
+        recognizer.isEnabled = isEnabled
+        return recognizer
+    }
+
+    func updateUIGestureRecognizer(_ recognizer: UIPanGestureRecognizer, context: Context) {
+        recognizer.isEnabled = isEnabled
+    }
+
+    func handleUIGestureRecognizerAction(_ recognizer: UIPanGestureRecognizer, context: Context) {
+        switch recognizer.state {
+        case .changed: onChanged(recognizer.translation(in: recognizer.view).x)
+        case .ended, .cancelled, .failed: onEnded()
+        default: break
+        }
+    }
+
+    func makeCoordinator(converter: CoordinateSpaceConverter) -> Coordinator { Coordinator() }
+
+    final class Coordinator: NSObject, UIGestureRecognizerDelegate {
+        func gestureRecognizerShouldBegin(_ gestureRecognizer: UIGestureRecognizer) -> Bool {
+            guard let pan = gestureRecognizer as? UIPanGestureRecognizer else { return false }
+            let velocity = pan.velocity(in: pan.view)
+            return abs(velocity.x) > abs(velocity.y) * 1.2
+        }
+    }
+}
+
+/// "More reactions": a larger emoji set in a grid.
+struct EmojiPickerSheet: View {
+    @Environment(\.dismiss) private var dismiss
+    let onPick: (String) -> Void
+
+    static let emojis = [
+        "👍", "❤️", "😂", "😮", "😢", "😡", "🔥", "🎉", "👏", "🙏", "😍", "🥰", "😎", "🤔", "😅", "🤣",
+        "😭", "😬", "🙌", "💯", "✨", "👀", "🤝", "💪", "🥳", "😴", "🤯", "😇", "🫶", "👋", "✅", "❌",
+        "☕️", "🍕", "🍻", "🎶", "⚽️", "🏀", "📍", "🌅", "💜", "💀", "🤷", "🙃", "😏", "🤩", "😳", "🫡"
+    ]
+
+    var body: some View {
+        NavigationStack {
+            ScrollView {
+                LazyVGrid(columns: Array(repeating: GridItem(.flexible(), spacing: 8), count: 8), spacing: 12) {
+                    ForEach(Self.emojis, id: \.self) { emoji in
+                        Button {
+                            ClickHaptics.impact(.light)
+                            onPick(emoji)
+                            dismiss()
+                        } label: {
+                            Text(emoji).font(.system(size: 30))
+                        }
+                        .buttonStyle(.plain)
+                    }
+                }
+                .padding(16)
+            }
+            .navigationTitle("React")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar { ToolbarItem(placement: .cancellationAction) { Button("Cancel") { dismiss() } } }
+        }
+        .presentationDetents([.medium])
+    }
+}

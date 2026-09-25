@@ -40,7 +40,7 @@ struct SavedEventsView: View {
             } else if events.value == nil {
                 if let message = events.errorMessage {
                     ContentUnavailableView {
-                        Label("Couldn't load saved events", systemImage: "wifi.exclamationmark")
+                        Label("Couldn't load saved events", systemImage: "exclamationmark.arrow.circlepath")
                     } description: {
                         Text(message)
                     } actions: {

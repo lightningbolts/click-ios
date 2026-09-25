@@ -93,8 +93,6 @@ struct BeaconDetailView: View {
 
                     infoCard(beacon)
 
-                    if beacon.isEvent { peoplePreview }
-
                     if let description = beacon.description, !description.isEmpty {
                         VStack(alignment: .leading, spacing: 8) {
                             Text("About")
@@ -107,6 +105,8 @@ struct BeaconDetailView: View {
                                 .textSelection(.enabled)
                         }
                     }
+
+                    if beacon.isEvent { peoplePreview }
 
                     if beacon.creatorID == env.session.currentSession?.userId {
                         if beacon.isEvent {

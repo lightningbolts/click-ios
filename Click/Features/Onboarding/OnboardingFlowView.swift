@@ -118,7 +118,7 @@ private struct OnboardingLoadErrorView: View {
     var body: some View {
         VStack(spacing: ClickSpacing.md) {
             Spacer()
-            Image(systemName: "wifi.exclamationmark")
+            Image(systemName: "exclamationmark.arrow.circlepath")
                 .font(.system(size: 34, weight: .semibold))
                 .foregroundStyle(ClickColors.accentForeground)
             Text("Couldn't finish loading")

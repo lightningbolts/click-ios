@@ -26,6 +26,7 @@ public struct ChatView: View {
     @State private var forwarding: ChatMessageItem?
     @State private var shareFile: ViewerURL?
     @State private var reactorsFor: ReactorsTarget?
+    @State private var reactingTo: ChatMessageItem?
     @State private var isSearching = false
     @State private var searchQuery = ""
     /// Index into the current matches (oldest first); nil until the reader steps.
@@ -33,6 +34,8 @@ public struct ChatView: View {
     @State private var highlightedID: String?
     /// Short confirmation capsule ("Your Click Drop developed").
     @State private var toast: String?
+
+    private static let eagerRowLimit = 150
 
     private struct ReactorsTarget: Identifiable {
         let message: ChatMessageItem
@@ -103,6 +106,7 @@ public struct ChatView: View {
             }
             .navigationBarTitleDisplayMode(.inline)
             .toolbar(.hidden, for: .tabBar)
+            .hidesTabBarWhenPushed()
             .toolbar {
                 // Identity cluster sits right after the back button, leading-aligned (prototype
                 // chat header). The principal slot keeps it free of per-item glass chrome.
@@ -138,6 +142,9 @@ public struct ChatView: View {
                 }
             }
             .sheet(item: $shareFile) { ActivityShareSheet(items: [$0.url]).presentationDetents([.medium, .large]) }
+            .sheet(item: $reactingTo) { target in
+                EmojiPickerSheet { emoji in Task { await model.toggleReaction(item: target, reactionType: emoji) } }
+            }
             .sheet(item: $reactorsFor) { target in
                 ReactorsSheet(reactions: target.message.reactions, initial: target.reaction,
                               currentUserID: env.session.currentSession?.userId ?? "")
@@ -155,12 +162,7 @@ public struct ChatView: View {
             .onChange(of: model.phase) { _, newPhase in
                 guard newPhase == .loaded, !animatesInserts else { return }
                 DispatchQueue.main.async {
-                    // Open at the first unread message when there is one.
-                    if model.firstUnreadID != nil {
-                        proxy.scrollTo("unread-divider", anchor: .top)
-                    } else {
-                        proxy.scrollTo("bottom-anchor", anchor: .bottom)
-                    }
+                    proxy.scrollTo("bottom-anchor", anchor: .bottom)
                     DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) { animatesInserts = true }
                 }
             }
@@ -219,8 +221,11 @@ public struct ChatView: View {
     }
 
     private func timeline(proxy: ScrollViewProxy) -> some View {
-        ScrollView {
-            LazyVStack(spacing: 2) {
+        let byID = Dictionary(model.items.map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first })
+        return ScrollView {
+            // Short timelines use an eager stack: every row has its real height at first paint,
+            // so opening a chat never shifts as lazily-estimated rows resolve.
+            TimelineStack(lazy: model.items.count > Self.eagerRowLimit) {
                 // Reaching the top loads the previous page (spec §31.3).
                 if model.hasMoreHistory, model.identity.hubID == nil, !model.items.isEmpty {
                     ProgressView()
@@ -279,7 +284,10 @@ public struct ChatView: View {
                         },
                         onForward: conversations != nil && model.canForward(item) ? { forwarding = $0 } : nil,
                         onSaveMedia: { target in Task { await saveOrShare(target) } },
-                        onShowReactions: { target, reaction in reactorsFor = ReactorsTarget(message: target, reaction: reaction) }
+                        onShowReactions: { target, reaction in reactorsFor = ReactorsTarget(message: target, reaction: reaction) },
+                        replyTarget: item.replyToID.flatMap { byID[$0] },
+                        onTapReplyQuote: { id in Task { await jump(to: id, proxy: proxy) } },
+                        onMoreReactions: { reactingTo = $0 }
                     )
                     .background {
                         if highlightedID == item.stableID {
@@ -414,7 +422,8 @@ public struct ChatView: View {
             onShareBeacon: model.identity.hubID == nil ? { sharingBeacon = true } : nil,
             staged: model.staged,
             onUnstage: { id in model.unstage(id) },
-            photosOnly: model.identity.hubID != nil
+            photosOnly: model.identity.hubID != nil,
+            replyMediaLoader: { message in try await model.mediaURL(for: message) }
         )
         // Dialogs hang off the composer so the main body stays type-checkable.
         .modifier(OptionalConversationActionDialogs(model: conversations, pending: $pendingAction) {
@@ -751,5 +760,19 @@ public struct ChatView: View {
             return "Yesterday"
         }
         return date.formatted(.dateTime.month(.abbreviated).day())
+    }
+}
+
+/// `VStack` or `LazyVStack` with the same content.
+private struct TimelineStack<Content: View>: View {
+    let lazy: Bool
+    @ViewBuilder let content: () -> Content
+
+    var body: some View {
+        if lazy {
+            LazyVStack(spacing: 2, content: content)
+        } else {
+            VStack(spacing: 2, content: content)
+        }
     }
 }

@@ -138,11 +138,12 @@ public struct ClicksView: View {
                         }
                     }
                     .buttonStyle(.plain)
+                    // Same actions as the conversation row (one implementation).
                     .contextMenu {
-                        Button("View Profile", systemImage: "person.crop.circle") { openProfile(item) }
+                        DirectConversationActions(item: item, model: model, pending: $pendingAction, onProfile: { openProfile(item) })
                     }
                     .accessibilityLabel("\(item.displayName), Core")
-                    .accessibilityHint("Opens the chat. Touch and hold for the profile.")
+                    .accessibilityHint("Opens the chat. Touch and hold for more options.")
                 }
             }
             .padding(.vertical, 2)
@@ -315,7 +316,7 @@ public struct ClicksView: View {
     private var initialState: some View {
         if let error = model.refreshError {
             ContentUnavailableView {
-                Label("Couldn't load Clicks", systemImage: "wifi.exclamationmark")
+                Label("Couldn't load Clicks", systemImage: "exclamationmark.arrow.circlepath")
             } description: {
                 Text(error)
             } actions: {

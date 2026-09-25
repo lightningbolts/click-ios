@@ -207,3 +207,37 @@ extension ClickAPIClientTests {
         #expect(controller.currentSession?.jwt == "new")
     }
 }
+
+@Suite("Transport retry policy")
+struct TransportRetryTests {
+    final class Counter: @unchecked Sendable { var calls = 0 }
+
+    @Test("TLS/connect failures retry for any method, then succeed")
+    func retriesConnectionFailures() async throws {
+        let counter = Counter()
+        let value = try await Transport.withRetry(idempotent: false) { () async throws -> Int in
+            counter.calls += 1
+            if counter.calls < 3 { throw URLError(.secureConnectionFailed) }
+            return 7
+        }
+        #expect(value == 7 && counter.calls == 3)
+    }
+
+    @Test("A POST that timed out is not retried (it may have reached the server)")
+    func noRetryForNonIdempotentTimeout() async {
+        let counter = Counter()
+        await #expect(throws: APIError.timeout) {
+            try await Transport.withRetry(idempotent: false) { () async throws -> Int in
+                counter.calls += 1
+                throw URLError(.timedOut)
+            }
+        }
+        #expect(counter.calls == 1)
+    }
+
+    @Test("Connection failures never read as offline")
+    func mapping() {
+        #expect(Transport.map(URLError(.secureConnectionFailed)) != .offline)
+        #expect(Transport.map(URLError(.notConnectedToInternet)) == .offline)
+    }
+}

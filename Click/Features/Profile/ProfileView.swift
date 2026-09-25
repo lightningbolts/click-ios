@@ -52,6 +52,8 @@ public struct ProfileView: View {
             }
             .padding(.horizontal, ClickSpacing.screenGutter)
             .padding(.bottom, 32)
+            // Sections that arrive later fade and slide into place instead of popping.
+            .animation(ClickMotion.content, value: loadSignature)
         }
         .background(ClickColors.background.ignoresSafeArea())
         .onScrollGeometryChange(for: Bool.self) { geometry in
@@ -119,6 +121,11 @@ public struct ProfileView: View {
         } message: {
             Text("Reports are private and reviewed by the Click team.")
         }
+    }
+
+    /// Changes whenever a module lands, driving one content animation.
+    private var loadSignature: [Int] {
+        [model.profile.value == nil ? 0 : 1, model.timeline.count, model.encounters.isPending ? 0 : 1, model.journal.isPending ? 0 : 1]
     }
 
     // MARK: - Identity
@@ -339,7 +346,18 @@ public struct ProfileView: View {
                 Divider().padding(.leading, 64)
                 Group {
                     if model.encounters.isPending || model.journal.isPending {
-                        ProgressView().padding(20)
+                        // Reserved space shaped like timeline rows, so history doesn't jump in.
+                        VStack(alignment: .leading, spacing: 14) {
+                            ForEach(0..<2, id: \.self) { _ in
+                                VStack(alignment: .leading, spacing: 6) {
+                                    Text("Reconnected at a place").font(ClickTypography.bodyEmphasized)
+                                    Text("Sep 22 · 7:30 PM · 68°F").font(ClickTypography.metadata)
+                                }
+                            }
+                        }
+                        .redacted(reason: .placeholder)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .padding(16)
                     } else if model.encounters.errorMessage != nil || model.journal.errorMessage != nil {
                         Button("Couldn't load your history. Retry") {
                             Task { await model.loadEncounters(); await model.loadJournal() }
@@ -695,22 +713,13 @@ private struct TimelineRow: View {
                     .font(ClickTypography.bodyEmphasized)
                     .foregroundStyle(ClickColors.textPrimary)
             }
-            // Secondary lines (KMP ProfileConnectionMoment): when, place, weather, sound, floor.
-            ForEach(EncounterLabels.lines(for: encounter), id: \.text) { line in
-                Label(line.text, systemImage: line.symbol)
-                    .font(ClickTypography.supporting)
+            // One compact line (KMP ProfileConnectionMoment density): place, weather, sound, floor.
+            let details = EncounterLabels.lines(for: encounter).map(\.text)
+            if !details.isEmpty {
+                Text(details.joined(separator: " · "))
+                    .font(ClickTypography.metadata)
                     .foregroundStyle(ClickColors.textSecondary)
-                    .labelStyle(.titleAndIcon)
-            }
-            let badges = EncounterLabels.badges(for: encounter)
-            if !badges.isEmpty {
-                HStack(spacing: 10) {
-                    ForEach(badges, id: \.text) { badge in
-                        Label(badge.text, systemImage: badge.symbol)
-                            .font(ClickTypography.metadata)
-                            .foregroundStyle(ClickColors.textTertiary)
-                    }
-                }
+                    .lineLimit(2)
             }
             let chips = EncounterLabels.chips(for: encounter)
             if !chips.isEmpty {

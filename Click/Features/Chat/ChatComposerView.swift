@@ -15,6 +15,8 @@ public struct ChatComposerView: View {
     let onDraft: ((MediaDraft) -> Void)?
     /// Hubs take photos and Click Drops only (KMP parity): no voice notes or files.
     let photosOnly: Bool
+    /// Loads a quoted photo for the reply strip's thumbnail.
+    var replyMediaLoader: ((ChatMessageItem) async throws -> URL)?
     let onAttachmentError: (String) -> Void
     let onShareBeacon: (() -> Void)?
     /// Attachments waiting to be sent; the send button sends them, then the text as a caption.
@@ -40,9 +42,11 @@ public struct ChatComposerView: View {
         onShareBeacon: (() -> Void)? = nil,
         staged: [StagedAttachment] = [],
         onUnstage: @escaping (UUID) -> Void = { _ in },
-        photosOnly: Bool = false
+        photosOnly: Bool = false,
+        replyMediaLoader: ((ChatMessageItem) async throws -> URL)? = nil
     ) {
         self.photosOnly = photosOnly
+        self.replyMediaLoader = replyMediaLoader
         self.staged = staged
         self.onUnstage = onUnstage
         self.onShareBeacon = onShareBeacon
@@ -186,9 +190,11 @@ public struct ChatComposerView: View {
             } else if let replyTarget {
                 contextStrip(
                     title: "Replying to \(replyTarget.senderName)",
-                    content: replyTarget.content,
+                    content: ConversationModel.quoteText(replyTarget),
                     icon: "arrowshape.turn.up.left.fill",
-                    onCancel: onCancelReply
+                    onCancel: onCancelReply,
+                    thumbnail: ReplyThumbnail.applies(to: replyTarget)
+                        ? AnyView(ReplyThumbnail(target: replyTarget, load: replyMediaLoader)) : nil
                 )
                 .transition(.move(edge: .bottom).combined(with: .opacity))
             }
@@ -300,7 +306,8 @@ public struct ChatComposerView: View {
         title: String,
         content: String,
         icon: String,
-        onCancel: @escaping () -> Void
+        onCancel: @escaping () -> Void,
+        thumbnail: AnyView? = nil
     ) -> some View {
         HStack(spacing: 10) {
             RoundedRectangle(cornerRadius: 2)
@@ -324,6 +331,8 @@ public struct ChatComposerView: View {
             }
 
             Spacer(minLength: 8)
+
+            if let thumbnail { thumbnail }
 
             Button {
                 ClickHaptics.selection()
