@@ -15,8 +15,8 @@ If a Done-when check fails, stop and fix it. Never mark a step done on the stren
 ## 0. Ground rules (read first)
 
 **Repos and branches**
-- `click-ios` is on branch `round5-parity`; commit there.
-- `click-web` is on branch `feat/ios-round5`.
+- Create and switch to new branch `feat/ios-round6` from `main` in `click-ios`.
+- Create and switch to new branch `feat/ios-round6` from `main` in `click-web` (incorporating server auth commit `7c28c9f`).
 - Never commit to `main`.
 
 **Build and test commands** (from `click-ios/`):
@@ -55,12 +55,12 @@ If the simulator is stuck "Shutting Down", run `xcrun simctl shutdown all` and `
 
 ## Step 1 — Deploy the server auth speedup (click-web)
 
-Already implemented and committed on `feat/ios-round5` (commit `7c28c9f`, "verify mobile bearer tokens locally against Supabase JWKS"):
+Branch `feat/ios-round6` in `click-web` (contains commit `7c28c9f`, "verify mobile bearer tokens locally against Supabase JWKS"):
 - `lib/server/verifyBearerJwt.ts` verifies ES256 access tokens locally against `https://lrgcwnmcscimkmslihxp.supabase.co/auth/v1/.well-known/jwks.json`.
 - `lib/server/supabaseRouteAuth.ts` uses that check first and falls back to `supabase.auth.getUser` only when it can't decide.
 
 Remaining work:
-1. Open a PR from `feat/ios-round5` to `main` in click-web and let the owner merge and deploy. **Don't merge it yourself.**
+1. Open a PR from `feat/ios-round6` to `main` in click-web and let the owner merge and deploy. **Don't merge it yourself.**
 2. After deployment, measure on the phone: launch with `--console` and read the `[net]` lines.
 
 **Done when:** authenticated `/api/...` calls in the console log average **< 600 ms**; before this change they took 1,000–1,900 ms. Record before and after numbers in the ledger row.
@@ -545,5 +545,5 @@ Changes:
 2. Build Release: `xcodebuild build -scheme Click -configuration Release -destination 'generic/platform=iOS Simulator'` with the same signing flags.
 3. Install on the phone and walk every Done-when list above. Report each one as confirmed, or not, with what you saw.
 4. Add ledger rows (Step 0 format), one per item: 3, 4, 5, 7, 10, and the server change.
-5. Commit on `round5-parity` with a message listing the five items, ending with the attribution line required by the environment.
+5. Commit on `feat/ios-round6` with a message listing the five items, ending with the attribution line required by the environment.
 6. **Don't** push or open PRs for click-ios unless the owner asks. The click-web PR (step 1) is the only PR.
