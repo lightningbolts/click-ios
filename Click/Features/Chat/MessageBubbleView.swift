@@ -125,7 +125,7 @@ public struct MessageBubbleView: View {
                     // A voice note's seek slider must win over swipe-to-reply (spec §37.6).
                     .gesture(HorizontalSwipeGesture(isEnabled: message.media?.kind != .audio, onChanged: swipeChanged, onEnded: swipeEnded))
                     .onGeometryChange(for: CGRect.self) { $0.frame(in: .global) } action: { bubbleFrame = $0 }
-                    .onLongPressGesture(minimumDuration: 0.35) {
+                    .onLongPressGesture(minimumDuration: 0.28, maximumDistance: 15) {
                         ClickHaptics.impact(.medium)
                         onLongPress?(message, bubbleFrame)
                     }

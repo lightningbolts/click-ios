@@ -287,7 +287,13 @@ public struct ChatView: View {
                         onShowReactions: { target, reaction in reactorsFor = ReactorsTarget(message: target, reaction: reaction) },
                         replyTarget: item.replyToID.flatMap { byID[$0] },
                         onTapReplyQuote: { id in Task { await jump(to: id, proxy: proxy) } },
-                        onLongPress: { message, frame in actionTarget = ActionTarget(message: message, frame: frame) }
+                        onLongPress: { message, frame in
+                            var transaction = Transaction()
+                            transaction.disablesAnimations = true
+                            withTransaction(transaction) {
+                                actionTarget = ActionTarget(message: message, frame: frame)
+                            }
+                        }
                     )
                     .background {
                         if highlightedID == item.stableID {
@@ -424,14 +430,19 @@ public struct ChatView: View {
         return actions
     }
 
-    /// Debounced (300 ms) older-history request that restores the reader's anchor afterwards.
+    /// Instant older-history request that restores the reader's anchor seamlessly.
     private func requestOlderHistory(proxy: ScrollViewProxy) {
         Task { @MainActor in
-            try? await Task.sleep(for: .milliseconds(300))
             guard model.hasMoreHistory, !model.isLoadingOlder else { return }
-            guard let anchor = visibleRows.topID else { return }
+            let anchor = visibleRows.topID ?? model.items.first?.stableID
             await model.loadOlder()
-            proxy.scrollTo(anchor, anchor: .top)
+            if let anchor {
+                var transaction = Transaction()
+                transaction.disablesAnimations = true
+                withTransaction(transaction) {
+                    proxy.scrollTo(anchor, anchor: .top)
+                }
+            }
         }
     }
 

@@ -53,6 +53,7 @@ public final class ConversationModel {
     private var pendingSendCount = 0
     private var typingActive = false
     private var typingStopTask: Task<Void, Never>?
+    private var acknowledgedReceipts = Set<String>()
 
     public init(
         identity: ConversationIdentity,
@@ -211,9 +212,10 @@ public final class ConversationModel {
             }
 
             let unreadIDs = items
-                .filter { !$0.isOutgoing && $0.deliveryStatus != .read }
+                .filter { !$0.isOutgoing && $0.deliveryStatus != .read && !acknowledgedReceipts.contains($0.id) }
                 .map(\.id)
             if identity.supportsReceipts, !unreadIDs.isEmpty {
+                for id in unreadIDs { acknowledgedReceipts.insert(id) }
                 try? await chatRepository.markRead(chatID: identity.chatID, messageIDs: unreadIDs)
             }
         } catch {
@@ -856,15 +858,20 @@ public final class ConversationModel {
             }
             resolveReplyQuotes()
 
-            if !decoded.isOutgoing, identity.supportsReceipts {
-                try? await chatRepository.markDelivered(
-                    chatID: identity.chatID,
-                    messageIDs: [decoded.id]
-                )
-                try? await chatRepository.markRead(
-                    chatID: identity.chatID,
-                    messageIDs: [decoded.id]
-                )
+            if !replacingExisting, !decoded.isOutgoing, identity.supportsReceipts {
+                if !acknowledgedReceipts.contains(decoded.id) {
+                    acknowledgedReceipts.insert(decoded.id)
+                    if decoded.deliveryStatus != .delivered && decoded.deliveryStatus != .read {
+                        try? await chatRepository.markDelivered(
+                            chatID: identity.chatID,
+                            messageIDs: [decoded.id]
+                        )
+                    }
+                    try? await chatRepository.markRead(
+                        chatID: identity.chatID,
+                        messageIDs: [decoded.id]
+                    )
+                }
             }
         } catch {
             operationError = error.userFacingMessage

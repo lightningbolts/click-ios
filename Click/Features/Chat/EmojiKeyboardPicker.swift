@@ -43,7 +43,7 @@ public struct EmojiKeyboardPicker: UIViewRepresentable {
         UITextInputMode.activeInputModes.contains { $0.primaryLanguage == "emoji" }
     }
 
-    private static let cachedAllEmoji: [(emoji: String, name: String)] = {
+    private nonisolated static let cachedAllEmoji: [(emoji: String, name: String)] = {
         var results: [(emoji: String, name: String)] = []
         let ranges = [
             0x1F300...0x1FAFF,
