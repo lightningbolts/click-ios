@@ -13,7 +13,7 @@ NOTIFICATION_SERVICE_BUNDLE_IDENTIFIER = compose.project.click.click.Notificatio
 
 // Marketing & Build Version
 MARKETING_VERSION = 1.1.0
-CURRENT_PROJECT_VERSION = 1
+CURRENT_PROJECT_VERSION = 2
 
 // API Configuration defaults
 CLICK_API_BASE_URL = https:/$()/joinclick.co
