@@ -103,14 +103,7 @@ struct HubChatView: View {
                 peerDisplayName: hub.name,
                 kind: .hub(hubID: hub.id)
             )
-            let model = ConversationModel(
-                identity: identity,
-                chatRepository: env.chat,
-                currentUserID: env.session.currentSession?.userId ?? "",
-                currentUserName: "You",
-                    timelineCache: env.timelineCache,
-                    pendingSends: env.pendingSends
-            )
+            let model = env.conversationModel(for: identity)
             phase = .ready(hub, model)
             await conversations.rememberHub(JoinedHub(
                 hubID: hub.id, name: hub.name, category: hub.category, eventBeaconID: hub.eventBeaconID, joinedAt: .now,

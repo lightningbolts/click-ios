@@ -23,6 +23,20 @@ public struct ChatView: View {
 
     @State private var quickLookURL: URL?
     @State private var sharingBeacon = false
+    @State private var forwarding: ChatMessageItem?
+    @State private var shareFile: ViewerURL?
+    @State private var reactorsFor: ReactorsTarget?
+    @State private var isSearching = false
+    @State private var searchQuery = ""
+    /// Index into the current matches (oldest first); nil until the reader steps.
+    @State private var searchPosition: Int?
+    @State private var highlightedID: String?
+
+    private struct ReactorsTarget: Identifiable {
+        let message: ChatMessageItem
+        let reaction: String
+        var id: String { message.id + reaction }
+    }
 
     private struct ViewerURL: Identifiable {
         let url: URL
@@ -56,11 +70,27 @@ public struct ChatView: View {
                 composer
             }
             .overlay(alignment: .top) {
-                if let error = model.operationError, !model.items.isEmpty {
+                if isSearching {
+                    searchBar(proxy: proxy)
+                        .padding(.horizontal, 12)
+                        .padding(.top, 8)
+                        .transition(.move(edge: .top).combined(with: .opacity))
+                } else if let error = model.operationError, !model.items.isEmpty {
                     operationBanner(error)
                         .padding(.horizontal, 12)
                         .padding(.top, 8)
                         .transition(.move(edge: .top).combined(with: .opacity))
+                } else if let connection = sayHiConnection {
+                    // An overlay, so it appears and leaves without moving the timeline.
+                    SayHiPanel(
+                        deadline: connection.sayHiDeadline,
+                        context: ([connection.encounterLocation] + connection.mutualTags).joined(separator: " "),
+                        seed: connection.connectionID
+                    ) { prompt in
+                        Task { await model.sendText(prompt) }
+                    }
+                    .padding(.horizontal, 12)
+                    .padding(.top, 8)
                 }
             }
             .navigationBarTitleDisplayMode(.inline)
@@ -74,10 +104,8 @@ public struct ChatView: View {
                     conversationTitle
                         .frame(width: max(120, screenWidth - 132), alignment: .leading)
                 }
-                if model.identity.hubID == nil {
-                    ToolbarItem(placement: .topBarTrailing) {
-                        conversationMenu
-                    }
+                ToolbarItem(placement: .topBarTrailing) {
+                    conversationMenu
                 }
             }
             .task {
@@ -86,11 +114,26 @@ public struct ChatView: View {
                     anonKey: AppConfig.shared.supabaseAnonKey,
                     authToken: env.session.currentSession?.jwt
                 )
+                // A search result opened this chat: bring that message into view.
+                if let focus = env.pendingMessageFocus, focus.matches(model.identity) {
+                    env.pendingMessageFocus = nil
+                    await jump(to: focus.messageID, proxy: proxy)
+                }
             }
             .fullScreenCover(item: $viewerURL) { item in
                 MediaViewer(url: item.url)
             }
             .quickLookPreview($quickLookURL)
+            .sheet(item: $forwarding) { item in
+                ChatTargetPicker(title: "Forward", excludedChatIDs: Set([model.identity.chatID, model.identity.connectionID].compactMap { $0 })) { target in
+                    try await model.forward(item, to: target)
+                }
+            }
+            .sheet(item: $shareFile) { ActivityShareSheet(items: [$0.url]).presentationDetents([.medium, .large]) }
+            .sheet(item: $reactorsFor) { target in
+                ReactorsSheet(reactions: target.message.reactions, initial: target.reaction,
+                              currentUserID: env.session.currentSession?.userId ?? "")
+            }
             .sheet(isPresented: $sharingBeacon) {
                 BeaconSharePicker { beacon in Task { await model.sendBeacon(beacon) } }
             }
@@ -104,7 +147,12 @@ public struct ChatView: View {
             .onChange(of: model.phase) { _, newPhase in
                 guard newPhase == .loaded, !animatesInserts else { return }
                 DispatchQueue.main.async {
-                    proxy.scrollTo("bottom-anchor", anchor: .bottom)
+                    // Open at the first unread message when there is one.
+                    if model.firstUnreadID != nil {
+                        proxy.scrollTo("unread-divider", anchor: .top)
+                    } else {
+                        proxy.scrollTo("bottom-anchor", anchor: .bottom)
+                    }
                     DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) { animatesInserts = true }
                 }
             }
@@ -125,7 +173,7 @@ public struct ChatView: View {
                 if nearBottom { unseenCount = 0 }
             }
             .overlay(alignment: .bottomTrailing) {
-                if !isNearBottom, !model.items.isEmpty {
+                if !isNearBottom || model.isDetachedFromLatest, !model.items.isEmpty {
                     jumpToLatestButton(proxy: proxy)
                         .padding(.trailing, 16)
                         .padding(.bottom, 12)
@@ -160,6 +208,9 @@ public struct ChatView: View {
                 ForEach(Array(model.items.enumerated()), id: \.element.stableID) { index, item in
                     if shouldShowDateHeader(at: index) {
                         dateHeader(item.createdAt)
+                    }
+                    if item.id == model.firstUnreadID {
+                        UnreadDivider().id("unread-divider")
                     }
 
                     MessageBubbleView(
@@ -197,8 +248,16 @@ public struct ChatView: View {
                         },
                         onDiscardFailed: { target in
                             withAnimation(ClickMotion.content) { model.discardFailed(item: target) }
-                        }
+                        },
+                        onForward: conversations != nil && model.canForward(item) ? { forwarding = $0 } : nil,
+                        onSaveMedia: { target in Task { await saveOrShare(target) } },
+                        onShowReactions: { target, reaction in reactorsFor = ReactorsTarget(message: target, reaction: reaction) }
                     )
+                    .background {
+                        if highlightedID == item.stableID {
+                            ClickColors.accentForeground.opacity(0.14).transition(.opacity)
+                        }
+                    }
                     .id(item.stableID)
                     .transition(.asymmetric(
                         insertion: .move(edge: .bottom).combined(with: .scale(scale: 0.92, anchor: item.isOutgoing ? .bottomTrailing : .bottomLeading)).combined(with: .opacity),
@@ -261,8 +320,12 @@ public struct ChatView: View {
 
     private func jumpToLatestButton(proxy: ScrollViewProxy) -> some View {
         Button {
-            withAnimation(ClickMotion.content) {
-                proxy.scrollTo("bottom-anchor", anchor: .bottom)
+            Task {
+                // A search window that isn't joined to the latest page reloads it first.
+                await model.returnToLatest()
+                withAnimation(ClickMotion.content) {
+                    proxy.scrollTo("bottom-anchor", anchor: .bottom)
+                }
             }
             unseenCount = 0
         } label: {
@@ -334,6 +397,9 @@ public struct ChatView: View {
     @ViewBuilder
     private var conversationMenu: some View {
         Menu {
+            Button("Search", systemImage: "magnifyingglass") {
+                withAnimation(ClickMotion.selection) { isSearching = true }
+            }
             switch model.identity.kind {
             case .direct:
                 if let conversations, let item = conversations.connection(connectionID: model.identity.connectionID) {
@@ -374,6 +440,83 @@ public struct ChatView: View {
             }
         } label: {
             Label("Conversation options", systemImage: "ellipsis")
+        }
+    }
+
+    /// A new direct Click with fewer than 5 messages gets icebreakers (KMP rule, spec §42).
+    private var sayHiConnection: ConnectionItem? {
+        guard model.identity.isDirect, model.phase == .loaded,
+              model.items.filter({ !$0.isDeleted }).count < Icebreakers.messageThreshold,
+              let item = conversations?.connection(connectionID: model.identity.connectionID) else { return nil }
+        return item
+    }
+
+    // MARK: - Search, jump, save
+
+    private var searchMatches: [String] {
+        ConversationModel.searchMatches(in: model.items, query: searchQuery)
+    }
+
+    private func searchBar(proxy: ScrollViewProxy) -> some View {
+        let matches = searchMatches
+        return ChatSearchBar(
+            query: $searchQuery,
+            matchCount: matches.count,
+            position: searchPosition,
+            canSearchOlder: model.hasMoreHistory && model.identity.hubID == nil,
+            onPrevious: { Task { await stepSearch(older: true, proxy: proxy) } },
+            onNext: { Task { await stepSearch(older: false, proxy: proxy) } },
+            onDone: {
+                withAnimation(ClickMotion.selection) { isSearching = false }
+                searchQuery = ""
+                searchPosition = nil
+            }
+        )
+        .onChange(of: searchQuery) { searchPosition = nil }
+    }
+
+    /// Steps through matches newest → oldest; past the oldest, loads older history and retries.
+    private func stepSearch(older: Bool, proxy: ScrollViewProxy) async {
+        var matches = searchMatches
+        let current = searchPosition ?? matches.count
+        var next = older ? current - 1 : current + 1
+        if older, next < 0 || matches.isEmpty, model.hasMoreHistory, model.identity.hubID == nil {
+            let before = matches.count
+            await model.loadOlder()
+            matches = searchMatches
+            next = matches.count - before - 1
+        }
+        guard matches.indices.contains(next) else { return }
+        searchPosition = next
+        await jump(to: matches[next], proxy: proxy)
+    }
+
+    /// Scrolls to a message (loading a window around it when needed) and flashes it.
+    private func jump(to messageID: String, proxy: ScrollViewProxy) async {
+        guard let stableID = await model.reveal(messageID: messageID) else {
+            notice = "That message isn't available anymore."
+            return
+        }
+        try? await Task.sleep(for: .milliseconds(50))
+        withAnimation(ClickMotion.content) { proxy.scrollTo(stableID, anchor: .center) }
+        withAnimation(ClickMotion.subtleFade) { highlightedID = stableID }
+        try? await Task.sleep(for: .seconds(1.6))
+        withAnimation(ClickMotion.subtleFade) { if highlightedID == stableID { highlightedID = nil } }
+    }
+
+    /// Images go to Photos; files and voice notes open the share sheet.
+    private func saveOrShare(_ item: ChatMessageItem) async {
+        do {
+            let url = try await model.mediaURL(for: item)
+            if item.media?.kind == .image {
+                try await PhotoLibrarySaver.saveImage(at: url)
+                ClickHaptics.success()
+                notice = "Saved to Photos."
+            } else {
+                shareFile = ViewerURL(url: url)
+            }
+        } catch {
+            notice = error.userFacingMessage
         }
     }
 
@@ -440,7 +583,9 @@ public struct ChatView: View {
 
     private var statusText: String {
         if model.isPeerTyping {
-            return model.identity.isDirect ? "typing…" : "Someone is typing…"
+            return model.identity.isDirect
+                ? "typing…"
+                : ConversationModel.typingLabel(names: model.typingNames, count: max(1, model.typingNames.count))
         }
         switch model.identity.kind {
         case .group:

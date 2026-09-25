@@ -82,3 +82,5 @@ Authoritative ledger of backend HTTP endpoints, authorization requirements, and 
 | `/api/hub/{id}/participants/me` | DELETE | Bearer JWT | Hubs | Same as `POST /api/hub/leave` |
 | `/api/chat/messages` | GET `?include_tombstones=1` | Bearer JWT | Chat | **New opt-in** `tombstones[{message_id, user_id, time_created, deleted_at}]` within the returned window |
 | `/api/chat/messages` | DELETE `?messageId=` | Bearer JWT (owner) | Chat | Hard delete unchanged; also writes `message_tombstones` |
+| `/api/chat/messages` | GET `?chatId&aroundMessageId&limit` | Bearer JWT | Chat | Window around one message (target + ≤`limit` older + ≤40 newer, newest first); iOS search jump |
+| `/api/hub/messages` | GET `?hubId&aroundMessageId&limit` | Bearer JWT | Hub chat | Same around window for hubs; iOS search jump |

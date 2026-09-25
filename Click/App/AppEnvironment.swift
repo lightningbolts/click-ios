@@ -35,6 +35,21 @@ public final class AppEnvironment {
     public let identities: IdentityCache
     /// The conversation currently on screen, so inbox realtime doesn't count it as unread.
     public var activeChatID: String?
+    /// A message to scroll to when its conversation next opens (search deep links).
+    public var pendingMessageFocus: MessageFocus?
+
+    /// The one way screens build a conversation model, so every chat shares caches and resolvers.
+    public func conversationModel(for identity: ConversationIdentity) -> ConversationModel {
+        ConversationModel(
+            identity: identity,
+            chatRepository: chat,
+            currentUserID: session.currentSession?.userId ?? "",
+            currentUserName: "You",
+            timelineCache: timelineCache,
+            pendingSends: pendingSends,
+            identities: identities
+        )
+    }
 
     public init(
         session: SessionController = SessionController(),
@@ -236,5 +251,20 @@ public final class AppEnvironment {
     /// Sends queued telemetry (called on foreground and background; never blocks the UI).
     public func flushTelemetry() {
         Task.detached(priority: .utility) { [telemetryQueue] in await telemetryQueue.flush() }
+    }
+}
+
+/// Where a search result lives: any of the conversation's IDs plus the message.
+public struct MessageFocus: Equatable, Sendable {
+    public let conversationIDs: Set<String>
+    public let messageID: String
+
+    public init(conversationIDs: [String?], messageID: String) {
+        self.conversationIDs = Set(conversationIDs.compactMap { $0 }.filter { !$0.isEmpty })
+        self.messageID = messageID
+    }
+
+    public func matches(_ identity: ConversationIdentity) -> Bool {
+        !conversationIDs.isDisjoint(with: [identity.chatID, identity.connectionID, identity.hubID].compactMap { $0 })
     }
 }

@@ -20,7 +20,12 @@ public struct MessageBubbleView: View {
     let onOpenBeacon: ((SharedBeacon) -> Void)?
     /// Removes a failed outgoing row (✕ on a failed attachment).
     var onDiscardFailed: ((ChatMessageItem) -> Void)?
+    /// Forward, save/share and "who reacted"; nil hides the matching menu item.
+    var onForward: ((ChatMessageItem) -> Void)?
+    var onSaveMedia: ((ChatMessageItem) -> Void)?
+    var onShowReactions: ((ChatMessageItem, String) -> Void)?
 
+    @State private var confirmingDelete = false
     @State private var dragOffset: CGFloat = 0
     @State private var dragIntent: DragIntent = .undecided
     @State private var hasTriggeredReplyHaptic = false
@@ -45,8 +50,14 @@ public struct MessageBubbleView: View {
         mediaLoader: ((ChatMessageItem) async throws -> URL)? = nil,
         onOpenMedia: ((URL, MessageMedia.Kind) -> Void)? = nil,
         onOpenBeacon: ((SharedBeacon) -> Void)? = nil,
-        onDiscardFailed: ((ChatMessageItem) -> Void)? = nil
+        onDiscardFailed: ((ChatMessageItem) -> Void)? = nil,
+        onForward: ((ChatMessageItem) -> Void)? = nil,
+        onSaveMedia: ((ChatMessageItem) -> Void)? = nil,
+        onShowReactions: ((ChatMessageItem, String) -> Void)? = nil
     ) {
+        self.onForward = onForward
+        self.onSaveMedia = onSaveMedia
+        self.onShowReactions = onShowReactions
         self.onDiscardFailed = onDiscardFailed
         self.onOpenBeacon = onOpenBeacon
         self.mediaLoader = mediaLoader
@@ -136,6 +147,20 @@ public struct MessageBubbleView: View {
                             }
                         }
 
+                        if let onForward {
+                            Button { onForward(message) } label: {
+                                Label("Forward", systemImage: "arrowshape.turn.up.right")
+                            }
+                        }
+
+                        if let onSaveMedia, let media = message.media, !media.isLocked() {
+                            Button { onSaveMedia(message) } label: {
+                                media.kind == .image
+                                    ? Label("Save to Photos", systemImage: "square.and.arrow.down")
+                                    : Label("Share…", systemImage: "square.and.arrow.up")
+                            }
+                        }
+
                         if message.isOutgoing {
                             if !message.isMedia {
                                 Button {
@@ -146,11 +171,16 @@ public struct MessageBubbleView: View {
                             }
 
                             Button(role: .destructive) {
-                                onDelete(message)
+                                confirmingDelete = true
                             } label: {
                                 Label("Delete", systemImage: "trash")
                             }
                         }
+                    }
+                    .confirmationDialog("Delete for everyone?", isPresented: $confirmingDelete, titleVisibility: .visible) {
+                        Button("Delete", role: .destructive) { onDelete(message) }
+                    } message: {
+                        Text("Everyone in this chat will see \"Message deleted\" instead.")
                     }
 
                 if !message.reactions.isEmpty {
@@ -324,6 +354,14 @@ public struct MessageBubbleView: View {
                     }
                 }
                 .buttonStyle(.plain)
+                // Long press lists who reacted.
+                .simultaneousGesture(LongPressGesture(minimumDuration: 0.4).onEnded { _ in
+                    guard let onShowReactions else { return }
+                    ClickHaptics.impact(.medium)
+                    onShowReactions(message, reaction.reactionType)
+                })
+                .accessibilityLabel("\(reaction.reactionType), \(reaction.count)\(reaction.userReacted ? ", including you" : "")")
+                .accessibilityAction(named: "Show who reacted") { onShowReactions?(message, reaction.reactionType) }
             }
         }
         .padding(.horizontal, 5)

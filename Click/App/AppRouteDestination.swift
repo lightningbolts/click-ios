@@ -13,31 +13,13 @@ struct AppRouteDestination: View {
     var body: some View {
         switch route {
         case .chat(let chat):
-            ChatView(
-                model: ConversationModel(
-                    identity: chat.conversationIdentity,
-                    chatRepository: env.chat,
-                    currentUserID: env.session.currentSession?.userId ?? "",
-                    currentUserName: "You",
-                    timelineCache: env.timelineCache,
-                    pendingSends: env.pendingSends
-                )
-            )
+            ChatView(model: env.conversationModel(for: chat.conversationIdentity))
         case .publicProfile(let userID):
             PublicProfileView(userID: userID)
         case .userProfile(let userID, let connectionID):
             ProfileView(userID: userID, connectionID: connectionID)
         case .groupChat(let group):
-            ChatView(
-                model: ConversationModel(
-                    identity: group.conversationIdentity,
-                    chatRepository: env.chat,
-                    currentUserID: env.session.currentSession?.userId ?? "",
-                    currentUserName: "You",
-                    timelineCache: env.timelineCache,
-                    pendingSends: env.pendingSends
-                )
-            )
+            ChatView(model: env.conversationModel(for: group.conversationIdentity))
         case .groupProfile(let chatID):
             GroupProfileView(chatID: chatID)
         case .eventChat(let beaconID):

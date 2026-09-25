@@ -30,13 +30,22 @@ public final class ConversationModel {
     public var replyTarget: ChatMessageItem?
     public var editTarget: ChatMessageItem?
     public var isPeerTyping = false
+    /// Display names of whoever is typing in a group or hub (empty for direct chats).
+    public private(set) var typingNames: [String] = []
     public var operationError: String?
+    /// The first incoming message that was unread when the chat opened ("New messages" divider).
+    /// Captured once per visit, before the timeline is marked read.
+    public private(set) var firstUnreadID: String?
+    private var hasCapturedUnread = false
+    /// True while showing a history window (search jump) that isn't contiguous with the latest page.
+    public private(set) var isDetachedFromLatest = false
 
     private let chatRepository: ChatRepositoryProtocol
     private let timelineCache: ConversationTimelineCache?
     private let realtimeManager: ChatRealtimeManager
     private let currentUserID: String
     private let currentUserName: String
+    private let identities: IdentityCache?
     /// Decrypted media locations by message ID (this conversation only).
     private var mediaURLs: [String: URL] = [:]
     /// Optimistic rows and their payloads; outlives this screen so sends finish in the background.
@@ -53,8 +62,10 @@ public final class ConversationModel {
         currentUserName: String = "You",
         initialItems: [ChatMessageItem]? = nil,
         timelineCache: ConversationTimelineCache? = nil,
-        pendingSends: PendingSendStore? = nil
+        pendingSends: PendingSendStore? = nil,
+        identities: IdentityCache? = nil
     ) {
+        self.identities = identities
         self.timelineCache = timelineCache
         self.pendingSends = pendingSends ?? PendingSendStore()
         self.identity = identity
@@ -142,6 +153,7 @@ public final class ConversationModel {
     }
 
     private func saveToCache() {
+        guard !isDetachedFromLatest else { return }
         timelineCache?.store(
             items.filter { $0.deliveryStatus != .sending && $0.deliveryStatus != .failed },
             for: [identity.chatID, identity.connectionID ?? ""]
@@ -181,6 +193,10 @@ public final class ConversationModel {
             phase = .loaded
             saveToCache()
             operationError = nil
+            if !hasCapturedUnread, identity.supportsReceipts {
+                hasCapturedUnread = true
+                firstUnreadID = items.first { !$0.isOutgoing && !$0.isDeleted && $0.deliveryStatus != .read }?.id
+            }
 
             let unreadIDs = items
                 .filter { !$0.isOutgoing && $0.deliveryStatus != .read }
@@ -213,6 +229,11 @@ public final class ConversationModel {
         let reply = replyTarget
         composerText = ""
         replyTarget = nil
+        await sendText(text, reply: reply)
+    }
+
+    /// Sends a text message through the ordinary optimistic, encrypted pipeline (icebreakers too).
+    public func sendText(_ text: String, reply: ChatMessageItem? = nil) async {
         stopTyping()
         await performSend(makeOptimistic(content: text, type: .text, reply: reply), payload: nil)
     }
@@ -542,7 +563,8 @@ public final class ConversationModel {
         items[index].reactions = Self.mutatedReactions(
             original,
             reactionType: reactionType,
-            adding: adding
+            adding: adding,
+            userID: currentUserID
         )
 
         do {
@@ -564,7 +586,8 @@ public final class ConversationModel {
     private static func mutatedReactions(
         _ source: [ReactionSummary],
         reactionType: String,
-        adding: Bool
+        adding: Bool,
+        userID: String
     ) -> [ReactionSummary] {
         var reactions = source
         if let index = reactions.firstIndex(where: { $0.reactionType == reactionType }) {
@@ -572,10 +595,12 @@ public final class ConversationModel {
                 guard !reactions[index].userReacted else { return reactions }
                 reactions[index].count += 1
                 reactions[index].userReacted = true
+                reactions[index].userIDs.append(userID)
             } else {
                 guard reactions[index].userReacted else { return reactions }
                 reactions[index].count -= 1
                 reactions[index].userReacted = false
+                reactions[index].userIDs.removeAll { $0 == userID }
                 if reactions[index].count <= 0 {
                     reactions.remove(at: index)
                 }
@@ -585,7 +610,8 @@ public final class ConversationModel {
                 ReactionSummary(
                     reactionType: reactionType,
                     count: 1,
-                    userReacted: true
+                    userReacted: true,
+                    userIDs: [userID]
                 )
             )
         }
@@ -659,11 +685,120 @@ public final class ConversationModel {
 
         realtimeManager.onTypingChanged = { [weak self] userIDs in
             Task { @MainActor in
-                guard let self else { return }
-                self.isPeerTyping = self.identity.isDirect
-                    ? userIDs.contains(self.identity.peerUserID)
-                    : !userIDs.subtracting([self.currentUserID]).isEmpty
+                await self?.typingChanged(userIDs)
             }
+        }
+    }
+
+    private func typingChanged(_ userIDs: Set<String>) async {
+        if identity.isDirect {
+            isPeerTyping = userIDs.contains(identity.peerUserID)
+            return
+        }
+        let others = userIDs.subtracting([currentUserID]).sorted()
+        isPeerTyping = !others.isEmpty
+        // Names already on screen first, then the shared resolver.
+        var names: [String: String] = [:]
+        for item in items where others.contains(item.senderID) && !item.senderName.isEmpty { names[item.senderID] = item.senderName }
+        let missing = others.filter { names[$0] == nil }
+        if !missing.isEmpty, let resolved = await identities?.resolve(missing) {
+            for (id, identity) in resolved { if let name = identity.name { names[id] = name } }
+        }
+        typingNames = others.compactMap { names[$0] }
+    }
+
+    /// "Lena is typing…", "Lena and Sam are typing…", "Lena and 2 others are typing…".
+    nonisolated static func typingLabel(names: [String], count: Int) -> String {
+        let first = names.map { $0.split(separator: " ").first.map(String.init) ?? $0 }
+        guard let lead = first.first, count > 0 else { return count > 0 ? "Someone is typing…" : "" }
+        switch count {
+        case 1: return "\(lead) is typing…"
+        case 2 where first.count >= 2: return "\(lead) and \(first[1]) are typing…"
+        default: return "\(lead) and \(count - 1) \(count - 1 == 1 ? "other" : "others") are typing…"
+        }
+    }
+
+    // MARK: - Search and jump (spec §34)
+
+    /// IDs of loaded messages whose plaintext matches `query`, oldest first.
+    nonisolated static func searchMatches(in items: [ChatMessageItem], query: String) -> [String] {
+        let needle = query.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard needle.count >= 2 else { return [] }
+        return items.filter { item in
+            guard !item.isDeleted else { return false }
+            let text = item.beacon?.title ?? item.media?.displayName ?? item.content
+            return text.localizedCaseInsensitiveContains(needle)
+        }
+        .map(\.id)
+    }
+
+    /// Makes `messageID` part of the timeline, loading a window around it when it isn't loaded.
+    /// Returns the row's `stableID` to scroll to, or nil when the server doesn't have it.
+    public func reveal(messageID: String) async -> String? {
+        if let item = items.first(where: { $0.id == messageID || $0.clientMessageID == messageID }) { return item.stableID }
+        do {
+            let window = try await chatRepository.fetchMessages(around: messageID, conversation: identity, currentUserID: currentUserID, limit: 20)
+            guard let target = window.first(where: { $0.id == messageID }) else { return nil }
+            items = Self.mergeWindow(window, into: items)
+            if !items.contains(where: { $0.id == messageID }) {
+                // Not contiguous with what's loaded: show the window alone until "latest".
+                isDetachedFromLatest = true
+                hasMoreHistory = identity.hubID == nil
+                items = (window + items.filter { $0.deliveryStatus == .sending || $0.deliveryStatus == .failed })
+                    .sorted { $0.createdAt < $1.createdAt }
+            }
+            resolveReplyQuotes()
+            return target.stableID
+        } catch {
+            if !error.isCancellation { operationError = error.userFacingMessage }
+            return nil
+        }
+    }
+
+    /// Joins a fetched window to the loaded timeline only when they overlap or touch; otherwise
+    /// returns the loaded timeline unchanged (a gap must never look continuous).
+    nonisolated static func mergeWindow(_ window: [ChatMessageItem], into loaded: [ChatMessageItem]) -> [ChatMessageItem] {
+        let settled = loaded.filter { $0.deliveryStatus != .sending && $0.deliveryStatus != .failed }
+        guard let windowNewest = window.map(\.createdAt).max(), let loadedOldest = settled.map(\.createdAt).min() else {
+            return settled.isEmpty ? (window + loaded).sorted { $0.createdAt < $1.createdAt } : loaded
+        }
+        let loadedIDs = Set(loaded.map(\.id))
+        let overlaps = window.contains { loadedIDs.contains($0.id) } || windowNewest >= loadedOldest
+        guard overlaps else { return loaded }
+        return (window.filter { !loadedIDs.contains($0.id) } + loaded).sorted { $0.createdAt < $1.createdAt }
+    }
+
+    /// Leaves a detached search window and reloads the latest page.
+    public func returnToLatest() async {
+        guard isDetachedFromLatest else { return }
+        isDetachedFromLatest = false
+        items = items.filter { $0.deliveryStatus == .sending || $0.deliveryStatus == .failed }
+        await loadMessages()
+    }
+
+    // MARK: - Forward (spec §33)
+
+    /// Messages that can be forwarded: live text and non-Click-Drop media.
+    public func canForward(_ item: ChatMessageItem) -> Bool {
+        guard !item.isDeleted, item.beacon == nil, item.deliveryStatus != .sending, item.deliveryStatus != .failed else { return false }
+        return !(item.media?.isDisposable ?? false)
+    }
+
+    /// Re-sends a message's plaintext into another conversation. Media is re-encrypted for the
+    /// target from the decrypted local copy (ciphertext never crosses chats), with a fresh client ID.
+    public func forward(_ item: ChatMessageItem, to target: ConversationIdentity) async throws {
+        let clientID = UUID().uuidString.lowercased()
+        if let media = item.media {
+            let url = try await mediaURL(for: item)
+            var draft = MediaDraft(kind: media.kind, data: try Data(contentsOf: url), mimeType: media.mimeType,
+                                   fileName: media.fileName, durationSeconds: media.durationSeconds)
+            draft.waveform = media.waveform
+            _ = try await chatRepository.sendMedia(conversation: target, currentUserID: currentUserID, currentUserName: currentUserName,
+                                                   draft: draft, replyToID: nil, clientMessageID: clientID)
+        } else {
+            _ = try await chatRepository.sendMessage(conversation: target, currentUserID: currentUserID, currentUserName: currentUserName,
+                                                     content: item.content, replyToID: nil, replyToSnippet: nil, replyToSenderName: nil,
+                                                     clientMessageID: clientID)
         }
     }
 

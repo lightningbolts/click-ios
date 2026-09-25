@@ -34,6 +34,10 @@ public protocol ChatRepositoryProtocol: Sendable {
     ) async throws
 
     func deleteMessage(messageID: String, conversation: ConversationIdentity) async throws
+
+    /// A window centred on one message (search deep links): the target, up to `limit` older and
+    /// up to 40 newer rows, newest first.
+    func fetchMessages(around messageID: String, conversation: ConversationIdentity, currentUserID: String, limit: Int) async throws -> [ChatMessageItem]
     func setReaction(messageID: String, reactionType: String, adding: Bool, conversation: ConversationIdentity) async throws
     func markRead(chatID: String, messageIDs: [String]) async throws
     func markDelivered(chatID: String, messageIDs: [String]) async throws
@@ -74,6 +78,10 @@ public protocol ChatRepositoryProtocol: Sendable {
 }
 
 public extension ChatRepositoryProtocol {
+    func fetchMessages(around messageID: String, conversation: ConversationIdentity, currentUserID: String, limit: Int) async throws -> [ChatMessageItem] {
+        []
+    }
+
     func sendMedia(
         conversation: ConversationIdentity,
         currentUserID: String,
@@ -540,10 +548,25 @@ public actor ChatRepository: ChatRepositoryProtocol {
         cursor: Int64?,
         limit: Int = 40
     ) async throws -> [ChatMessageItem] {
+        try await fetchPage(conversation: conversation, currentUserID: currentUserID, cursor: cursor, around: nil, limit: limit)
+    }
+
+    public func fetchMessages(around messageID: String, conversation: ConversationIdentity, currentUserID: String, limit: Int) async throws -> [ChatMessageItem] {
+        try await fetchPage(conversation: conversation, currentUserID: currentUserID, cursor: nil, around: messageID, limit: limit)
+    }
+
+    /// Latest page, an older page (`cursor`), or a window around one message (`around`).
+    private func fetchPage(
+        conversation: ConversationIdentity,
+        currentUserID: String,
+        cursor: Int64?,
+        around: String?,
+        limit: Int
+    ) async throws -> [ChatMessageItem] {
         if let hubID = conversation.hubID {
-            // The hub thread route returns the latest window only; it has no older cursor.
+            // The hub thread route returns the latest window (or an around window); no older cursor.
             guard cursor == nil else { return [] }
-            return try await fetchHubMessages(hubID: hubID, currentUserID: currentUserID, limit: limit)
+            return try await fetchHubMessages(hubID: hubID, currentUserID: currentUserID, limit: limit, around: around)
         }
 
         let canonicalChatID = try await canonicalChatID(conversation)
@@ -555,6 +578,9 @@ public actor ChatRepository: ChatRepositoryProtocol {
         ]
         if let cursor {
             queryItems.append(URLQueryItem(name: "cursor", value: String(cursor)))
+        }
+        if let around {
+            queryItems.append(URLQueryItem(name: "aroundMessageId", value: around))
         }
 
         let request = APIRequest(
@@ -1395,7 +1421,7 @@ public actor ChatRepository: ChatRepositoryProtocol {
 
     // MARK: - Hub transport (spec §61, §62)
 
-    private func fetchHubMessages(hubID: String, currentUserID: String, limit: Int) async throws -> [ChatMessageItem] {
+    private func fetchHubMessages(hubID: String, currentUserID: String, limit: Int, around: String? = nil) async throws -> [ChatMessageItem] {
         let data: Data
         do {
             (data, _) = try await apiClient.executeRaw(APIRequest(
@@ -1404,7 +1430,7 @@ public actor ChatRepository: ChatRepositoryProtocol {
                 queryItems: [
                     URLQueryItem(name: "hubId", value: hubID),
                     URLQueryItem(name: "limit", value: String(min(max(limit, 1), 120)))
-                ]
+                ] + (around.map { [URLQueryItem(name: "aroundMessageId", value: $0)] } ?? [])
             ))
         } catch {
             throw HubChatError.map(error)
@@ -1551,7 +1577,7 @@ public actor ChatRepository: ChatRepositoryProtocol {
         let metadata = JSONFields.dictionary(row["metadata"]) ?? [:]
         let isOutgoing = sender == currentUserID
         let summaries = (reactions[id] ?? [:]).map { type, users in
-            ReactionSummary(reactionType: type, count: users.count, userReacted: users.contains(currentUserID))
+            ReactionSummary(reactionType: type, count: users.count, userReacted: users.contains(currentUserID), userIDs: users)
         }
         .sorted { $0.reactionType < $1.reactionType }
         return ChatMessageItem(
@@ -1637,7 +1663,8 @@ public actor ChatRepository: ChatRepositoryProtocol {
                 ReactionSummary(
                     reactionType: emoji,
                     count: entries.count,
-                    userReacted: entries.contains { $0.userID == currentUserID }
+                    userReacted: entries.contains { $0.userID == currentUserID },
+                    userIDs: entries.map(\.userID)
                 )
             }
             .sorted { $0.reactionType < $1.reactionType }
