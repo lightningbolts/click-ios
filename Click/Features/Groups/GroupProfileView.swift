@@ -453,6 +453,8 @@ struct GroupMemberPickerSheet: View {
                                 Image(systemName: selected.contains(item.userID) ? "checkmark.circle.fill" : "circle")
                                     .foregroundStyle(selected.contains(item.userID) ? ClickColors.accentForeground : ClickColors.textTertiary)
                             }
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                            .contentShape(Rectangle())
                         }
                         .buttonStyle(.plain)
                         .disabled(reason != nil && !selected.contains(item.userID))
