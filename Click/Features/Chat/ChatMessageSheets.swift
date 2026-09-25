@@ -325,7 +325,12 @@ struct HorizontalSwipeGesture: UIGestureRecognizerRepresentable {
             while let current = responder {
                 if let navigation = current as? UINavigationController {
                     if recognizer === navigation.interactivePopGestureRecognizer { return true }
-                    if #available(iOS 26.0, *), recognizer === navigation.interactiveContentPopGestureRecognizer { return true }
+                    if #available(iOS 26.0, *),
+                       navigation.responds(to: NSSelectorFromString("interactiveContentPopGestureRecognizer")),
+                       let contentPop = navigation.value(forKey: "interactiveContentPopGestureRecognizer") as? UIGestureRecognizer,
+                       recognizer === contentPop {
+                        return true
+                    }
                     return false
                 }
                 responder = current.next
