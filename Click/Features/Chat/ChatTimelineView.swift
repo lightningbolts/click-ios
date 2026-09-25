@@ -95,7 +95,8 @@ struct ChatTimelineView: UIViewRepresentable {
         private var contentVersion = -1
         private var hasPositionedInitially = false
         private var lastNearBottom = true
-        private var nearBottomReportTask: Task<Void, Never>?
+        private var pendingNearBottom: Bool?
+        private var nearBottomReportScheduled = false
         private var lastNearTopRequest = Date.distantPast
 
         func attach(_ view: TimelineCollectionView, controller: TimelineController) {
@@ -232,16 +233,20 @@ struct ChatTimelineView: UIViewRepresentable {
         private func reportNearBottom(_ near: Bool) {
             guard near != lastNearBottom else { return }
             lastNearBottom = near
+            pendingNearBottom = near
+            guard !nearBottomReportScheduled else { return }
+            nearBottomReportScheduled = true
 
-            // UIKit can call scroll delegates while SwiftUI is updating this representable
-            // (for example while a diffable snapshot/layout pass changes contentOffset).
-            // Defer and coalesce the bridge back into SwiftUI state so @State is never mutated
-            // synchronously from inside a view update.
-            nearBottomReportTask?.cancel()
-            nearBottomReportTask = Task { @MainActor [weak self] in
-                await Task.yield()
-                guard !Task.isCancelled else { return }
-                self?.parent?.onNearBottomChanged(near)
+            // UIKit can invoke scroll delegates while SwiftUI is synchronously updating this
+            // representable. Task.yield() is not a sufficient boundary because the task may
+            // resume in the same update cycle. Queue the callback to the next main run-loop turn
+            // and coalesce any intermediate values.
+            DispatchQueue.main.async { [weak self] in
+                guard let self else { return }
+                self.nearBottomReportScheduled = false
+                guard let pending = self.pendingNearBottom else { return }
+                self.pendingNearBottom = nil
+                self.parent?.onNearBottomChanged(pending)
             }
         }
 
