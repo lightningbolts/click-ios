@@ -252,12 +252,7 @@ public struct MessageActionOverlay: View {
                 }
             }
         }
-        .background(
-            RoundedRectangle(cornerRadius: 22, style: .continuous)
-                .fill(ClickColors.surfaceElevated)
-        )
-        .clipShape(RoundedRectangle(cornerRadius: 22, style: .continuous))
-        .overlay(RoundedRectangle(cornerRadius: 22, style: .continuous).stroke(ClickColors.separator.opacity(0.5), lineWidth: ClickMetrics.strokeWidth))
-        .shadow(color: .black.opacity(0.22), radius: 18, x: 0, y: 8)
+        .glassPanelBackground(cornerRadius: 22)
+        .shadow(color: .black.opacity(0.18), radius: 14, x: 0, y: 6)
     }
 }

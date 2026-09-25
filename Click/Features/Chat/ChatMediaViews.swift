@@ -425,7 +425,7 @@ private struct ChatAudioView: View {
 
     var body: some View {
         HStack(spacing: 10) {
-            Button { Task { await toggle() } } label: {
+            Button(action: BubbleTapGate.gated { Task { await toggle() } }) {
                 ZStack {
                     if isLoading {
                         ProgressView().tint(foreground)
@@ -509,7 +509,7 @@ private struct ChatFileView: View {
     @State private var failed = false
 
     var body: some View {
-        Button { Task { await open() } } label: {
+        Button(action: BubbleTapGate.gated { Task { await open() } }) {
             HStack(spacing: 10) {
                 Image(systemName: icon)
                     .font(.system(size: 22))

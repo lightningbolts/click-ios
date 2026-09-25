@@ -20,6 +20,21 @@ extension View {
         #endif
     }
 
+    /// Liquid Glass rounded panel on iOS 26+, `.regularMaterial` below (menus, popovers).
+    @ViewBuilder
+    public func glassPanelBackground(cornerRadius: CGFloat) -> some View {
+        let shape = RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
+        #if compiler(>=6.2)
+        if #available(iOS 26.0, *) {
+            self.glassEffect(.regular, in: shape)
+        } else {
+            self.background(.regularMaterial, in: shape).clipShape(shape)
+        }
+        #else
+        self.background(.regularMaterial, in: shape).clipShape(shape)
+        #endif
+    }
+
     @ViewBuilder
     private func materialCapsule(tint: Color?) -> some View {
         if let tint {

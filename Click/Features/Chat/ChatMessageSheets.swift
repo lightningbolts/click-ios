@@ -242,6 +242,41 @@ struct ReplyThumbnail: View {
 ///   vertically mid-swipe) and cancels touches underneath (a swipe never opens a photo).
 /// - The navigation back-swipe waits for it to fail, so a rightward swipe on an incoming bubble
 ///   replies instead of popping the chat. Touches in the leading 24 pt stay with the edge swipe.
+/// Blocks the taps a press-and-hold would otherwise trigger on release. SwiftUI buttons inside a
+/// bubble (photo, Click Drop, file, event card, play, retry) ignore UIKit touch cancellation,
+/// so every tap action inside a bubble asks `allowsTap` first. Global because only one finger
+/// can hold a bubble at a time.
+@MainActor
+enum BubbleTapGate {
+    private static var holdID = 0
+    private static var isHolding = false
+    private static var heldSince = Date.distantPast
+
+    /// A hold whose end never arrived (its cell was recycled mid-press) stops blocking taps
+    /// after a few seconds.
+    static var allowsTap: Bool { !isHolding || Date().timeIntervalSince(heldSince) > 5 }
+
+    static func beginHold() {
+        holdID += 1
+        isHolding = true
+        heldSince = Date()
+    }
+
+    /// The release's tap lands at about the same moment as the recognizer's end; stay closed
+    /// briefly so it is swallowed whichever arrives first.
+    static func endHold() {
+        let id = holdID
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.35) {
+            if holdID == id { isHolding = false }
+        }
+    }
+
+    /// Wraps a tap action so it is ignored when it is the release of a press-and-hold.
+    static func gated(_ action: @escaping () -> Void) -> () -> Void {
+        { if allowsTap { action() } }
+    }
+}
+
 /// Press-and-hold that fires while the finger is still down, on every bubble kind. A SwiftUI
 /// long press on the bubble loses to child buttons (photos, event cards) and waits for the
 /// swipe-to-reply pan to fail, which only happens on release.
@@ -261,7 +296,15 @@ struct PressAndHoldGesture: UIGestureRecognizerRepresentable {
     }
 
     func handleUIGestureRecognizerAction(_ recognizer: UILongPressGestureRecognizer, context: Context) {
-        if recognizer.state == .began { onBegan() }
+        switch recognizer.state {
+        case .began:
+            BubbleTapGate.beginHold()
+            onBegan()
+        case .ended, .cancelled:
+            BubbleTapGate.endHold()
+        default:
+            break
+        }
     }
 
     func makeCoordinator(converter: CoordinateSpaceConverter) -> Coordinator { Coordinator() }

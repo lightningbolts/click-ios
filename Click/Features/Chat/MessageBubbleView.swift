@@ -163,9 +163,8 @@ public struct MessageBubbleView: View {
     @ViewBuilder
     private var content: some View {
         if let beacon = message.beacon {
-            BeaconMessageCard(beacon: beacon, time: message.formattedTime, isOutgoing: message.isOutgoing) {
-                onOpenBeacon?(beacon)
-            }
+            BeaconMessageCard(beacon: beacon, time: message.formattedTime, isOutgoing: message.isOutgoing,
+                              onOpen: BubbleTapGate.gated { onOpenBeacon?(beacon) })
         } else if let media = message.media {
             VStack(alignment: message.isOutgoing ? .trailing : .leading, spacing: 4) {
                 if let snippet = message.replyToSnippet, !snippet.isEmpty {
@@ -182,7 +181,7 @@ public struct MessageBubbleView: View {
                     message: message,
                     media: media,
                     load: { try await mediaLoader(message) },
-                    onOpen: { url in onOpenMedia?(url, media.kind) }
+                    onOpen: { url in if BubbleTapGate.allowsTap { onOpenMedia?(url, media.kind) } }
                 )
                 .overlay { UploadStateOverlay(message: message, onRetry: onRetrySend, onDiscard: onDiscardFailed) }
                 HStack(spacing: 4) {
@@ -288,9 +287,9 @@ public struct MessageBubbleView: View {
         }
         .fixedSize(horizontal: false, vertical: true)
         .contentShape(Rectangle())
-        .onTapGesture {
+        .onTapGesture(perform: BubbleTapGate.gated {
             if let id = message.replyToID { onTapReplyQuote?(id) }
-        }
+        })
         .accessibilityAddTraits(onTapReplyQuote == nil ? [] : .isButton)
         .accessibilityHint(onTapReplyQuote == nil ? "" : "Shows the original message")
         .background(
@@ -416,10 +415,10 @@ public struct MessageBubbleView: View {
             doubleCheck.foregroundStyle(Color(hex: "#7DD3FC"))
 
         case .failed:
-            Button {
+            Button(action: BubbleTapGate.gated {
                 ClickHaptics.warning()
                 onRetrySend?(message)
-            } label: {
+            }) {
                 Image(systemName: "exclamationmark.circle.fill")
                     .font(.system(size: 12, weight: .bold))
                     .foregroundStyle(ClickColors.messageOutgoingForeground)
