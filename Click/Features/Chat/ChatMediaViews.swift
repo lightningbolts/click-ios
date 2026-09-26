@@ -681,7 +681,12 @@ struct ComposerAttachmentButton: View {
             }
         } label: {
             ComposerCircleLabel(systemImage: "plus")
+                .contentShape(Circle())
         }
+        // Menu's automatic button chrome can briefly draw a rectangular pressed surface
+        // around an already-interactive Liquid Glass label. Keep the trigger visually owned
+        // by ComposerCircleLabel so it stays circular throughout press/presentation.
+        .buttonStyle(.plain)
         .accessibilityLabel("Attach")
         .photosPicker(isPresented: $showingPhotos, selection: $photoItems, maxSelectionCount: ConversationModel.maxStaged, selectionBehavior: .ordered, matching: .images)
         .fileImporter(isPresented: $showingFiles, allowedContentTypes: Self.fileTypes) { result in
