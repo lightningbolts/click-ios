@@ -30,6 +30,11 @@ public final class NotificationService: UNNotificationServiceExtension {
             } else if bestAttemptContent.title.isEmpty {
                 bestAttemptContent.title = "Click"
             }
+            // Group messages: the group under the sender's name.
+            if let group = (userInfo["group_name"] as? String)?.trimmingCharacters(in: .whitespacesAndNewlines), !group.isEmpty {
+                bestAttemptContent.subtitle = group
+                bestAttemptContent.threadIdentifier = (userInfo["chat_id"] as? String) ?? group
+            }
             bestAttemptContent.body = resolveChatMessageBody(userInfo: userInfo)
         case "event_reminder":
             bestAttemptContent.title = "Event Reminder"
@@ -72,10 +77,25 @@ public final class NotificationService: UNNotificationServiceExtension {
             return fallback
         }
 
-        // V2 epoch keys are app-owned and may not be available to this extension process. Never
-        // trust a server-provided plaintext preview for E2EE v2; use deterministic private copy.
+        // v2: decrypt on this device with the chat's epoch key, which the app shares through
+        // the team keychain group once it has opened (or synced) the chat. Never trust a
+        // server-provided plaintext preview; without the key, show private copy.
         if encrypted.hasPrefix("e2e2:") {
-            return fallback
+            guard let envelope = try? ClickCryptoV2.parseMessageEnvelope(wire: encrypted),
+                  let key = SharedEpochKeyStore.key(chatID: envelope.chatId, epoch: envelope.epoch) else {
+                return fallback
+            }
+            let metadata = ClickCryptoV2.MessageMetadata(
+                chatId: envelope.chatId,
+                epoch: envelope.epoch,
+                senderDeviceId: envelope.senderDeviceId,
+                clientMessageId: envelope.clientMessageId
+            )
+            guard let text = try? ClickCryptoV2.decryptMessage(metadata: metadata, epochKey: key, envelope: encrypted) else {
+                return fallback
+            }
+            let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
+            return trimmed.isEmpty ? fallback : String(trimmed.prefix(180))
         }
 
         // Legacy v1 direct decryption

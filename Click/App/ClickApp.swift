@@ -277,6 +277,10 @@ final class ClickNotificationCoordinator {
         let value = { (keys: [String]) in firstValue(payload, keys: keys) }
         switch payload["type"] ?? payload["category"] ?? "" {
         case "chat_message", "new_message", "disposable_reveal":
+            // A group message opens its group chat.
+            if payload["group_id"] != nil, let chatID = value(["chat_id", "chatId"]) {
+                return .route(.conversation(chatID: chatID, messageID: nil))
+            }
             return .chat(chatID: value(["chat_id", "chatId"]), connectionID: value(["connection_id", "connectionId"]),
                          senderUserID: value(["sender_user_id", "user_id", "peer_user_id"]),
                          senderName: value(["sender_name", "peer_name", "title"]))
@@ -311,6 +315,8 @@ final class ClickNotificationCoordinator {
             return [chatID, connectionID].contains { $0.map(onScreen.contains) ?? false }
         case .route(.hub(let hubID)):
             return onScreen.contains(hubID)
+        case .route(.conversation(let chatID, _)):
+            return onScreen.contains(chatID)
         default:
             return false
         }

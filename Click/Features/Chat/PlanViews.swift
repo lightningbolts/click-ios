@@ -14,8 +14,13 @@ struct PlanHangoutSheet: View {
 
     @Environment(AppEnvironment.self) private var env
     @Environment(\.dismiss) private var dismiss
+    private var settings: SettingsStore { env.settings }
     @State private var title = ""
     @State private var startsAt = PlanHangoutSheet.defaultStart()
+    @State private var hasEnd = false
+    @State private var endsAt = PlanHangoutSheet.defaultStart().addingTimeInterval(2 * 3600)
+    @State private var isAddingIdea = false
+    @State private var newIdea = ""
     @State private var place: PlanPlace?
     @State private var search = PlaceSearch()
     @State private var metSpots: [FriendshipSpot] = []
@@ -30,25 +35,35 @@ struct PlanHangoutSheet: View {
         return calendar.date(byAdding: .day, value: 1, to: todayEvening) ?? todayEvening
     }
 
-    private var quickDates: [(String, Date)] {
+    /// Today (while there's evening left) and the next six days; picking one keeps the time.
+    private var weekDays: [(label: String, day: Date)] {
         let calendar = Calendar.current
-        let now = Date.now
-        var options: [(String, Date)] = []
-        if let tonight = calendar.date(bySettingHour: 19, minute: 0, second: 0, of: now), tonight > now.addingTimeInterval(1800) {
-            options.append(("Tonight", tonight))
+        let today = calendar.startOfDay(for: .now)
+        return (0..<7).compactMap { offset -> (String, Date)? in
+            guard let day = calendar.date(byAdding: .day, value: offset, to: today) else { return nil }
+            let label = switch offset {
+            case 0: "Today"
+            case 1: "Tomorrow"
+            default: day.formatted(.dateTime.weekday(.abbreviated).day())
+            }
+            return (label, day)
         }
-        if let tomorrow = calendar.date(byAdding: .day, value: 1, to: now),
-           let evening = calendar.date(bySettingHour: 19, minute: 0, second: 0, of: tomorrow) {
-            options.append(("Tomorrow", evening))
-        }
-        if let saturday = calendar.nextDate(after: now, matching: DateComponents(hour: 12, weekday: 7), matchingPolicy: .nextTime) {
-            options.append(("Saturday", saturday))
-        }
-        return options
     }
 
+    /// Moves the plan to `day`, keeping its time of day (and its length, if it has an end).
+    private func move(to day: Date) {
+        let calendar = Calendar.current
+        let time = calendar.dateComponents([.hour, .minute], from: startsAt)
+        guard let moved = calendar.date(bySettingHour: time.hour ?? 19, minute: time.minute ?? 0, second: 0, of: day) else { return }
+        let length = endsAt.timeIntervalSince(startsAt)
+        startsAt = moved
+        endsAt = moved.addingTimeInterval(max(1800, length))
+    }
+
+    private var ideas: [String] { settings.planIdeas + Self.ideas.filter { !settings.planIdeas.contains($0) } }
+
     private var canSend: Bool {
-        !title.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty && startsAt > .now
+        !title.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty && startsAt > .now && (!hasEnd || endsAt > startsAt)
     }
 
     var body: some View {
@@ -59,8 +74,19 @@ struct PlanHangoutSheet: View {
                         .submitLabel(.next)
                     ScrollView(.horizontal) {
                         HStack(spacing: 8) {
-                            ForEach(Self.ideas, id: \.self) { idea in
+                            ForEach(ideas, id: \.self) { idea in
                                 chip(idea, selected: title == idea) { title = idea }
+                                    .contextMenu {
+                                        if settings.planIdeas.contains(idea) {
+                                            Button("Remove", systemImage: "trash", role: .destructive) {
+                                                settings.planIdeas.removeAll { $0 == idea }
+                                            }
+                                        }
+                                    }
+                            }
+                            chip("＋ Add your own", selected: false) {
+                                newIdea = title.trimmingCharacters(in: .whitespacesAndNewlines)
+                                isAddingIdea = true
                             }
                         }
                     }
@@ -71,14 +97,22 @@ struct PlanHangoutSheet: View {
                 Section("When") {
                     ScrollView(.horizontal) {
                         HStack(spacing: 8) {
-                            ForEach(quickDates, id: \.0) { label, date in
-                                chip(label, selected: Calendar.current.isDate(startsAt, equalTo: date, toGranularity: .minute)) { startsAt = date }
+                            ForEach(weekDays, id: \.day) { item in
+                                chip(item.label, selected: Calendar.current.isDate(startsAt, inSameDayAs: item.day)) { move(to: item.day) }
                             }
                         }
                     }
                     .scrollIndicators(.hidden)
                     .listRowInsets(EdgeInsets(top: 8, leading: 16, bottom: 8, trailing: 16))
                     DatePicker("Starts", selection: $startsAt, in: Date.now..., displayedComponents: [.date, .hourAndMinute])
+                    Toggle("End time", isOn: $hasEnd.animation(ClickMotion.content))
+                    if hasEnd {
+                        DatePicker("Ends", selection: $endsAt, in: startsAt.addingTimeInterval(900)..., displayedComponents: [.date, .hourAndMinute])
+                    }
+                }
+                .onChange(of: startsAt) { old, new in
+                    // Keep the length when the start moves; never end before it starts.
+                    endsAt = new.addingTimeInterval(max(1800, endsAt.timeIntervalSince(old)))
                 }
 
                 Section {
@@ -132,6 +166,19 @@ struct PlanHangoutSheet: View {
                     }
                 }
             }
+            .alert("New idea", isPresented: $isAddingIdea) {
+                TextField("🎮 Game night", text: $newIdea)
+                Button("Cancel", role: .cancel) { newIdea = "" }
+                Button("Add") {
+                    let idea = String(newIdea.trimmingCharacters(in: .whitespacesAndNewlines).prefix(40))
+                    guard !idea.isEmpty else { return }
+                    settings.planIdeas = [idea] + settings.planIdeas.filter { $0 != idea }
+                    title = idea
+                    newIdea = ""
+                }
+            } message: {
+                Text("Saved on this iPhone for your next plans. Long-press it to remove.")
+            }
             .navigationTitle("Plan with \(withName)")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
@@ -139,7 +186,8 @@ struct PlanHangoutSheet: View {
                 ToolbarItem(placement: .confirmationAction) {
                     Button("Send") {
                         let trimmed = title.trimmingCharacters(in: .whitespacesAndNewlines)
-                        onSend(HangoutPlan(title: String(trimmed.prefix(80)), startsAt: startsAt, placeName: place?.name,
+                        onSend(HangoutPlan(title: String(trimmed.prefix(80)), startsAt: startsAt, endsAt: hasEnd ? endsAt : nil,
+                                           placeName: place?.name,
                                            latitude: place?.coordinate?.latitude, longitude: place?.coordinate?.longitude))
                         ClickHaptics.success()
                         dismiss()
@@ -240,6 +288,8 @@ struct PlanCardView: View {
     let plan: HangoutPlan
     let message: ChatMessageItem
     let onRSVP: ((Bool) -> Void)?
+    /// Who answered (the reactors sheet for ✅ or ❌).
+    var onShowResponses: ((String) -> Void)? = nil
 
     @Environment(\.openURL) private var openURL
 
@@ -251,8 +301,8 @@ struct PlanCardView: View {
         message.reactions.first { $0.reactionType == reaction }?.userReacted ?? false
     }
 
-    /// Plans stay answerable until a few hours after they start.
-    private var isOver: Bool { plan.startsAt < Date.now.addingTimeInterval(-3 * 3600) }
+    /// Plans stay answerable until they end (or three hours after they start).
+    private var isOver: Bool { plan.endsOrAssumedEnd < .now }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
@@ -264,7 +314,7 @@ struct PlanCardView: View {
                 .font(ClickTypography.bodyEmphasized)
                 .foregroundStyle(ClickColors.textPrimary)
                 .fixedSize(horizontal: false, vertical: true)
-            Label(Self.whenText(plan.startsAt), systemImage: "clock")
+            Label(Self.whenText(plan.startsAt, until: plan.endsAt), systemImage: "clock")
                 .font(ClickTypography.supporting)
                 .foregroundStyle(ClickColors.textSecondary)
             if let placeName = plan.placeName {
@@ -292,9 +342,19 @@ struct PlanCardView: View {
                 let going = count(HangoutPlan.goingReaction)
                 let declined = count(HangoutPlan.declinedReaction)
                 if going + declined > 0 {
-                    Text([going > 0 ? "\(going) going" : nil, declined > 0 ? "\(declined) can't" : nil].compactMap { $0 }.joined(separator: " · "))
+                    Button {
+                        onShowResponses?(going > 0 ? HangoutPlan.goingReaction : HangoutPlan.declinedReaction)
+                    } label: {
+                        HStack(spacing: 4) {
+                            Text([going > 0 ? "\(going) going" : nil, declined > 0 ? "\(declined) can't" : nil].compactMap { $0 }.joined(separator: " · "))
+                            if onShowResponses != nil { Image(systemName: "chevron.right").font(.caption2.weight(.semibold)) }
+                        }
                         .font(ClickTypography.metadata)
                         .foregroundStyle(ClickColors.textTertiary)
+                    }
+                    .buttonStyle(.plain)
+                    .disabled(onShowResponses == nil)
+                    .accessibilityHint("Shows who's going")
                 }
             }
             HStack {
@@ -330,15 +390,20 @@ struct PlanCardView: View {
         .accessibilityAddTraits(selected ? .isSelected : [])
     }
 
-    static func whenText(_ date: Date, now: Date = .now, calendar: Calendar = .current) -> String {
-        let time = date.formatted(date: .omitted, time: .shortened)
+    static func whenText(_ date: Date, until end: Date? = nil, now: Date = .now, calendar: Calendar = .current) -> String {
+        var time = date.formatted(date: .omitted, time: .shortened)
+        if let end {
+            time += "–" + (calendar.isDate(end, inSameDayAs: date)
+                ? end.formatted(date: .omitted, time: .shortened)
+                : end.formatted(.dateTime.weekday(.abbreviated).hour().minute()))
+        }
         if calendar.isDateInToday(date) { return "Today · \(time)" }
         if calendar.isDateInTomorrow(date) { return "Tomorrow · \(time)" }
         if let days = calendar.dateComponents([.day], from: calendar.startOfDay(for: now), to: calendar.startOfDay(for: date)).day,
            (0..<7).contains(days) {
             return "\(date.formatted(.dateTime.weekday(.wide))) · \(time)"
         }
-        return date.formatted(.dateTime.weekday(.abbreviated).month(.abbreviated).day().hour().minute())
+        return "\(date.formatted(.dateTime.weekday(.abbreviated).month(.abbreviated).day())) · \(time)"
     }
 
     static func mapsURL(plan: HangoutPlan, placeName: String) -> URL {

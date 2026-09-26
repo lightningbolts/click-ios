@@ -26,7 +26,7 @@ struct AlertsSettingsView: View {
     @Environment(AppEnvironment.self) private var env
     @Environment(\.scenePhase) private var scenePhase
 
-    @State private var preferences = ModuleState<NotificationPreferences>()
+    private var preferences: ModuleState<NotificationPreferences> { env.selfData.notificationPreferences }
     @State private var pendingKey: NotificationPreferences.Key?
     @State private var systemStatus: PermissionStatus?
     @State private var errorMessage: String?
@@ -98,15 +98,10 @@ struct AlertsSettingsView: View {
         }
     }
 
+    /// Usually already loaded (Me prefetches it); refreshes only when stale.
     private func load() async {
-        guard let userID = env.session.currentSession?.userId else { return }
         systemStatus = await env.permissions.statusAsync(for: .notifications)
-        preferences.begin()
-        do {
-            preferences.succeed(try await env.me.notificationPreferences(userID: userID))
-        } catch {
-            preferences.fail(error)
-        }
+        await env.selfData.loadNotificationPreferences()
     }
 
     private func set(_ key: NotificationPreferences.Key, _ enabled: Bool) async {
@@ -116,7 +111,7 @@ struct AlertsSettingsView: View {
         defer { pendingKey = nil }
         do {
             let saved = try await env.me.setNotificationPreference(key, enabled: enabled)
-            preferences.succeed(saved)
+            env.selfData.apply(notificationPreferences: saved)
             if key == .messages { env.settings.messageNotificationsEnabled = saved[.messages] }
             if key == .eventReminders, !saved[.eventReminders] { await EventReminderScheduler.cancelAll() }
             if enabled, systemStatus == .notDetermined {
@@ -134,7 +129,7 @@ struct AlertsSettingsView: View {
 struct PrivacySettingsView: View {
     @Environment(AppEnvironment.self) private var env
 
-    @State private var privacy = ModuleState<LocationPrivacy>()
+    private var privacy: ModuleState<LocationPrivacy> { env.selfData.locationPrivacy }
     @State private var isSaving = false
     @State private var errorMessage: String?
     @State private var locationHint: String?
@@ -285,14 +280,9 @@ struct PrivacySettingsView: View {
         }
     }
 
+    /// Usually already loaded (Me prefetches it); refreshes only when stale.
     private func load() async {
-        guard let userID = env.session.currentSession?.userId else { return }
-        privacy.begin()
-        do {
-            privacy.succeed(try await env.me.locationPrivacy(userID: userID))
-        } catch {
-            privacy.fail(error)
-        }
+        await env.selfData.loadLocationPrivacy()
     }
 
     private func save(_ next: LocationPrivacy, enablingSnap: Bool) async {
@@ -302,7 +292,7 @@ struct PrivacySettingsView: View {
         locationHint = nil
         defer { isSaving = false }
         do {
-            privacy.succeed(try await env.me.setLocationPrivacy(next, userID: userID))
+            env.selfData.apply(locationPrivacy: try await env.me.setLocationPrivacy(next, userID: userID))
         } catch {
             errorMessage = "Your location setting wasn't changed. \(error.userFacingMessage)"
             return

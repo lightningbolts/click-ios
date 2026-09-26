@@ -41,6 +41,8 @@ final class PeerProfileModel {
     private var mediaURLs: [String: URL] = [:]
     /// Hangouts with this person waiting for a confirmation (either side).
     private(set) var pendingHangouts: [PendingHangout] = []
+    /// Plans in your chat with them that haven't happened yet (on-device, instant).
+    private(set) var upcomingPlans: [ChatMessageItem] = []
     /// Feedback for relationship actions (toast).
     var relationshipNotice: String?
 
@@ -94,6 +96,8 @@ final class PeerProfileModel {
     /// Refreshes everything unless it was refreshed moments ago (`force` for pull-to-refresh).
     func load(force: Bool = false) async {
         guard let environment, let viewerID = environment.session.currentSession?.userId else { return }
+        // On-device and instant: always current, even within the refresh window below.
+        if let connectionID { upcomingPlans = UpcomingPlans.in(chatID: connectionID, userID: viewerID) }
         if !force, let lastLoaded, Date.now.timeIntervalSince(lastLoaded) < 30 { return }
         lastLoaded = .now
         profile.seed(await environment.profiles.cachedProfile(userID: userID, viewerID: viewerID))

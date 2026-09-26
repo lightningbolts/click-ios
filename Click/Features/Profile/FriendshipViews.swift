@@ -17,6 +17,8 @@ struct FriendshipSection: View {
     let onLog: () -> Void
     let onPlan: () -> Void
     let onStory: () -> Void
+    var upcomingPlans: [ChatMessageItem] = []
+    var onOpenPlan: (ChatMessageItem) -> Void = { _ in }
 
     var body: some View {
         let stats = FriendshipStats.compute(encounters)
@@ -30,6 +32,7 @@ struct FriendshipSection: View {
                 statsRow(stats)
                 EncounterMapPreview(encounters: encounters, stats: stats, avatarURL: avatarURL, seed: seed)
             }
+            UpcomingPlansList(plans: upcomingPlans, onOpen: onOpenPlan)
             HStack(spacing: 8) {
                 pill("Log hangout", systemImage: "plus.circle", action: onLog)
                 pill("Plan", systemImage: "calendar.badge.plus", action: onPlan)
@@ -535,7 +538,12 @@ struct FriendshipStorySheet: View {
             VStack(spacing: 16) {
                 TabView(selection: $page) {
                     ForEach(pages) { item in
-                        card(item).padding(.horizontal, 20).tag(item.id)
+                        // Room below the card for the page dots, so they never cover it.
+                        card(item)
+                            .padding(.horizontal, 20)
+                            .padding(.bottom, 44)
+                            .frame(maxHeight: .infinity, alignment: .center)
+                            .tag(item.id)
                     }
                 }
                 .tabViewStyle(.page(indexDisplayMode: .always))
@@ -547,14 +555,19 @@ struct FriendshipStorySheet: View {
                             sharing = ShareableImage.render(card(current), width: 340)
                         }
                     } label: {
-                        Label("Share", systemImage: "square.and.arrow.up").frame(maxWidth: .infinity)
+                        Label("Share", systemImage: "square.and.arrow.up")
+                            .lineLimit(1)
+                            .frame(maxWidth: .infinity)
                     }
                     .buttonStyle(.clickSecondary)
                     Button {
                         dismiss()
                         onPlan()
                     } label: {
-                        Label("Plan the next one", systemImage: "calendar.badge.plus").frame(maxWidth: .infinity)
+                        Label("Plan next", systemImage: "calendar.badge.plus")
+                            .lineLimit(1)
+                            .minimumScaleFactor(0.85)
+                            .frame(maxWidth: .infinity)
                     }
                     .buttonStyle(.clickPrimary)
                 }
@@ -593,11 +606,116 @@ struct FriendshipStorySheet: View {
         }
         .foregroundStyle(.white)
         .padding(24)
-        .frame(maxWidth: .infinity, minHeight: 380, alignment: .leading)
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .leading)
+        // A fixed story shape: the same card on screen and in the shared image.
+        .aspectRatio(4 / 5, contentMode: .fit)
         .background(
             LinearGradient(colors: SouvenirPalette.colors(seed: peerSeed + "\(item.id)"), startPoint: .topLeading, endPoint: .bottomTrailing),
             in: RoundedRectangle(cornerRadius: 28, style: .continuous)
         )
         .accessibilityElement(children: .combine)
+    }
+}
+
+// MARK: - Coming up (plans)
+
+/// Plans in a chat that haven't happened yet; tapping one opens it in the chat.
+struct UpcomingPlansList: View {
+    let plans: [ChatMessageItem]
+    let onOpen: (ChatMessageItem) -> Void
+
+    var body: some View {
+        ForEach(plans.prefix(3)) { message in
+            if let plan = message.plan {
+                Button { onOpen(message) } label: {
+                    HStack(spacing: 10) {
+                        Image(systemName: "calendar")
+                            .foregroundStyle(ClickColors.accentForeground)
+                            .frame(width: 32, height: 32)
+                            .background(ClickColors.selectionTint, in: Circle())
+                        VStack(alignment: .leading, spacing: 1) {
+                            Text(plan.title).font(ClickTypography.supportingEmphasized).foregroundStyle(ClickColors.textPrimary)
+                            Text(PlanCardView.whenText(plan.startsAt, until: plan.endsAt) + (plan.placeName.map { " · \($0)" } ?? ""))
+                                .font(ClickTypography.metadata)
+                                .foregroundStyle(ClickColors.textTertiary)
+                                .lineLimit(1)
+                        }
+                        Spacer(minLength: 4)
+                        let going = message.reactions.first { $0.reactionType == HangoutPlan.goingReaction }?.count ?? 0
+                        if going > 0 {
+                            Text("\(going) going").font(ClickTypography.caption).foregroundStyle(ClickColors.textSecondary)
+                        }
+                        Image(systemName: "chevron.right").font(.caption.weight(.semibold)).foregroundStyle(ClickColors.textTertiary)
+                    }
+                    .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+                .accessibilityHint("Opens the plan in the chat")
+            }
+        }
+    }
+}
+
+// MARK: - Group together
+
+/// A group's shared life, not a copy of the one-to-one view: how often you're together as a
+/// group (you with two or more members at once), who shows up most, where you meet, and
+/// what's coming up. Built from your own encounters with the members.
+struct GroupTogetherSection: View {
+    let group: CliqueItem
+    let model: GroupSpaceModel
+    let currentUserID: String?
+    let onPlan: () -> Void
+    let onOpenPlan: (ChatMessageItem) -> Void
+
+    private var representatives: [Encounter] { model.hangouts.map(\.representative) }
+
+    /// Members you've been with most in group hangouts.
+    private var regulars: [String] {
+        var counts: [String: Int] = [:]
+        for hangout in model.hangouts { for id in hangout.memberIDs { counts[id, default: 0] += 1 } }
+        let names = Dictionary(group.members.map { ($0.userID, HomeFeedModel.firstName($0.name) ?? $0.name) }, uniquingKeysWith: { a, _ in a })
+        return counts.sorted { $0.value > $1.value }.prefix(3).compactMap { names[$0.key] }
+    }
+
+    var body: some View {
+        Section {
+            if model.hangouts.isEmpty {
+                Text("No group hangouts yet. Tap phones with two or more members at once and it shows up here.")
+                    .font(ClickTypography.supporting)
+                    .foregroundStyle(ClickColors.textTertiary)
+            } else {
+                let stats = FriendshipStats.compute(representatives)
+                VStack(alignment: .leading, spacing: 10) {
+                    HStack(alignment: .firstTextBaseline) {
+                        Label(stats.level.name, systemImage: stats.level.symbol)
+                            .font(ClickTypography.bodyEmphasized)
+                            .foregroundStyle(ClickColors.accentForeground)
+                        Spacer()
+                        Text("\(stats.hangouts) group \(stats.hangouts == 1 ? "hangout" : "hangouts") · \(stats.spots.count) \(stats.spots.count == 1 ? "spot" : "spots")")
+                            .font(ClickTypography.metadata)
+                            .foregroundStyle(ClickColors.textTertiary)
+                    }
+                    if !regulars.isEmpty {
+                        Text("Most often with \(ListFormatter.localizedString(byJoining: regulars))")
+                            .font(ClickTypography.supporting)
+                            .foregroundStyle(ClickColors.textSecondary)
+                    }
+                    if stats.weekStreak >= 2 {
+                        Label("\(stats.weekStreak)-week streak", systemImage: "flame.fill")
+                            .font(ClickTypography.supporting)
+                            .foregroundStyle(ClickColors.textSecondary)
+                    }
+                    EncounterMapPreview(encounters: representatives, stats: stats, avatarURL: group.avatarURL, seed: group.chatID)
+                }
+                .padding(.vertical, 4)
+            }
+            UpcomingPlansList(plans: model.upcomingPlans, onOpen: onOpenPlan)
+            Button(action: onPlan) {
+                Label(model.upcomingPlans.isEmpty ? "Plan something" : "Plan another", systemImage: "calendar.badge.plus")
+            }
+        } header: {
+            Text("Together")
+        }
     }
 }

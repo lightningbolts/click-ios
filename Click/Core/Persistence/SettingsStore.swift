@@ -20,6 +20,7 @@ public final class SettingsStore {
         static let ambientNoiseOptIn = "ambient_noise_opt_in"
         static let barometricContextOptIn = "barometric_context_opt_in"
         static let hangoutDetectionOptIn = "hangout_detection_opt_in"
+        static let planIdeas = "plan_custom_ideas"
         static let locationExplainerSeen = "location_explainer_seen"
         static let onboardingState = "onboarding_state"
         static let hasCompletedOnboarding = "has_completed_onboarding"
@@ -38,6 +39,7 @@ public final class SettingsStore {
         self.ambientNoiseOptIn = defaults.bool(forKey: Key.ambientNoiseOptIn)
         self.barometricContextOptIn = defaults.bool(forKey: Key.barometricContextOptIn)
         self.hangoutDetectionOptIn = defaults.bool(forKey: Key.hangoutDetectionOptIn)
+        self.planIdeas = defaults.stringArray(forKey: Key.planIdeas) ?? []
     }
 
     // User-visible preferences are stored properties so SwiftUI observes changes; a computed
@@ -91,6 +93,11 @@ public final class SettingsStore {
     /// app opens so mutual Clicks nearby (who also opted in) can log the hangout. Off by default.
     public var hangoutDetectionOptIn: Bool {
         didSet { defaults.set(hangoutDetectionOptIn, forKey: Key.hangoutDetectionOptIn) }
+    }
+
+    /// Your own plan categories ("🎮 Game night"), shown before the built-in ideas.
+    public var planIdeas: [String] {
+        didSet { defaults.set(planIdeas, forKey: Key.planIdeas) }
     }
 
     public var tagsInitialized: Bool {

@@ -89,6 +89,8 @@ targets:
     sources:
       - path: NotificationService
       - path: Click/Core/Crypto/ClickCryptoV1.swift
+      - path: Click/Core/Crypto/ClickCryptoV2.swift
+      - path: Click/Core/Crypto/SharedEpochKeyStore.swift
     configFiles:
       Debug: Config/Debug.xcconfig
       Release: Config/Release.xcconfig
@@ -96,6 +98,7 @@ targets:
       PRODUCT_BUNDLE_IDENTIFIER: compose.project.click.click.NotificationService
       PRODUCT_NAME: NotificationService
       INFOPLIST_FILE: NotificationService/Info.plist
+      CODE_SIGN_ENTITLEMENTS: NotificationService/NotificationService.entitlements
       INFOPLIST_KEY_CFBundleDisplayName: "NotificationService"
       DEVELOPMENT_TEAM: W4C3V9Z2N4
       CODE_SIGN_STYLE: Automatic

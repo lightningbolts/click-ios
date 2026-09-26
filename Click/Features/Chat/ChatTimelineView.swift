@@ -142,9 +142,6 @@ struct ChatTimelineView: UIViewRepresentable {
 
             let previousRows = currentRows
             currentRows = rows
-            // Same rows with new content (a reaction, an edit): the row resize that follows
-            // glides, and the pinned bottom with it, instead of shifting in one frame.
-            collectionView.animatesLayoutUntil = !rowsChanged && hasPositionedInitially ? CACurrentMediaTime() + 0.4 : 0
             var snapshot = NSDiffableDataSourceSnapshot<Int, ChatTimelineRow>()
             snapshot.appendSections([0])
             snapshot.appendItems(rows)
@@ -166,7 +163,11 @@ struct ChatTimelineView: UIViewRepresentable {
                 collectionView.contentOffset.y = collectionView.contentSize.height - distanceFromBottom
                 collectionView.isPreservingPosition = false
             } else if hasPositionedInitially, wasAtBottom, let tail = Self.tailChange(old: previousRows, new: rows) {
-                applyAnimatedTail(snapshot, tail: tail)
+                applyAnimated(snapshot, added: tail.added, removed: tail.removed, pinToBottom: true)
+            } else if hasPositionedInitially, !rowsChanged {
+                // Same rows, new content (a reaction, an edit, a receipt): rows that resize or
+                // move glide to their new places instead of jumping, wherever they are.
+                applyAnimated(snapshot, added: [], removed: [], pinToBottom: wasAtBottom)
             } else {
                 dataSource.apply(snapshot, animatingDifferences: false)
                 if !hasPositionedInitially {
@@ -191,13 +192,23 @@ struct ChatTimelineView: UIViewRepresentable {
             return (added, removed)
         }
 
-        /// Messages-style arrival while the reader is at the bottom: the new bubble rises from
-        /// the composer as the rows above glide up by its height (and a departing typing
-        /// bubble fades), instead of everything jumping in one frame.
-        private func applyAnimatedTail(_ snapshot: NSDiffableDataSourceSnapshot<Int, ChatTimelineRow>,
-                                       tail: (added: [ChatTimelineRow], removed: [ChatTimelineRow])) {
+        /// Applies a snapshot and animates the visible rows from where they were on screen to
+        /// where they land (FLIP), so nothing jumps:
+        /// - a message arriving while at the bottom rises from the composer as the rows above
+        ///   glide up by its height, and a departing typing bubble fades;
+        /// - a row resizing in place (a reaction added or removed, an edit) pushes its
+        ///   neighbours smoothly, above or below, pinned to the bottom or not.
+        private func applyAnimated(_ snapshot: NSDiffableDataSourceSnapshot<Int, ChatTimelineRow>,
+                                   added: [ChatTimelineRow], removed: [ChatTimelineRow], pinToBottom: Bool) {
             guard let collectionView, let dataSource else { return }
-            let departing = tail.removed.compactMap { row -> UIView? in
+            // Where each visible row sits on screen now.
+            var before: [ChatTimelineRow: CGFloat] = [:]
+            for indexPath in collectionView.indexPathsForVisibleItems {
+                guard let row = dataSource.itemIdentifier(for: indexPath),
+                      let cell = collectionView.cellForItem(at: indexPath) else { continue }
+                before[row] = cell.frame.minY - collectionView.contentOffset.y
+            }
+            let departing = removed.compactMap { row -> UIView? in
                 guard let indexPath = dataSource.indexPath(for: row), let cell = collectionView.cellForItem(at: indexPath),
                       let copy = cell.snapshotView(afterScreenUpdates: false) else { return nil }
                 copy.frame = cell.frame
@@ -206,24 +217,35 @@ struct ChatTimelineView: UIViewRepresentable {
             let oldOffset = collectionView.contentOffset.y
 
             dataSource.apply(snapshot, animatingDifferences: false)
+            // Let reconfigured SwiftUI rows measure their new content now (not on a later
+            // pass, which would move them after the animation was set up).
+            collectionView.visibleCells.forEach { $0.layoutIfNeeded() }
             collectionView.layoutIfNeeded()
-            scrollToBottom(animated: false)
-            collectionView.layoutIfNeeded()
+            if pinToBottom {
+                scrollToBottom(animated: false)
+                collectionView.layoutIfNeeded()
+            }
 
-            let shift = collectionView.contentOffset.y - oldOffset
-            let added = Set(tail.added)
             let reduceMotion = UIAccessibility.isReduceMotionEnabled
+            let shift = collectionView.contentOffset.y - oldOffset
+            let arriving = Set(added)
+            var moved = false
             for indexPath in collectionView.indexPathsForVisibleItems {
                 guard let cell = collectionView.cellForItem(at: indexPath),
                       let row = dataSource.itemIdentifier(for: indexPath) else { continue }
                 let content = cell.contentView
-                if added.contains(row) {
+                if arriving.contains(row) {
                     // From just below its resting place (behind the composer).
                     let rise = max(shift, cell.bounds.height * 0.6)
                     content.transform = reduceMotion ? .identity : CGAffineTransform(translationX: 0, y: rise).scaledBy(x: 0.96, y: 0.96)
                     content.alpha = 0
-                } else if !reduceMotion {
-                    content.transform = CGAffineTransform(translationX: 0, y: shift)
+                    moved = true
+                } else if !reduceMotion, let oldY = before[row] {
+                    let delta = oldY - (cell.frame.minY - collectionView.contentOffset.y)
+                    if abs(delta) > 0.5 {
+                        content.transform = CGAffineTransform(translationX: 0, y: delta)
+                        moved = true
+                    }
                 }
             }
             for copy in departing {
@@ -231,6 +253,7 @@ struct ChatTimelineView: UIViewRepresentable {
                 copy.frame.origin.y += shift
                 collectionView.addSubview(copy)
             }
+            guard moved || !departing.isEmpty else { return }
 
             UIView.animate(withDuration: reduceMotion ? 0.2 : 0.42, delay: 0, usingSpringWithDamping: 0.86,
                            initialSpringVelocity: 0, options: [.allowUserInteraction, .beginFromCurrentState]) {
@@ -387,21 +410,10 @@ final class TimelineCollectionView: UICollectionView {
     var stickToBottom = true
     /// Set while a prepend restores the offset (layout must not re-pin in between).
     var isPreservingPosition = false
-    /// Layout passes before this time animate (rows resizing after a content update).
-    var animatesLayoutUntil: CFTimeInterval = 0
     var onLayout: (() -> Void)?
 
     override func layoutSubviews() {
-        guard CACurrentMediaTime() < animatesLayoutUntil, !isPreservingPosition, !isTracking, !isDecelerating,
-              !UIAccessibility.isReduceMotionEnabled else {
-            super.layoutSubviews()
-            onLayout?()
-            return
-        }
-        UIView.animate(withDuration: 0.35, delay: 0, usingSpringWithDamping: 0.9, initialSpringVelocity: 0,
-                       options: [.allowUserInteraction, .beginFromCurrentState]) {
-            super.layoutSubviews()
-            self.onLayout?()
-        }
+        super.layoutSubviews()
+        onLayout?()
     }
 }

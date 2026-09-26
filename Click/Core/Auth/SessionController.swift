@@ -465,6 +465,8 @@ public final class SessionController: SessionControlling {
         settingsStore?.resetSessionScopedData()
         // Decrypted chat media never outlives the session that decrypted it.
         await ChatMediaVault.shared.clear()
+        // Push previews stop decrypting this account's chats.
+        SharedEpochKeyStore.removeAll()
         await FreshnessCache.shared.removeAll()
         await onSignOut?()
         retainedSession = nil

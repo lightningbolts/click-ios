@@ -14,6 +14,13 @@
 		<string>applinks:www.joinclick.co</string>
 		<string>applinks:click-us.vercel.app</string>
 	</array>
+	<key>keychain-access-groups</key>
+	<array>
+		<!-- The app's own group first: it stays the default for existing and new items. -->
+		<string>$(AppIdentifierPrefix)compose.project.click.click</string>
+		<!-- Shared with the Notification Service extension (push previews). -->
+		<string>$(AppIdentifierPrefix)compose.project.click.click.shared</string>
+	</array>
 	<key>com.apple.developer.associated-appclip-app-identifiers</key>
 	<array>
 		<string>$(AppIdentifierPrefix)compose.project.click.click.Clip</string>

@@ -1,8 +1,9 @@
 import Foundation
 import Observation
 
-/// The signed-in user's own profile, availability posts and saved events — one copy shared by
-/// Home, Me, the settings editors and the availability sheet. An edit on any screen is visible
+/// The signed-in user's own profile, availability posts, saved events and editable settings
+/// (notification preferences, location privacy) — one copy shared by Home, Me, the settings
+/// editors and the availability sheet. Opening Me prefetches it all, so editors open filled. An edit on any screen is visible
 /// on every other screen immediately (no reload, no spinner), and repeated visits reuse fresh
 /// data instead of refetching three endpoints on every appearance.
 @Observable
@@ -11,6 +12,8 @@ final class SelfDataStore {
     private(set) var profile = ModuleState<SelfProfile>()
     private(set) var intents = ModuleState<[AvailabilityIntentPost]>()
     private(set) var savedEvents = ModuleState<[SavedEvent]>()
+    private(set) var notificationPreferences = ModuleState<NotificationPreferences>()
+    private(set) var locationPrivacy = ModuleState<LocationPrivacy>()
 
     private weak var environment: AppEnvironment?
     private var seededUserID: String?
@@ -33,6 +36,8 @@ final class SelfDataStore {
         profile = ModuleState()
         intents = ModuleState()
         savedEvents = ModuleState()
+        notificationPreferences = ModuleState()
+        locationPrivacy = ModuleState()
         fetchedAt = [:]
         profile.seed(await environment.me.cachedSelfProfile(userID: userID))
         intents.seed(await environment.me.cachedIntents(userID: userID))
@@ -45,7 +50,33 @@ final class SelfDataStore {
         async let a: Void = loadProfile(force: force)
         async let b: Void = loadIntents(force: force)
         async let c: Void = loadSavedEvents(force: force)
-        _ = await (a, b, c)
+        async let d: Void = loadNotificationPreferences(force: force)
+        async let e: Void = loadLocationPrivacy(force: force)
+        _ = await (a, b, c, d, e)
+    }
+
+    func loadNotificationPreferences(force: Bool = false) async {
+        await run("notifications", force: force) { environment, userID in
+            self.notificationPreferences.begin()
+            do {
+                self.notificationPreferences.succeed(try await environment.me.notificationPreferences(userID: userID))
+            } catch {
+                self.notificationPreferences.fail(error)
+                throw error
+            }
+        }
+    }
+
+    func loadLocationPrivacy(force: Bool = false) async {
+        await run("privacy", force: force) { environment, userID in
+            self.locationPrivacy.begin()
+            do {
+                self.locationPrivacy.succeed(try await environment.me.locationPrivacy(userID: userID))
+            } catch {
+                self.locationPrivacy.fail(error)
+                throw error
+            }
+        }
     }
 
     func loadProfile(force: Bool = false) async {
@@ -97,6 +128,16 @@ final class SelfDataStore {
     func apply(intents updated: [AvailabilityIntentPost]) {
         intents.succeed(updated)
         fetchedAt["intents"] = .now
+    }
+
+    func apply(notificationPreferences updated: NotificationPreferences) {
+        notificationPreferences.succeed(updated)
+        fetchedAt["notifications"] = .now
+    }
+
+    func apply(locationPrivacy updated: LocationPrivacy) {
+        locationPrivacy.succeed(updated)
+        fetchedAt["privacy"] = .now
     }
 
     func apply(savedEvents updated: [SavedEvent]) {

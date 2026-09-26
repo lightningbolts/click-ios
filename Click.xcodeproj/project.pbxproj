@@ -210,6 +210,9 @@
 		E3FA32F400AB915E3A8137FC /* PlanReminders.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4C5C4597A6DDB129FE28C7FB /* PlanReminders.swift */; };
 		23A4F1504FC9065DC74A7FF7 /* PlanViews.swift in Sources */ = {isa = PBXBuildFile; fileRef = 48F68E8F2BF07FA07CF088E6 /* PlanViews.swift */; };
 		8A140AC3E556C1ADA216C74F /* FriendshipViews.swift in Sources */ = {isa = PBXBuildFile; fileRef = C3E8B5E2970089FCB15D583C /* FriendshipViews.swift */; };
+		D8375096617CD94AB73093CC /* SharedEpochKeyStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8488BDD6A72AEA095FFF6D13 /* SharedEpochKeyStore.swift */; };
+		64523918CC748905F58B4DA4 /* ClickCryptoV2.swift in Sources */ = {isa = PBXBuildFile; fileRef = 819744403B53A100BF880F1B /* ClickCryptoV2.swift */; };
+		911F28944E5935DC6A8B351C /* SharedEpochKeyStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8488BDD6A72AEA095FFF6D13 /* SharedEpochKeyStore.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -470,6 +473,7 @@
 		4C5C4597A6DDB129FE28C7FB /* PlanReminders.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PlanReminders.swift; sourceTree = "<group>"; };
 		48F68E8F2BF07FA07CF088E6 /* PlanViews.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PlanViews.swift; sourceTree = "<group>"; };
 		C3E8B5E2970089FCB15D583C /* FriendshipViews.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FriendshipViews.swift; sourceTree = "<group>"; };
+		8488BDD6A72AEA095FFF6D13 /* SharedEpochKeyStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SharedEpochKeyStore.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXGroup section */
@@ -697,6 +701,7 @@
 			children = (
 				DF1EEA7316772A0B9800A223 /* ClickCryptoV1.swift */,
 				819744403B53A100BF880F1B /* ClickCryptoV2.swift */,
+				8488BDD6A72AEA095FFF6D13 /* SharedEpochKeyStore.swift */,
 				385A8122FAAD5A5FB19BCF56 /* DeviceIdentityVault.swift */,
 			);
 			path = Crypto;
@@ -1347,6 +1352,7 @@
 				141635CE6697C819553C2786 /* ClickApp.swift in Sources */,
 				5644CD79052856D5EBB5002A /* ClickCryptoV1.swift in Sources */,
 				772DB2063A845310BCE94CBA /* ClickCryptoV2.swift in Sources */,
+				D8375096617CD94AB73093CC /* SharedEpochKeyStore.swift in Sources */,
 				972C13760ACEC9B165E723CF /* ClickDropCameraView.swift in Sources */,
 				8A07FC1B9619FAE67BD81910 /* ClickDropFilter.swift in Sources */,
 				9AE812C6606649A248A7CB4C /* ClickLoadingView.swift in Sources */,
@@ -1479,6 +1485,8 @@
 			files = (
 				6E5402BDE25E7CB5DAA5025E /* ClickCryptoV1.swift in Sources */,
 				E2323AFB20A0A40DBF055431 /* NotificationService.swift in Sources */,
+				911F28944E5935DC6A8B351C /* SharedEpochKeyStore.swift in Sources */,
+				64523918CC748905F58B4DA4 /* ClickCryptoV2.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -1639,6 +1647,7 @@
 			baseConfigurationReference = 5CE872BED60D02250BA16BD1 /* Debug.xcconfig */;
 			buildSettings = {
 				CODE_SIGN_STYLE = Automatic;
+				CODE_SIGN_ENTITLEMENTS = NotificationService/NotificationService.entitlements;
 				INFOPLIST_FILE = NotificationService/Info.plist;
 				INFOPLIST_KEY_CFBundleDisplayName = NotificationService;
 				LD_RUNPATH_SEARCH_PATHS = (
@@ -1819,6 +1828,7 @@
 			baseConfigurationReference = FC2D8FD2E9A926E650F8748C /* Release.xcconfig */;
 			buildSettings = {
 				CODE_SIGN_STYLE = Automatic;
+				CODE_SIGN_ENTITLEMENTS = NotificationService/NotificationService.entitlements;
 				INFOPLIST_FILE = NotificationService/Info.plist;
 				INFOPLIST_KEY_CFBundleDisplayName = NotificationService;
 				LD_RUNPATH_SEARCH_PATHS = (

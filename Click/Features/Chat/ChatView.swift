@@ -157,12 +157,14 @@ public struct ChatView: View {
             // Also on every re-appear (back from a profile pushed on top), not just the first.
             .onAppear(perform: markOnScreen)
             .onAppear {
-                // "Plan" on their profile opens this chat with the planner up.
-                if let pending = env.pendingPlanConnectionID, pending == model.identity.connectionID {
-                    env.pendingPlanConnectionID = nil
+                // "Plan" on a profile opens this chat with the planner up.
+                if let pending = env.pendingPlanChatKey, [model.identity.connectionID, model.identity.chatID].contains(pending) {
+                    env.pendingPlanChatKey = nil
                     isPlanning = true
                 }
             }
+            // The profile is one tap away: have it filled before it opens.
+            .task(id: model.identity.chatID) { prefetchProfile() }
             .onChange(of: model.identity.chatID) { markOnScreen() }
             // Only a new *latest* message matters here: the timeline keeps itself pinned while
             // the reader is at the bottom; our own sends always bring it into view.
@@ -259,6 +261,21 @@ public struct ChatView: View {
             ToolbarItem(placement: .topBarTrailing) {
                 conversationMenu
             }
+        }
+    }
+
+    private func prefetchProfile() {
+        switch model.identity.kind {
+        case .direct:
+            let profile = PeerProfileModel.shared(userID: model.identity.peerUserID, connectionID: model.identity.connectionID)
+            profile.attach(env, fallbackConnectionID: model.identity.connectionID)
+            Task { await profile.load() }
+        case .group:
+            guard let group = conversations?.group(chatID: model.identity.chatID) else { return }
+            let connections = conversations?.memberConnections(group) ?? [:]
+            Task { await GroupSpaceModel.shared(chatID: group.chatID).load(env, memberConnections: connections) }
+        case .hub:
+            break
         }
     }
 

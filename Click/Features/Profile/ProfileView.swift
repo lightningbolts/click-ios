@@ -57,7 +57,9 @@ public struct ProfileView: View {
                         onDecline: { hangout in Task { await model.decline(hangout) } },
                         onLog: { isLoggingHangout = true },
                         onPlan: planHangout,
-                        onStory: { showsStory = true }
+                        onStory: { showsStory = true },
+                        upcomingPlans: model.upcomingPlans,
+                        onOpenPlan: { message in env.router.navigate(to: .conversation(chatID: message.chatID, messageID: message.id)) }
                     )
                 }
                 Section {
@@ -600,7 +602,7 @@ public struct ProfileView: View {
     /// Opens your chat with the planner up (the chat sends the plan and RSVPs you).
     private func planHangout() {
         guard let connectionID = model.connectionID else { return }
-        env.pendingPlanConnectionID = connectionID
+        env.pendingPlanChatKey = connectionID
         openChat()
     }
 

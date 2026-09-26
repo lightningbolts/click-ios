@@ -180,7 +180,8 @@ public struct MessageBubbleView: View {
     private var content: some View {
         if let plan = message.plan {
             PlanCardView(plan: plan, message: message,
-                         onRSVP: onRSVP.map { rsvp in { going in if BubbleTapGate.allowsTap { rsvp(message, going) } } })
+                         onRSVP: onRSVP.map { rsvp in { going in if BubbleTapGate.allowsTap { rsvp(message, going) } } },
+                         onShowResponses: onShowReactions.map { show in { reaction in show(message, reaction) } })
         } else if let beacon = message.beacon {
             BeaconMessageCard(beacon: beacon, time: message.formattedTime, isOutgoing: message.isOutgoing,
                               onOpen: BubbleTapGate.gated { onOpenBeacon?(beacon) })

@@ -187,13 +187,113 @@ struct GroupCommonInterests: View {
     }
 }
 
+/// Everything a group's profile shows that its members make together: journal notes, group
+/// hangouts (you with two or more members at once) and upcoming plans. One cached model per
+/// group, prefetched when the group chat opens, so the profile opens filled.
+@Observable
+@MainActor
+final class GroupSpaceModel {
+    let chatID: String
+    private(set) var journal = ModuleState<[JournalEntry]>()
+    private(set) var hangouts: [GroupHangout] = []
+    private(set) var upcomingPlans: [ChatMessageItem] = []
+    private var lastLoaded: Date?
+
+    private static var registry: [String: GroupSpaceModel] = [:]
+
+    static func shared(chatID: String) -> GroupSpaceModel {
+        if let existing = registry[chatID] { return existing }
+        let model = GroupSpaceModel(chatID: chatID)
+        registry[chatID] = model
+        return model
+    }
+
+    static func resetRegistry() { registry = [:] }
+
+    private init(chatID: String) {
+        self.chatID = chatID
+    }
+
+    /// Refreshes unless it was refreshed moments ago. `memberConnections`: member user ID →
+    /// your connection with them (group hangouts are built from your own encounters).
+    func load(_ env: AppEnvironment, memberConnections: [String: String], force: Bool = false) async {
+        guard let userID = env.session.currentSession?.userId else { return }
+        upcomingPlans = UpcomingPlans.in(chatID: chatID, userID: userID)
+        if !force, let lastLoaded, Date.now.timeIntervalSince(lastLoaded) < 30 { return }
+        lastLoaded = .now
+        async let notes: Void = loadJournal(env)
+        async let together: Void = loadHangouts(env, memberConnections: memberConnections)
+        _ = await (notes, together)
+    }
+
+    func loadJournal(_ env: AppEnvironment) async {
+        journal.begin()
+        do { journal.succeed(try await env.profiles.journal(targetUserID: chatID, targetType: "chat")) }
+        catch { journal.fail(error) }
+    }
+
+    private func loadHangouts(_ env: AppEnvironment, memberConnections: [String: String]) async {
+        var tagged: [(userID: String, encounter: Encounter)] = []
+        await withTaskGroup(of: [(String, Encounter)].self) { group in
+            for (memberID, connectionID) in memberConnections {
+                group.addTask {
+                    let encounters = (try? await env.profiles.encounters(connectionID: connectionID)) ?? []
+                    return encounters.map { (memberID, $0) }
+                }
+            }
+            for await batch in group { tagged += batch.map { (userID: $0.0, encounter: $0.1) } }
+        }
+        hangouts = GroupHangout.clusters(tagged)
+    }
+}
+
+/// A moment you were with two or more members of a group (encounters within two hours).
+struct GroupHangout: Equatable, Identifiable {
+    /// The earliest encounter, preferring one with a location (date, place, map pin).
+    let representative: Encounter
+    let memberIDs: Set<String>
+    var id: String { representative.id }
+
+    static func clusters(_ tagged: [(userID: String, encounter: Encounter)], window: TimeInterval = 2 * 3600) -> [GroupHangout] {
+        let ordered = tagged.sorted { $0.encounter.date < $1.encounter.date }
+        var result: [GroupHangout] = []
+        var current: [(userID: String, encounter: Encounter)] = []
+        func flush() {
+            let members = Set(current.map(\.userID))
+            guard members.count >= 2, let first = current.first?.encounter else { return }
+            let located = current.map(\.encounter).first { $0.latitude != nil } ?? first
+            result.append(GroupHangout(representative: located, memberIDs: members))
+        }
+        for item in ordered {
+            if let start = current.first?.encounter.date, item.encounter.date.timeIntervalSince(start) > window {
+                flush()
+                current = []
+            }
+            current.append(item)
+        }
+        flush()
+        return result
+    }
+}
+
+/// Plans made in a chat that haven't ended, soonest first (from the on-device timeline, so
+/// they show instantly and offline).
+enum UpcomingPlans {
+    static func `in`(chatID: String, userID: String, now: Date = .now) -> [ChatMessageItem] {
+        LocalStore.shared.latestMessages(conversation: chatID, userID: userID, limit: 400)
+            .filter { !$0.isDeleted && ($0.plan?.endsOrAssumedEnd ?? .distantPast) > now }
+            .sorted { $0.plan!.startsAt < $1.plan!.startsAt }
+    }
+}
+
 /// Journal notes on a group (`target_type: chat`).
 struct GroupJournalSection: View {
     @Environment(AppEnvironment.self) private var env
     let chatID: String
 
-    @State private var entries = ModuleState<[JournalEntry]>()
     @State private var editor: JournalEditorTarget?
+    private var model: GroupSpaceModel { GroupSpaceModel.shared(chatID: chatID) }
+    private var entries: ModuleState<[JournalEntry]> { model.journal }
 
     var body: some View {
         Group {
@@ -233,12 +333,11 @@ struct GroupJournalSection: View {
                 await load()
             }
         }
-        .task { await load() }
+        // Normally prefetched with the group; this covers a cold open.
+        .task { if entries.value == nil { await load() } }
     }
 
     private func load() async {
-        entries.begin()
-        do { entries.succeed(try await env.profiles.journal(targetUserID: chatID, targetType: "chat")) }
-        catch { entries.fail(error) }
+        await model.loadJournal(env)
     }
 }

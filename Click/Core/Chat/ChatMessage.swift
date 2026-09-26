@@ -254,6 +254,8 @@ public struct ConversationIdentity: Hashable, Sendable {
 public struct HangoutPlan: Hashable, Sendable, Codable {
     public var title: String
     public var startsAt: Date
+    /// Optional; after `startsAt` when set.
+    public var endsAt: Date?
     public var placeName: String?
     public var latitude: Double?
     public var longitude: Double?
@@ -261,9 +263,10 @@ public struct HangoutPlan: Hashable, Sendable, Codable {
     public static let goingReaction = "✅"
     public static let declinedReaction = "❌"
 
-    public init(title: String, startsAt: Date, placeName: String? = nil, latitude: Double? = nil, longitude: Double? = nil) {
+    public init(title: String, startsAt: Date, endsAt: Date? = nil, placeName: String? = nil, latitude: Double? = nil, longitude: Double? = nil) {
         self.title = title
         self.startsAt = startsAt
+        self.endsAt = endsAt.flatMap { $0 > startsAt ? $0 : nil }
         self.placeName = placeName
         self.latitude = latitude
         self.longitude = longitude
@@ -271,12 +274,18 @@ public struct HangoutPlan: Hashable, Sendable, Codable {
 
     /// The message text: readable anywhere, even where plans aren't understood.
     public var summary: String {
-        let when = startsAt.formatted(.dateTime.weekday(.abbreviated).month(.abbreviated).day().hour().minute())
+        var when = startsAt.formatted(.dateTime.weekday(.abbreviated).month(.abbreviated).day().hour().minute())
+        if let endsAt { when += "–" + endsAt.formatted(date: Calendar.current.isDate(endsAt, inSameDayAs: startsAt) ? .omitted : .abbreviated, time: .shortened) }
         return "📅 \(title) · \(when)" + (placeName.map { " · 📍 \($0)" } ?? "")
+    }
+
+    /// When the plan is over: its end, or three hours after it starts.
+    public var endsOrAssumedEnd: Date { endsAt ?? startsAt.addingTimeInterval(3 * 3600)
     }
 
     var wire: [String: Any] {
         var plan: [String: Any] = ["title": title, "starts_at": Int64(startsAt.timeIntervalSince1970 * 1000)]
+        if let endsAt { plan["ends_at"] = Int64(endsAt.timeIntervalSince1970 * 1000) }
         if let placeName { plan["place_name"] = placeName }
         if let latitude, let longitude {
             plan["lat"] = latitude
@@ -290,6 +299,7 @@ public struct HangoutPlan: Hashable, Sendable, Codable {
               let title = JSONFields.string(plan["title"]),
               let startsMs = JSONFields.double(plan["starts_at"]) else { return nil }
         return HangoutPlan(title: title, startsAt: Date(timeIntervalSince1970: startsMs / 1000),
+                           endsAt: JSONFields.double(plan["ends_at"]).map { Date(timeIntervalSince1970: $0 / 1000) },
                            placeName: JSONFields.string(plan["place_name"]),
                            latitude: JSONFields.double(plan["lat"]), longitude: JSONFields.double(plan["lon"]))
     }

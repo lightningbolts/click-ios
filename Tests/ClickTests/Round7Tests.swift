@@ -330,8 +330,10 @@ struct FriendshipTests {
 
     @Test("Plans round-trip through metadata and read well as plain text")
     func plans() {
-        let plan = HangoutPlan(title: "Dinner", startsAt: Date(timeIntervalSince1970: 1_790_000_000), placeName: "Café Allegro",
+        let plan = HangoutPlan(title: "Dinner", startsAt: Date(timeIntervalSince1970: 1_790_000_000),
+                               endsAt: Date(timeIntervalSince1970: 1_790_007_200), placeName: "Café Allegro",
                                latitude: 47.6, longitude: -122.3)
+        #expect(HangoutPlan(title: "x", startsAt: .now, endsAt: .now.addingTimeInterval(-60)).endsAt == nil)
         let parsed = HangoutPlan.parse(metadata: ["plan": plan.wire])
         #expect(parsed == plan)
         #expect(plan.summary.hasPrefix("📅 Dinner · "))
@@ -385,5 +387,85 @@ struct RelationshipMomentRoutingTests {
                 == Route.chat(chatID: nil, connectionID: "c1", senderUserID: "u2", senderName: nil))
         #expect(ClickNotificationCoordinator.tapRoute(for: ["type": "group_revival", "chat_id": "g1"])
                 == Route.route(.conversation(chatID: "g1", messageID: nil)))
+    }
+}
+
+import SwiftUI
+import UIKit
+
+@Suite("Timeline row resizing is measurable synchronously")
+@MainActor
+struct TimelineResizeTests {
+    @Test("A reconfigured SwiftUI row reports its new height before the next frame")
+    func reconfiguredRowMeasuresNow() {
+        var lines = 1
+        let layout = UICollectionViewCompositionalLayout { _, _ in
+            let size = NSCollectionLayoutSize(widthDimension: .fractionalWidth(1), heightDimension: .estimated(64))
+            let group = NSCollectionLayoutGroup.vertical(layoutSize: size, subitems: [NSCollectionLayoutItem(layoutSize: size)])
+            return NSCollectionLayoutSection(group: group)
+        }
+        let window = UIWindow(frame: CGRect(x: 0, y: 0, width: 390, height: 800))
+        let view = UICollectionView(frame: window.bounds, collectionViewLayout: layout)
+        window.addSubview(view)
+        window.makeKeyAndVisible()
+        let registration = UICollectionView.CellRegistration<UICollectionViewCell, Int> { cell, _, _ in
+            let count = lines
+            cell.contentConfiguration = UIHostingConfiguration {
+                VStack(spacing: 0) { ForEach(0..<count, id: \.self) { _ in Text("Row").frame(height: 40) } }
+            }.margins(.all, 0)
+        }
+        let dataSource = UICollectionViewDiffableDataSource<Int, Int>(collectionView: view) { cv, indexPath, item in
+            cv.dequeueConfiguredReusableCell(using: registration, for: indexPath, item: item)
+        }
+        var snapshot = NSDiffableDataSourceSnapshot<Int, Int>()
+        snapshot.appendSections([0])
+        snapshot.appendItems([1, 2])
+        dataSource.apply(snapshot, animatingDifferences: false)
+        view.layoutIfNeeded()
+        let before = view.cellForItem(at: IndexPath(item: 0, section: 0))?.frame.height ?? 0
+        let secondBefore = view.cellForItem(at: IndexPath(item: 1, section: 0))?.frame.minY ?? 0
+
+        lines = 2 // "a reaction strip appears"
+        snapshot.reconfigureItems([1])
+        dataSource.apply(snapshot, animatingDifferences: false)
+        view.visibleCells.forEach { $0.layoutIfNeeded() }
+        view.layoutIfNeeded()
+
+        let after = view.cellForItem(at: IndexPath(item: 0, section: 0))?.frame.height ?? 0
+        #expect(after > before + 30)
+        #expect((view.cellForItem(at: IndexPath(item: 1, section: 0))?.frame.minY ?? 0) > secondBefore + 30)
+    }
+}
+
+@Suite("Group message pushes")
+@MainActor
+struct GroupPushRouteTests {
+    @Test("A group message push opens the group chat")
+    func groupMessageOpensGroup() {
+        #expect(ClickNotificationCoordinator.tapRoute(for: ["type": "chat_message", "chat_id": "g1", "group_id": "grp", "sender_user_id": "u"])
+                == .route(.conversation(chatID: "g1", messageID: nil)))
+    }
+}
+
+@Suite("Group hangouts")
+struct GroupHangoutTests {
+    private func encounter(_ id: String, _ minutes: Double, lat: Double? = nil) -> Encounter {
+        Encounter(id: id, date: Date(timeIntervalSince1970: 1_790_000_000 + minutes * 60), place: nil, eventTitle: nil, eventBeaconID: nil,
+                  contextTags: [], noiseLevel: nil, elevation: nil, latitude: lat, longitude: lat.map { _ in -122.3 })
+    }
+
+    @Test("Encounters with two or more members within two hours are one group hangout")
+    func clusters() {
+        let result = GroupHangout.clusters([
+            (userID: "a", encounter: encounter("1", 0)),
+            (userID: "b", encounter: encounter("2", 30, lat: 47.6)),
+            (userID: "a", encounter: encounter("3", 600)),      // alone: not a group hangout
+            (userID: "a", encounter: encounter("4", 2000)),
+            (userID: "c", encounter: encounter("5", 2050))
+        ])
+        #expect(result.count == 2)
+        #expect(result[0].memberIDs == ["a", "b"])
+        #expect(result[0].representative.id == "2")   // prefers the located encounter
+        #expect(result[1].memberIDs == ["a", "c"])
     }
 }

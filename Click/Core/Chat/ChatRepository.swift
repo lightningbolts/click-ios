@@ -517,7 +517,19 @@ public actor ChatRepository: ChatRepositoryProtocol {
         )
         v2SessionCache[scope.cacheKey] = session
         v2SessionResolvedAt[scope.cacheKey] = Date()
+        shareEpochKeysForPreviews(session, scope: scope)
         return session
+    }
+
+    /// Epoch keys already handed to the notification extension (this launch).
+    private var sharedEpochKeys = Set<String>()
+
+    /// Lets push previews decrypt direct and group messages (hubs aren't pushed as chats).
+    private func shareEpochKeysForPreviews(_ session: V2Session, scope: V2Scope) {
+        guard case .chat(let chatID) = scope else { return }
+        for (epoch, key) in session.epochKeys where sharedEpochKeys.insert("\(chatID):\(epoch)").inserted {
+            SharedEpochKeyStore.save(key, chatID: chatID, epoch: epoch)
+        }
     }
 
     /// Result of reconciling a chat's E2EE v2 epoch after a membership change (spec §30, §48).

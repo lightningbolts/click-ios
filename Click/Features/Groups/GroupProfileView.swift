@@ -45,7 +45,15 @@ struct GroupProfileView: View {
         .navigationBarTitleDisplayMode(.inline)
         .task {
             if group == nil { await conversations.refresh() }
-            await loadTabs()
+            // Usually prefetched by the group chat; refreshes only when stale.
+            if let group {
+                async let space: Void = GroupSpaceModel.shared(chatID: group.chatID)
+                    .load(env, memberConnections: conversations.memberConnections(group))
+                async let shared: Void = loadTabs()
+                _ = await (space, shared)
+            } else {
+                await loadTabs()
+            }
         }
         .alert("Group", isPresented: Binding(get: { notice != nil }, set: { if !$0 { notice = nil } })) {
             Button("OK", role: .cancel) {}
@@ -59,6 +67,16 @@ struct GroupProfileView: View {
         return List {
             headerSection(group)
             rotationSection(group)
+            GroupTogetherSection(
+                group: group,
+                model: GroupSpaceModel.shared(chatID: group.chatID),
+                currentUserID: currentUserID,
+                onPlan: {
+                    env.pendingPlanChatKey = group.chatID
+                    env.router.navigate(to: .groupChat(group.chatRoute))
+                },
+                onOpenPlan: { message in env.router.navigate(to: .conversation(chatID: group.chatID, messageID: message.id)) }
+            )
             membersSection(group, isCreator: isCreator)
             Section("Common interests") { GroupCommonInterests(members: group.members) }
             sharedSection

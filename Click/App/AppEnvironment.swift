@@ -328,9 +328,9 @@ public final class AppEnvironment {
     }
 
     /// Sends queued telemetry (called on foreground and background; never blocks the UI).
-    /// A chat to open with the hangout planner showing (set by "Plan" on a profile; the chat
-    /// consumes it when it appears). Keyed by connection ID.
-    var pendingPlanConnectionID: String?
+    /// A chat to open with the hangout planner showing (set by "Plan" on a person's or group's
+    /// profile; the chat consumes it when it appears). A connection ID or a chat ID.
+    var pendingPlanChatKey: String?
 
     @ObservationIgnored private var lastPresencePing: Date?
 

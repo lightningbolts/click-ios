@@ -229,6 +229,7 @@ public struct MainTabShellView: View {
             // Decrypted timelines never carry over from another account.
             env.timelineCache.clear()
             PeerProfileModel.resetRegistry()
+            GroupSpaceModel.resetRegistry()
             QRCodeStore.shared.clear()
             // Loaded at the shell so the Clicks badge is right before the tab is opened.
             conversations.attach(env)
