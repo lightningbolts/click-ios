@@ -2,7 +2,7 @@ import SwiftUI
 
 /// A chat's backdrop pattern. Every style is a subtle, static line drawing over the dark chat
 /// color, tinted by the conversation's seed colors.
-enum ChatBackdropStyle: String, CaseIterable, Identifiable, Sendable {
+enum ChatBackdropStyle: String, CaseIterable, Identifiable, Codable, Sendable {
     case classic, city, nature, coffee, water, night, campus, contours
 
     var id: String { rawValue }
@@ -54,19 +54,104 @@ enum ChatBackdropStyle: String, CaseIterable, Identifiable, Sendable {
     }
 }
 
-/// Chosen and automatic backdrops by conversation key (connection ID, else chat ID), stored
-/// on this device. The automatic style is remembered too, so a chat's first frame already has
-/// its pattern (the encounter it comes from loads later).
+/// A conversation's backdrop: a motif, and for the automatic one the encounter signature that
+/// makes it this connection's own (a chosen style uses its fixed palette).
+struct ChatBackdrop: Codable, Equatable, Sendable {
+    var style: ChatBackdropStyle
+    var signature: EncounterSignature?
+
+    /// From where and how you met (a person's encounters, or a group's hangouts); nil while
+    /// none of it is known.
+    static func automatic(encounters: [Encounter]?, place: String?, seed: String) -> ChatBackdrop? {
+        guard let style = ChatBackdropStyle.automatic(encounters: encounters, place: place) else { return nil }
+        return ChatBackdrop(style: style, signature: EncounterSignature(encounters: encounters ?? [], seed: seed))
+    }
+}
+
+/// What made a connection's encounters theirs, reduced to drawing parameters: the sky's hue at
+/// the hour you met (shifted by the temperature, muted by grey weather), how lively it was, the
+/// wind's direction, and the path through the places you've met.
+struct EncounterSignature: Codable, Equatable, Sendable {
+    /// 0...1 around the color wheel.
+    var hue: Double
+    /// 0.3...1: grey or dark moments are muted, clear bright ones vivid.
+    var vividness: Double
+    /// 0...1: quiet and still → sparse, loud and moving → dense.
+    var energy: Double
+    /// Tilt of the motif (radians), from the wind.
+    var tilt: Double
+    /// The spots you've met at, in order, normalized to 0...1 (north up).
+    var path: [CGPoint]
+
+    init(encounters: [Encounter], seed: String) {
+        let jitter = Double(CardVisual.fnv1a32(seed) % 10_000) / 10_000
+        let ordered = encounters.sorted { $0.date < $1.date }
+        let first = ordered.first
+        if let first {
+            let parts = Calendar.current.dateComponents([.hour, .minute], from: first.date)
+            let warmth = first.temperatureCelsius.map { min(1, max(-1, ($0 - 15) / 15)) } ?? 0
+            hue = Self.skyHue(Double(parts.hour ?? 12) + Double(parts.minute ?? 0) / 60) - warmth * 0.04 + (jitter - 0.5) * 0.1
+        } else {
+            hue = jitter
+        }
+        hue = hue - hue.rounded(.down)
+        let weather = first?.weatherCondition?.lowercased() ?? ""
+        let grey = ["rain", "cloud", "overcast", "fog", "mist", "drizzle", "snow", "haze", "storm"].contains { weather.contains($0) }
+        vividness = (grey ? 0.5 : 0.9) * ((first?.lux).map { $0 < 20 ? 0.85 : 1 } ?? 1)
+        let loudness: Double
+        if let decibels = first?.noiseDecibels {
+            loudness = (decibels - 35) / 50
+        } else {
+            let level = first?.noiseLevel?.lowercased() ?? ""
+            loudness = level.contains("loud") || level.contains("busy") ? 0.8 : level.contains("quiet") ? 0.2 : 0.5
+        }
+        energy = min(1, max(0, loudness + min(0.3, (first?.motionVariance ?? 0) * 0.1)))
+        tilt = ((first?.windDirectionDegrees).map { $0 * .pi / 180 } ?? jitter * .pi * 2)
+        path = Self.normalizedPath(ordered)
+    }
+
+    /// Dawn pink, morning and midday blues, golden-hour orange, dusk violet, night indigo.
+    private static func skyHue(_ hour: Double) -> Double {
+        let stops: [(Double, Double)] = [(0, 0.68), (5, 0.70), (6.5, 0.93), (9, 0.57), (13, 0.52), (17, 0.08), (19.5, 0.80), (21.5, 0.70), (24, 0.68)]
+        guard let upper = stops.firstIndex(where: { $0.0 >= hour }), upper > 0 else { return 0.68 }
+        let (h0, v0) = stops[upper - 1], (h1, v1) = stops[upper]
+        var delta = v1 - v0
+        if abs(delta) > 0.5 { delta -= delta.sign == .minus ? -1 : 1 }   // the short way around the wheel
+        return v0 + delta * (hour - h0) / max(0.001, h1 - h0)
+    }
+
+    /// Distinct spots (about 10 m apart), scaled into a unit square keeping their shape.
+    private static func normalizedPath(_ encounters: [Encounter]) -> [CGPoint] {
+        var spots: [(lat: Double, lon: Double)] = []
+        for encounter in encounters {
+            guard let lat = encounter.latitude, let lon = encounter.longitude, (lat, lon) != (0, 0) else { continue }
+            if let last = spots.last, abs(last.lat - lat) < 0.0001, abs(last.lon - lon) < 0.0001 { continue }
+            spots.append((lat, lon * cos(lat * .pi / 180)))
+        }
+        spots = Array(spots.suffix(12))
+        guard spots.count > 1, let minLat = spots.map(\.lat).min(), let maxLat = spots.map(\.lat).max(),
+              let minLon = spots.map(\.lon).min(), let maxLon = spots.map(\.lon).max() else {
+            return spots.isEmpty ? [] : [CGPoint(x: 0.5, y: 0.5)]
+        }
+        let span = max(maxLat - minLat, maxLon - minLon, 0.0001)
+        let padX = (1 - (maxLon - minLon) / span) / 2, padY = (1 - (maxLat - minLat) / span) / 2
+        return spots.map { CGPoint(x: padX + ($0.lon - minLon) / span, y: padY + (maxLat - $0.lat) / span) }
+    }
+}
+
+/// Chosen styles and automatic backdrops by conversation key (connection ID, else chat ID),
+/// stored on this device. The automatic one is remembered, so a chat's first frame already has
+/// it (the encounters it comes from load later).
 @Observable
 @MainActor
 final class ChatBackdrops {
     static let shared = ChatBackdrops()
 
     private static let choicesKey = "click.chat.backdrops"
-    private static let automaticKey = "click.chat.backdrops.automatic"
+    private static let automaticKey = "click.chat.backdrops.signatures"
 
     private var choices: [String: String] = UserDefaults.standard.dictionary(forKey: choicesKey) as? [String: String] ?? [:]
-    @ObservationIgnored private var automatic: [String: String] = UserDefaults.standard.dictionary(forKey: automaticKey) as? [String: String] ?? [:]
+    @ObservationIgnored private var automatic: [String: Data] = UserDefaults.standard.dictionary(forKey: automaticKey) as? [String: Data] ?? [:]
 
     /// The chosen style, or nil for automatic.
     func choice(for key: String) -> ChatBackdropStyle? {
@@ -78,18 +163,22 @@ final class ChatBackdrops {
         UserDefaults.standard.set(choices, forKey: Self.choicesKey)
     }
 
-    /// The automatic style; `resolved` (when the encounter is known) replaces the remembered one.
-    func automaticStyle(for key: String, resolved: ChatBackdropStyle?) -> ChatBackdropStyle {
-        guard let resolved else { return automatic[key].flatMap(ChatBackdropStyle.init(rawValue:)) ?? .classic }
-        if automatic[key] != resolved.rawValue {
-            automatic[key] = resolved.rawValue
+    /// The automatic backdrop; `resolved` (when the encounters are known) replaces the
+    /// remembered one. Before anything is known it is still this conversation's own color.
+    func automaticBackdrop(for key: String, resolved: ChatBackdrop?) -> ChatBackdrop {
+        guard let resolved else {
+            return automatic[key].flatMap { try? JSONDecoder().decode(ChatBackdrop.self, from: $0) }
+                ?? ChatBackdrop(style: .classic, signature: EncounterSignature(encounters: [], seed: key))
+        }
+        if let data = try? JSONEncoder().encode(resolved), automatic[key] != data {
+            automatic[key] = data
             UserDefaults.standard.set(automatic, forKey: Self.automaticKey)
         }
         return resolved
     }
 
-    func style(for key: String, resolved: ChatBackdropStyle?) -> ChatBackdropStyle {
-        choice(for: key) ?? automaticStyle(for: key, resolved: resolved)
+    func backdrop(for key: String, resolved: ChatBackdrop?) -> ChatBackdrop {
+        choice(for: key).map { ChatBackdrop(style: $0) } ?? automaticBackdrop(for: key, resolved: resolved)
     }
 }
 
@@ -101,12 +190,33 @@ private struct BackdropPalette {
     let ink: Color
     let accent: Color
 
+    init(top: Color, bottom: Color, glows: [Color], ink: Color, accent: Color) {
+        self.top = top
+        self.bottom = bottom
+        self.glows = glows
+        self.ink = ink
+        self.accent = accent
+    }
+
     init(_ top: String, _ bottom: String, glows: [String], ink: String, accent: String) {
-        self.top = Color(hex: top)
-        self.bottom = Color(hex: bottom)
-        self.glows = glows.map { Color(hex: $0) }
-        self.ink = Color(hex: ink)
-        self.accent = Color(hex: accent)
+        self.init(top: Color(hex: top), bottom: Color(hex: bottom), glows: glows.map { Color(hex: $0) },
+                  ink: Color(hex: ink), accent: Color(hex: accent))
+    }
+
+    /// A connection's own spectrum: its sky hue, a neighbouring glow, and the complement as accent.
+    static func of(_ signature: EncounterSignature, dark: Bool) -> BackdropPalette {
+        let h = signature.hue, v = signature.vividness
+        func color(_ shift: Double, _ saturation: Double, _ brightness: Double) -> Color {
+            let hue = h + shift
+            return Color(hue: hue - hue.rounded(.down), saturation: min(1, saturation), brightness: brightness)
+        }
+        return dark
+            ? .init(top: color(0, 0.25 + 0.45 * v, 0.2), bottom: color(0.06, 0.3 + 0.35 * v, 0.07),
+                    glows: [color(0, 0.25 + 0.6 * v, 0.95), color(0.16, 0.25 + 0.55 * v, 0.9), color(-0.1, 0.3 + 0.4 * v, 0.8)],
+                    ink: color(0.03, 0.25, 0.97), accent: color(0.5, 0.3 + 0.45 * v, 1))
+            : .init(top: color(0, 0.06 + 0.08 * v, 0.99), bottom: color(0.06, 0.12 + 0.12 * v, 0.95),
+                    glows: [color(0, 0.3 + 0.4 * v, 1), color(0.16, 0.3 + 0.35 * v, 1), color(-0.1, 0.3 + 0.3 * v, 0.95)],
+                    ink: color(0.02, 0.55, 0.5), accent: color(0.5, 0.55, 0.7))
     }
 
     /// Dark palettes stay deep enough for bubbles and headers to read; light ones stay pale.
@@ -138,21 +248,23 @@ private struct BackdropPalette {
 /// Static geometry, rasterized once, so it costs nothing while scrolling.
 struct ChatBackground: View, Equatable {
     let seed: String
-    var style: ChatBackdropStyle = .classic
+    var backdrop = ChatBackdrop(style: .classic)
     @Environment(\.colorScheme) private var colorScheme
 
     nonisolated static func == (lhs: ChatBackground, rhs: ChatBackground) -> Bool {
-        lhs.seed == rhs.seed && lhs.style == rhs.style
+        lhs.seed == rhs.seed && lhs.backdrop == rhs.backdrop
     }
 
     var body: some View {
         let visual = CardVisual(seed: seed)
         let dark = colorScheme == .dark
-        let palette = BackdropPalette.of(style, dark: dark, visual: visual)
+        let palette = backdrop.signature.map { BackdropPalette.of($0, dark: dark) }
+            ?? BackdropPalette.of(backdrop.style, dark: dark, visual: visual)
         ZStack {
             LinearGradient(colors: [palette.top, palette.bottom], startPoint: .top, endPoint: .bottom)
             Canvas { context, size in
-                ChatPattern(style: style, hash: visual.hash, size: size, palette: palette, dark: dark).draw(in: &context)
+                ChatPattern(style: backdrop.style, hash: visual.hash, size: size, palette: palette, dark: dark,
+                            signature: backdrop.signature).draw(in: &context)
             }
             .drawingGroup()
         }
@@ -166,9 +278,14 @@ struct ChatBackground: View, Equatable {
 private struct ChatPattern {
     let style: ChatBackdropStyle
     let hash: UInt32
-    let size: CGSize
+    var size: CGSize
     let palette: BackdropPalette
     let dark: Bool
+    /// The automatic backdrop's encounter signature: density, tilt and the path you've taken.
+    var signature: EncounterSignature?
+
+    /// Motif density: sparse for quiet, still moments; dense for loud, moving ones.
+    private var density: CGFloat { signature.map { 0.75 + 0.6 * CGFloat($0.energy) } ?? 1 }
 
     /// SplitMix64: tiny, stable across launches (unlike `Hasher`).
     private struct Generator {
@@ -192,6 +309,20 @@ private struct ChatPattern {
     func draw(in context: inout GraphicsContext) {
         var random = Generator(state: UInt64(hash) &* 2654435761 &+ UInt64(style.rawValue.count))
         drawGlows(&context, random: &random)
+        guard let signature else { return drawMotif(&context, random: &random) }
+        // Tilted by the wind: drawn over the square that covers the screen at any angle.
+        let side = hypot(size.width, size.height)
+        var tilted = context
+        tilted.translateBy(x: size.width / 2, y: size.height / 2)
+        tilted.rotate(by: .radians(sin(signature.tilt) * 0.35))
+        tilted.translateBy(x: -side / 2, y: -side / 2)
+        var square = self
+        square.size = CGSize(width: side, height: side)
+        square.drawMotif(&tilted, random: &random)
+        drawPath(&context, signature.path)
+    }
+
+    private func drawMotif(_ context: inout GraphicsContext, random: inout Generator) {
         switch style {
         case .classic: drawClassic(&context)
         case .city: drawCity(&context, random: &random)
@@ -201,6 +332,32 @@ private struct ChatPattern {
         case .night: drawNight(&context, random: &random)
         case .campus: drawCampus(&context, random: &random)
         case .contours: drawContours(&context, random: &random)
+        }
+    }
+
+    /// The places you've met, joined in order like a constellation (one place: ripples).
+    private func drawPath(_ context: inout GraphicsContext, _ path: [CGPoint]) {
+        let points = path.map { CGPoint(x: size.width * (0.14 + 0.72 * $0.x), y: size.height * (0.22 + 0.5 * $0.y)) }
+        guard let first = points.first else { return }
+        if points.count == 1 {
+            for (index, radius) in [16, 34, 58, 88, 124].enumerated() {
+                let r = CGFloat(radius)
+                context.stroke(Path(ellipseIn: CGRect(x: first.x - r, y: first.y - r, width: r * 2, height: r * 2)),
+                               with: accent(0.32 - Double(index) * 0.055), style: line(1.5))
+            }
+        } else {
+            var trail = Path()
+            trail.move(to: first)
+            for (previous, point) in zip(points, points.dropFirst()) {
+                let middle = CGPoint(x: (previous.x + point.x) / 2, y: (previous.y + point.y) / 2)
+                trail.addQuadCurve(to: point, control: CGPoint(x: middle.x + (point.y - previous.y) * 0.2, y: middle.y - (point.x - previous.x) * 0.2))
+            }
+            context.stroke(trail, with: accent(0.3), style: StrokeStyle(lineWidth: 1.5, lineCap: .round, dash: [2, 5]))
+        }
+        for (index, point) in points.enumerated() {
+            let r: CGFloat = index == 0 ? 5 : 3.5
+            context.fill(Path(ellipseIn: CGRect(x: point.x - r * 2.2, y: point.y - r * 2.2, width: r * 4.4, height: r * 4.4)), with: accent(0.12))
+            context.fill(Path(ellipseIn: CGRect(x: point.x - r, y: point.y - r, width: r * 2, height: r * 2)), with: accent(0.6))
         }
     }
 
@@ -218,8 +375,9 @@ private struct ChatPattern {
 
     private func drawClassic(_ context: inout GraphicsContext) {
         var dots = Path()
-        for (row, y) in stride(from: 0, to: size.height, by: 26).enumerated() {
-            for x in stride(from: row.isMultiple(of: 2) ? 0 : 13, to: size.width, by: 26) {
+        let spacing = 26 / density
+        for (row, y) in stride(from: 0, to: size.height, by: spacing).enumerated() {
+            for x in stride(from: row.isMultiple(of: 2) ? 0 : spacing / 2, to: size.width, by: spacing) {
                 dots.addEllipse(in: CGRect(x: x, y: y, width: 2.2, height: 2.2))
             }
         }
@@ -231,9 +389,9 @@ private struct ChatPattern {
         var streets = Path(), avenues = Path()
         var xs: [CGFloat] = [], ys: [CGFloat] = []
         var x = random.next(0...30)
-        while x < size.width { xs.append(x); x += random.next(40...90) }
+        while x < size.width { xs.append(x); x += random.next(40...90) / density }
         var y = random.next(0...30)
-        while y < size.height { ys.append(y); y += random.next(50...105) }
+        while y < size.height { ys.append(y); y += random.next(50...105) / density }
         for (index, x) in xs.enumerated() {
             var path = index % 3 == 1 ? avenues : streets
             path.move(to: CGPoint(x: x, y: 0)); path.addLine(to: CGPoint(x: x, y: size.height))
@@ -316,7 +474,7 @@ private struct ChatPattern {
 
     /// Layered swells (near ones bolder) with rising bubbles.
     private func drawWater(_ context: inout GraphicsContext, random: inout Generator) {
-        for (row, y) in stride(from: CGFloat(16), to: size.height + 20, by: 26).enumerated() {
+        for (row, y) in stride(from: CGFloat(16), to: size.height + 20, by: 26 / density).enumerated() {
             let phase = CGFloat(row) * 0.8 + random.next(0...1)
             let amplitude: CGFloat = row.isMultiple(of: 3) ? 7 : 4
             let wavelength: CGFloat = row.isMultiple(of: 2) ? 90 : 64
@@ -336,7 +494,7 @@ private struct ChatPattern {
 
     /// A starfield with sparkles and a crescent moon over neon glows.
     private func drawNight(_ context: inout GraphicsContext, random: inout Generator) {
-        let count = Int(size.width * size.height / 1400)
+        let count = Int(size.width * size.height / 1400 * density)
         var faint = Path(), bright = Path()
         for index in 0..<count {
             let point = random.point(in: size), radius = random.next(0.5...1.7)
@@ -431,7 +589,8 @@ private struct ChatPattern {
     }
 
     /// A jittered grid of points (even coverage without looking tiled).
-    private func cells(spacing: CGFloat, random: inout Generator) -> [CGPoint] {
+    private func cells(spacing base: CGFloat, random: inout Generator) -> [CGPoint] {
+        let spacing = base / density
         var points: [CGPoint] = []
         for y in stride(from: spacing / 2, to: size.height + spacing, by: spacing) {
             for x in stride(from: spacing / 2, to: size.width + spacing, by: spacing) {
@@ -442,23 +601,24 @@ private struct ChatPattern {
     }
 }
 
-/// Picks a conversation's backdrop: Automatic (from where you met) or a fixed style.
+/// Picks a conversation's backdrop: Automatic (this connection's own, from how you met) or a
+/// fixed style.
 struct ChatBackdropPicker: View {
     let key: String
     let seed: String
-    /// The automatic style, when the encounter is known.
-    let automatic: ChatBackdropStyle?
+    /// The automatic backdrop, when the encounters are known.
+    let automatic: ChatBackdrop?
 
     private var backdrops: ChatBackdrops { .shared }
 
     var body: some View {
         let chosen = backdrops.choice(for: key)
-        let auto = backdrops.automaticStyle(for: key, resolved: automatic)
+        let auto = backdrops.automaticBackdrop(for: key, resolved: automatic)
         ScrollView(.horizontal) {
             HStack(spacing: 10) {
-                tile("Automatic", subtitle: auto.title, style: auto, selected: chosen == nil) { backdrops.choose(nil, for: key) }
+                tile("Automatic", subtitle: "Just yours", backdrop: auto, selected: chosen == nil) { backdrops.choose(nil, for: key) }
                 ForEach(ChatBackdropStyle.allCases) { style in
-                    tile(style.title, subtitle: nil, style: style, selected: chosen == style) { backdrops.choose(style, for: key) }
+                    tile(style.title, subtitle: nil, backdrop: ChatBackdrop(style: style), selected: chosen == style) { backdrops.choose(style, for: key) }
                 }
             }
             .padding(.vertical, 2)
@@ -466,13 +626,13 @@ struct ChatBackdropPicker: View {
         .scrollIndicators(.hidden)
     }
 
-    private func tile(_ title: String, subtitle: String?, style: ChatBackdropStyle, selected: Bool, action: @escaping () -> Void) -> some View {
+    private func tile(_ title: String, subtitle: String?, backdrop: ChatBackdrop, selected: Bool, action: @escaping () -> Void) -> some View {
         Button {
             ClickHaptics.selection()
             withAnimation(ClickMotion.selection) { action() }
         } label: {
             VStack(spacing: 6) {
-                ChatBackground(seed: seed, style: style)
+                ChatBackground(seed: seed, backdrop: backdrop)
                     .frame(width: 66, height: 96)
                     .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
                     .overlay {

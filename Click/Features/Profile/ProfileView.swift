@@ -389,7 +389,7 @@ public struct ProfileView: View {
                 ChatBackdropPicker(
                     key: connectionID,
                     seed: connectionID,
-                    automatic: .automatic(encounters: model.encounters.value, place: inboxItem?.encounterLocation)
+                    automatic: .automatic(encounters: model.encounters.value, place: inboxItem?.encounterLocation, seed: connectionID)
                 )
             }
             .padding(18)

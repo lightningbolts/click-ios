@@ -77,7 +77,8 @@ struct GroupProfileView: View {
             Section("Common interests") { GroupCommonInterests(members: group.members) }
             sharedSection
             Section("Pinned") { PinnedMessagesList(model: env.conversationModel(for: group.chatRoute.conversationIdentity)) }
-            Section("Chat background") { ChatBackdropPicker(key: group.chatID, seed: group.chatID, automatic: nil) }
+            Section("Chat background") { ChatBackdropPicker(key: group.chatID, seed: group.chatID,
+                                                                    automatic: .automatic(encounters: space.hangouts.map(\.representative), place: nil, seed: group.chatID)) }
             Section("Journal") { GroupJournalSection(chatID: group.chatID) }
             manageSection(group, isCreator: isCreator)
         }

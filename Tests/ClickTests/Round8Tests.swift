@@ -102,4 +102,20 @@ struct ChatBackdropTests {
         #expect(ChatBackdropStyle.automatic(encounters: [encounter(nil, hour: 23)], place: nil) == .night)
         #expect(ChatBackdropStyle.automatic(encounters: [encounter(nil)], place: nil) == .classic)
     }
+
+    @Test("Each connection's automatic backdrop is its own: sky hue by the hour, a per-connection shift, its path")
+    func signature() {
+        var first = encounter("Café Allegro", hour: 17)
+        first.latitude = 47.60; first.longitude = -122.33
+        var second = encounter("Café Allegro", hour: 17)
+        second.latitude = 47.62; second.longitude = -122.30
+        let a = EncounterSignature(encounters: [first, second], seed: "conn-a")
+        let b = EncounterSignature(encounters: [first, second], seed: "conn-b")
+        #expect(a.hue != b.hue)
+        #expect(a.path.count == 2)
+        #expect(a.path.allSatisfy { (0...1).contains($0.x) && (0...1).contains($0.y) })
+        #expect(a.path[1].y < a.path[0].y)   // north is up
+        let night = EncounterSignature(encounters: [encounter(nil, hour: 23)], seed: "conn-a")
+        #expect(abs(night.hue - 0.7) < 0.1)
+    }
 }

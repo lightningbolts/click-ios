@@ -30,7 +30,8 @@ struct FriendshipSection: View {
             }
             if !stats.isEmpty {
                 statsRow(stats)
-                EncounterMapPreview(encounters: encounters, stats: stats, avatarURL: avatarURL, seed: seed)
+                let person = GroupMember(userID: seed, name: peerName, avatarURL: avatarURL)
+                EncounterMapPreview(encounters: encounters, stats: stats) { _ in [person] }
             }
             UpcomingPlansList(plans: upcomingPlans, onOpen: onOpenPlan)
             HStack(spacing: 8) {
@@ -169,8 +170,8 @@ private struct PendingHangoutRow: View {
 struct EncounterMapPreview: View {
     let encounters: [Encounter]
     let stats: FriendshipStats
-    let avatarURL: String?
-    let seed: String
+    /// Who a pin shows: the person, or the group members who were there.
+    let faces: (Encounter) -> [GroupMember]
     @State private var isExpanded = false
 
     private var pins: [EncounterPin] {
@@ -182,14 +183,14 @@ struct EncounterMapPreview: View {
             let isNewest = index == ordered.count - 1
             return EncounterPin(number: index + 1, encounter: encounter,
                                 coordinate: CLLocationCoordinate2D(latitude: lat, longitude: lon),
-                                isNewSpot: isNewest && highlights?.isNewSpot == true)
+                                isNewSpot: isNewest && highlights?.isNewSpot == true, faces: faces(encounter))
         }
     }
 
     var body: some View {
         let pins = pins
         if !pins.isEmpty {
-            EncounterMap(pins: pins, avatarURL: avatarURL, seed: seed, interactive: false)
+            EncounterMap(pins: pins, interactive: false)
                 .frame(height: 180)
                 .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
                 // The preview map takes no touches; this layer opens the full one.
@@ -209,7 +210,7 @@ struct EncounterMapPreview: View {
                 .accessibilityAction { isExpanded = true }
                 .sheet(isPresented: $isExpanded) {
                     NavigationStack {
-                        EncounterMap(pins: pins, avatarURL: avatarURL, seed: seed, interactive: true)
+                        EncounterMap(pins: pins, interactive: true)
                             .ignoresSafeArea(edges: .bottom)
                             .navigationTitle("Where you've met")
                             .navigationBarTitleDisplayMode(.inline)
@@ -227,23 +228,33 @@ private struct EncounterPin: Identifiable {
     let encounter: Encounter
     let coordinate: CLLocationCoordinate2D
     let isNewSpot: Bool
+    let faces: [GroupMember]
     var id: String { encounter.id }
 }
 
-/// The map itself: the person's avatar at each spot with its number badge.
+/// The map itself: who you met at each spot (overlapping when several) with its number badge.
 private struct EncounterMap: View {
     let pins: [EncounterPin]
-    let avatarURL: String?
-    let seed: String
     let interactive: Bool
+
+    private static let pinSize: CGFloat = 34
+
+    @ViewBuilder
+    private func faces(_ members: [GroupMember]) -> some View {
+        if members.count >= 2 {
+            GroupAvatarView(avatarURL: nil, seed: members[0].userID, initials: members[0].initials, members: members, size: Self.pinSize)
+        } else if let member = members.first {
+            AvatarView(imageURL: member.avatarURL, seed: member.userID, initials: member.initials, size: Self.pinSize)
+                .overlay(Circle().stroke(.white, lineWidth: 2))
+        }
+    }
 
     var body: some View {
         Map(initialPosition: .automatic, interactionModes: interactive ? .all : []) {
             ForEach(pins) { pin in
                 Annotation(interactive ? (pin.encounter.placeName ?? "") : "", coordinate: pin.coordinate, anchor: .bottom) {
                     ZStack(alignment: .topTrailing) {
-                        AvatarView(imageURL: avatarURL, seed: seed, initials: "", size: 34)
-                            .overlay(Circle().stroke(.white, lineWidth: 2))
+                        faces(pin.faces)
                             .shadow(color: .black.opacity(0.25), radius: 3, y: 1)
                         Text("\(pin.number)")
                             .font(.system(size: 11, weight: .bold).monospacedDigit())
@@ -670,6 +681,12 @@ struct GroupTogetherSection: View {
 
     private var representatives: [Encounter] { model.hangouts.map(\.representative) }
 
+    /// The members who were there, for a hangout's map pin.
+    private func hangoutMembers(_ encounter: Encounter) -> [GroupMember] {
+        guard let ids = model.hangouts.first(where: { $0.representative.id == encounter.id })?.memberIDs else { return [] }
+        return group.members.filter { ids.contains($0.userID) }
+    }
+
     /// Members you've been with most in group hangouts.
     private var regulars: [String] {
         var counts: [String: Int] = [:]
@@ -706,7 +723,7 @@ struct GroupTogetherSection: View {
                             .font(ClickTypography.supporting)
                             .foregroundStyle(ClickColors.textSecondary)
                     }
-                    EncounterMapPreview(encounters: representatives, stats: stats, avatarURL: group.avatarURL, seed: group.chatID)
+                    EncounterMapPreview(encounters: representatives, stats: stats, faces: hangoutMembers)
                 }
                 .padding(.vertical, 4)
             }

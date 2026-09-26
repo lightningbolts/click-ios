@@ -11,7 +11,6 @@ public struct ChatView: View {
     @State private var timeline = TimelineController()
     /// Messages that arrived while the reader was scrolled up.
     @State private var unseenCount = 0
-    @State private var screenWidth: CGFloat = 390
     @State private var viewerURL: ViewerURL?
     @Environment(ConversationListModel.self) private var conversations: ConversationListModel?
     @Environment(\.scenePhase) private var scenePhase
@@ -213,8 +212,7 @@ public struct ChatView: View {
                 timelineView
             }
         }
-        .background { ChatBackground(seed: backdropKey, style: backdropStyle).equatable() }
-        .onGeometryChange(for: CGFloat.self) { $0.size.width } action: { screenWidth = $0 }
+        .background { ChatBackground(seed: backdropKey, backdrop: backdrop).equatable() }
         .safeAreaInset(edge: .bottom, spacing: 0) {
             VStack(spacing: 0) {
                 ScheduledMessagesBar(scheduled: model.scheduled) { showsScheduled = true }
@@ -267,7 +265,10 @@ public struct ChatView: View {
         .toolbar {
             ToolbarItem(placement: .principal) {
                 conversationTitle
-                    .frame(width: max(120, screenWidth - 132), alignment: .leading)
+                    // Fills the space between back button and menu (no measured width to change
+                    // after the first layout or a cancelled back swipe), set in a little.
+                    .padding(.leading, 6)
+                    .frame(maxWidth: .infinity, alignment: .leading)
             }
             ToolbarItem(placement: .topBarTrailing) {
                 conversationMenu
@@ -278,14 +279,22 @@ public struct ChatView: View {
     /// Backdrops are per conversation: the connection for a person, else the chat.
     private var backdropKey: String { model.identity.connectionID ?? model.identity.chatID }
 
-    /// The chosen backdrop, else the one for where you met (a person's first encounter).
-    private var backdropStyle: ChatBackdropStyle {
-        var resolved: ChatBackdropStyle?
-        if case .direct = model.identity.kind {
+    /// The chosen backdrop, else this conversation's own: from a person's encounters, or a
+    /// group's hangouts.
+    private var backdrop: ChatBackdrop {
+        var resolved: ChatBackdrop?
+        switch model.identity.kind {
+        case .direct:
             let encounters = PeerProfileModel.shared(userID: model.identity.peerUserID, connectionID: model.identity.connectionID).encounters.value
-            resolved = .automatic(encounters: encounters, place: conversations?.connection(connectionID: model.identity.connectionID)?.encounterLocation)
+            resolved = .automatic(encounters: encounters, place: conversations?.connection(connectionID: model.identity.connectionID)?.encounterLocation,
+                                  seed: backdropKey)
+        case .group:
+            resolved = .automatic(encounters: GroupSpaceModel.shared(chatID: model.identity.chatID).hangouts.map(\.representative),
+                                  place: nil, seed: backdropKey)
+        case .hub:
+            break
         }
-        return ChatBackdrops.shared.style(for: backdropKey, resolved: resolved)
+        return ChatBackdrops.shared.backdrop(for: backdropKey, resolved: resolved)
     }
 
     /// A short notice for a new pin (pins live in the profile, not over the chat); tap to see it.
