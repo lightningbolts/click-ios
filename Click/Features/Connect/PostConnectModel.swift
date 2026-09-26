@@ -19,6 +19,8 @@ final class PostConnectModel {
     let suggestions: [ContextTag]
 
     private(set) var encounterCount: Int?
+    /// This pair's encounters (newest first), for the souvenir.
+    private(set) var encounters: [Encounter] = []
     private(set) var isExtendedHangout = false
     private(set) var placeName: String?
     private(set) var recommendation: EventRecommendation?
@@ -92,6 +94,7 @@ final class PostConnectModel {
             longitude: env.location.lastFix?.coordinate.longitude
         )
         if let encounters = await history {
+            self.encounters = encounters
             encounterCount = encounters.count
             if let latest = encounters.first {
                 placeName = latest.placeName
@@ -141,6 +144,9 @@ final class PostConnectModel {
             try? await env.encounterContext.saveContext(connectionID: connectionID, tags: [], sensor: sensor, reportingUserID: userID)
         }
     }
+
+    /// What this tap added (new spot, level, streak, milestone), once history has loaded.
+    var highlights: HangoutHighlights? { HangoutHighlights.of(encounters) }
 
     func dismissRecommendation() {
         recommendationDismissed = true

@@ -23,10 +23,14 @@ enum HomeOpportunity: Equatable, Identifiable {
     /// 1. a saved event that is live now;
     /// 2. a saved event starting today;
     /// 3. a nearby event that is live now;
-    /// 4. a shared-upcoming-event nudge;
-    /// 5. a greeting deadline expiring within 12 hours;
-    /// 6. a reconnect nudge;
-    /// 7. a nearby event starting today.
+    /// 4. a hangout waiting for your confirmation (it expires);
+    /// 5. a shared-upcoming-event nudge;
+    /// 6. a wave;
+    /// 7. a greeting deadline expiring within 12 hours;
+    /// 8. an anniversary;
+    /// 9. a reconnect nudge;
+    /// 10. a memory prompt, then a quiet group;
+    /// 11. a nearby event starting today.
     static func select(
         savedEvents: [SavedEvent],
         nearbyBeacons: [MapBeacon],
@@ -51,8 +55,14 @@ enum HomeOpportunity: Equatable, Identifiable {
         if let live = nearbyEvents.first(where: { $0.schedule!.isLive(at: now) }) {
             return .event(HomeEventHighlight(beacon: live, now: now))
         }
+        if let hangout = nudges.first(where: { $0.kind == .hangoutConfirm }) {
+            return .nudge(hangout)
+        }
         if let shared = nudges.first(where: { $0.kind == .sharedUpcomingEvent }) {
             return .nudge(shared)
+        }
+        if let wave = nudges.first(where: { $0.kind == .wave }) {
+            return .nudge(wave)
         }
         if let urgent = connections
             .compactMap({ item in item.sayHiDeadline.map { (item, $0) } })
@@ -60,8 +70,8 @@ enum HomeOpportunity: Equatable, Identifiable {
             .min(by: { $0.1 < $1.1 }) {
             return .sayHi(urgent.0, deadline: urgent.1)
         }
-        if let reconnect = nudges.first(where: { $0.kind == .reconnectLull }) {
-            return .nudge(reconnect)
+        for kind in [InboxNudge.Kind.anniversary, .reconnectLull, .memoryPrompt, .groupRevival] {
+            if let nudge = nudges.first(where: { $0.kind == kind }) { return .nudge(nudge) }
         }
         if let today = nearbyEvents.first(where: { $0.schedule!.startsToday(at: now) }) {
             return .event(HomeEventHighlight(beacon: today, now: now))
@@ -241,6 +251,53 @@ final class HomeFeedModel {
             try await environment.me.resolveNudge(nudge.id, action: action, userID: userID)
         } catch {
             if action == .dismiss { resolvedNudgeIDs.remove(nudge.id) }
+        }
+    }
+
+    /// Shown after a nudge action that needs feedback (hangout logged, wave sent, errors).
+    var actionNotice: String?
+
+    /// Confirms a hangout from its nudge (the server resolves the nudge).
+    func confirmHangout(_ nudge: InboxNudge) async {
+        guard let environment, let id = nudge.confirmationID else { return }
+        resolvedNudgeIDs.insert(nudge.id)
+        do {
+            switch try await environment.relationships.confirmHangout(id: id) {
+            case .logged(let alreadyLogged):
+                ClickHaptics.success()
+                actionNotice = alreadyLogged ? "Already on your timeline" : "Added to your timeline with \(nudge.peerFirstName ?? "them")"
+            case .waiting:
+                ClickHaptics.success()
+                actionNotice = "Confirmed. It's added once \(nudge.peerFirstName ?? "they") confirm too."
+            }
+        } catch {
+            resolvedNudgeIDs.remove(nudge.id)
+            actionNotice = error.userFacingMessage
+        }
+    }
+
+    func declineHangout(_ nudge: InboxNudge) async {
+        guard let environment, let id = nudge.confirmationID else { return }
+        resolvedNudgeIDs.insert(nudge.id)
+        do {
+            try await environment.relationships.declineHangout(id: id)
+        } catch {
+            resolvedNudgeIDs.remove(nudge.id)
+            actionNotice = error.userFacingMessage
+        }
+    }
+
+    /// Waves back (the server marks their wave answered).
+    func waveBack(_ nudge: InboxNudge) async {
+        guard let environment, let connectionID = nudge.connectionID else { return }
+        resolvedNudgeIDs.insert(nudge.id)
+        do {
+            _ = try await environment.relationships.wave(connectionID: connectionID)
+            ClickHaptics.success()
+            actionNotice = "You waved at \(nudge.peerFirstName ?? "them") 👋"
+        } catch {
+            resolvedNudgeIDs.remove(nudge.id)
+            actionNotice = error.userFacingMessage
         }
     }
 

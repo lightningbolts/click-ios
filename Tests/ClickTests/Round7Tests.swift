@@ -264,3 +264,126 @@ struct HistoryTombstoneTests {
         #expect(ConversationModel.isFullPage((0..<40).map { row("m\($0)", Double($0)) }))
     }
 }
+
+@Suite("Friendship stats, highlights and plans")
+struct FriendshipTests {
+    private var calendar: Calendar {
+        var calendar = Calendar(identifier: .gregorian)
+        calendar.timeZone = TimeZone(identifier: "UTC")!
+        calendar.firstWeekday = 2
+        return calendar
+    }
+
+    private func encounter(_ id: String, daysAgo: Double, venue: String? = nil, lat: Double? = nil, temp: Double? = nil,
+                           now: Date) -> Encounter {
+        Encounter(id: id, date: now.addingTimeInterval(-daysAgo * 86_400), place: nil, eventTitle: nil, eventBeaconID: nil,
+                  contextTags: [], noiseLevel: nil, elevation: nil, venue: venue, temperatureCelsius: temp,
+                  latitude: lat, longitude: lat.map { _ in -122.33 })
+    }
+
+    @Test("Levels follow hangout counts, with progress toward the next")
+    func levels() {
+        #expect(FriendshipLevel.forHangouts(1).name == "New Click")
+        #expect(FriendshipLevel.forHangouts(3).name == "Familiar")
+        #expect(FriendshipLevel.forHangouts(11).name == "Regulars")
+        #expect(FriendshipLevel.forHangouts(40).name == "Inseparable")
+        let now = Date(timeIntervalSince1970: 1_790_000_000)
+        let stats = FriendshipStats.compute((0..<4).map { encounter("e\($0)", daysAgo: Double($0) * 10, now: now) }, now: now, calendar: calendar)
+        #expect(stats.level.name == "Familiar")
+        #expect(stats.toNextLevel == 2)
+        #expect(abs(stats.levelProgress - 1.0 / 3.0) < 0.001)
+    }
+
+    @Test("Spots merge repeat venues; streaks count consecutive weeks, still alive last week")
+    func spotsAndStreaks() {
+        let now = Date(timeIntervalSince1970: 1_790_000_000) // a Monday-to-Sunday week in UTC
+        let list = [
+            encounter("a", daysAgo: 1, venue: "Café Allegro", now: now),
+            encounter("b", daysAgo: 8, venue: "café allegro", now: now),
+            encounter("c", daysAgo: 15, venue: "Gas Works Park", now: now),
+            encounter("d", daysAgo: 60, lat: 47.6101, now: now),
+            encounter("e", daysAgo: 61, lat: 47.6102, now: now) // same ~110 m cell as "d"
+        ]
+        let stats = FriendshipStats.compute(list, now: now, calendar: calendar)
+        #expect(stats.spots.count == 3)
+        #expect(stats.topSpot?.visits == 2)
+        #expect(stats.weekStreak == 3)
+        #expect(stats.longestWeekStreak == 3)
+        let lapsed = FriendshipStats.compute(list, now: now.addingTimeInterval(21 * 86_400), calendar: calendar)
+        #expect(lapsed.weekStreak == 0)
+    }
+
+    @Test("The newest hangout's highlights: new spot, level up, milestone")
+    func highlights() {
+        let now = Date(timeIntervalSince1970: 1_790_000_000)
+        let two = [encounter("a", daysAgo: 30, venue: "Park", now: now), encounter("b", daysAgo: 0, venue: "Park", now: now)]
+        #expect(HangoutHighlights.of(two)?.isNewSpot == false)
+        let three = two + [encounter("c", daysAgo: -0.01, venue: "Bar", now: now)]
+        let result = HangoutHighlights.of(three)
+        #expect(result?.isNewSpot == true)
+        #expect(result?.leveledUpTo?.name == "Familiar")
+        #expect(result?.ordinal == 3)
+        let five = (0..<5).map { encounter("m\($0)", daysAgo: Double(5 - $0), now: now) }
+        #expect(HangoutHighlights.of(five)?.isMilestone == true)
+        #expect(HangoutHighlights.of([encounter("x", daysAgo: 0, venue: "Park", now: now)])?.isNewSpot == false)
+    }
+
+    @Test("Plans round-trip through metadata and read well as plain text")
+    func plans() {
+        let plan = HangoutPlan(title: "Dinner", startsAt: Date(timeIntervalSince1970: 1_790_000_000), placeName: "Café Allegro",
+                               latitude: 47.6, longitude: -122.3)
+        let parsed = HangoutPlan.parse(metadata: ["plan": plan.wire])
+        #expect(parsed == plan)
+        #expect(plan.summary.hasPrefix("📅 Dinner · "))
+        #expect(plan.summary.hasSuffix(" · 📍 Café Allegro"))
+        #expect(HangoutPlan.parse(metadata: ["plan": ["title": "x"]]) == nil)
+    }
+
+    @Test("Links become tappable runs; bare domains open over https")
+    @MainActor
+    func links() {
+        let text = MessageBubbleView.linkified("see example.com and https://click.co/x ok")
+        let urls = text.runs.compactMap(\.link)
+        #expect(urls.map(\.absoluteString) == ["https://example.com", "https://click.co/x"])
+        #expect(MessageBubbleView.linkified("no links here").runs.allSatisfy { $0.link == nil })
+    }
+}
+
+@Suite("Relationship moments on Home and in pushes")
+@MainActor
+struct RelationshipMomentRoutingTests {
+    @Test("New nudge kinds decode (unknown ones are skipped) with their payload")
+    func decode() {
+        let row: [String: Any] = ["id": "n1", "nudge_type": "hangout_confirm", "connection_id": "c1", "headline": "h", "body": "b",
+                                  "payload": ["confirmation_id": "h1", "peer_first_name": "Maya", "peer_user_id": "u2", "place_name": "Park"]]
+        let nudge = InboxNudge.decode(row)
+        #expect(nudge?.kind == .hangoutConfirm)
+        #expect(nudge?.confirmationID == "h1")
+        #expect(nudge?.peerUserID == "u2")
+        #expect(InboxNudge.decode(["id": "n2", "nudge_type": "something_new"]) == nil)
+    }
+
+    @Test("A hangout to confirm outranks other nudges; waves outrank reconnects")
+    func priority() {
+        func nudge(_ id: String, _ kind: InboxNudge.Kind) -> InboxNudge {
+            InboxNudge(id: id, kind: kind, connectionID: "c1", beaconID: nil, headline: "h", body: "b", peerFirstName: nil, sentAt: nil)
+        }
+        let all = [nudge("r", .reconnectLull), nudge("w", .wave), nudge("h", .hangoutConfirm), nudge("s", .sharedUpcomingEvent)]
+        #expect(HomeOpportunity.select(savedEvents: [], nearbyBeacons: [], nudges: all, connections: [])?.id == "nudge.h")
+        #expect(HomeOpportunity.select(savedEvents: [], nearbyBeacons: [], nudges: [nudge("r", .reconnectLull), nudge("w", .wave)],
+                                       connections: [])?.id == "nudge.w")
+        #expect(HomeOpportunity.select(savedEvents: [], nearbyBeacons: [], nudges: [nudge("g", .groupRevival), nudge("a", .anniversary)],
+                                       connections: [])?.id == "nudge.a")
+    }
+
+    @Test("Moment pushes open the right place")
+    func pushes() {
+        typealias Route = ClickNotificationCoordinator.TapRoute
+        #expect(ClickNotificationCoordinator.tapRoute(for: ["type": "anniversary", "peer_user_id": "u2", "connection_id": "c1"])
+                == Route.route(.userProfile(userID: "u2", connectionID: "c1")))
+        #expect(ClickNotificationCoordinator.tapRoute(for: ["type": "wave", "peer_user_id": "u2", "connection_id": "c1"])
+                == Route.chat(chatID: nil, connectionID: "c1", senderUserID: "u2", senderName: nil))
+        #expect(ClickNotificationCoordinator.tapRoute(for: ["type": "group_revival", "chat_id": "g1"])
+                == Route.route(.conversation(chatID: "g1", messageID: nil)))
+    }
+}

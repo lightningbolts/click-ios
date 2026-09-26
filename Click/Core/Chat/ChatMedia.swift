@@ -223,6 +223,8 @@ public struct MediaDraft: Sendable {
     public var isClickDrop = false
     /// The in-person encounter a Click Drop belongs to (`metadata.encounter_id`), when one is active.
     public var encounterID: String?
+    /// Re-sent from another chat (`metadata.forwarded`).
+    public var isForwarded = false
 
     public init(kind: MessageMedia.Kind, data: Data, mimeType: String, fileName: String? = nil, durationSeconds: Int? = nil) {
         self.kind = kind

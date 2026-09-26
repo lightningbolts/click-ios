@@ -19,6 +19,7 @@ public final class SettingsStore {
         static let messageNotificationsEnabled = "message_notifications_enabled"
         static let ambientNoiseOptIn = "ambient_noise_opt_in"
         static let barometricContextOptIn = "barometric_context_opt_in"
+        static let hangoutDetectionOptIn = "hangout_detection_opt_in"
         static let locationExplainerSeen = "location_explainer_seen"
         static let onboardingState = "onboarding_state"
         static let hasCompletedOnboarding = "has_completed_onboarding"
@@ -36,6 +37,7 @@ public final class SettingsStore {
         self.messageNotificationsEnabled = defaults.object(forKey: Key.messageNotificationsEnabled) as? Bool ?? true
         self.ambientNoiseOptIn = defaults.bool(forKey: Key.ambientNoiseOptIn)
         self.barometricContextOptIn = defaults.bool(forKey: Key.barometricContextOptIn)
+        self.hangoutDetectionOptIn = defaults.bool(forKey: Key.hangoutDetectionOptIn)
     }
 
     // User-visible preferences are stored properties so SwiftUI observes changes; a computed
@@ -83,6 +85,12 @@ public final class SettingsStore {
 
     public var barometricContextOptIn: Bool {
         didSet { defaults.set(barometricContextOptIn, forKey: Key.barometricContextOptIn) }
+    }
+
+    /// "Hanging out?" detection: share an approximate, short-lived position with Click when the
+    /// app opens so mutual Clicks nearby (who also opted in) can log the hangout. Off by default.
+    public var hangoutDetectionOptIn: Bool {
+        didSet { defaults.set(hangoutDetectionOptIn, forKey: Key.hangoutDetectionOptIn) }
     }
 
     public var tagsInitialized: Bool {

@@ -4,6 +4,7 @@ import Foundation
 public enum PendingSendPayload: Sendable {
     case media(MediaDraft)
     case beacon(MapBeacon)
+    case plan(HangoutPlan)
 }
 
 /// Receives pending-send changes for the conversation currently on screen.

@@ -88,13 +88,19 @@ public struct ChatMessageItem: Identifiable, Hashable, Sendable, Codable {
     public var uploadProgress: MediaUploadProgress?
     /// "Message deleted" placeholder (server tombstone or a realtime delete seen live).
     public var isDeleted = false
+    /// `metadata.forwarded`: re-sent from another chat (shown as "Forwarded"). Optional so rows
+    /// stored before it existed still decode.
+    public var forwarded: Bool?
+    public var isForwarded: Bool { forwarded == true }
+    /// A hangout proposed in chat (`metadata.plan`).
+    public var plan: HangoutPlan?
 
     /// Persisted fields (LocalStore). The local media path and upload progress are
     /// device/session-specific and never stored.
     private enum CodingKeys: String, CodingKey {
         case id, chatID, senderID, senderName, senderAvatarURL, content, rawContent, messageType
         case createdAt, deliveryStatus, isOutgoing, replyToID, replyToSnippet, replyToSenderName
-        case reactions, isEdited, media, beacon, clientMessageID, isDeleted
+        case reactions, isEdited, media, beacon, clientMessageID, isDeleted, forwarded, plan
     }
 
     /// The placeholder that replaces a deleted message in place.
@@ -133,8 +139,12 @@ public struct ChatMessageItem: Identifiable, Hashable, Sendable, Codable {
         media: MessageMedia? = nil,
         localMediaURL: URL? = nil,
         beacon: SharedBeacon? = nil,
-        clientMessageID: String? = nil
+        clientMessageID: String? = nil,
+        forwarded: Bool? = nil,
+        plan: HangoutPlan? = nil
     ) {
+        self.forwarded = forwarded
+        self.plan = plan
         self.clientMessageID = clientMessageID
         self.beacon = beacon
         self.media = media
@@ -239,6 +249,52 @@ public struct ConversationIdentity: Hashable, Sendable {
 
 /// Card data for a shared beacon/event (KMP `toBeaconChatMetadata`). The card metadata is
 /// plaintext by design (public beacon fields only).
+/// A proposed hangout sent into a chat (`metadata.plan`). The readable summary is the message
+/// text (so any client shows it); RSVPs are reactions (✅ going, ❌ can't make it).
+public struct HangoutPlan: Hashable, Sendable, Codable {
+    public var title: String
+    public var startsAt: Date
+    public var placeName: String?
+    public var latitude: Double?
+    public var longitude: Double?
+
+    public static let goingReaction = "✅"
+    public static let declinedReaction = "❌"
+
+    public init(title: String, startsAt: Date, placeName: String? = nil, latitude: Double? = nil, longitude: Double? = nil) {
+        self.title = title
+        self.startsAt = startsAt
+        self.placeName = placeName
+        self.latitude = latitude
+        self.longitude = longitude
+    }
+
+    /// The message text: readable anywhere, even where plans aren't understood.
+    public var summary: String {
+        let when = startsAt.formatted(.dateTime.weekday(.abbreviated).month(.abbreviated).day().hour().minute())
+        return "📅 \(title) · \(when)" + (placeName.map { " · 📍 \($0)" } ?? "")
+    }
+
+    var wire: [String: Any] {
+        var plan: [String: Any] = ["title": title, "starts_at": Int64(startsAt.timeIntervalSince1970 * 1000)]
+        if let placeName { plan["place_name"] = placeName }
+        if let latitude, let longitude {
+            plan["lat"] = latitude
+            plan["lon"] = longitude
+        }
+        return plan
+    }
+
+    static func parse(metadata: [String: Any]?) -> HangoutPlan? {
+        guard let plan = metadata?["plan"] as? [String: Any],
+              let title = JSONFields.string(plan["title"]),
+              let startsMs = JSONFields.double(plan["starts_at"]) else { return nil }
+        return HangoutPlan(title: title, startsAt: Date(timeIntervalSince1970: startsMs / 1000),
+                           placeName: JSONFields.string(plan["place_name"]),
+                           latitude: JSONFields.double(plan["lat"]), longitude: JSONFields.double(plan["lon"]))
+    }
+}
+
 public struct SharedBeacon: Hashable, Sendable, Codable {
     public let beaconID: String
     public let kind: BeaconKind

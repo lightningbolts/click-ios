@@ -24,6 +24,8 @@ public struct ChatComposerView: View {
     let onUnstage: (UUID) -> Void
     /// Long-press on send offers "Send Later" (text only). Nil where scheduling isn't supported.
     let onScheduleSend: (() -> Void)?
+    /// "+" menu: plan a hangout (chats, not event hubs).
+    let onPlanHangout: (() -> Void)?
 
     @FocusState private var isFocused: Bool
     @State private var recorder = VoiceNoteRecorder()
@@ -46,9 +48,11 @@ public struct ChatComposerView: View {
         onUnstage: @escaping (UUID) -> Void = { _ in },
         photosOnly: Bool = false,
         replyMediaLoader: ((ChatMessageItem) async throws -> URL)? = nil,
-        onScheduleSend: (() -> Void)? = nil
+        onScheduleSend: (() -> Void)? = nil,
+        onPlanHangout: (() -> Void)? = nil
     ) {
         self.onScheduleSend = onScheduleSend
+        self.onPlanHangout = onPlanHangout
         self.photosOnly = photosOnly
         self.replyMediaLoader = replyMediaLoader
         self.staged = staged
@@ -282,6 +286,7 @@ public struct ChatComposerView: View {
                         onError: onAttachmentError,
                         onVoice: photosOnly ? nil : { beginRecording(locked: true) },
                         onShareBeacon: onShareBeacon,
+                        onPlanHangout: onPlanHangout,
                         allowsFiles: !photosOnly
                     )
                 }

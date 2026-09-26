@@ -541,6 +541,11 @@ public final class ConversationModel {
                     conversation: identity, currentUserID: currentUserID, currentUserName: currentUserName,
                     beacon: beacon, clientMessageID: clientID
                 )
+            case .plan(let plan)?:
+                server = try await chatRepository.sendPlan(
+                    conversation: identity, currentUserID: currentUserID, currentUserName: currentUserName,
+                    plan: plan, clientMessageID: clientID
+                )
             case nil:
                 server = try await chatRepository.sendMessage(
                     conversation: identity,
@@ -556,6 +561,8 @@ public final class ConversationModel {
             store.finish(clientID: clientID, chatID: chatID, serverItem: server)
             onLocalSend?(chatID, server.id, Self.quoteText(server), server.messageType.rawValue, server.createdAt)
             operationError = nil
+            // Whoever proposes a plan is going.
+            if case .plan? = payload { await rsvp(to: server, going: true) }
         } catch {
             store.update(clientID: clientID, chatID: chatID) {
                 $0.deliveryStatus = .failed
@@ -627,6 +634,33 @@ public final class ConversationModel {
     /// A page with `pageSize` messages (tombstones ride along and don't count).
     nonisolated static func isFullPage(_ page: [ChatMessageItem]) -> Bool {
         page.lazy.filter { !$0.isDeleted }.count >= pageSize
+    }
+
+    // MARK: - Plans
+
+    public var supportsPlans: Bool { identity.hubID == nil }
+
+    /// Sends a hangout plan (same optimistic row and retry as any message).
+    public func sendPlan(_ plan: HangoutPlan) async {
+        let clientID = UUID().uuidString.lowercased()
+        var optimistic = makeOptimistic(content: plan.summary, type: .text, reply: nil, clientID: clientID)
+        optimistic.plan = plan
+        await performSend(optimistic, payload: .plan(plan))
+    }
+
+    /// Going / can't make it: exclusive reactions on the plan message, plus a local reminder
+    /// an hour before for plans you're going to.
+    public func rsvp(to item: ChatMessageItem, going: Bool) async {
+        guard let plan = item.plan else { return }
+        let live = items.first { $0.id == item.id } ?? item
+        let add = going ? HangoutPlan.goingReaction : HangoutPlan.declinedReaction
+        let remove = going ? HangoutPlan.declinedReaction : HangoutPlan.goingReaction
+        let mine = Set(live.reactions.filter(\.userReacted).map(\.reactionType))
+        if mine.contains(remove) { await toggleReaction(item: live, reactionType: remove) }
+        let current = items.first { $0.id == item.id } ?? live
+        if !mine.contains(add) { await toggleReaction(item: current, reactionType: add) }
+        await PlanReminders.update(messageID: item.id, plan: plan, going: going, chatID: identity.chatID,
+                                   connectionID: identity.connectionID, chatName: identity.peerDisplayName)
     }
 
     /// Shares an event/beacon card into this conversation (optimistic, same send animation).
@@ -1045,19 +1079,21 @@ public final class ConversationModel {
     /// target from the decrypted local copy (ciphertext never crosses chats), with a fresh client ID.
     public func forward(_ item: ChatMessageItem, to target: ConversationIdentity) async throws {
         let clientID = UUID().uuidString.lowercased()
-        let sent: ChatMessageItem
+        var sent: ChatMessageItem
         if let media = item.media {
             let url = try await mediaURL(for: item)
             var draft = MediaDraft(kind: media.kind, data: try Data(contentsOf: url), mimeType: media.mimeType,
                                    fileName: media.fileName, durationSeconds: media.durationSeconds)
             draft.waveform = media.waveform
+            draft.isForwarded = true
             sent = try await chatRepository.sendMedia(conversation: target, currentUserID: currentUserID, currentUserName: currentUserName,
                                                       draft: draft, replyToID: nil, clientMessageID: clientID)
         } else {
-            sent = try await chatRepository.sendMessage(conversation: target, currentUserID: currentUserID, currentUserName: currentUserName,
-                                                        content: item.content, replyToID: nil, replyToSnippet: nil, replyToSenderName: nil,
-                                                        clientMessageID: clientID)
+            sent = try await chatRepository.sendForwardedText(conversation: target, currentUserID: currentUserID,
+                                                              currentUserName: currentUserName, content: item.content,
+                                                              clientMessageID: clientID)
         }
+        sent.forwarded = true
         onLocalSend?(sent.chatID.isEmpty ? target.chatID : sent.chatID, sent.id, Self.quoteText(sent), sent.messageType.rawValue, sent.createdAt)
         onForwarded?(target, sent)
     }
@@ -1090,6 +1126,8 @@ public final class ConversationModel {
         merged.replyToSnippet = update.replyToSnippet ?? existing.replyToSnippet
         merged.replyToSenderName = update.replyToSenderName ?? existing.replyToSenderName
         merged.isEdited = update.isEdited || existing.isEdited
+        merged.forwarded = update.forwarded ?? existing.forwarded
+        merged.plan = update.plan ?? existing.plan
         // Receipts only move forward (a late "delivered" never un-reads a message).
         let rank: [MessageDeliveryStatus: Int] = [.sent: 1, .delivered: 2, .read: 3]
         if rank[existing.deliveryStatus, default: 0] > rank[update.deliveryStatus, default: 0] {

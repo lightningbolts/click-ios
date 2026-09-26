@@ -905,7 +905,7 @@ struct ShareToChatSheet: View {
     let beacon: MapBeacon
 
     var body: some View {
-        ChatTargetPicker(title: "Share to chat") { identity in
+        ChatTargetPicker(title: "Share to chat", preview: beacon.title, previewSymbol: "calendar") { identity in
             guard let userID = env.session.currentSession?.userId else { return }
             _ = try await env.chat.sendBeacon(conversation: identity, currentUserID: userID, currentUserName: "You",
                                               beacon: beacon, clientMessageID: UUID().uuidString.lowercased())

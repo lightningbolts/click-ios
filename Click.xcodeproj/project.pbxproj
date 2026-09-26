@@ -204,6 +204,12 @@
 		FE73E5CDA34C6AAF260E376A /* ProximityCodec.swift in Sources */ = {isa = PBXBuildFile; fileRef = CEFB1BA8BE902D3D92C87CCD /* ProximityCodec.swift */; };
 		FEEF3EB93549BC0E8570F080 /* ClicksSnapshot.swift in Sources */ = {isa = PBXBuildFile; fileRef = C4BA259925DD4913607E5A68 /* ClicksSnapshot.swift */; };
 		FEF90A5A9FF3E2503A3054DE /* GroupsHubsSettingsTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 08AA20450324A4CA55FE6A68 /* GroupsHubsSettingsTests.swift */; };
+		00EA77F1CE21D8B0FC0196DC /* RelationshipRepository.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6682307B5B0792A4DB0A6C92 /* RelationshipRepository.swift */; };
+		6176B2D884B802F937E5CE41 /* FriendshipStats.swift in Sources */ = {isa = PBXBuildFile; fileRef = D4FF71A91B48F5280E7A4155 /* FriendshipStats.swift */; };
+		E5FE953C2F1B839C069B3DFB /* ClickToast.swift in Sources */ = {isa = PBXBuildFile; fileRef = 845B0ADCADA25389B3B78D83 /* ClickToast.swift */; };
+		E3FA32F400AB915E3A8137FC /* PlanReminders.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4C5C4597A6DDB129FE28C7FB /* PlanReminders.swift */; };
+		23A4F1504FC9065DC74A7FF7 /* PlanViews.swift in Sources */ = {isa = PBXBuildFile; fileRef = 48F68E8F2BF07FA07CF088E6 /* PlanViews.swift */; };
+		8A140AC3E556C1ADA216C74F /* FriendshipViews.swift in Sources */ = {isa = PBXBuildFile; fileRef = C3E8B5E2970089FCB15D583C /* FriendshipViews.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -458,6 +464,12 @@
 		FCB1638F35F178E0F0FE80F1 /* EventReminderScheduler.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = EventReminderScheduler.swift; sourceTree = "<group>"; };
 		FD5B79848C6B2337EA8CD816 /* ConnectionFlowTelemetry.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ConnectionFlowTelemetry.swift; sourceTree = "<group>"; };
 		FF26912F27B4E25BACF33C07 /* AppRouteDestination.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppRouteDestination.swift; sourceTree = "<group>"; };
+		6682307B5B0792A4DB0A6C92 /* RelationshipRepository.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RelationshipRepository.swift; sourceTree = "<group>"; };
+		D4FF71A91B48F5280E7A4155 /* FriendshipStats.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FriendshipStats.swift; sourceTree = "<group>"; };
+		845B0ADCADA25389B3B78D83 /* ClickToast.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ClickToast.swift; sourceTree = "<group>"; };
+		4C5C4597A6DDB129FE28C7FB /* PlanReminders.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PlanReminders.swift; sourceTree = "<group>"; };
+		48F68E8F2BF07FA07CF088E6 /* PlanViews.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PlanViews.swift; sourceTree = "<group>"; };
+		C3E8B5E2970089FCB15D583C /* FriendshipViews.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FriendshipViews.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXGroup section */
@@ -481,6 +493,7 @@
 				7706CFCC8974CFECA09912F7 /* EventVisual.swift */,
 				C8EA116736D43E0C9432BBF5 /* FlowLayout.swift */,
 				C0EEFAB074A9D2D9EB6AA5B9 /* GlassCircle.swift */,
+				845B0ADCADA25389B3B78D83 /* ClickToast.swift */,
 				856572EA2FE8C0C700768A86 /* GroupAvatarView.swift */,
 				CEEFE47A4CBAB925D04FB0E9 /* GroupedSurface.swift */,
 				30988D99C421B40B486F5134 /* OfflineNotice.swift */,
@@ -993,6 +1006,8 @@
 			children = (
 				4D484160D6CF063EFF1BF5FD /* ContextTagTaxonomy.swift */,
 				E667F8D1F4DAC876F8758433 /* EncounterContextRepository.swift */,
+				D4FF71A91B48F5280E7A4155 /* FriendshipStats.swift */,
+				6682307B5B0792A4DB0A6C92 /* RelationshipRepository.swift */,
 				8BF0B2661A42F5C41AC15B6F /* EncounterSensorSampler.swift */,
 			);
 			path = Connections;
@@ -1035,6 +1050,7 @@
 				17FB03068E701F0CD7FE556B /* JournalEditor.swift */,
 				F23B8F9BB56FEA60442B3E78 /* PeerProfileModel.swift */,
 				ED9FF6290770C75EBD921B16 /* ProfileView.swift */,
+				C3E8B5E2970089FCB15D583C /* FriendshipViews.swift */,
 				70C155CC9544DAF18ECE1D1F /* PublicProfileView.swift */,
 			);
 			path = Profile;
@@ -1067,6 +1083,7 @@
 				B22B0A3012F4CC56A01188C7 /* ChatMediaViews.swift */,
 				CFDEEB947FE11EAC6206E3B0 /* ChatMessageSheets.swift */,
 				79A26B08508E31DA4A4A7330 /* ChatTargetPicker.swift */,
+				48F68E8F2BF07FA07CF088E6 /* PlanViews.swift */,
 				AE7FA351CE8C9F0C265B78B1 /* ChatTimelineView.swift */,
 				F96A5E440B359E2A2F052A29 /* ChatView.swift */,
 				68FA499EB03E1FC06A6AB7F6 /* ClickDropCameraView.swift */,
@@ -1089,6 +1106,7 @@
 				FC5DAB1F9B385380CDD073D3 /* Icebreakers.swift */,
 				74E0259A1FAA13222827DE61 /* MediaValidator.swift */,
 				75F3B6683C059DAF391328A6 /* PendingSendStore.swift */,
+				4C5C4597A6DDB129FE28C7FB /* PlanReminders.swift */,
 			);
 			path = Chat;
 			sourceTree = "<group>";
@@ -1322,6 +1340,7 @@
 				442AEA315FD898EB8BFED96F /* ChatRealtimeManager.swift in Sources */,
 				EC60870B8E0FFA7A95EA1733 /* ChatRepository.swift in Sources */,
 				2BC0FD0FBF17D5EBD39AC88C /* ChatTargetPicker.swift in Sources */,
+				23A4F1504FC9065DC74A7FF7 /* PlanViews.swift in Sources */,
 				FA2AFC7CD7C41E30F05CABF2 /* ChatTimelineView.swift in Sources */,
 				12CEB6414B495389B44F2C0A /* ChatView.swift in Sources */,
 				B741FE5C5E7099D25DF60D0F /* ClickAPIClient.swift in Sources */,
@@ -1352,6 +1371,8 @@
 				D3646E36CA545C20E2D35A93 /* DeviceIdentityVault.swift in Sources */,
 				9AC749853721AF6DE61C1348 /* EmojiKeyboardPicker.swift in Sources */,
 				B73D41F788E49DA35A63D6F4 /* EncounterContextRepository.swift in Sources */,
+				6176B2D884B802F937E5CE41 /* FriendshipStats.swift in Sources */,
+				00EA77F1CE21D8B0FC0196DC /* RelationshipRepository.swift in Sources */,
 				4083D10D51C7254F40D5AB0E /* EncounterSensorSampler.swift in Sources */,
 				A30461AB84F2BAE2A8A57572 /* EventEngagementRepository.swift in Sources */,
 				96AC60FC284F2F6A42ABC946 /* EventFormatting.swift in Sources */,
@@ -1361,6 +1382,7 @@
 				3F2AF754567BBC15E7B494BE /* FreshnessCache.swift in Sources */,
 				80915243C5479D8A91333C4A /* FrictionTelemetry.swift in Sources */,
 				619B213920BF476FE52ECC38 /* GlassCircle.swift in Sources */,
+				E5FE953C2F1B839C069B3DFB /* ClickToast.swift in Sources */,
 				9059C7BC731D34781013C8E7 /* GlobalSearchView.swift in Sources */,
 				4B24696C76DA27D9F45A29E6 /* GroupAvatarView.swift in Sources */,
 				C3963FF6783D0509A84F407F /* GroupProfileView.swift in Sources */,
@@ -1411,6 +1433,7 @@
 				D3FBC1FCACB9E37591FF9776 /* OnboardingState.swift in Sources */,
 				306512AA3D989236575986CD /* PeerProfileModel.swift in Sources */,
 				ABA2B9996384B740238496CC /* PendingSendStore.swift in Sources */,
+				E3FA32F400AB915E3A8137FC /* PlanReminders.swift in Sources */,
 				DCF918349766112AF4A11269 /* PermissionCoordinator.swift in Sources */,
 				4A3E8D24E65F4FC92A145E37 /* PersonalityTaggingView.swift in Sources */,
 				E9BE06D7CA1990F770288CD1 /* PersonalityTaxonomy.swift in Sources */,
@@ -1422,6 +1445,7 @@
 				960AE12D4E878C46BF271473 /* ProfileBasicsGateView.swift in Sources */,
 				AA9C50C670473C88ABF9872D /* ProfileRepository.swift in Sources */,
 				71FD881181695CDCB10FB84C /* ProfileView.swift in Sources */,
+				8A140AC3E556C1ADA216C74F /* FriendshipViews.swift in Sources */,
 				FE73E5CDA34C6AAF260E376A /* ProximityCodec.swift in Sources */,
 				BE3AB54FA800C115DED3B3CE /* ProximityRepository.swift in Sources */,
 				70CC21D749BB5C6216BD983F /* PublicProfileView.swift in Sources */,

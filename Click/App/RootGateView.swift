@@ -211,6 +211,7 @@ public struct MainTabShellView: View {
             case .active:
                 Task { await conversations.resumeFromBackground() }
                 env.resumeLiveConversations()
+                env.reportPresenceIfEnabled()
                 env.flushTelemetry()
             case .background:
                 conversations.stopRealtime()

@@ -22,6 +22,8 @@ public struct ChatView: View {
     @State private var sharingBeacon = false
     @State private var isSchedulingSend = false
     @State private var showsScheduled = false
+    @State private var isPlanning = false
+    @State private var revivalDismissed = false
     @State private var forwarding: ChatMessageItem?
     @State private var shareFile: ViewerURL?
     @State private var reactorsFor: ReactorsTarget?
@@ -84,7 +86,9 @@ public struct ChatView: View {
             }
             .quickLookPreview($quickLookURL)
             .sheet(item: $forwarding) { item in
-                ChatTargetPicker(title: "Forward", excludedChatIDs: Set([model.identity.chatID, model.identity.connectionID].compactMap { $0 })) { target in
+                ChatTargetPicker(title: "Forward", excludedChatIDs: Set([model.identity.chatID, model.identity.connectionID].compactMap { $0 }),
+                                 preview: ConversationModel.quoteText(item),
+                                 previewSymbol: item.media == nil ? "text.bubble" : "photo") { target in
                     try await model.forward(item, to: target)
                 }
             }
@@ -103,6 +107,13 @@ public struct ChatView: View {
                 }
             }
             .sheet(isPresented: $showsScheduled) { ScheduledMessagesSheet(model: model) }
+            .sheet(isPresented: $isPlanning) {
+                PlanHangoutSheet(withName: model.identity.isDirect ? (HomeFeedModel.firstName(model.identity.peerDisplayName) ?? model.identity.peerDisplayName)
+                                                                   : model.identity.peerDisplayName,
+                                 connectionID: model.identity.isDirect ? model.identity.connectionID : nil) { plan in
+                    Task { await model.sendPlan(plan) }
+                }
+            }
             .sheet(item: $reactorsFor) { target in
                 ReactorsSheet(
                     reactions: target.message.reactions,
@@ -145,6 +156,13 @@ public struct ChatView: View {
             }
             // Also on every re-appear (back from a profile pushed on top), not just the first.
             .onAppear(perform: markOnScreen)
+            .onAppear {
+                // "Plan" on their profile opens this chat with the planner up.
+                if let pending = env.pendingPlanConnectionID, pending == model.identity.connectionID {
+                    env.pendingPlanConnectionID = nil
+                    isPlanning = true
+                }
+            }
             .onChange(of: model.identity.chatID) { markOnScreen() }
             // Only a new *latest* message matters here: the timeline keeps itself pinned while
             // the reader is at the bottom; our own sends always bring it into view.
@@ -211,6 +229,12 @@ public struct ChatView: View {
                     .transition(.move(edge: .top).combined(with: .opacity))
             } else if let error = model.operationError, !model.items.isEmpty {
                 operationBanner(error)
+                    .padding(.horizontal, 12)
+                    .padding(.top, 8)
+                    .transition(.move(edge: .top).combined(with: .opacity))
+            } else if let quietDays = revivalQuietDays {
+                GroupRevivalBanner(quietDays: quietDays, onPlan: { isPlanning = true },
+                                   onDismiss: { withAnimation(ClickMotion.content) { revivalDismissed = true } })
                     .padding(.horizontal, 12)
                     .padding(.top, 8)
                     .transition(.move(edge: .top).combined(with: .opacity))
@@ -385,7 +409,8 @@ public struct ChatView: View {
                 actionTarget = ActionTarget(message: message, frame: frame)
             },
             // The lifted copy stands in for the bubble while actions are open.
-            isBubbleHidden: actionTarget?.message.stableID == item.stableID
+            isBubbleHidden: actionTarget?.message.stableID == item.stableID,
+            onRSVP: model.supportsPlans ? { target, going in Task { await model.rsvp(to: target, going: going) } } : nil
         )
         .background {
             if highlightedID == item.stableID {
@@ -554,7 +579,8 @@ public struct ChatView: View {
             onUnstage: { id in model.unstage(id) },
             photosOnly: model.identity.hubID != nil,
             replyMediaLoader: { message in try await model.mediaURL(for: message) },
-            onScheduleSend: model.supportsScheduling && model.editTarget == nil ? { isSchedulingSend = true } : nil
+            onScheduleSend: model.supportsScheduling && model.editTarget == nil ? { isSchedulingSend = true } : nil,
+            onPlanHangout: model.supportsPlans ? { isPlanning = true } : nil
         )
         // Dialogs hang off the composer so the main body stays type-checkable.
         .modifier(OptionalConversationActionDialogs(model: conversations, pending: $pendingAction) {
@@ -569,10 +595,21 @@ public struct ChatView: View {
 
     /// The same action list as the inbox row (one implementation, spec §29.7).
     @ViewBuilder
+    /// Days a formerly active group has been quiet (≥ 3 weeks), or nil (no banner).
+    private var revivalQuietDays: Int? {
+        guard !revivalDismissed, case .group = model.identity.kind, model.items.count >= 10,
+              let last = model.items.last(where: { !$0.isDeleted })?.createdAt else { return nil }
+        let days = Int(Date.now.timeIntervalSince(last) / 86_400)
+        return days >= 21 ? days : nil
+    }
+
     private var conversationMenu: some View {
         Menu {
             Button("Search", systemImage: "magnifyingglass") {
                 withAnimation(ClickMotion.selection) { isSearching = true }
+            }
+            if model.supportsPlans {
+                Button("Plan a Hangout", systemImage: "calendar.badge.plus") { isPlanning = true }
             }
             switch model.identity.kind {
             case .direct:

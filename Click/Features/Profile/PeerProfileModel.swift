@@ -1,3 +1,4 @@
+import CoreLocation
 import Foundation
 import Observation
 
@@ -38,6 +39,10 @@ final class PeerProfileModel {
     private(set) var mediaItems: [ChatMessageItem] = []
     private(set) var fileItems: [ChatMessageItem] = []
     private var mediaURLs: [String: URL] = [:]
+    /// Hangouts with this person waiting for a confirmation (either side).
+    private(set) var pendingHangouts: [PendingHangout] = []
+    /// Feedback for relationship actions (toast).
+    var relationshipNotice: String?
 
     private var environment: AppEnvironment?
     private var lastLoaded: Date?
@@ -98,7 +103,78 @@ final class PeerProfileModel {
         async let history: Void = loadEncounters()
         async let notes: Void = loadJournal()
         async let shared: Void = loadTabs()
-        _ = await (identity, history, notes, shared)
+        async let hangouts: Void = loadPendingHangouts()
+        _ = await (identity, history, notes, shared, hangouts)
+    }
+
+    // MARK: - Relationship actions
+
+    func loadPendingHangouts() async {
+        guard let environment, let connectionID,
+              let all = try? await environment.relationships.pendingHangouts() else { return }
+        pendingHangouts = all.filter { $0.connectionID == connectionID }
+    }
+
+    /// First name for copy ("Maya"), falling back to the display name.
+    private var peerFirstName: String {
+        let name = profile.value?.displayName ?? "them"
+        return HomeFeedModel.firstName(name) ?? name
+    }
+
+    func confirm(_ hangout: PendingHangout) async {
+        guard let environment else { return }
+        do {
+            switch try await environment.relationships.confirmHangout(id: hangout.id) {
+            case .logged(let alreadyLogged):
+                relationshipNotice = alreadyLogged ? "Already on your timeline" : "Added to your timeline"
+                await loadEncounters()
+            case .waiting:
+                relationshipNotice = "Confirmed. It's added once \(peerFirstName) confirms too."
+            }
+            ClickHaptics.success()
+        } catch {
+            relationshipNotice = error.userFacingMessage
+        }
+        await loadPendingHangouts()
+    }
+
+    func decline(_ hangout: PendingHangout) async {
+        guard let environment else { return }
+        do {
+            try await environment.relationships.declineHangout(id: hangout.id)
+        } catch {
+            relationshipNotice = error.userFacingMessage
+        }
+        await loadPendingHangouts()
+    }
+
+    /// Logs a hangout for them to confirm; false when it couldn't be sent.
+    func logHangout(at date: Date, coordinate: CLLocationCoordinate2D?, placeName: String?) async -> Bool {
+        guard let environment, let connectionID else { return false }
+        do {
+            _ = try await environment.relationships.logHangout(connectionID: connectionID, occurredAt: date,
+                                                               coordinate: coordinate, locationName: placeName)
+            ClickHaptics.success()
+            relationshipNotice = "Sent to \(peerFirstName) to confirm"
+            await loadPendingHangouts()
+            return true
+        } catch APIError.conflict {
+            relationshipNotice = "A hangout is already waiting for \(peerFirstName) to confirm."
+        } catch {
+            relationshipNotice = error.userFacingMessage
+        }
+        return false
+    }
+
+    func wave() async {
+        guard let environment, let connectionID else { return }
+        do {
+            let sent = try await environment.relationships.wave(connectionID: connectionID)
+            ClickHaptics.success()
+            relationshipNotice = sent ? "You waved at \(peerFirstName) 👋" : "You already waved at \(peerFirstName) today"
+        } catch {
+            relationshipNotice = error.userFacingMessage
+        }
     }
 
     func loadProfile() async {

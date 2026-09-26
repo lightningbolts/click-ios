@@ -644,6 +644,7 @@ struct ComposerAttachmentButton: View {
     let onError: (String) -> Void
     var onVoice: (() -> Void)?
     var onShareBeacon: (() -> Void)?
+    var onPlanHangout: (() -> Void)?
     var allowsFiles = true
 
     private enum Camera: Identifiable {
@@ -672,6 +673,9 @@ struct ComposerAttachmentButton: View {
             }
             if let onVoice {
                 Button("Voice Message", systemImage: "mic") { onVoice() }
+            }
+            if let onPlanHangout {
+                Button("Plan a Hangout", systemImage: "calendar.badge.plus") { onPlanHangout() }
             }
             if let onShareBeacon {
                 Button("Share Event or Beacon", systemImage: "mappin.and.ellipse") { onShareBeacon() }

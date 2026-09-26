@@ -16,6 +16,20 @@ extension ChatRepositoryProtocol {
     public func scheduledMessages(conversation: ConversationIdentity, currentUserID: String) async throws -> [ScheduledMessage] { [] }
     public func cancelScheduledMessage(id: String) async throws {}
     public func readCursors(chatID: String) async throws -> [String: Date] { [:] }
+    public func sendForwardedText(conversation: ConversationIdentity, currentUserID: String, currentUserName: String,
+                                  content: String, clientMessageID: String) async throws -> ChatMessageItem {
+        try await sendMessage(conversation: conversation, currentUserID: currentUserID, currentUserName: currentUserName,
+                              content: content, replyToID: nil, replyToSnippet: nil, replyToSenderName: nil,
+                              clientMessageID: clientMessageID)
+    }
+    public func sendPlan(conversation: ConversationIdentity, currentUserID: String, currentUserName: String,
+                         plan: HangoutPlan, clientMessageID: String) async throws -> ChatMessageItem {
+        var sent = try await sendMessage(conversation: conversation, currentUserID: currentUserID, currentUserName: currentUserName,
+                                         content: plan.summary, replyToID: nil, replyToSnippet: nil, replyToSenderName: nil,
+                                         clientMessageID: clientMessageID)
+        sent.plan = plan
+        return sent
+    }
 
     public func fetchMessages(conversation: ConversationIdentity, currentUserID: String, since: Int64, limit: Int) async throws -> [ChatMessageItem] {
         try await fetchMessages(conversation: conversation, currentUserID: currentUserID, cursor: nil, limit: limit)
@@ -77,6 +91,12 @@ public protocol ChatRepositoryProtocol: Sendable {
     func scheduleMessage(conversation: ConversationIdentity, currentUserID: String, content: String, replyToID: String?, sendAt: Date) async throws -> ScheduledMessage
     func scheduledMessages(conversation: ConversationIdentity, currentUserID: String) async throws -> [ScheduledMessage]
     func cancelScheduledMessage(id: String) async throws
+    /// A proposed hangout (text summary + `metadata.plan`), direct and group chats.
+    func sendPlan(conversation: ConversationIdentity, currentUserID: String, currentUserName: String,
+                  plan: HangoutPlan, clientMessageID: String) async throws -> ChatMessageItem
+    /// A text message re-sent from another chat, marked "Forwarded" for every reader.
+    func sendForwardedText(conversation: ConversationIdentity, currentUserID: String, currentUserName: String,
+                           content: String, clientMessageID: String) async throws -> ChatMessageItem
     func markDelivered(chatID: String, messageIDs: [String]) async throws
     func registerDevice() async throws
 
@@ -737,6 +757,40 @@ public actor ChatRepository: ChatRepositoryProtocol {
         replyToSenderName: String?,
         clientMessageID: String
     ) async throws -> ChatMessageItem {
+        try await sendText(conversation: conversation, currentUserID: currentUserID, currentUserName: currentUserName,
+                           content: content, replyToID: replyToID, replyToSnippet: replyToSnippet,
+                           replyToSenderName: replyToSenderName, clientMessageID: clientMessageID, extraMetadata: [:])
+    }
+
+    public func sendForwardedText(conversation: ConversationIdentity, currentUserID: String, currentUserName: String,
+                                  content: String, clientMessageID: String) async throws -> ChatMessageItem {
+        var sent = try await sendText(conversation: conversation, currentUserID: currentUserID, currentUserName: currentUserName,
+                                      content: content, replyToID: nil, replyToSnippet: nil, replyToSenderName: nil,
+                                      clientMessageID: clientMessageID, extraMetadata: ["forwarded": true])
+        sent.forwarded = true
+        return sent
+    }
+
+    public func sendPlan(conversation: ConversationIdentity, currentUserID: String, currentUserName: String,
+                         plan: HangoutPlan, clientMessageID: String) async throws -> ChatMessageItem {
+        var sent = try await sendText(conversation: conversation, currentUserID: currentUserID, currentUserName: currentUserName,
+                                      content: plan.summary, replyToID: nil, replyToSnippet: nil, replyToSenderName: nil,
+                                      clientMessageID: clientMessageID, extraMetadata: ["plan": plan.wire])
+        sent.plan = plan
+        return sent
+    }
+
+    private func sendText(
+        conversation: ConversationIdentity,
+        currentUserID: String,
+        currentUserName: String,
+        content: String,
+        replyToID: String?,
+        replyToSnippet: String?,
+        replyToSenderName: String?,
+        clientMessageID: String,
+        extraMetadata: [String: Any]
+    ) async throws -> ChatMessageItem {
         if let hubID = conversation.hubID {
             return try await sendHubMessage(
                 hubID: hubID,
@@ -752,7 +806,7 @@ public actor ChatRepository: ChatRepositoryProtocol {
 
         let (canonicalChatID, wireContent, post) = try await textPost(
             conversation: conversation, currentUserID: currentUserID, content: content,
-            replyToID: replyToID, clientMessageID: clientMessageID
+            replyToID: replyToID, clientMessageID: clientMessageID, extraMetadata: extraMetadata
         )
         let request = APIRequest(
             path: "/api/chat/messages",
@@ -798,7 +852,8 @@ public actor ChatRepository: ChatRepositoryProtocol {
         currentUserID: String,
         content: String,
         replyToID: String?,
-        clientMessageID: String
+        clientMessageID: String,
+        extraMetadata: [String: Any] = [:]
     ) async throws -> (chatID: String, wireContent: String, body: [String: Any]) {
         let canonicalChatID = try await canonicalChatID(conversation)
         let encrypted = try await encryptText(
@@ -814,6 +869,7 @@ public actor ChatRepository: ChatRepositoryProtocol {
         // Only the reply target's ID is sent. A plaintext excerpt in metadata would expose
         // encrypted text to the server; the quote is resolved on-device from the timeline.
         if let replyToID { metadata["reply_to_id"] = replyToID }
+        metadata.merge(extraMetadata) { _, new in new }
 
         var post: [String: Any] = [
             "chat_id": canonicalChatID,
@@ -1171,7 +1227,9 @@ public actor ChatRepository: ChatRepositoryProtocol {
             isEdited: bool(payload.metadata?["is_edited"]) ?? payload.isEdited,
             media: MessageMedia.parse(messageType: payload.messageType, metadata: payload.metadata, decryptedContent: decrypted, chatID: canonicalChatID),
             beacon: SharedBeacon.parse(messageType: payload.messageType, metadata: payload.metadata, content: decrypted),
-            clientMessageID: string(payload.metadata?["client_message_id"])
+            clientMessageID: string(payload.metadata?["client_message_id"]),
+            forwarded: payload.metadata?["forwarded"] as? Bool,
+            plan: HangoutPlan.parse(metadata: payload.metadata)
         )
     }
 
@@ -1361,7 +1419,7 @@ public actor ChatRepository: ChatRepositoryProtocol {
         case .image, .audio:
             metadata["original_mime_type"] = draft.mimeType
             metadata["is_encrypted_media"] = true
-            metadata.merge(Self.clickDropMetadata(draft)) { _, new in new }
+            metadata.merge(Self.draftMetadata(draft)) { _, new in new }
             if let duration = draft.durationSeconds { metadata["duration_seconds"] = duration }
             if draft.kind == .audio, let waveform = draft.waveform { metadata["waveform"] = VoiceWaveform.wire(waveform) }
         case .file:
@@ -1763,7 +1821,7 @@ public actor ChatRepository: ChatRepositoryProtocol {
             "media_authorization_envelope": encrypted.authorizationEnvelope
         ]
         metadata.merge(body.metadata) { current, _ in current }
-        metadata.merge(Self.clickDropMetadata(draft)) { _, new in new }
+        metadata.merge(Self.draftMetadata(draft)) { _, new in new }
         if let replyToID { metadata["reply_to_id"] = replyToID }
 
         var post = location
@@ -1853,6 +1911,13 @@ public actor ChatRepository: ChatRepositoryProtocol {
             plain = try ClickCryptoV1.decryptMediaBytes(raw, keys: ClickCryptoV1.deriveKeysForHub(hubID: hubID))
         }
         return try await ChatMediaVault.shared.store(plain, messageID: messageID, fileExtension: media.fileExtension)
+    }
+
+    /// Per-draft metadata: Click Drop fields and the forwarded mark.
+    static func draftMetadata(_ draft: MediaDraft) -> [String: Any] {
+        var metadata = clickDropMetadata(draft)
+        if draft.isForwarded { metadata["forwarded"] = true }
+        return metadata
     }
 
     /// KMP Click Drop fields: reveal is always 24 hours after send, plus the encounter if any.
@@ -2056,7 +2121,9 @@ public actor ChatRepository: ChatRepositoryProtocol {
             isEdited: isEdited,
             media: MessageMedia.parse(messageType: raw.messageType ?? "text", metadata: metadata, decryptedContent: content, chatID: canonicalChatID),
             beacon: SharedBeacon.parse(messageType: raw.messageType ?? "text", metadata: metadata, content: content),
-            clientMessageID: raw.metadata?.clientMessageID
+            clientMessageID: raw.metadata?.clientMessageID,
+            forwarded: metadata?["forwarded"] as? Bool,
+            plan: HangoutPlan.parse(metadata: metadata)
         )
     }
 

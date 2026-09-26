@@ -23,6 +23,7 @@ public final class AppEnvironment {
     public let groups: GroupRepository
     public let hubs: HubRepository
     public let encounterContext: EncounterContextRepository
+    public let relationships: RelationshipRepository
     public let telemetryQueue = TelemetryQueue()
     public let connectionTelemetry: ConnectionFlowTelemetry
     public let friction: FrictionTelemetry
@@ -174,6 +175,7 @@ public final class AppEnvironment {
             supabaseURL: AppConfig.shared.supabaseURL,
             supabaseAnonKey: AppConfig.shared.supabaseAnonKey
         )
+        self.relationships = RelationshipRepository(api: resolvedAPI)
         self.connectionTelemetry = ConnectionFlowTelemetry(queue: telemetryQueue)
         self.friction = FrictionTelemetry(queue: telemetryQueue)
         self.profiles = ProfileRepository(api: resolvedAPI)
@@ -326,6 +328,25 @@ public final class AppEnvironment {
     }
 
     /// Sends queued telemetry (called on foreground and background; never blocks the UI).
+    /// A chat to open with the hangout planner showing (set by "Plan" on a profile; the chat
+    /// consumes it when it appears). Keyed by connection ID.
+    var pendingPlanConnectionID: String?
+
+    @ObservationIgnored private var lastPresencePing: Date?
+
+    /// Hangout detection (opt-in): on returning to the app, share a fresh position so Clicks
+    /// who are with you right now (and opted in) both get "Hanging out?". At most every 10
+    /// minutes, and never without a recent, reasonably precise fix.
+    func reportPresenceIfEnabled() {
+        guard settings.hangoutDetectionOptIn, location.isAuthorized, session.currentSession != nil else { return }
+        if let last = lastPresencePing, Date().timeIntervalSince(last) < 600 { return }
+        lastPresencePing = Date()
+        Task {
+            guard let fix = await location.currentLocation(maximumAge: 120, acceptableAccuracy: 100, timeout: .seconds(6)) else { return }
+            try? await relationships.reportPresence(fix.coordinate)
+        }
+    }
+
     public func flushTelemetry() {
         Task.detached(priority: .utility) { [telemetryQueue] in await telemetryQueue.flush() }
     }

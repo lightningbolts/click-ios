@@ -284,9 +284,15 @@ final class ClickNotificationCoordinator {
             return value(["beacon_id", "event_id"]).map { .route(.event(beaconID: $0)) } ?? .none
         case "hub_message":
             return value(["hub_id", "venue_id"]).map { .route(.hub(hubID: $0)) } ?? .none
-        case "archive_warning", "reconnect_nudge":
-            guard let userID = value(["user_id", "peer_user_id", "sender_user_id"]) else { return .connections }
+        case "archive_warning", "reconnect_nudge", "anniversary", "memory_prompt", "hangout_confirm":
+            // The profile carries the moment: friendship, story, and a hangout to confirm.
+            guard let userID = value(["peer_user_id", "user_id", "sender_user_id"]) else { return .connections }
             return .route(.userProfile(userID: userID, connectionID: value(["connection_id", "connectionId"])))
+        case "wave":
+            return .chat(chatID: nil, connectionID: value(["connection_id", "connectionId"]),
+                         senderUserID: value(["peer_user_id", "sender_user_id"]), senderName: nil)
+        case "group_revival":
+            return value(["chat_id", "chatId"]).map { .route(.conversation(chatID: $0, messageID: nil)) } ?? .connections
         case "availability_match":
             return .connections
         default:

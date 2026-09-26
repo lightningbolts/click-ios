@@ -1,4 +1,3 @@
-import MapKit
 import SwiftUI
 
 /// The one canonical person profile (spec §47), reached from Clicks, chat headers, map pins,
@@ -21,6 +20,8 @@ public struct ProfileView: View {
     @State private var showsCompactTitle = false
     @State private var viewerURL: ProfileViewerURL?
     @State private var takingDrop = false
+    @State private var isLoggingHangout = false
+    @State private var showsStory = false
     @State private var quickLookURL: URL?
 
     public init(userID: String, connectionID: String? = nil) {
@@ -45,8 +46,20 @@ public struct ProfileView: View {
                         .frame(maxWidth: .infinity)
                 }
                 commonGround
-                EncounterMapCard(encounters: model.encounters.value ?? [],
-                                 avatarURL: model.profile.value?.avatarURL ?? inboxItem?.avatarUrl, seed: model.userID)
+                if !isSelf, model.connectionID != nil {
+                    FriendshipSection(
+                        peerName: peerFirstName,
+                        avatarURL: model.profile.value?.avatarURL ?? inboxItem?.avatarUrl,
+                        seed: model.userID,
+                        encounters: model.encounters.value ?? [],
+                        pendingHangouts: model.pendingHangouts,
+                        onConfirm: { hangout in Task { await model.confirm(hangout) } },
+                        onDecline: { hangout in Task { await model.decline(hangout) } },
+                        onLog: { isLoggingHangout = true },
+                        onPlan: planHangout,
+                        onStory: { showsStory = true }
+                    )
+                }
                 Section {
                     tabContent
                 } header: {
@@ -59,6 +72,17 @@ public struct ProfileView: View {
             .animation(ClickMotion.content, value: loadSignature)
         }
         .background(ClickColors.background.ignoresSafeArea())
+        .clickToast($model.relationshipNotice)
+        .sheet(isPresented: $isLoggingHangout) {
+            LogHangoutSheet(peerName: peerFirstName) { date, coordinate, place in
+                await model.logHangout(at: date, coordinate: coordinate, placeName: place)
+            }
+        }
+        .sheet(isPresented: $showsStory) {
+            FriendshipStorySheet(peerName: peerFirstName, peerSeed: model.userID,
+                                 peerInitials: String(peerFirstName.prefix(1)),
+                                 encounters: model.encounters.value ?? [], onPlan: planHangout)
+        }
         .onScrollGeometryChange(for: Bool.self) { geometry in
             geometry.contentOffset.y + geometry.contentInsets.top > 170
         } action: { _, scrolledPastName in
@@ -187,8 +211,16 @@ public struct ProfileView: View {
                 actionTile("Message", systemImage: "message") { openChat() }
                     .disabled(model.connectionID == nil)
                 if model.connectionID != nil {
-                    actionTile("Nudge", systemImage: "hand.wave", busy: isWorking) { Task { await sendNudge() } }
-                        .disabled(isWorking)
+                    // A wave is a light "thinking of you": a notification and a Home card, not a
+                    // chat message.
+                    actionTile("Wave", systemImage: "hand.wave", busy: isWorking) {
+                        Task {
+                            isWorking = true
+                            await model.wave()
+                            isWorking = false
+                        }
+                    }
+                    .disabled(isWorking)
                     if let item = inboxItem {
                         actionTile("Core", systemImage: item.isCore ? "star.fill" : "star", tint: item.isCore ? ClickColors.accentForeground : nil) {
                             Task { await conversations.setCore(item, isCore: !item.isCore) }
@@ -560,6 +592,18 @@ public struct ProfileView: View {
         }
     }
 
+    private var peerFirstName: String {
+        let name = model.profile.value?.displayName ?? inboxItem?.displayName ?? "them"
+        return HomeFeedModel.firstName(name) ?? name
+    }
+
+    /// Opens your chat with the planner up (the chat sends the plan and RSVPs you).
+    private func planHangout() {
+        guard let connectionID = model.connectionID else { return }
+        env.pendingPlanConnectionID = connectionID
+        openChat()
+    }
+
     private func openChat() {
         guard let connectionID = model.connectionID else { return }
         let profile = model.profile.value
@@ -570,32 +614,6 @@ public struct ProfileView: View {
             peerDisplayName: profile?.displayName ?? inboxItem?.displayName ?? "Click user",
             peerAvatarURL: profile?.avatarURL ?? inboxItem?.avatarUrl
         )))
-    }
-
-    /// Nudge is an ordinary encrypted chat message, like the shipping client (spec §29.7).
-    private func sendNudge() async {
-        guard let connectionID = model.connectionID, let currentUserID = env.session.currentSession?.userId else { return }
-        isWorking = true
-        defer { isWorking = false }
-        let senderName = await env.me.cachedSelfProfile(userID: currentUserID)?.firstName.nonEmptyTrimmed ?? "Someone"
-        do {
-            let chatID = try await env.chat.resolveCanonicalChatID(chatID: connectionID, connectionID: connectionID)
-            let conversation = ConversationIdentity(
-                chatID: chatID, connectionID: connectionID, peerUserID: model.userID,
-                peerDisplayName: model.profile.value?.displayName ?? "Click user"
-            )
-            _ = try await env.chat.sendMessage(
-                conversation: conversation,
-                currentUserID: currentUserID, currentUserName: senderName,
-                content: "👋 \(senderName) nudged you!", replyToID: nil, replyToSnippet: nil,
-                replyToSenderName: nil, clientMessageID: UUID().uuidString.lowercased()
-            )
-            notice = "Nudge sent."
-            ClickHaptics.success()
-        } catch {
-            notice = "Couldn't send the nudge. \(error.userFacingMessage)"
-            ClickHaptics.error()
-        }
     }
 
     private var safetyTitle: String {
@@ -1046,101 +1064,5 @@ extension String {
     var nonEmptyTrimmed: String? {
         let value = trimmingCharacters(in: .whitespacesAndNewlines)
         return value.isEmpty ? nil : value
-    }
-}
-
-
-/// Every located encounter with this person on a map, numbered in the order they happened
-/// (1 = where you first clicked). The card is a still preview; tapping opens it full screen.
-struct EncounterMapCard: View {
-    let encounters: [Encounter]
-    let avatarURL: String?
-    let seed: String
-    @State private var isExpanded = false
-
-    /// Located encounters, oldest first, with their chronological number.
-    private var pins: [EncounterPin] {
-        encounters
-            .sorted { $0.date < $1.date }
-            .enumerated()
-            .compactMap { index, encounter in
-                guard let lat = encounter.latitude, let lon = encounter.longitude,
-                      (lat, lon) != (0, 0), abs(lat) <= 90, abs(lon) <= 180 else { return nil }
-                return EncounterPin(number: index + 1, encounter: encounter,
-                                    coordinate: CLLocationCoordinate2D(latitude: lat, longitude: lon))
-            }
-    }
-
-    var body: some View {
-        let pins = pins
-        if !pins.isEmpty {
-            VStack(alignment: .leading, spacing: 10) {
-                Text(pins.count == 1 ? "Where you met" : "Where you've met")
-                    .font(ClickTypography.bodyEmphasized)
-                EncounterMap(pins: pins, avatarURL: avatarURL, seed: seed, interactive: false)
-                    .frame(height: 190)
-                    .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
-                    // The preview map takes no touches; this layer opens the full one.
-                    .overlay { Color.clear.contentShape(Rectangle()).onTapGesture { isExpanded = true } }
-                    .accessibilityAddTraits(.isButton)
-                    .accessibilityAction { isExpanded = true }
-                    .accessibilityLabel("Map of \(pins.count) encounters. Opens a larger map.")
-            }
-            .padding(18)
-            .frame(maxWidth: .infinity, alignment: .leading)
-            .groupedSurface()
-            .sheet(isPresented: $isExpanded) {
-                NavigationStack {
-                    EncounterMap(pins: pins, avatarURL: avatarURL, seed: seed, interactive: true)
-                        .ignoresSafeArea(edges: .bottom)
-                        .navigationTitle("Encounters")
-                        .navigationBarTitleDisplayMode(.inline)
-                        .toolbar {
-                            ToolbarItem(placement: .confirmationAction) { Button("Done") { isExpanded = false } }
-                        }
-                }
-            }
-        }
-    }
-}
-
-private struct EncounterPin: Identifiable {
-    let number: Int
-    let encounter: Encounter
-    let coordinate: CLLocationCoordinate2D
-    var id: String { encounter.id }
-}
-
-/// The map itself: the person's avatar at each spot with its number badge.
-private struct EncounterMap: View {
-    let pins: [EncounterPin]
-    let avatarURL: String?
-    let seed: String
-    let interactive: Bool
-
-    var body: some View {
-        Map(initialPosition: .automatic, interactionModes: interactive ? .all : []) {
-            ForEach(pins) { pin in
-                Annotation(interactive ? (pin.encounter.placeName ?? "") : "", coordinate: pin.coordinate, anchor: .bottom) {
-                    ZStack(alignment: .topTrailing) {
-                        AvatarView(imageURL: avatarURL, seed: seed, initials: "", size: 34)
-                            .overlay(Circle().stroke(.white, lineWidth: 2))
-                            .shadow(color: .black.opacity(0.25), radius: 3, y: 1)
-                        Text("\(pin.number)")
-                            .font(.system(size: 11, weight: .bold).monospacedDigit())
-                            .foregroundStyle(.white)
-                            .frame(minWidth: 18, minHeight: 18)
-                            .background(ClickColors.accentForeground, in: Capsule())
-                            .overlay(Capsule().stroke(.white, lineWidth: 1.5))
-                            .offset(x: 6, y: -6)
-                    }
-                    .accessibilityElement(children: .ignore)
-                    .accessibilityLabel("Encounter \(pin.number)\(pin.encounter.placeName.map { ", \($0)" } ?? ""), \(EncounterLabels.whenLine(pin.encounter.date))")
-                }
-                .annotationTitles(interactive ? .automatic : .hidden)
-            }
-        }
-        .mapStyle(.standard(pointsOfInterest: .excludingAll))
-        .allowsHitTesting(interactive)
     }
 }

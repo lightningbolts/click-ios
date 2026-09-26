@@ -22,6 +22,8 @@ public struct MessageBubbleView: View {
     var onDiscardFailed: ((ChatMessageItem) -> Void)?
     /// Forward, save/share and "who reacted"; nil hides the matching menu item.
     var onForward: ((ChatMessageItem) -> Void)?
+    /// Going (true) / can't make it (false) on a plan card.
+    var onRSVP: ((ChatMessageItem, Bool) -> Void)?
     var onSaveMedia: ((ChatMessageItem) -> Void)?
     var onShowReactions: ((ChatMessageItem, String) -> Void)?
     /// Renders only the bubble itself (no row spacing, name, reactions or gestures): the copy
@@ -58,8 +60,10 @@ public struct MessageBubbleView: View {
         onTapReplyQuote: ((String) -> Void)? = nil,
         isLiftedCopy: Bool = false,
         onLongPress: ((ChatMessageItem, CGRect) -> Void)? = nil,
-        isBubbleHidden: Bool = false
+        isBubbleHidden: Bool = false,
+        onRSVP: ((ChatMessageItem, Bool) -> Void)? = nil
     ) {
+        self.onRSVP = onRSVP
         self.isBubbleHidden = isBubbleHidden
         self.onLongPress = onLongPress
         self.isLiftedCopy = isLiftedCopy
@@ -156,7 +160,7 @@ public struct MessageBubbleView: View {
 
                 // Below the bubble, never over its time or text. The row grows with it, and
                 // the timeline animates that resize (no jump).
-                if !message.reactions.isEmpty {
+                if !stripReactions.isEmpty {
                     reactionsStrip
                         .offset(x: dragOffset)
                         .transition(.scale(scale: 0.6, anchor: message.isOutgoing ? .topTrailing : .topLeading).combined(with: .opacity))
@@ -174,11 +178,17 @@ public struct MessageBubbleView: View {
 
     @ViewBuilder
     private var content: some View {
-        if let beacon = message.beacon {
+        if let plan = message.plan {
+            PlanCardView(plan: plan, message: message,
+                         onRSVP: onRSVP.map { rsvp in { going in if BubbleTapGate.allowsTap { rsvp(message, going) } } })
+        } else if let beacon = message.beacon {
             BeaconMessageCard(beacon: beacon, time: message.formattedTime, isOutgoing: message.isOutgoing,
                               onOpen: BubbleTapGate.gated { onOpenBeacon?(beacon) })
         } else if let media = message.media {
             VStack(alignment: message.isOutgoing ? .trailing : .leading, spacing: 4) {
+                if message.isForwarded {
+                    forwardedLabel(onBubble: false).padding(.horizontal, 4)
+                }
                 if let snippet = message.replyToSnippet, !snippet.isEmpty {
                     replyQuote(snippet: snippet)
                         .padding(.horizontal, 10)
@@ -212,6 +222,7 @@ public struct MessageBubbleView: View {
 
     private var bubbleContainer: some View {
         VStack(alignment: .leading, spacing: 5) {
+            if message.isForwarded { forwardedLabel(onBubble: true) }
             if let snippet = message.replyToSnippet, !snippet.isEmpty {
                 replyQuote(snippet: snippet)
             }
@@ -224,6 +235,8 @@ public struct MessageBubbleView: View {
                 .foregroundStyle(foreground)
                 .fixedSize(horizontal: false, vertical: true)
                 .textSelection(.disabled)
+                // Links take the bubble's text color on our own (colored) bubbles.
+                .tint(message.isOutgoing ? foreground : ClickColors.accentForeground)
                 .overlay(alignment: .bottomTrailing) {
                     metaRow.offset(y: 3)
                 }
@@ -244,13 +257,47 @@ public struct MessageBubbleView: View {
         .contentShape(RoundedRectangle(cornerRadius: ClickRadius.messageBubble, style: .continuous))
     }
 
-    /// The message text; a call log leads with its direction/outcome icon.
+    /// "↪ Forwarded" above a message re-sent from another chat.
+    /// `onBubble`: drawn inside the colored text bubble (media sits on the chat background).
+    private func forwardedLabel(onBubble: Bool) -> some View {
+        Label("Forwarded", systemImage: "arrowshape.turn.up.right.fill")
+            .font(ClickTypography.caption.italic())
+            .foregroundStyle(onBubble && message.isOutgoing ? foreground.opacity(0.75) : ClickColors.textSecondary)
+            .labelStyle(.titleAndIcon)
+            .accessibilityLabel("Forwarded message")
+    }
+
+    /// The message text with web links tappable; a call log leads with its direction/outcome icon.
     private var bodyText: Text {
-        guard message.messageType == .callLog else { return Text(message.content) }
+        guard message.messageType == .callLog else { return Text(Self.linkified(message.content)) }
         let unanswered = CallLogFormatting.isUnanswered(message.content)
         let symbol = unanswered ? "phone.down.fill" : (message.isOutgoing ? "phone.arrow.up.right.fill" : "phone.arrow.down.left.fill")
         return Text(Image(systemName: symbol)).foregroundColor(unanswered ? ClickColors.destructive : foreground)
             + Text(verbatim: " " + message.content)
+    }
+
+    private static let linkDetector = try? NSDataDetector(types: NSTextCheckingResult.CheckingType.link.rawValue)
+
+    /// Web and email links as tappable, underlined runs ("example.com" opens as https).
+    static func linkified(_ text: String) -> AttributedString {
+        var result = AttributedString(text)
+        guard let detector = linkDetector, text.count < 20_000 else { return result }
+        for match in detector.matches(in: text, range: NSRange(text.startIndex..., in: text)) {
+            guard var url = match.url, let scheme = url.scheme?.lowercased(),
+                  ["http", "https", "mailto"].contains(scheme),
+                  let range = Range(match.range, in: text),
+                  let lower = AttributedString.Index(range.lowerBound, within: result),
+                  let upper = AttributedString.Index(range.upperBound, within: result) else { continue }
+            // The detector adds "http://" to bare domains; prefer the secure scheme.
+            if scheme == "http", !text[range].lowercased().hasPrefix("http"),
+               var parts = URLComponents(url: url, resolvingAgainstBaseURL: false) {
+                parts.scheme = "https"
+                url = parts.url ?? url
+            }
+            result[lower..<upper].link = url
+            result[lower..<upper].underlineStyle = .single
+        }
+        return result
     }
 
     private var foreground: Color {
@@ -312,9 +359,15 @@ public struct MessageBubbleView: View {
         .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
     }
 
+    /// Reactions under the bubble; a plan's Going / Can't answers live on its card instead.
+    private var stripReactions: [ReactionSummary] {
+        guard message.plan != nil else { return message.reactions }
+        return message.reactions.filter { $0.reactionType != HangoutPlan.goingReaction && $0.reactionType != HangoutPlan.declinedReaction }
+    }
+
     private var reactionsStrip: some View {
         HStack(spacing: 4) {
-            ForEach(message.reactions) { reaction in
+            ForEach(stripReactions) { reaction in
                 Button {
                     ClickHaptics.impact(.light)
                     onShowReactions?(message, reaction.reactionType)

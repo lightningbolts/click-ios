@@ -17,6 +17,7 @@ struct PostConnectView: View {
     @State private var showingClickDrop = false
     @State private var dropNotice: String?
     @State private var dropError: String?
+    @State private var sharingSouvenir: ShareableImage?
 
     var body: some View {
         ScrollView {
@@ -35,6 +36,19 @@ struct PostConnectView: View {
                     .padding(.top, 6)
                     .contentTransition(.opacity)
                     .animation(ClickMotion.subtleFade, value: model.subtitle)
+
+                if let souvenir {
+                    souvenir
+                        .padding(.top, 22)
+                        .transition(.scale(scale: 0.94).combined(with: .opacity))
+                    Button {
+                        sharingSouvenir = ShareableImage.render(souvenirCard(avatarURL: nil), width: 340)
+                    } label: {
+                        Label("Share souvenir", systemImage: "square.and.arrow.up")
+                            .font(ClickTypography.supportingEmphasized)
+                    }
+                    .padding(.top, 10)
+                }
 
                 tagging
                     .padding(.top, 28)
@@ -67,6 +81,29 @@ struct PostConnectView: View {
             }
         }
         .animation(ClickMotion.content, value: model.recommendation)
+        .animation(ClickMotion.reveal, value: model.encounters.count)
+        .sheet(item: $sharingSouvenir) { ActivityShareSheet(items: [$0.image]).presentationDetents([.medium, .large]) }
+    }
+
+    // MARK: - Souvenir
+
+    /// One-to-one only, once this pair's history (with the new encounter) has loaded.
+    private var souvenir: AnyView? {
+        guard !model.isGroup, model.primaryPeer != nil, !model.encounters.isEmpty else { return nil }
+        return AnyView(souvenirCard(avatarURL: model.primaryPeer?.avatarURL))
+    }
+
+    private func souvenirCard(avatarURL: String?) -> SouvenirCard {
+        let peer = model.primaryPeer
+        return SouvenirCard(
+            peerName: peer.map { HomeFeedModel.firstName($0.name) ?? $0.name } ?? "them",
+            peerSeed: peer?.id ?? "",
+            peerInitials: peer?.initials ?? "",
+            encounter: model.encounters.max { $0.date < $1.date },
+            highlights: model.highlights,
+            date: model.encounters.map(\.date).max() ?? .now,
+            avatarURL: avatarURL
+        )
     }
 
     // MARK: - Reveal

@@ -44,6 +44,11 @@ public struct InboxNudge: Codable, Equatable, Identifiable, Sendable {
     public enum Kind: String, Codable, Sendable {
         case reconnectLull = "reconnect_lull"
         case sharedUpcomingEvent = "shared_upcoming_event"
+        case anniversary
+        case memoryPrompt = "memory_prompt"
+        case groupRevival = "group_revival"
+        case wave
+        case hangoutConfirm = "hangout_confirm"
     }
 
     public let id: String
@@ -54,20 +59,36 @@ public struct InboxNudge: Codable, Equatable, Identifiable, Sendable {
     public let body: String
     public let peerFirstName: String?
     public let sentAt: Date?
+    /// The other person (waves, moments, hangout confirmations).
+    public var peerUserID: String? = nil
+    /// Group revival: the quiet group chat.
+    public var chatID: String? = nil
+    public var groupID: String? = nil
+    public var groupName: String? = nil
+    /// Hangout confirmations: the request to confirm or decline.
+    public var confirmationID: String? = nil
+    public var placeName: String? = nil
 
     static func decode(_ row: [String: Any]) -> InboxNudge? {
-        guard let id = JSONFields.string(row["id"]) else { return nil }
+        // A kind this build doesn't know yet is skipped rather than shown as something else.
+        guard let id = JSONFields.string(row["id"]),
+              let kind = Kind(rawValue: JSONFields.string(row["nudge_type"]) ?? "") else { return nil }
         let payload = JSONFields.dictionary(row["payload"]) ?? [:]
         return InboxNudge(
             id: id,
-            kind: JSONFields.string(row["nudge_type"]) == Kind.sharedUpcomingEvent.rawValue
-                ? .sharedUpcomingEvent : .reconnectLull,
+            kind: kind,
             connectionID: JSONFields.string(row["connection_id"]),
             beaconID: JSONFields.string(row["beacon_id"]),
             headline: JSONFields.string(row["headline"]) ?? "Reconnect",
             body: JSONFields.string(row["body"]) ?? "",
             peerFirstName: JSONFields.string(payload["peer_first_name"]),
-            sentAt: JSONFields.date(row["sent_at"])
+            sentAt: JSONFields.date(row["sent_at"]),
+            peerUserID: JSONFields.string(payload["peer_user_id"]),
+            chatID: JSONFields.string(payload["chat_id"]),
+            groupID: JSONFields.string(payload["group_id"]),
+            groupName: JSONFields.string(payload["group_name"]),
+            confirmationID: JSONFields.string(payload["confirmation_id"]),
+            placeName: JSONFields.string(payload["place_name"])
         )
     }
 }
@@ -425,7 +446,7 @@ public struct NotificationPreferences: Codable, Equatable, Sendable {
             switch self {
             case .messages: "Message notifications"
             case .eventReminders: "Event reminders"
-            case .reconnectNudges: "Reconnect nudges"
+            case .reconnectNudges: "Relationship moments"
             case .availabilityMatches: "Availability matches"
             case .hubMessages: "Hub messages"
             }
@@ -435,7 +456,7 @@ public struct NotificationPreferences: Codable, Equatable, Sendable {
             switch self {
             case .messages: "New messages, archive warnings, and Click Drop reveals"
             case .eventReminders: "Day-of and one-hour-before reminders for your events"
-            case .reconnectNudges: "Prompts to reconnect and shared upcoming events"
+            case .reconnectNudges: "Anniversaries, memories, quiet groups, reconnecting and shared events"
             case .availabilityMatches: "When a Click's plans overlap with yours"
             case .hubMessages: "Messages in community and event hubs"
             }

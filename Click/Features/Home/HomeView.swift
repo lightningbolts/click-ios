@@ -34,6 +34,8 @@ public struct HomeView: View {
                         onOpenEvent: { openEvent($0) },
                         onShowOnMap: { env.router.showOnMap(.beacon($0)) },
                         onMessage: { message($0) },
+                        onNudgeAction: { act(on: $0) },
+                        onDeclineHangout: { nudge in Task { await model.declineHangout(nudge) } },
                         onResolveNudge: { nudge, action in
                             Task { await model.resolveNudge(nudge, action: action) }
                         }
@@ -61,6 +63,7 @@ public struct HomeView: View {
             .animation(ClickMotion.subtleFade, value: opportunity == nil)
         }
         .background(ClickColors.background.ignoresSafeArea())
+        .clickToast($model.actionNotice)
         .refreshable {
             async let feed: Void = model.refresh()
             async let inbox: Void = conversations.refresh()
@@ -318,7 +321,8 @@ public struct HomeView: View {
                     HomeNudgeRow(
                         nudge: secondaryNudge,
                         person: conversationItem(connectionID: secondaryNudge.connectionID),
-                        onMessage: { message(secondaryNudge) },
+                        onPrimary: { act(on: secondaryNudge) },
+                        onDecline: { Task { await model.declineHangout(secondaryNudge) } },
                         onDismiss: { Task { await model.resolveNudge(secondaryNudge, action: .dismiss) } }
                     )
                     .padding(.horizontal, 18)
@@ -588,8 +592,29 @@ public struct HomeView: View {
         }
     }
 
-    private func message(_ nudge: InboxNudge) {
-        message(.nudge(nudge))
+    /// A nudge's primary action, by kind.
+    private func act(on nudge: InboxNudge) {
+        switch nudge.kind {
+        case .hangoutConfirm:
+            Task { await model.confirmHangout(nudge) }
+        case .wave:
+            Task { await model.waveBack(nudge) }
+        case .memoryPrompt:
+            Task { await model.resolveNudge(nudge, action: .acted) }
+            if let userID = nudge.peerUserID ?? conversationItem(connectionID: nudge.connectionID)?.userID {
+                ClickHaptics.selection()
+                env.router.navigate(to: .userProfile(userID: userID, connectionID: nudge.connectionID))
+            }
+        case .groupRevival:
+            Task { await model.resolveNudge(nudge, action: .acted) }
+            guard let chatID = nudge.chatID else { return }
+            ClickHaptics.selection()
+            let route = conversations.groups.first { $0.chatID == chatID }?.chatRoute
+                ?? GroupChatRoute(chatID: chatID, groupID: nudge.groupID ?? chatID, name: nudge.groupName ?? "Group")
+            env.router.navigate(to: .groupChat(route))
+        case .reconnectLull, .sharedUpcomingEvent, .anniversary:
+            message(.nudge(nudge))
+        }
     }
 
     private func openChat(_ item: ConnectionItem) {

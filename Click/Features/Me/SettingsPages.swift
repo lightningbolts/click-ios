@@ -139,6 +139,7 @@ struct PrivacySettingsView: View {
     @State private var errorMessage: String?
     @State private var locationHint: String?
     @State private var microphoneDenied = false
+    @State private var locationDeniedForHangouts = false
 
     var body: some View {
         @Bindable var settings = env.settings
@@ -195,6 +196,25 @@ struct PrivacySettingsView: View {
             }
 
             Section {
+                Toggle(isOn: Binding(
+                    get: { env.settings.hangoutDetectionOptIn },
+                    set: { value in Task { await setHangoutDetection(value) } }
+                )) {
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text("Hangout detection")
+                        Text("When you open Click near a Click who also turned this on, you both get a “Hanging out?” prompt to log it. Your approximate location is shared only with Click, never shown to anyone, and deleted within 2 hours.")
+                            .font(ClickTypography.metadata)
+                            .foregroundStyle(ClickColors.textTertiary)
+                    }
+                }
+            } footer: {
+                if locationDeniedForHangouts {
+                    Button("Location access is off. Open Settings") { env.permissions.openSystemSettings() }
+                        .font(ClickTypography.metadata)
+                }
+            }
+
+            Section {
                 NavigationLink(value: AppRoute.settings(.permissions)) {
                     Text("Permissions")
                 }
@@ -230,6 +250,24 @@ struct PrivacySettingsView: View {
             }
         }
         .disabled(isSaving)
+    }
+
+    private func setHangoutDetection(_ enabled: Bool) async {
+        locationDeniedForHangouts = false
+        guard enabled else {
+            env.settings.hangoutDetectionOptIn = false
+            // Forget the last position right away, not in two hours.
+            try? await env.relationships.clearPresence()
+            return
+        }
+        let status = env.permissions.status(for: .locationWhenInUse)
+        let resolved = status == .notDetermined ? await env.permissions.requestPermission(for: .locationWhenInUse) : status
+        guard resolved == .authorized else {
+            locationDeniedForHangouts = true
+            return
+        }
+        env.settings.hangoutDetectionOptIn = true
+        env.reportPresenceIfEnabled()
     }
 
     private func setAmbient(_ enabled: Bool) async {

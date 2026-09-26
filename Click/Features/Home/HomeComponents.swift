@@ -129,6 +129,8 @@ struct HomeOpportunitySection: View {
     let onOpenEvent: (String) -> Void
     let onShowOnMap: (String) -> Void
     let onMessage: (HomeMessageTarget) -> Void
+    let onNudgeAction: (InboxNudge) -> Void
+    let onDeclineHangout: (InboxNudge) -> Void
     let onResolveNudge: (InboxNudge, MeRepository.NudgeAction) -> Void
 
     var body: some View {
@@ -143,7 +145,7 @@ struct HomeOpportunitySection: View {
     private var title: String {
         switch opportunity {
         case .event(let event): event.isLive ? "Happening now" : "Today"
-        case .nudge(let nudge): nudge.kind == .sharedUpcomingEvent ? "Going together" : "Reconnect"
+        case .nudge(let nudge): nudge.sectionTitle
         case .sayHi: "Say hi"
         }
     }
@@ -157,7 +159,8 @@ struct HomeOpportunitySection: View {
             HomeNudgeRow(
                 nudge: nudge,
                 person: person,
-                onMessage: { onMessage(.nudge(nudge)) },
+                onPrimary: { onNudgeAction(nudge) },
+                onDecline: { onDeclineHangout(nudge) },
                 onDismiss: { onResolveNudge(nudge, .dismiss) }
             )
             .padding(18)
@@ -237,19 +240,69 @@ struct HomeOpportunitySection: View {
     }
 }
 
-/// A relationship nudge row: person, server copy, "Say hi", dismiss.
+extension InboxNudge {
+    /// Home section heading for this kind.
+    var sectionTitle: String {
+        switch kind {
+        case .sharedUpcomingEvent: "Going together"
+        case .reconnectLull: "Reconnect"
+        case .anniversary: "Anniversary"
+        case .memoryPrompt: "Memories"
+        case .groupRevival: "Your groups"
+        case .wave: "Wave"
+        case .hangoutConfirm: "Hanging out?"
+        }
+    }
+
+    /// The one filled action.
+    var actionTitle: String {
+        switch kind {
+        case .sharedUpcomingEvent, .reconnectLull, .anniversary: "Say hi"
+        case .memoryPrompt: "Add memory"
+        case .groupRevival: "Plan"
+        case .wave: "Wave back"
+        case .hangoutConfirm: "Confirm"
+        }
+    }
+
+    var symbol: String {
+        switch kind {
+        case .sharedUpcomingEvent: "calendar"
+        case .anniversary: "gift.fill"
+        case .memoryPrompt: "photo.on.rectangle.angled"
+        case .groupRevival: "person.3.fill"
+        case .hangoutConfirm: "figure.2"
+        case .reconnectLull, .wave: "hand.wave.fill"
+        }
+    }
+}
+
+/// A relationship nudge row: person, server copy, the kind's action, dismiss (or "Not us"
+/// for a hangout to confirm).
 struct HomeNudgeRow: View {
     let nudge: InboxNudge
     let person: ConnectionItem?
-    let onMessage: () -> Void
+    let onPrimary: () -> Void
+    var onDecline: (() -> Void)? = nil
     let onDismiss: () -> Void
 
     var body: some View {
         HStack(spacing: 12) {
             if let person {
                 AvatarView(imageURL: person.avatarUrl, seed: person.userID, initials: person.initials, size: 44)
+                    .overlay(alignment: .bottomTrailing) {
+                        if nudge.kind != .reconnectLull {
+                            Image(systemName: nudge.symbol)
+                                .font(.system(size: 10, weight: .bold))
+                                .foregroundStyle(ClickColors.accentForeground)
+                                .frame(width: 20, height: 20)
+                                .background(ClickColors.surface, in: Circle())
+                                .offset(x: 3, y: 3)
+                                .accessibilityHidden(true)
+                        }
+                    }
             } else {
-                Image(systemName: nudge.kind == .sharedUpcomingEvent ? "calendar" : "hand.wave.fill")
+                Image(systemName: nudge.symbol)
                     .foregroundStyle(ClickColors.accentForeground)
                     .frame(width: 44, height: 44)
                     .background(ClickColors.selectionTint, in: Circle())
@@ -266,20 +319,30 @@ struct HomeNudgeRow: View {
                 }
             }
             Spacer(minLength: 8)
-            Button("Say hi", action: onMessage)
-                .font(ClickTypography.supportingEmphasized)
-                .foregroundStyle(ClickColors.accentForeground)
-                .padding(.horizontal, 14)
-                .frame(minHeight: 34)
-                .background(ClickColors.selectionTint, in: Capsule())
-            Button(action: onDismiss) {
-                Image(systemName: "xmark")
-                    .font(.system(size: 13, weight: .semibold))
-                    .foregroundStyle(ClickColors.textTertiary)
-                    .frame(width: 30, height: ClickMetrics.minimumHitTarget)
+            VStack(spacing: 4) {
+                Button(nudge.actionTitle, action: onPrimary)
+                    .font(ClickTypography.supportingEmphasized)
+                    .foregroundStyle(ClickColors.accentForeground)
+                    .padding(.horizontal, 14)
+                    .frame(minHeight: 34)
+                    .background(ClickColors.selectionTint, in: Capsule())
+                if nudge.kind == .hangoutConfirm, let onDecline {
+                    Button("Not us", action: onDecline)
+                        .font(ClickTypography.caption)
+                        .foregroundStyle(ClickColors.textTertiary)
+                        .accessibilityHint("You weren't together; nothing is logged")
+                }
             }
-            .buttonStyle(.plain)
-            .accessibilityLabel("Dismiss")
+            if nudge.kind != .hangoutConfirm {
+                Button(action: onDismiss) {
+                    Image(systemName: "xmark")
+                        .font(.system(size: 13, weight: .semibold))
+                        .foregroundStyle(ClickColors.textTertiary)
+                        .frame(width: 30, height: ClickMetrics.minimumHitTarget)
+                }
+                .buttonStyle(.plain)
+                .accessibilityLabel("Dismiss")
+            }
         }
     }
 }
