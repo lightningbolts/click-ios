@@ -60,29 +60,37 @@ struct GroupProfileView: View {
 
     private func content(_ group: CliqueItem) -> some View {
         let isCreator = group.createdBy == currentUserID
-        return List {
-            headerSection(group)
-            rotationSection(group)
-            GroupTogetherSection(
-                group: group,
-                model: space,
-                currentUserID: currentUserID,
-                onPlan: {
-                    env.pendingPlanChatKey = group.chatID
-                    env.router.navigate(to: .groupChat(group.chatRoute))
-                },
-                onOpenPlan: { message in env.router.navigate(to: .conversation(chatID: group.chatID, messageID: message.id)) }
-            )
-            membersSection(group, isCreator: isCreator)
-            Section("Common interests") { GroupCommonInterests(members: group.members) }
-            sharedSection
-            Section("Pinned") { PinnedMessagesList(model: env.conversationModel(for: group.chatRoute.conversationIdentity)) }
-            Section("Chat background") { ChatBackdropPicker(key: group.chatID, seed: group.chatID,
-                                                                    automatic: .automatic(encounters: space.hangouts.map(\.representative), place: nil, seed: group.chatID)) }
-            Section("Journal") { GroupJournalSection(chatID: group.chatID) }
-            manageSection(group, isCreator: isCreator)
+        // Eager, not a List: a list measures rows lazily and estimates the rest, so the scroll
+        // bar jumped as the map, picker and other tall rows were first measured.
+        return ScrollView {
+            VStack(spacing: 22) {
+                headerSection(group)
+                rotationSection(group)
+                GroupTogetherSection(
+                    group: group,
+                    model: space,
+                    currentUserID: currentUserID,
+                    onPlan: {
+                        env.pendingPlanChatKey = group.chatID
+                        env.router.navigate(to: .groupChat(group.chatRoute))
+                    },
+                    onOpenPlan: { message in env.router.navigate(to: .conversation(chatID: group.chatID, messageID: message.id)) }
+                )
+                membersSection(group, isCreator: isCreator)
+                GroupedSection("Common interests") { GroupCommonInterests(members: group.members) }
+                sharedSection
+                GroupedSection("Pinned") { PinnedMessagesList(model: env.conversationModel(for: group.chatRoute.conversationIdentity)) }
+                GroupedSection("Chat background") {
+                    ChatBackdropPicker(key: group.chatID, seed: group.chatID,
+                                       automatic: .automatic(encounters: space.hangouts.map(\.representative), place: nil, seed: group.chatID))
+                }
+                GroupedSection("Journal") { GroupJournalSection(chatID: group.chatID) }
+                manageSection(group, isCreator: isCreator)
+            }
+            .padding(.horizontal, ClickSpacing.screenGutter)
+            .padding(.vertical, 12)
         }
-        .listStyle(.insetGrouped)
+        .background(ClickColors.background.ignoresSafeArea())
         .overlay { if isWorking { ProgressView() } }
         .confirmationDialog(
             "Remove \(pendingRemoval?.name ?? "member")?",
@@ -125,8 +133,7 @@ struct GroupProfileView: View {
     }
 
     private func headerSection(_ group: CliqueItem) -> some View {
-        Section {
-            VStack(spacing: 10) {
+        VStack(spacing: 10) {
                 GroupAvatarView(
                     avatarURL: group.avatarURL,
                     seed: group.chatID,
@@ -151,16 +158,14 @@ struct GroupProfileView: View {
                 .tint(ClickColors.primaryActionFill)
                 .controlSize(.large)
                 .padding(.top, 4)
-            }
-            .frame(maxWidth: .infinity)
-            .listRowBackground(Color.clear)
         }
+        .frame(maxWidth: .infinity)
     }
 
     @ViewBuilder
     private func rotationSection(_ group: CliqueItem) -> some View {
         if let pending = unfinishedRotation {
-            Section {
+            GroupedSection {
                 Label("Membership changed, but the new encryption key isn't set up yet. New messages can't be sent until it is.", systemImage: "lock.trianglebadge.exclamationmark")
                     .font(ClickTypography.supporting)
                 Button("Finish Securing Group") { Task { await reconcile(group, members: pending) } }
@@ -170,7 +175,7 @@ struct GroupProfileView: View {
     }
 
     private func membersSection(_ group: CliqueItem, isCreator: Bool) -> some View {
-        Section("Members") {
+        GroupedSection("Members") {
             ForEach(group.members) { member in
                 memberRow(member, group: group, isCreator: isCreator)
             }
@@ -186,7 +191,7 @@ struct GroupProfileView: View {
     }
 
     private var sharedSection: some View {
-        Section("Shared") {
+        GroupedSection("Shared") {
             if let group {
                 NavigationLink { GroupSharedView(group: group, kind: .media) } label: {
                     sharedRow("Media", systemImage: "photo.on.rectangle", items: tabs.value?.media)
@@ -210,7 +215,7 @@ struct GroupProfileView: View {
     }
 
     private func manageSection(_ group: CliqueItem, isCreator: Bool) -> some View {
-        Section {
+        GroupedSection {
             if isCreator {
                 Button("Rename Group", systemImage: "pencil") {
                     draftName = group.name
@@ -256,11 +261,7 @@ struct GroupProfileView: View {
             }
         }
         .buttonStyle(.plain)
-        .swipeActions {
-            if isCreator, !isSelf {
-                Button("Remove", role: .destructive) { pendingRemoval = member }
-            }
-        }
+        // Touch and hold to remove (the page is a scroll view, which has no swipe actions).
         .contextMenu {
             if isCreator, !isSelf {
                 Button("Remove from Group", systemImage: "person.badge.minus", role: .destructive) { pendingRemoval = member }
@@ -269,7 +270,7 @@ struct GroupProfileView: View {
     }
 
     private func sharedRow(_ title: String, systemImage: String, items: [SharedItem]?) -> some View {
-        HStack {
+        HStack(spacing: 8) {
             Label(title, systemImage: systemImage)
                 .foregroundStyle(ClickColors.textPrimary)
             Spacer()
@@ -282,6 +283,9 @@ struct GroupProfileView: View {
             } else {
                 Text("—").foregroundStyle(ClickColors.textTertiary)
             }
+            Image(systemName: "chevron.right")
+                .font(.footnote.weight(.semibold))
+                .foregroundStyle(ClickColors.textTertiary)
         }
         .font(ClickTypography.body)
     }

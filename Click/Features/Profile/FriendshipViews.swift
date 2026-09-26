@@ -696,7 +696,7 @@ struct GroupTogetherSection: View {
     }
 
     var body: some View {
-        Section {
+        GroupedSection("Together") {
             if model.hangouts.isEmpty {
                 Text("No group hangouts yet. Tap phones with two or more members at once and it shows up here.")
                     .font(ClickTypography.supporting)
@@ -731,8 +731,6 @@ struct GroupTogetherSection: View {
             Button(action: onPlan) {
                 Label(model.upcomingPlans.isEmpty ? "Plan something" : "Plan another", systemImage: "calendar.badge.plus")
             }
-        } header: {
-            Text("Together")
         }
     }
 }
