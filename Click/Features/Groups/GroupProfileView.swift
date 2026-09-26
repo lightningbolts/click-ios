@@ -11,7 +11,6 @@ struct GroupProfileView: View {
 
     let chatID: String
 
-    @State private var tabs = ModuleState<SharedTabs>()
     @State private var isWorking = false
     @State private var notice: String?
     @State private var pendingRemoval: GroupMember?
@@ -26,6 +25,8 @@ struct GroupProfileView: View {
 
     private var group: CliqueItem? { conversations.groups.first { $0.chatID == chatID } }
     private var currentUserID: String? { env.session.currentSession?.userId }
+    private var space: GroupSpaceModel { GroupSpaceModel.shared(chatID: chatID) }
+    private var tabs: ModuleState<SharedTabs> { space.shared.tabs }
 
     var body: some View {
         Group {
@@ -47,12 +48,7 @@ struct GroupProfileView: View {
             if group == nil { await conversations.refresh() }
             // Usually prefetched by the group chat; refreshes only when stale.
             if let group {
-                async let space: Void = GroupSpaceModel.shared(chatID: group.chatID)
-                    .load(env, memberConnections: conversations.memberConnections(group))
-                async let shared: Void = loadTabs()
-                _ = await (space, shared)
-            } else {
-                await loadTabs()
+                await space.load(env, group: group, memberConnections: conversations.memberConnections(group))
             }
         }
         .alert("Group", isPresented: Binding(get: { notice != nil }, set: { if !$0 { notice = nil } })) {
@@ -69,7 +65,7 @@ struct GroupProfileView: View {
             rotationSection(group)
             GroupTogetherSection(
                 group: group,
-                model: GroupSpaceModel.shared(chatID: group.chatID),
+                model: space,
                 currentUserID: currentUserID,
                 onPlan: {
                     env.pendingPlanChatKey = group.chatID
@@ -80,6 +76,8 @@ struct GroupProfileView: View {
             membersSection(group, isCreator: isCreator)
             Section("Common interests") { GroupCommonInterests(members: group.members) }
             sharedSection
+            Section("Pinned") { PinnedMessagesList(model: env.conversationModel(for: group.chatRoute.conversationIdentity)) }
+            Section("Chat background") { ChatBackdropPicker(key: group.chatID, seed: group.chatID, automatic: nil) }
             Section("Journal") { GroupJournalSection(chatID: group.chatID) }
             manageSection(group, isCreator: isCreator)
         }
@@ -200,7 +198,10 @@ struct GroupProfileView: View {
                 }
             }
             if let error = tabs.errorMessage, tabs.value == nil {
-                Button("Couldn't load shared content. Retry") { Task { await loadTabs() } }
+                Button("Couldn't load shared content. Retry") {
+                    guard let group else { return }
+                    Task { await space.shared.load(env) { _ in group.chatRoute.conversationIdentity } }
+                }
                     .font(ClickTypography.supporting)
                     .accessibilityHint(error)
             }
@@ -285,15 +286,6 @@ struct GroupProfileView: View {
     }
 
     // MARK: - Actions
-
-    private func loadTabs() async {
-        tabs.begin()
-        do {
-            tabs.succeed(try await env.profiles.sharedTabs(chatID: chatID))
-        } catch {
-            tabs.fail(error)
-        }
-    }
 
     private func remove(_ member: GroupMember, from group: CliqueItem) async {
         pendingRemoval = nil

@@ -296,6 +296,18 @@ private struct ChatImageView: View {
     @State private var pixelatedImage: UIImage?
     @State private var url: URL?
     @State private var failed = false
+
+    init(message: ChatMessageItem, load: @escaping () async throws -> URL, onOpen: @escaping (URL) -> Void) {
+        self.message = message
+        self.load = load
+        self.onOpen = onOpen
+        // Decoded before (another row, an earlier visit): on screen from the first frame.
+        if let cached = DecodedMediaCache.entry(message.id) {
+            _image = State(initialValue: cached.image)
+            _pixelatedImage = State(initialValue: cached.pixelated)
+            _url = State(initialValue: cached.url)
+        }
+    }
     /// Bumped when the reveal time passes so the Drop develops on screen.
     @State private var developTick = 0
 
@@ -398,6 +410,7 @@ private struct ChatImageView: View {
             }.value
             guard let decoded else { throw ChatRepositoryError.mediaUnavailable }
             MediaAspectCache.remember(decoded.0.size, for: message)
+            DecodedMediaCache.insert(decoded.0, pixelated: decoded.1, url: fileURL, for: message.id)
             url = fileURL
             pixelatedImage = decoded.1
             image = decoded.0
@@ -1142,6 +1155,48 @@ private struct StagedAttachmentChip: View {
 
     static func duration(_ seconds: Int) -> String {
         String(format: "%d:%02d", seconds / 60, seconds % 60)
+    }
+}
+
+/// Decoded chat photos by key (message ID), so a bubble or reply thumbnail that renders again
+/// (cell reuse, reopening the chat) shows its image on the first frame instead of decoding again.
+/// Memory only: decrypted private media never goes to a shared or on-disk cache.
+enum DecodedMediaCache {
+    final class Entry {
+        let image: UIImage
+        let pixelated: UIImage?
+        let url: URL
+        init(image: UIImage, pixelated: UIImage?, url: URL) {
+            self.image = image
+            self.pixelated = pixelated
+            self.url = url
+        }
+    }
+
+    /// `NSCache` is thread-safe.
+    nonisolated(unsafe) private static let cache: NSCache<NSString, Entry> = {
+        let cache = NSCache<NSString, Entry>()
+        cache.totalCostLimit = 48 * 1024 * 1024
+        return cache
+    }()
+
+    static func entry(_ key: String) -> Entry? {
+        cache.object(forKey: key as NSString)
+    }
+
+    static func insert(_ image: UIImage, pixelated: UIImage? = nil, url: URL, for key: String) {
+        let cost = [image, pixelated].compactMap { $0?.cgImage.map { $0.bytesPerRow * $0.height } }.reduce(0, +)
+        cache.setObject(Entry(image: image, pixelated: pixelated, url: url), forKey: key as NSString, cost: cost)
+    }
+
+    /// A `side`-pixel square thumbnail of `file`, decoded off the main actor and remembered.
+    static func thumbnail(of file: URL, side: CGFloat, key: String) async -> UIImage? {
+        if let cached = entry(key) { return cached.image }
+        let image = await Task.detached(priority: .userInitiated) {
+            UIImage(contentsOfFile: file.path)?.preparingThumbnail(of: CGSize(width: side, height: side))
+        }.value
+        if let image { insert(image, url: file, for: key) }
+        return image
     }
 }
 

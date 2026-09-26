@@ -40,6 +40,8 @@ public struct ChatView: View {
     /// Index into the current matches (oldest first); nil until the reader steps.
     @State private var searchPosition: Int?
     @State private var highlightedID: String?
+    /// Which pin the pinned banner shows (advances on each tap).
+    @State private var pinCursor = 0
     /// Short confirmation capsule ("Your Click Drop developed").
     @State private var toast: String?
 
@@ -207,7 +209,7 @@ public struct ChatView: View {
                 timelineView
             }
         }
-        .background { ChatBackground(seed: model.identity.connectionID ?? model.identity.chatID).equatable() }
+        .background { ChatBackground(seed: backdropKey, style: backdropStyle).equatable() }
         .onGeometryChange(for: CGFloat.self) { $0.size.width } action: { screenWidth = $0 }
         .safeAreaInset(edge: .bottom, spacing: 0) {
             VStack(spacing: 0) {
@@ -231,6 +233,11 @@ public struct ChatView: View {
                     .transition(.move(edge: .top).combined(with: .opacity))
             } else if let error = model.operationError, !model.items.isEmpty {
                 operationBanner(error)
+                    .padding(.horizontal, 12)
+                    .padding(.top, 8)
+                    .transition(.move(edge: .top).combined(with: .opacity))
+            } else if !model.pins.isEmpty {
+                pinnedBanner
                     .padding(.horizontal, 12)
                     .padding(.top, 8)
                     .transition(.move(edge: .top).combined(with: .opacity))
@@ -264,6 +271,33 @@ public struct ChatView: View {
         }
     }
 
+    /// Backdrops are per conversation: the connection for a person, else the chat.
+    private var backdropKey: String { model.identity.connectionID ?? model.identity.chatID }
+
+    /// The chosen backdrop, else the one for where you met (a person's first encounter).
+    private var backdropStyle: ChatBackdropStyle {
+        var resolved: ChatBackdropStyle?
+        if case .direct = model.identity.kind {
+            let encounters = PeerProfileModel.shared(userID: model.identity.peerUserID, connectionID: model.identity.connectionID).encounters.value
+            resolved = .automatic(encounters: encounters, place: conversations?.connection(connectionID: model.identity.connectionID)?.encounterLocation)
+        }
+        return ChatBackdrops.shared.style(for: backdropKey, resolved: resolved)
+    }
+
+    /// The pin shown in the banner; each tap jumps to it and moves on to the next.
+    private var pinnedBanner: some View {
+        let index = pinCursor % model.pins.count
+        let pin = model.pins[index]
+        return PinnedMessageBanner(
+            text: model.items.first { $0.id == pin.messageID }.map(ConversationModel.quoteText),
+            position: index,
+            count: model.pins.count
+        ) {
+            pinCursor = index + 1
+            Task { await jump(to: pin.messageID) }
+        }
+    }
+
     private func prefetchProfile() {
         switch model.identity.kind {
         case .direct:
@@ -273,7 +307,7 @@ public struct ChatView: View {
         case .group:
             guard let group = conversations?.group(chatID: model.identity.chatID) else { return }
             let connections = conversations?.memberConnections(group) ?? [:]
-            Task { await GroupSpaceModel.shared(chatID: group.chatID).load(env, memberConnections: connections) }
+            Task { await GroupSpaceModel.shared(chatID: group.chatID).load(env, group: group, memberConnections: connections) }
         case .hub:
             break
         }
@@ -517,6 +551,14 @@ public struct ChatView: View {
             })
         }
 
+        // Pin / Unpin: sent messages in direct and group chats
+        if model.supportsPins, !item.isDeleted, item.deliveryStatus != .sending, item.deliveryStatus != .failed {
+            let pinned = model.isPinned(item)
+            actions.append(MessageAction(id: "pin", title: pinned ? "Unpin" : "Pin", systemImage: pinned ? "pin.slash" : "pin") {
+                Task { await model.togglePin(item) }
+            })
+        }
+
         // Delete: if outgoing; destructive
         if item.isOutgoing {
             actions.append(MessageAction(id: "delete", title: "Delete", systemImage: "trash", isDestructive: true) {
@@ -611,32 +653,11 @@ public struct ChatView: View {
     }
 
     /// Push notifications for this conversation (enforced server-side, on every device).
-    @ViewBuilder
     private func notificationsMenu(_ conversations: ConversationListModel) -> some View {
-        let chatID = model.identity.chatID
-        let muted = conversations.isMuted([chatID, model.identity.connectionID])
-        Menu {
-            if muted {
-                Button("Unmute", systemImage: "bell") { setMute(conversations, chatID: chatID, duration: nil, muted: false) }
-            } else {
-                Button("For 1 hour") { setMute(conversations, chatID: chatID, duration: 3600, muted: true) }
-                Button("For 8 hours") { setMute(conversations, chatID: chatID, duration: 8 * 3600, muted: true) }
-                Button("For 1 week") { setMute(conversations, chatID: chatID, duration: 7 * 86_400, muted: true) }
-                Button("Until I turn it back on") { setMute(conversations, chatID: chatID, duration: nil, muted: true) }
-            }
-        } label: {
-            Label(muted ? "Muted" : "Mute Notifications", systemImage: muted ? "bell.slash.fill" : "bell.slash")
-        }
-    }
-
-    private func setMute(_ conversations: ConversationListModel, chatID: String, duration: TimeInterval?, muted: Bool) {
-        Task {
-            do {
-                try await conversations.setMuted(chatID: chatID, duration: duration, muted: muted)
-                ClickHaptics.success()
-                await showToast(muted ? "Notifications muted" : "Notifications on")
-            } catch {
-                model.operationError = error.userFacingMessage
+        MuteMenu(model: conversations, chatID: model.identity.chatID, aliases: [model.identity.connectionID]) { result in
+            switch result {
+            case .success(let muted): Task { await showToast(muted ? "Notifications muted" : "Notifications on") }
+            case .failure(let error): model.operationError = error.userFacingMessage
             }
         }
     }

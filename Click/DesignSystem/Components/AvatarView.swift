@@ -67,6 +67,12 @@ public struct AvatarView: View {
     /// Decode at 3x so one cache entry serves every device scale.
     private static func pixelSize(for size: CGFloat) -> CGFloat { size * 3 }
 
+    /// Decodes these avatars into memory ahead of display at `size`.
+    static func prefetch(_ urls: [String?], size: CGFloat) {
+        ImagePipeline.shared.prefetch(urls.compactMap { $0?.nonEmptyTrimmed.flatMap(URL.init(string:)) },
+                                      maxPixelSize: pixelSize(for: size))
+    }
+
     private var fallback: some View {
         Circle()
             .fill(ClickColors.GeneratedContent.avatarColor(for: seed))

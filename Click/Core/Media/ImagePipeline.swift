@@ -44,6 +44,14 @@ public actor ImagePipeline {
 
         let session = self.session
         let task = Task.detached(priority: .userInitiated) { () -> UIImage? in
+            // Disk first, even when stale: a picture seen before appears at once (no network
+            // wait after a cold start); a background revalidation refreshes it for next time.
+            let request = URLRequest(url: url)
+            if let cached = session.configuration.urlCache?.cachedResponse(for: request),
+               let image = Self.downsample(cached.data, maxPixelSize: maxPixelSize) {
+                Task.detached(priority: .utility) { _ = try? await session.data(for: request) }
+                return image
+            }
             guard
                 let (data, response) = try? await session.data(from: url),
                 (response as? HTTPURLResponse).map({ (200..<300).contains($0.statusCode) }) ?? true
@@ -55,6 +63,18 @@ public actor ImagePipeline {
         inFlight[key] = nil
         if let image { memory.insert(image, forKey: key) }
         return image
+    }
+
+    /// Decodes images into memory ahead of display (a list about to be shown), so its rows
+    /// render them on their first frame.
+    public nonisolated func prefetch(_ urls: [URL], maxPixelSize: CGFloat) {
+        let pending = Set(urls.filter { cachedImage(for: $0, maxPixelSize: maxPixelSize) == nil })
+        guard !pending.isEmpty else { return }
+        Task(priority: .utility) {
+            await withTaskGroup(of: Void.self) { group in
+                for url in pending { group.addTask { _ = await self.image(for: url, maxPixelSize: maxPixelSize) } }
+            }
+        }
     }
 
     private nonisolated static func key(_ url: URL, _ maxPixelSize: CGFloat) -> String {

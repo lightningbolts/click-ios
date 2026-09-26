@@ -140,6 +140,11 @@ public struct EventVisual: View {
 
     private static let pixelSize: CGFloat = 900
 
+    /// Decodes these pictures into memory ahead of display.
+    static func prefetch(_ urls: [String?]) {
+        ImagePipeline.shared.prefetch(urls.compactMap { $0?.nonEmptyTrimmed.flatMap(URL.init(string:)) }, maxPixelSize: pixelSize)
+    }
+
     public var body: some View {
         let visual = CardVisual(seed: seed)
         ZStack {
@@ -194,12 +199,29 @@ struct BeaconVisual: View {
     @State private var resolvedURL: String?
 
     var body: some View {
-        let url = imageURL?.nonEmptyTrimmed ?? resolvedURL
+        let url = imageURL?.nonEmptyTrimmed ?? resolvedURL ?? beaconID.flatMap { Self.knownURL($0) }
         EventVisual(seed: seed ?? beaconID ?? "", imageURL: url, symbol: symbol, cornerRadius: cornerRadius)
+            .id(url)   // a newly resolved picture seeds from the memory cache like the first one
             .task(id: beaconID) {
                 guard imageURL?.nonEmptyTrimmed == nil, let beaconID, let env else { return }
                 resolvedURL = await env.beacons.imageURL(beaconID: beaconID)
+                Self.remember(resolvedURL, for: beaconID)
             }
+    }
+
+    /// Banner URLs resolved before, by beacon ID (persisted), so a visual paints its picture
+    /// on its first frame, even right after launch.
+    private static let knownKey = "click.beacon.image-urls"
+    private static var known: [String: String] = UserDefaults.standard.dictionary(forKey: knownKey) as? [String: String] ?? [:]
+
+    static func knownURL(_ beaconID: String) -> String? { known[beaconID]?.nonEmptyTrimmed }
+
+    private static func remember(_ url: String?, for beaconID: String) {
+        let value = url ?? ""
+        guard known[beaconID] != value else { return }
+        known[beaconID] = value
+        if known.count > 500 { known = Dictionary(uniqueKeysWithValues: known.suffix(400).map { ($0.key, $0.value) }) }
+        UserDefaults.standard.set(known, forKey: knownKey)
     }
 }
 

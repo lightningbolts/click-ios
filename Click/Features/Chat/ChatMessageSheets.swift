@@ -330,11 +330,124 @@ struct SayHiPanel: View {
 
 /// Small visual for the message a reply quotes: the photo itself, the event image, or a kind
 /// icon for voice notes and files. Shared by bubble quotes and the composer's reply strip.
+/// The chat's pinned message, above the timeline: tap to jump to it (then to the next pin).
+struct PinnedMessageBanner: View {
+    /// The pinned text when it's in the loaded timeline.
+    let text: String?
+    let position: Int
+    let count: Int
+    let onTap: () -> Void
+
+    var body: some View {
+        Button(action: onTap) {
+            HStack(spacing: 10) {
+                Image(systemName: "pin.fill")
+                    .font(.system(size: 14, weight: .semibold))
+                    .foregroundStyle(ClickColors.accentForeground)
+                    .rotationEffect(.degrees(45))
+                VStack(alignment: .leading, spacing: 1) {
+                    Text(count > 1 ? "Pinned · \(position + 1) of \(count)" : "Pinned")
+                        .font(ClickTypography.metadataEmphasized)
+                        .foregroundStyle(ClickColors.accentForeground)
+                        .contentTransition(.numericText())
+                    Text(text?.nonEmptyTrimmed ?? "Pinned message")
+                        .font(ClickTypography.supporting)
+                        .foregroundStyle(ClickColors.textPrimary)
+                        .lineLimit(1)
+                }
+                Spacer(minLength: 0)
+            }
+            .padding(.horizontal, 14)
+            .padding(.vertical, 8)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .glassPanelBackground(cornerRadius: 18)
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .accessibilityLabel("Pinned message\(count > 1 ? " \(position + 1) of \(count)" : ""): \(text ?? "")")
+        .accessibilityHint("Shows it in the chat")
+    }
+}
+
+/// A conversation's pinned messages, for its profile: tap one to see it in the chat.
+struct PinnedMessagesList: View {
+    @Environment(AppEnvironment.self) private var env
+    let model: ConversationModel
+    @State private var messages: [ChatMessageItem]?
+
+    var body: some View {
+        Group {
+            if let messages, model.hasLoadedPins || !messages.isEmpty {
+                if messages.isEmpty {
+                    Text("Nothing pinned yet. Touch and hold a message in the chat to pin it.")
+                        .font(ClickTypography.supporting)
+                        .foregroundStyle(ClickColors.textTertiary)
+                        .padding(.vertical, 6)
+                }
+                ForEach(messages) { message in
+                    Button {
+                        env.router.navigate(to: .conversation(chatID: message.chatID, messageID: message.id))
+                    } label: {
+                        row(message)
+                    }
+                    .buttonStyle(.plain)
+                    .contextMenu {
+                        Button("Unpin", systemImage: "pin.slash") { Task { await model.togglePin(message) } }
+                    }
+                }
+            } else {
+                ClickLoadingView(size: 26, fillsSpace: false)
+            }
+        }
+        .task { await model.loadPins() }
+        .task(id: model.pins) { messages = await model.pinnedMessages() }
+    }
+
+    private func row(_ message: ChatMessageItem) -> some View {
+        HStack(alignment: .top, spacing: 10) {
+            Image(systemName: "pin.fill")
+                .font(.system(size: 13, weight: .semibold))
+                .foregroundStyle(ClickColors.accentForeground)
+                .rotationEffect(.degrees(45))
+                .padding(.top, 2)
+            VStack(alignment: .leading, spacing: 2) {
+                HStack {
+                    Text(message.isOutgoing ? "You" : message.senderName)
+                        .font(ClickTypography.supportingEmphasized)
+                        .foregroundStyle(ClickColors.textPrimary)
+                    Spacer()
+                    Text(message.createdAt.formatted(date: .abbreviated, time: .omitted))
+                        .font(ClickTypography.metadata)
+                        .foregroundStyle(ClickColors.textTertiary)
+                }
+                Text(ConversationModel.quoteText(message))
+                    .font(ClickTypography.supporting)
+                    .foregroundStyle(ClickColors.textSecondary)
+                    .lineLimit(3)
+            }
+        }
+        .padding(.vertical, 6)
+        .contentShape(Rectangle())
+        .accessibilityElement(children: .combine)
+        .accessibilityHint("Shows it in the chat")
+    }
+}
+
 struct ReplyThumbnail: View {
     let target: ChatMessageItem
     var load: ((ChatMessageItem) async throws -> URL)?
     var size: CGFloat = 36
     @State private var image: UIImage?
+
+    init(target: ChatMessageItem, load: ((ChatMessageItem) async throws -> URL)? = nil, size: CGFloat = 36) {
+        self.target = target
+        self.load = load
+        self.size = size
+        // The quoted photo is usually decoded already (its own bubble, an earlier render).
+        _image = State(initialValue: (DecodedMediaCache.entry(Self.cacheKey(target)) ?? DecodedMediaCache.entry(target.id))?.image)
+    }
+
+    private static func cacheKey(_ target: ChatMessageItem) -> String { target.id + "#reply" }
 
     var body: some View {
         Group {
@@ -362,8 +475,7 @@ struct ReplyThumbnail: View {
             var file = url
             if file == nil, let load { file = try? await load(target) }
             guard let file else { return }
-            let side = size * 3
-            image = await Task.detached { UIImage(contentsOfFile: file.path)?.preparingThumbnail(of: CGSize(width: side, height: side)) }.value
+            image = await DecodedMediaCache.thumbnail(of: file, side: size * 3, key: Self.cacheKey(target))
         }
     }
 

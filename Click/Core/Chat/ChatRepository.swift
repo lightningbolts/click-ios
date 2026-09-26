@@ -1,6 +1,13 @@
 import Foundation
 import CryptoKit
 
+/// A pinned message in a direct or group chat.
+public struct MessagePin: Codable, Hashable, Sendable {
+    public let messageID: String
+    public let pinnedBy: String
+    public let pinnedAt: Date
+}
+
 /// A text message waiting on the server to be sent at `sendAt` (decrypted for display).
 public struct ScheduledMessage: Identifiable, Hashable, Sendable {
     public let id: String
@@ -16,6 +23,8 @@ extension ChatRepositoryProtocol {
     public func scheduledMessages(conversation: ConversationIdentity, currentUserID: String) async throws -> [ScheduledMessage] { [] }
     public func cancelScheduledMessage(id: String) async throws {}
     public func readCursors(chatID: String) async throws -> [String: Date] { [:] }
+    public func pins(chatID: String) async throws -> [MessagePin] { [] }
+    public func setPinned(_ pinned: Bool, messageID: String) async throws {}
     public func sendForwardedText(conversation: ConversationIdentity, currentUserID: String, currentUserName: String,
                                   content: String, clientMessageID: String) async throws -> ChatMessageItem {
         try await sendMessage(conversation: conversation, currentUserID: currentUserID, currentUserName: currentUserName,
@@ -87,6 +96,9 @@ public protocol ChatRepositoryProtocol: Sendable {
     func markRead(chatID: String, messageIDs: [String]) async throws
     /// Each member's read-through time (group read receipts), by user ID.
     func readCursors(chatID: String) async throws -> [String: Date]
+    /// The chat's pinned messages, newest pin first (direct and group chats).
+    func pins(chatID: String) async throws -> [MessagePin]
+    func setPinned(_ pinned: Bool, messageID: String) async throws
     /// Encrypts now; the server sends it at `sendAt` (direct and group chats, text only).
     func scheduleMessage(conversation: ConversationIdentity, currentUserID: String, content: String, replyToID: String?, sendAt: Date) async throws -> ScheduledMessage
     func scheduledMessages(conversation: ConversationIdentity, currentUserID: String) async throws -> [ScheduledMessage]
@@ -1109,6 +1121,23 @@ public actor ChatRepository: ChatRepositoryProtocol {
         _ = try await apiClient.executeRaw(APIRequest(path: "/api/chat/messages/unread", method: .patch, body: body))
     }
 
+    public func pins(chatID: String) async throws -> [MessagePin] {
+        let (data, _) = try await apiClient.executeRaw(APIRequest(
+            path: "/api/chat/pins",
+            queryItems: [URLQueryItem(name: "chatId", value: chatID)],
+            requiresAuth: true
+        ))
+        return JSONFields.rows(try JSONFields.object(data)["pins"]).compactMap { row in
+            guard let id = JSONFields.string(row["message_id"]), let by = JSONFields.string(row["pinned_by"]) else { return nil }
+            return MessagePin(messageID: id, pinnedBy: by, pinnedAt: JSONFields.date(row["pinned_at"]) ?? .now)
+        }
+    }
+
+    public func setPinned(_ pinned: Bool, messageID: String) async throws {
+        let body = try JSONSerialization.data(withJSONObject: ["messageId": messageID])
+        _ = try await apiClient.executeRaw(APIRequest(path: "/api/chat/pins", method: pinned ? .post : .delete, body: body, requiresAuth: true))
+    }
+
     public func readCursors(chatID: String) async throws -> [String: Date] {
         let (data, _) = try await apiClient.executeRaw(APIRequest(
             path: "/api/chat/messages/read",
@@ -1273,6 +1302,13 @@ public actor ChatRepository: ChatRepositoryProtocol {
         }
 
         return content
+    }
+
+    /// Loads a v2 chat's keys (read-only, never upgrades) so its inbox preview decrypts before
+    /// the chat is opened, and the chat then opens without waiting on them.
+    public func loadV2Keys(chatID: String) async {
+        guard v2SessionCache[chatID] == nil else { return }
+        _ = try? await resolveV2Session(scope: .chat(chatID), participantUserIDs: [], allowUpgrade: false)
     }
 
     /// Group inbox preview from keys already held in memory (legacy master or cached v2 session).

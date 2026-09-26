@@ -9,11 +9,13 @@ struct GroupAvatarView: View {
     let members: [GroupMember]
     let size: CGFloat
 
+    private static let memberScale: CGFloat = 0.7
+
     var body: some View {
         if avatarURL?.nonEmptyTrimmed != nil || members.count < 2 {
             AvatarView(imageURL: avatarURL, seed: seed, initials: initials, size: size)
         } else {
-            let small = size * 0.7
+            let small = size * Self.memberScale
             ZStack(alignment: .topLeading) {
                 AvatarView(imageURL: members[1].avatarURL, seed: members[1].userID, initials: members[1].initials, size: small)
                     .offset(x: size - small, y: size - small)
@@ -23,6 +25,16 @@ struct GroupAvatarView: View {
             .frame(width: size, height: size, alignment: .topLeading)
             .accessibilityHidden(true)
         }
+    }
+}
+
+extension GroupAvatarView {
+    /// Decodes the pictures these groups' avatars show into memory ahead of display.
+    static func prefetch(_ groups: [CliqueItem], excluding viewerID: String?, size: CGFloat) {
+        AvatarView.prefetch(groups.map(\.avatarURL), size: size)
+        let generated = groups.filter { $0.avatarURL?.nonEmptyTrimmed == nil }
+        AvatarView.prefetch(generated.flatMap { $0.avatarMembers(excluding: viewerID).prefix(2).map(\.avatarURL) },
+                            size: size * memberScale)
     }
 }
 

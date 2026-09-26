@@ -14,23 +14,21 @@ struct GroupSharedView: View {
     let group: CliqueItem
     let kind: Kind
 
-    @State private var items: [ChatMessageItem] = []
-    @State private var beacons: [SharedItem] = []
-    @State private var loaded = false
-    @State private var error: String?
-    @State private var mediaURLs: [String: URL] = [:]
     @State private var viewerURL: ProfileViewerURL?
     @State private var quickLookURL: URL?
-    @State private var tabs: SharedTabs?
-    @State private var isLoadingMore = false
+
+    /// Loaded with the group (prefetched when its chat opens, stored across launches).
+    private var shared: SharedContentModel { GroupSpaceModel.shared(chatID: group.chatID).shared }
+    private var beacons: [SharedItem] { shared.tabs.value?.beacons ?? [] }
+    private var items: [ChatMessageItem] { kind == .files ? shared.fileItems : shared.mediaItems }
 
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 12) {
-                if !loaded {
-                    ClickLoadingView(size: 32, fillsSpace: false).padding(28)
-                } else if let error {
+                if shared.tabs.value == nil, let error = shared.tabs.errorMessage {
                     Button("Couldn't load. \(error) Retry") { Task { await load() } }.padding()
+                } else if shared.tabs.value == nil {
+                    ClickLoadingView(size: 32, fillsSpace: false).padding(28)
                 } else if kind == .beacons {
                     if beacons.isEmpty { empty }
                     ForEach(beacons) { item in
@@ -59,21 +57,21 @@ struct GroupSharedView: View {
                     let prefetchFrom = Set(photos.suffix(12).map(\.id))
                     LazyVGrid(columns: Array(repeating: GridItem(.flexible(), spacing: 3), count: 3), spacing: 3) {
                         ForEach(photos) { item in
-                            ProfileMediaThumbnail(item: item, load: { try await url(for: item) }) { viewerURL = ProfileViewerURL(url: $0) }
-                                .onAppear { if prefetchFrom.contains(item.id) { Task { await loadMore() } } }
+                            ProfileMediaThumbnail(item: item, load: { try await shared.mediaURL(for: item) }) { viewerURL = ProfileViewerURL(url: $0) }
+                                .onAppear { if prefetchFrom.contains(item.id) { Task { await shared.loadMore() } } }
                         }
                     }
                     ForEach(items.filter { $0.media?.kind == .audio }) { item in
                         if let media = item.media {
-                            MessageMediaContent(message: item, media: media, load: { try await url(for: item) }, onOpen: { _ in })
+                            MessageMediaContent(message: item, media: media, load: { try await shared.mediaURL(for: item) }, onOpen: { _ in })
                         }
                     }
                 } else {
                     LazyVStack(spacing: 12) {
                         ForEach(items) { item in
                             if let media = item.media {
-                                MessageMediaContent(message: item, media: media, load: { try await url(for: item) }) { quickLookURL = $0 }
-                                    .onAppear { if item.id == items.last?.id { Task { await loadMore() } } }
+                                MessageMediaContent(message: item, media: media, load: { try await shared.mediaURL(for: item) }) { quickLookURL = $0 }
+                                    .onAppear { if item.id == items.last?.id { Task { await shared.loadMore() } } }
                             }
                         }
                     }
@@ -85,51 +83,15 @@ struct GroupSharedView: View {
         .navigationBarTitleDisplayMode(.inline)
         .fullScreenCover(item: $viewerURL) { MediaViewer(url: $0.url) }
         .quickLookPreview($quickLookURL)
-        .task { if !loaded { await load() } }
+        .task { if shared.tabs.value == nil { await load() } }
     }
 
     private var empty: some View {
         Text("Nothing shared yet.").foregroundStyle(ClickColors.textTertiary).frame(maxWidth: .infinity).padding(40)
     }
 
-    private func url(for item: ChatMessageItem) async throws -> URL {
-        if let url = mediaURLs[item.id] { return url }
-        guard let userID = env.session.currentSession?.userId else { throw ChatRepositoryError.mediaUnavailable }
-        let url = try await env.chat.loadMedia(for: item, conversation: group.chatRoute.conversationIdentity, currentUserID: userID)
-        mediaURLs[item.id] = url
-        return url
-    }
-
     private func load() async {
-        defer { loaded = true }
-        guard let userID = env.session.currentSession?.userId else { return }
-        do {
-            let tabs = try await env.profiles.sharedTabs(chatID: group.chatID)
-            self.tabs = tabs
-            beacons = tabs.beacons
-            let rows = kind == .files ? tabs.fileRows : tabs.mediaRows
-            items = await env.chat.items(fromRows: rows, conversation: group.chatRoute.conversationIdentity, currentUserID: userID)
-                .filter { $0.media != nil }
-            error = nil
-        } catch {
-            self.error = error.userFacingMessage
-        }
-    }
-}
-
-extension GroupSharedView {
-    /// Next (older) page, appended as the grid nears its end.
-    fileprivate func loadMore() async {
-        guard !isLoadingMore, let current = tabs, current.hasMore == true, let cursor = current.oldestAttachment,
-              let userID = env.session.currentSession?.userId else { return }
-        isLoadingMore = true
-        defer { isLoadingMore = false }
-        guard let page = try? await env.profiles.sharedTabs(chatID: group.chatID, before: cursor) else { return }
-        tabs = current.appending(page)
-        let known = Set(items.map(\.id))
-        let rows = kind == .files ? page.fileRows : page.mediaRows
-        items += await env.chat.items(fromRows: rows, conversation: group.chatRoute.conversationIdentity, currentUserID: userID)
-            .filter { $0.media != nil && !known.contains($0.id) }
+        await shared.load(env) { [group] _ in group.chatRoute.conversationIdentity }
     }
 }
 
@@ -194,6 +156,8 @@ struct GroupCommonInterests: View {
 @MainActor
 final class GroupSpaceModel {
     let chatID: String
+    /// Shared photos/voice notes, files and event cards.
+    let shared: SharedContentModel
     private(set) var journal = ModuleState<[JournalEntry]>()
     private(set) var hangouts: [GroupHangout] = []
     private(set) var upcomingPlans: [ChatMessageItem] = []
@@ -212,18 +176,20 @@ final class GroupSpaceModel {
 
     private init(chatID: String) {
         self.chatID = chatID
+        self.shared = SharedContentModel(connectionID: nil, chatID: chatID)
     }
 
     /// Refreshes unless it was refreshed moments ago. `memberConnections`: member user ID →
     /// your connection with them (group hangouts are built from your own encounters).
-    func load(_ env: AppEnvironment, memberConnections: [String: String], force: Bool = false) async {
+    func load(_ env: AppEnvironment, group: CliqueItem, memberConnections: [String: String], force: Bool = false) async {
         guard let userID = env.session.currentSession?.userId else { return }
         upcomingPlans = UpcomingPlans.in(chatID: chatID, userID: userID)
         if !force, let lastLoaded, Date.now.timeIntervalSince(lastLoaded) < 30 { return }
         lastLoaded = .now
         async let notes: Void = loadJournal(env)
         async let together: Void = loadHangouts(env, memberConnections: memberConnections)
-        _ = await (notes, together)
+        async let content: Void = shared.load(env) { _ in group.chatRoute.conversationIdentity }
+        _ = await (notes, together, content)
     }
 
     func loadJournal(_ env: AppEnvironment) async {

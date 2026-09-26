@@ -139,6 +139,54 @@ struct HubConversationActions: View {
     }
 }
 
+/// Push notifications for one conversation (enforced server-side, on every device). The same
+/// menu in inbox rows and the chat header.
+struct MuteMenu: View {
+    let model: ConversationListModel
+    let chatID: String
+    /// Other IDs a mute may be stored under (a direct chat's connection ID).
+    var aliases: [String?] = []
+    var onChanged: (Result<Bool, Error>) -> Void = { _ in }
+
+    var body: some View {
+        let muted = model.isMuted([chatID] + aliases)
+        Menu {
+            if muted {
+                Button("Unmute", systemImage: "bell") { set(nil, muted: false) }
+            } else {
+                Button("For 1 hour") { set(3600, muted: true) }
+                Button("For 8 hours") { set(8 * 3600, muted: true) }
+                Button("For 1 week") { set(7 * 86_400, muted: true) }
+                Button("Until I turn it back on") { set(nil, muted: true) }
+            }
+        } label: {
+            Label(muted ? "Muted" : "Mute Notifications", systemImage: muted ? "bell.slash.fill" : "bell.slash")
+        }
+    }
+
+    private func set(_ duration: TimeInterval?, muted: Bool) {
+        Task {
+            do {
+                try await model.setMuted(chatID: chatID, duration: duration, muted: muted)
+                ClickHaptics.success()
+                onChanged(.success(muted))
+            } catch {
+                onChanged(.failure(error))
+            }
+        }
+    }
+}
+
+/// The small bell shown after a muted conversation's name.
+struct MutedBadge: View {
+    var body: some View {
+        Image(systemName: "bell.slash.fill")
+            .font(.caption2)
+            .foregroundStyle(ClickColors.textTertiary)
+            .accessibilityLabel("Muted")
+    }
+}
+
 /// Confirmation dialogs, report reasons and rename input for `PendingConversationAction`.
 /// Hosts: the inbox and the chat screen. `onEnded` runs after an action that removes the
 /// conversation succeeded (the chat screen pops itself).

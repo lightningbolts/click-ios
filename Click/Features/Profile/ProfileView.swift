@@ -62,6 +62,7 @@ public struct ProfileView: View {
                         onOpenPlan: { message in env.router.navigate(to: .conversation(chatID: message.chatID, messageID: message.id)) }
                     )
                 }
+                chatBackdrop
                 Section {
                     tabContent
                 } header: {
@@ -266,13 +267,9 @@ public struct ProfileView: View {
 
     /// Click Drop from the profile: sent into the direct chat, revealed 24 h later.
     private func sendClickDrop(_ image: UIImage) async {
-        guard let connectionID = model.connectionID, let userID = env.session.currentSession?.userId,
+        guard let conversation = directConversation, let userID = env.session.currentSession?.userId,
               let data = image.jpegData(compressionQuality: 0.9), var draft = await MediaDraftBuilder.image(from: data) else { return }
         draft.isClickDrop = true
-        let conversation = ConversationIdentity(
-            chatID: inboxItem?.chatID ?? connectionID, connectionID: connectionID,
-            peerUserID: model.userID, peerDisplayName: model.profile.value?.displayName ?? "Click user"
-        )
         do {
             _ = try await env.chat.sendMedia(conversation: conversation, currentUserID: userID, currentUserName: "You",
                                              draft: draft, replyToID: nil, clientMessageID: UUID().uuidString.lowercased())
@@ -325,9 +322,7 @@ public struct ProfileView: View {
                     Button {
                         tab = value
                         ClickHaptics.selection()
-                        if value == .links, let name = model.profile.value?.displayName {
-                            Task { await model.loadLinks(peerName: name) }
-                        }
+                        if value == .links { Task { await model.loadLinks() } }
                     } label: {
                         Text(value.title)
                             .font(ClickTypography.supporting.weight(tab == value ? .semibold : .medium))
@@ -353,7 +348,53 @@ public struct ProfileView: View {
         case .media: mediaTab
         case .links: linksTab
         case .files: filesTab
-        case .beacons: sharedList(model.tabs.value?.beacons, empty: "No events or beacons shared yet.")
+        case .beacons: sharedList(model.shared.tabs.value?.beacons, empty: "No events or beacons shared yet.")
+        case .pinned: pinnedTab
+        }
+    }
+
+    @ViewBuilder
+    private var pinnedTab: some View {
+        if let conversation = directConversation {
+            VStack(alignment: .leading, spacing: 4) {
+                PinnedMessagesList(model: env.conversationModel(for: conversation))
+            }
+            .padding(14)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .groupedSurface()
+        } else {
+            Text("Pinned messages appear once you're connected.")
+                .font(ClickTypography.supporting)
+                .foregroundStyle(ClickColors.textTertiary)
+                .padding(20)
+        }
+    }
+
+    /// Your direct chat with this person (nil until you're connected).
+    private var directConversation: ConversationIdentity? {
+        guard let connectionID = model.connectionID else { return nil }
+        return ConversationIdentity(
+            chatID: inboxItem?.chatID ?? connectionID, connectionID: connectionID,
+            peerUserID: model.userID, peerDisplayName: model.profile.value?.displayName ?? inboxItem?.displayName ?? "Click user"
+        )
+    }
+
+    /// This chat's backdrop: automatic (from where you met) or a chosen style.
+    @ViewBuilder
+    private var chatBackdrop: some View {
+        if !isSelf, let connectionID = model.connectionID {
+            VStack(alignment: .leading, spacing: 10) {
+                Text("Chat background")
+                    .font(ClickTypography.bodyEmphasized)
+                ChatBackdropPicker(
+                    key: connectionID,
+                    seed: connectionID,
+                    automatic: .automatic(encounters: model.encounters.value, place: inboxItem?.encounterLocation)
+                )
+            }
+            .padding(18)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .groupedSurface()
         }
     }
 
@@ -448,7 +489,7 @@ public struct ProfileView: View {
                     if item.id != items.last?.id { Divider().padding(.leading, 68) }
                 }
             } else {
-                switch model.tabs.phase {
+                switch model.shared.tabs.phase {
                 case .unavailable(let reason):
                     Text(reason).font(ClickTypography.supporting).foregroundStyle(ClickColors.textTertiary).padding(20)
                 case .failed:
@@ -467,24 +508,24 @@ public struct ProfileView: View {
 
     @ViewBuilder
     private var mediaTab: some View {
-        if model.tabs.value == nil {
+        if model.shared.tabs.value == nil {
             sharedList(nil, empty: "")
-        } else if model.mediaItems.isEmpty {
+        } else if model.shared.mediaItems.isEmpty {
             sharedList([], empty: "No photos or voice notes shared yet.")
         } else {
-            let photos = model.mediaItems.filter { $0.media?.kind == .image }
-            let voice = model.mediaItems.filter { $0.media?.kind == .audio }
+            let photos = model.shared.mediaItems.filter { $0.media?.kind == .image }
+            let voice = model.shared.mediaItems.filter { $0.media?.kind == .audio }
             VStack(alignment: .leading, spacing: 14) {
                 if !photos.isEmpty {
                     let prefetchFrom = Set(photos.suffix(12).map(\.id))
                     LazyVGrid(columns: Array(repeating: GridItem(.flexible(), spacing: 3), count: 3), spacing: 3) {
                         ForEach(photos) { item in
-                            ProfileMediaThumbnail(item: item, load: { try await model.mediaURL(for: item) }) { url in
+                            ProfileMediaThumbnail(item: item, load: { try await model.shared.mediaURL(for: item) }) { url in
                                 viewerURL = ProfileViewerURL(url: url)
                             }
                             // The next page loads while the last rows are still coming into view.
                             .onAppear {
-                                if prefetchFrom.contains(item.id) { Task { await model.loadMoreMedia() } }
+                                if prefetchFrom.contains(item.id) { Task { await model.shared.loadMore() } }
                             }
                         }
                     }
@@ -498,9 +539,9 @@ public struct ProfileView: View {
                         LazyVStack(alignment: .leading, spacing: 8) {
                             ForEach(voice) { item in
                                 if let media = item.media {
-                                    MessageMediaContent(message: item, media: media, load: { try await model.mediaURL(for: item) }, onOpen: { _ in })
+                                    MessageMediaContent(message: item, media: media, load: { try await model.shared.mediaURL(for: item) }, onOpen: { _ in })
                                         .onAppear {
-                                            if item.id == voice.last?.id { Task { await model.loadMoreMedia() } }
+                                            if item.id == voice.last?.id { Task { await model.shared.loadMore() } }
                                         }
                                 }
                             }
@@ -513,15 +554,15 @@ public struct ProfileView: View {
 
     @ViewBuilder
     private var filesTab: some View {
-        if model.tabs.value == nil {
+        if model.shared.tabs.value == nil {
             sharedList(nil, empty: "")
-        } else if model.fileItems.isEmpty {
+        } else if model.shared.fileItems.isEmpty {
             sharedList([], empty: "No files shared yet.")
         } else {
             VStack(spacing: 8) {
-                ForEach(model.fileItems) { item in
+                ForEach(model.shared.fileItems) { item in
                     if let media = item.media {
-                        MessageMediaContent(message: item, media: media, load: { try await model.mediaURL(for: item) }) { url in
+                        MessageMediaContent(message: item, media: media, load: { try await model.shared.mediaURL(for: item) }) { url in
                             quickLookURL = url
                         }
                         .frame(maxWidth: .infinity, alignment: .leading)
@@ -569,7 +610,7 @@ public struct ProfileView: View {
                     Text(reason).font(ClickTypography.supporting).foregroundStyle(ClickColors.textTertiary).padding(20)
                 } else if model.links.errorMessage != nil {
                     Button("Couldn't read your messages for links. Retry") {
-                        Task { await model.loadLinks(peerName: model.profile.value?.displayName ?? "") }
+                        Task { await model.loadLinks() }
                     }
                     .font(ClickTypography.supporting).padding(20)
                 } else {
@@ -648,7 +689,7 @@ public struct ProfileView: View {
 }
 
 private enum ProfileTab: String, CaseIterable, Identifiable {
-    case timeline, beacons, media, links, files
+    case timeline, pinned, beacons, media, links, files
     var id: String { rawValue }
     var title: String { rawValue.capitalized }
 }
@@ -928,6 +969,25 @@ struct ProfileMediaThumbnail: View {
     @State private var url: URL?
     @State private var failed = false
 
+    init(item: ChatMessageItem, load: @escaping () async throws -> URL, onOpen: @escaping (URL) -> Void) {
+        self.item = item
+        self.load = load
+        self.onOpen = onOpen
+        // Prefetched with the profile, or shown before: on screen from the first frame.
+        let cached = DecodedMediaCache.entry(Self.cacheKey(item))
+        _image = State(initialValue: cached?.image)
+        _url = State(initialValue: cached?.url)
+    }
+
+    static func cacheKey(_ item: ChatMessageItem) -> String { item.id + "#grid" }
+    static let side: CGFloat = 360
+
+    /// Decodes this photo's thumbnail ahead of display.
+    static func prefetch(_ item: ChatMessageItem, load: @Sendable () async throws -> URL) async {
+        guard item.media?.kind == .image, item.media?.isLocked() != true, let file = try? await load() else { return }
+        _ = await DecodedMediaCache.thumbnail(of: file, side: side, key: cacheKey(item))
+    }
+
     var body: some View {
         Color.clear
             .aspectRatio(1, contentMode: .fit)
@@ -951,9 +1011,7 @@ struct ProfileMediaThumbnail: View {
                 guard image == nil, item.media?.isLocked() != true else { return }
                 do {
                     let fileURL = try await load()
-                    let thumb = await Task.detached(priority: .utility) {
-                        UIImage(contentsOfFile: fileURL.path)?.preparingThumbnail(of: CGSize(width: 360, height: 360))
-                    }.value
+                    let thumb = await DecodedMediaCache.thumbnail(of: fileURL, side: Self.side, key: Self.cacheKey(item))
                     url = fileURL
                     image = thumb
                     failed = thumb == nil

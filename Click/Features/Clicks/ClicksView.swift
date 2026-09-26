@@ -193,6 +193,7 @@ public struct ClicksView: View {
                     }
                 }
                 .contextMenu {
+                    if let chatID = item.chatID?.nonEmptyTrimmed { muteMenu(chatID: chatID, aliases: [item.connectionID]) }
                     DirectConversationActions(item: item, model: model, pending: $pendingAction, onProfile: { openProfile(item) })
                 }
             }
@@ -231,6 +232,7 @@ public struct ClicksView: View {
                         group: group,
                         preview: model.previewText(for: group),
                         avatarMembers: group.avatarMembers(excluding: env.session.currentSession?.userId),
+                        isMuted: model.isMuted([group.chatID]),
                         onOpen: { openGroup(group) },
                         onProfile: { env.router.navigate(to: .groupProfile(chatID: group.chatID)) }
                     )
@@ -244,6 +246,7 @@ public struct ClicksView: View {
                         .tint(ClickColors.accentForeground)
                     }
                     .contextMenu {
+                        muteMenu(chatID: group.chatID)
                         GroupConversationActions(
                             group: group,
                             model: model,
@@ -253,7 +256,7 @@ public struct ClicksView: View {
                         )
                     }
                 case .hub(let hub):
-                    HubInboxRow(hub: hub) {
+                    HubInboxRow(hub: hub, isMuted: model.isMuted([hub.hubID])) {
                         ClickHaptics.selection()
                         env.router.navigate(to: .hub(hubID: hub.hubID))
                     }
@@ -266,6 +269,7 @@ public struct ClicksView: View {
                         }
                     }
                     .contextMenu {
+                        muteMenu(chatID: hub.hubID)
                         HubConversationActions(hub: hub, currentUserID: env.session.currentSession?.userId, pending: $pendingAction)
                     }
                 }
@@ -278,6 +282,12 @@ public struct ClicksView: View {
                     .listRowSeparator(.hidden)
                     .listRowBackground(Color.clear)
             }
+        }
+    }
+
+    private func muteMenu(chatID: String, aliases: [String?] = []) -> some View {
+        MuteMenu(model: model, chatID: chatID, aliases: aliases) { result in
+            if case .failure = result { model.actionError = "Couldn't change notifications. Try again." }
         }
     }
 
@@ -450,12 +460,7 @@ struct ConversationRow: View {
                                 .foregroundStyle(ClickColors.accentForeground)
                                 .accessibilityHidden(true)
                         }
-                        if isMuted {
-                            Image(systemName: "bell.slash.fill")
-                                .font(.caption2)
-                                .foregroundStyle(ClickColors.textTertiary)
-                                .accessibilityLabel("Muted")
-                        }
+                        if isMuted { MutedBadge() }
                         Spacer(minLength: 8)
                         if let date = item.lastActivityAt {
                             Text(InboxFormatting.timestamp(for: date))
@@ -557,6 +562,7 @@ private enum GroupsTabRow: Identifiable {
 
 struct HubInboxRow: View {
     let hub: JoinedHub
+    var isMuted = false
     let onOpen: () -> Void
 
     var body: some View {
@@ -571,6 +577,7 @@ struct HubInboxRow: View {
                             .font(ClickTypography.bodyEmphasized)
                             .foregroundStyle(ClickColors.textPrimary)
                             .lineLimit(1)
+                        if isMuted { MutedBadge() }
                         Spacer(minLength: 8)
                         if let date = hub.lastActivityAt {
                             Text(InboxFormatting.timestamp(for: date))
@@ -617,6 +624,7 @@ struct GroupInboxRow: View {
     let group: CliqueItem
     let preview: String
     let avatarMembers: [GroupMember]
+    var isMuted = false
     let onOpen: () -> Void
     var onProfile: () -> Void = {}
 
@@ -641,6 +649,7 @@ struct GroupInboxRow: View {
                             .font(ClickTypography.bodyEmphasized)
                             .foregroundStyle(ClickColors.textPrimary)
                             .lineLimit(1)
+                        if isMuted { MutedBadge() }
                         Spacer(minLength: 8)
                         if let date = group.lastActivityAt {
                             Text(InboxFormatting.timestamp(for: date))

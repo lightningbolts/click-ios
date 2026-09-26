@@ -137,7 +137,7 @@ public struct MessageActionOverlay: View {
                 // Invisible catcher: taps and drags anywhere else dismiss; nothing is dimmed.
                 Color.clear
                     .contentShape(Rectangle())
-                    .onTapGesture(perform: dismissOverlay)
+                    .onTapGesture { dismissOverlay() }
                     .gesture(DragGesture(minimumDistance: 8).onEnded { _ in dismissOverlay() })
 
                 bubble
@@ -175,14 +175,16 @@ public struct MessageActionOverlay: View {
     }
 
     /// Settles the bubble back into its row and fades the controls before removing the
-    /// overlay, so tapping away never makes it vanish in one frame.
-    private func dismissOverlay() {
+    /// overlay, so tapping away never makes it vanish in one frame. `then` runs once the real
+    /// bubble is showing again.
+    private func dismissOverlay(then action: (() -> Void)? = nil) {
         guard !isDismissing else { return }
         isDismissing = true
         withAnimation(.spring(response: 0.28, dampingFraction: 0.9)) {
             appeared = false
         } completion: {
             onDismiss()
+            action?()
         }
     }
 
@@ -192,8 +194,10 @@ public struct MessageActionOverlay: View {
                 let hasReacted = message.reactions.contains { $0.reactionType == emoji && $0.userReacted }
                 Button {
                     ClickHaptics.impact(.light)
-                    onReact(emoji)
-                    dismissOverlay()
+                    // After the lifted copy has settled: the visible bubble then grows with its
+                    // reaction (animated by the timeline) rather than resizing, hidden, under
+                    // a copy that lands on its old frame.
+                    dismissOverlay { onReact(emoji) }
                 } label: {
                     ZStack {
                         if hasReacted {

@@ -135,8 +135,10 @@ struct ChatTimelineView: UIViewRepresentable {
             let contentChanged = version != contentVersion
             contentVersion = version
             guard rowsChanged || contentChanged else {
-                // State outside the rows (highlight, lifted bubble) may have changed.
+                // State outside the rows (highlight, lifted bubble) may have changed, and so may
+                // paging (a page that added nothing finished while the reader rests at the top).
                 reconfigureVisible()
+                requestOlderIfNeeded()
                 return
             }
 

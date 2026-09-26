@@ -100,7 +100,6 @@ public final class LocalStore: @unchecked Sendable {
         );
         CREATE INDEX IF NOT EXISTS messages_by_time ON messages (conv, created_ms);
         CREATE TABLE IF NOT EXISTS conv_alias (alias TEXT PRIMARY KEY, conv TEXT NOT NULL);
-        CREATE TABLE IF NOT EXISTS conv_meta (conv TEXT PRIMARY KEY, reached_start INTEGER NOT NULL DEFAULT 0, synced_at REAL);
         CREATE TABLE IF NOT EXISTS kv (key TEXT PRIMARY KEY, json BLOB NOT NULL, fetched_at REAL NOT NULL);
         """)
         hasFTS = exec("""
@@ -109,13 +108,13 @@ public final class LocalStore: @unchecked Sendable {
             tokenize = 'unicode61 remove_diacritics 2'
         );
         """)
-        // Earlier builds stored islands (v1: detached search windows; v2: history pages that
-        // jumped past an old tombstone), so history pages skipped a gap or stopped early with
-        // the start wrongly marked reached. Messages are a cache: drop them once and refetch.
-        if userVersion() < 2 {
-            exec("DELETE FROM messages; DELETE FROM conv_meta;")
+        // Earlier builds stored islands (detached search windows; old tombstones from history
+        // pages and from delta syncs), so history pages skipped a gap or stopped early with the
+        // start wrongly marked reached. Messages are a cache: drop them once and refetch.
+        if userVersion() < 3 {
+            exec("DELETE FROM messages; DROP TABLE IF EXISTS conv_meta;")
             if hasFTS { exec("DELETE FROM messages_fts;") }
-            exec("PRAGMA user_version = 2;")
+            exec("PRAGMA user_version = 3;")
         }
     }
 
@@ -303,22 +302,39 @@ public final class LocalStore: @unchecked Sendable {
         }
     }
 
-    /// Whether the oldest message of this conversation is known to be stored (no more history).
-    func reachedStart(conversation: String, userID: String) -> Bool {
-        queue.sync {
-            guard ensureOpen(userID), let db,
-                  let statement = Statement(db, "SELECT reached_start FROM conv_meta WHERE conv = ?") else { return false }
-            statement.bind([resolveLocked(conversation)])
-            return statement.step() && statement.int64(0) != 0
+    /// Stored messages by ID, in no particular order.
+    func messages(ids: [String], conversation: String, userID: String) async -> [ChatMessageItem] {
+        await withCheckedContinuation { continuation in
+            queue.async {
+                var result: [ChatMessageItem] = []
+                defer { continuation.resume(returning: result) }
+                guard self.ensureOpen(userID), let db = self.db,
+                      let statement = Statement(db, "SELECT json FROM messages WHERE conv = ? AND id = ?") else { return }
+                let conv = self.resolveLocked(conversation)
+                for id in ids {
+                    statement.bind([conv, id])
+                    result += self.decodeMessages(statement)
+                }
+            }
         }
     }
 
-    func setReachedStart(_ reached: Bool, conversation: String, userID: String) {
-        queue.async {
-            guard self.ensureOpen(userID), let db = self.db,
-                  let statement = Statement(db, "INSERT INTO conv_meta (conv, reached_start) VALUES (?, ?) ON CONFLICT(conv) DO UPDATE SET reached_start = excluded.reached_start") else { return }
-            statement.bind([self.resolveLocked(conversation), reached ? 1 : 0])
-            statement.run()
+    /// Inbox previews this device can show without keys: for each key, the plaintext of the
+    /// conversation's stored message carrying `wire` (the server's ciphertext), among its newest.
+    func plaintext(ofLatest wires: [String: (conversation: String, wire: String)], userID: String) async -> [String: String] {
+        await withCheckedContinuation { continuation in
+            queue.async {
+                var result: [String: String] = [:]
+                defer { continuation.resume(returning: result) }
+                guard self.ensureOpen(userID), let db = self.db,
+                      let statement = Statement(db, "SELECT json FROM messages WHERE conv = ? ORDER BY created_ms DESC LIMIT 5") else { return }
+                for (key, source) in wires where !source.wire.isEmpty {
+                    statement.bind([self.resolveLocked(source.conversation)])
+                    if let match = self.decodeMessages(statement).first(where: { $0.rawContent == source.wire && !$0.isDeleted }) {
+                        result[key] = match.content
+                    }
+                }
+            }
         }
     }
 

@@ -9,7 +9,7 @@ import Observation
 @MainActor
 final class ConversationListModel {
     private(set) var snapshot: ClicksSnapshot?
-    /// Decrypted preview text by connection ID. Never persisted.
+    /// Decrypted preview text by connection ID (memory only).
     private(set) var previewTexts: [String: String] = [:]
     private(set) var refreshError: String?
     var actionError: String?
@@ -60,7 +60,10 @@ final class ConversationListModel {
     /// Paints the cached inbox immediately, then refreshes.
     func load() async {
         guard refreshesAutomatically, let environment else { return }
-        if let userID { hubs = await environment.joinedHubs.hubs(userID: userID) }
+        if let userID {
+            hubs = await environment.joinedHubs.hubs(userID: userID)
+            if mutes.isEmpty, let stored = await CacheStore.shared.load([String: Date?].self, key: "mutes", userID: userID) { mutes = stored }
+        }
         if snapshot == nil, let userID, let cached = await environment.phase3.cachedClicks(for: userID) {
             let cachedGroups = await CacheStore.shared.load([CliqueItem].self, key: "groups", userID: userID)
             snapshot = ClicksSnapshot(
@@ -69,9 +72,19 @@ final class ConversationListModel {
                 groups: cachedGroups ?? cached.groups,
                 mapPins: cached.mapPins
             )
+            prefetchVisuals()
             await decryptPreviews(for: cached)
         }
         await refresh()
+    }
+
+    /// Every avatar and hub picture the inbox tabs show, decoded into memory as soon as the rows
+    /// are known, so opening Groups (or scrolling) never shows one arriving.
+    private func prefetchVisuals() {
+        let size = ClickMetrics.Avatar.conversation
+        AvatarView.prefetch((active + archived).map(\.avatarUrl), size: size)
+        GroupAvatarView.prefetch(groups, excluding: userID, size: size)
+        EventVisual.prefetch(hubs.compactMap { $0.eventBeaconID.flatMap(BeaconVisual.knownURL) })
     }
 
     func refreshIfStale() async {
@@ -96,7 +109,11 @@ final class ConversationListModel {
         guard let environment, let userID else { return }
         refreshError = nil
         Task { await refreshHubs(environment, userID: userID) }
-        Task { if let fresh = try? await environment.me.chatMutes() { mutes = fresh } }
+        Task {
+            guard let fresh = try? await environment.me.chatMutes() else { return }
+            mutes = fresh
+            await CacheStore.shared.save(fresh, key: "mutes", userID: userID)
+        }
         async let clicksTask = Transport.refreshing { try await environment.phase3.refreshClicks(for: userID) }
         async let groupsTask = Transport.refreshing { try await environment.groups.groups(userID: userID) }
         let groups: [CliqueItem]?
@@ -118,6 +135,7 @@ final class ConversationListModel {
                 mapPins: fresh.mapPins
             )
             snapshot = merged
+            prefetchVisuals()
             refreshError = nil
             lastRefresh = Date()
             await decryptPreviews(for: merged)
@@ -272,6 +290,7 @@ final class ConversationListModel {
         // stored preview until they rise into the top 10.
         guard hubPreviewsVisible else {
             hubs = current
+            prefetchVisuals()
             return
         }
         let ranked = current.sorted { ($0.lastActivityAt ?? $0.joinedAt) > ($1.lastActivityAt ?? $1.joinedAt) }
@@ -296,6 +315,7 @@ final class ConversationListModel {
         }
         await environment.joinedHubs.replaceAll(updated, userID: userID)
         hubs = updated
+        prefetchVisuals()
     }
 
     /// Called when a hub or event chat opens successfully.
@@ -364,6 +384,7 @@ final class ConversationListModel {
         if muted { mutes[chatID] = .some(until) } else { mutes[chatID] = nil }
         do {
             try await environment.me.setChatMute(chatID: chatID, muted: muted, until: until)
+            if let userID { await CacheStore.shared.save(mutes, key: "mutes", userID: userID) }
         } catch {
             mutes[chatID] = previous
             throw error
@@ -477,28 +498,54 @@ final class ConversationListModel {
         )
     }
 
+    /// Bumped per preview pass, so a slower earlier pass never overwrites a newer one.
+    private var previewGeneration = 0
+
     private func decryptPreviews(for snapshot: ClicksSnapshot) async {
         guard let environment, let userID else { return }
-        var texts: [String: String] = [:]
+        previewGeneration += 1
+        let generation = previewGeneration
+        let chat = environment.chat
+        typealias Source = (conversation: String, v2ChatID: String?, wire: String, decrypt: () async -> String?)
+        var sources: [String: Source] = [:]
         for item in snapshot.connections + snapshot.archived {
             guard let message = item.lastMessage else { continue }
-            if let text = await environment.chat.inboxPreviewText(
-                message.content,
-                chatID: item.chatID,
-                connectionID: item.connectionID,
-                peerUserID: item.userID,
-                currentUserID: userID
-            ) {
-                texts[item.connectionID] = text
-            }
+            sources[item.connectionID] = (item.chatID ?? item.connectionID, item.chatID, message.content, {
+                await chat.inboxPreviewText(message.content, chatID: item.chatID, connectionID: item.connectionID,
+                                            peerUserID: item.userID, currentUserID: userID)
+            })
         }
         for group in snapshot.cliques {
             guard let message = group.lastMessage else { continue }
-            // Group previews decrypt only from key material already held on this device.
-            if let text = await environment.chat.groupPreviewText(message.content, chatID: group.chatID, groupID: group.id) {
-                texts[Self.groupPreviewKey(group.chatID)] = text
-            }
+            sources[Self.groupPreviewKey(group.chatID)] = (group.chatID, group.chatID, message.content, {
+                await chat.groupPreviewText(message.content, chatID: group.chatID, groupID: group.id)
+            })
         }
+
+        var texts: [String: String] = [:]
+        for (key, source) in sources {
+            if let text = await source.decrypt() { texts[key] = text }
+        }
+        // Not decryptable from keys in memory (a chat not opened since launch): this device's
+        // stored copy of the message, else the chat's keys, loaded now (warming the chat too).
+        var missing = sources.filter { texts[$0.key] == nil }
+        if !missing.isEmpty {
+            let stored = await LocalStore.shared.plaintext(ofLatest: missing.mapValues { ($0.conversation, $0.wire) }, userID: userID)
+            texts.merge(stored) { current, _ in current }
+            missing = missing.filter { texts[$0.key] == nil }
+        }
+        guard generation == previewGeneration else { return }
+        previewTexts = texts
+
+        let chatIDs = Set(missing.values.compactMap { ClickCryptoV2.isEncrypted($0.wire) ? $0.v2ChatID : nil })
+        guard !chatIDs.isEmpty else { return }
+        await withTaskGroup(of: Void.self) { group in
+            for chatID in chatIDs { group.addTask { await chat.loadV2Keys(chatID: chatID) } }
+        }
+        for (key, source) in missing {
+            if let text = await source.decrypt() { texts[key] = text }
+        }
+        guard generation == previewGeneration else { return }
         previewTexts = texts
     }
 

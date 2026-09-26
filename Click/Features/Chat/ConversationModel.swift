@@ -107,17 +107,18 @@ public final class ConversationModel {
                 }
             }
         }
-        if let store = self.store {
-            hasMoreHistory = !store.reachedStart(conversation: identity.chatID, userID: currentUserID)
-        }
+        // Rows from disk may predate their quotes' resolution: fill them before the first frame.
+        resolveReplyQuotes()
     }
 
-    /// Writes server rows to the on-device timeline. The store holds one contiguous run back
-    /// from the latest message (history pages read it as gap-free), so a detached search
-    /// window is never written.
+    /// Writes server rows to the on-device timeline, as loaded (reply quotes resolved, so a
+    /// chat painted from disk shows them on its first frame). The store holds one contiguous
+    /// run back from the latest message (history pages read it as gap-free), so a detached
+    /// search window is never written.
     private func persist(_ rows: [ChatMessageItem]) {
         guard let store, !rows.isEmpty, !isDetachedFromLatest else { return }
-        store.upsertMessages(rows, conversation: identity.chatID, userID: currentUserID)
+        let loaded = Dictionary(items.map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first })
+        store.upsertMessages(rows.map { loaded[$0.id] ?? $0 }, conversation: identity.chatID, userID: currentUserID)
     }
 
     public var realtimeHealth: SubscriptionHealth {
@@ -141,16 +142,11 @@ public final class ConversationModel {
                     connectionID: identity.connectionID
                 )
                 store?.link(aliases: [requested, identity.connectionID ?? ""], to: identity.chatID, userID: currentUserID)
-                if let store {
-                    // The model can be created before a connection route resolves to its canonical
-                    // chat UUID. Re-read paging state against that canonical conversation so a
-                    // stale alias cannot permanently disable older-history loading.
-                    hasMoreHistory = !store.reachedStart(conversation: identity.chatID, userID: currentUserID)
-                }
                 if items.isEmpty, let store {
                     let stored = store.latestMessages(conversation: identity.chatID, userID: currentUserID, limit: Self.initialPaintSize)
                     if !stored.isEmpty {
                         items = stored
+                        resolveReplyQuotes()
                         phase = .loaded
                     }
                 }
@@ -179,10 +175,78 @@ public final class ConversationModel {
         }
 
         // Always refresh: a cached timeline painted first is updated in place.
+        async let pinned: Void = loadPins()
         await loadMessages()
         async let cursors: Void = loadReadCursors()
         async let scheduledRows: Void = loadScheduled()
-        _ = await (cursors, scheduledRows)
+        _ = await (pinned, cursors, scheduledRows)
+    }
+
+    // MARK: - Pins
+
+    /// This chat's pinned messages, newest pin first (direct and group chats).
+    public private(set) var pins: [MessagePin] = []
+    /// True once pins came from this device or the server (an empty list is then real).
+    public private(set) var hasLoadedPins = false
+    /// Bumped by every pin or unpin, so a refresh that started before one never undoes it.
+    private var pinEdits = 0
+
+    public var supportsPins: Bool { identity.hubID == nil }
+
+    private var pinsKey: String { "pins.\(identity.chatID)" }
+
+    /// Paints the pins stored on this device, then refreshes them. Also used from profiles,
+    /// where this chat may not have been opened (and resolved to its canonical ID) yet.
+    public func loadPins() async {
+        guard supportsPins, let chatID = try? await chatRepository.resolveCanonicalChatID(chatID: identity.chatID, connectionID: identity.connectionID) else { return }
+        let key = "pins.\(chatID)"
+        if !hasLoadedPins, let stored = store?.load([MessagePin].self, key: key, userID: currentUserID) {
+            pins = stored.value
+            hasLoadedPins = true
+        }
+        let edits = pinEdits
+        let fresh = try? await chatRepository.pins(chatID: chatID)
+        hasLoadedPins = true
+        guard let fresh, edits == pinEdits else { return }
+        pins = fresh
+        store?.save(fresh, key: key, userID: currentUserID)
+    }
+
+    public func isPinned(_ item: ChatMessageItem) -> Bool {
+        pins.contains { $0.messageID == item.id }
+    }
+
+    /// Pins (to the top) or unpins, shown at once and undone if the server refuses.
+    public func togglePin(_ item: ChatMessageItem) async {
+        pinEdits += 1
+        let original = pins
+        let pinning = !isPinned(item)
+        let others = pins.filter { $0.messageID != item.id }
+        pins = pinning ? [MessagePin(messageID: item.id, pinnedBy: currentUserID, pinnedAt: .now)] + others : others
+        do {
+            try await chatRepository.setPinned(pinning, messageID: item.id)
+            store?.save(pins, key: pinsKey, userID: currentUserID)
+            operationError = nil
+        } catch {
+            pins = original
+            operationError = error.userFacingMessage
+        }
+    }
+
+    /// The pinned messages themselves, newest pin first: from the loaded timeline, else this
+    /// device's store, else the server.
+    public func pinnedMessages() async -> [ChatMessageItem] {
+        let ids = pins.map(\.messageID)
+        var byID = Dictionary(items.map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first })
+        let unloaded = ids.filter { byID[$0] == nil }
+        if !unloaded.isEmpty, let store {
+            for item in await store.messages(ids: unloaded, conversation: identity.chatID, userID: currentUserID) { byID[item.id] = item }
+        }
+        for id in ids where byID[id] == nil {
+            let window = try? await chatRepository.fetchMessages(around: id, conversation: identity, currentUserID: currentUserID, limit: 1)
+            if let item = window?.first(where: { $0.id == id }) { byID[id] = item }
+        }
+        return ids.compactMap { byID[$0] }.filter { !$0.isDeleted }
     }
 
     // MARK: - Group read receipts
@@ -269,8 +333,9 @@ public final class ConversationModel {
             kept.clientMessageID = clientID
             return kept
         }
-        // Older pages already loaded stay put when the latest page refreshes.
-        let oldestFetched = fetched.map(\.createdAt).min() ?? .distantFuture
+        // Older pages already loaded stay put when the latest page refreshes. Tombstones don't
+        // bound the page: a delta carries them for messages of any age (they replace by ID).
+        let oldestFetched = fetched.lazy.filter { !$0.isDeleted }.map(\.createdAt).min() ?? .distantFuture
         let older = items.filter { $0.createdAt < oldestFetched && !fetchedIDs.contains($0.id) && $0.deliveryStatus != .sending && $0.deliveryStatus != .failed }
         return (older + fetched + pending).sorted { $0.createdAt < $1.createdAt }
     }
@@ -375,7 +440,15 @@ public final class ConversationModel {
             if let until, newest >= until { break }
             since = Int64(newest.timeIntervalSince1970 * 1000)
         }
-        return collected
+        // A delta carries every tombstone deleted since, however old the message. One older than
+        // the loaded timeline must not become a row: as the oldest row, the next history page
+        // would jump from it past everything in between. Its stored copy is dropped instead.
+        let floor = items.first { $0.deliveryStatus != .sending && $0.deliveryStatus != .failed }?.createdAt ?? .distantPast
+        return collected.filter { row in
+            guard row.isDeleted, row.createdAt < floor else { return true }
+            store?.removeMessage(id: row.id, conversation: identity.chatID, userID: currentUserID)
+            return false
+        }
     }
 
     /// Catch-up after a reconnect or foreground: only what's new since the newest row.
@@ -387,11 +460,7 @@ public final class ConversationModel {
         do {
             let rows = try await fetchDeltas(after: newest)
             guard !rows.isEmpty else { return }
-            items = mergeFetched(rows)
-            // Tombstones for older rows replace them in place.
-            for tomb in rows where tomb.isDeleted {
-                if let index = items.firstIndex(where: { $0.id == tomb.id }) { items[index] = items[index].tombstoned() }
-            }
+            items = mergeFetched(rows)   // tombstones replace their rows in place
             resolveReplyQuotes()
             persist(rows)
             saveToCache()
@@ -619,13 +688,13 @@ public final class ConversationModel {
             )
             let known = Set(items.map(\.id))
             let fresh = older.filter { !known.contains($0.id) && $0.createdAt <= networkOldest.createdAt }
-            // A short page, or a server that ignored the cursor (nothing new), is the start.
+            // A short page, or a server that ignored the cursor (nothing new), is the start. Not
+            // persisted: a stale flag silently disabled paging; one request re-proves it.
             hasMoreHistory = Self.isFullPage(older) && !fresh.isEmpty
-            if !hasMoreHistory { store?.setReachedStart(true, conversation: identity.chatID, userID: currentUserID) }
             guard !fresh.isEmpty else { return }
-            persist(fresh)
             items = (fresh + items).sorted { $0.createdAt < $1.createdAt }
             resolveReplyQuotes()
+            persist(fresh)
         } catch {
             if !error.isCancellation { operationError = error.userFacingMessage }
         }
@@ -935,7 +1004,13 @@ public final class ConversationModel {
 
     private func setupRealtimeCallbacks() {
         realtimeManager.onRejoined = { [weak self] in
-            Task { await self?.syncNewer() }
+            Task {
+                await self?.syncNewer()
+                await self?.loadPins()
+            }
+        }
+        realtimeManager.onPinsChanged = { [weak self] in
+            Task { @MainActor in await self?.loadPins() }
         }
         realtimeManager.onMessageInserted = { [weak self] payload in
             Task { @MainActor in
@@ -1285,6 +1360,14 @@ extension ConversationModel {
 private struct PreviewChatRepo: ChatRepositoryProtocol {
     let initial: [ChatMessageItem]
     var all: [ChatMessageItem] = []
+    private final class Pins: @unchecked Sendable { var list: [MessagePin] = [] }
+    private let pinned = Pins()
+
+    func pins(chatID: String) async throws -> [MessagePin] { pinned.list }
+    func setPinned(_ pinned: Bool, messageID: String) async throws {
+        self.pinned.list.removeAll { $0.messageID == messageID }
+        if pinned { self.pinned.list.insert(MessagePin(messageID: messageID, pinnedBy: "user-self", pinnedAt: .now), at: 0) }
+    }
 
     func resolveCanonicalChatID(chatID: String, connectionID: String?) async throws -> String {
         chatID

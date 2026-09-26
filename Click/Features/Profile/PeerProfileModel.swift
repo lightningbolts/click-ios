@@ -28,17 +28,16 @@ enum TimelineItem: Identifiable, Equatable {
 @MainActor
 final class PeerProfileModel {
     let userID: String
-    private(set) var connectionID: String?
+    private(set) var connectionID: String? {
+        didSet { if connectionID != oldValue { shared = SharedContentModel(connectionID: connectionID) } }
+    }
 
     private(set) var profile = ModuleState<PeerProfile>()
     private(set) var encounters = ModuleState<[Encounter]>()
     private(set) var journal = ModuleState<[JournalEntry]>()
-    private(set) var tabs = ModuleState<SharedTabs>()
     private(set) var links = ModuleState<[URL]>()
-    /// Shared photos/voice notes and files as decryptable message items.
-    private(set) var mediaItems: [ChatMessageItem] = []
-    private(set) var fileItems: [ChatMessageItem] = []
-    private var mediaURLs: [String: URL] = [:]
+    /// Shared photos/voice notes, files and event cards.
+    private(set) var shared: SharedContentModel
     /// Hangouts with this person waiting for a confirmation (either side).
     private(set) var pendingHangouts: [PendingHangout] = []
     /// Plans in your chat with them that haven't happened yet (on-device, instant).
@@ -70,6 +69,7 @@ final class PeerProfileModel {
     init(userID: String, connectionID: String?) {
         self.userID = userID
         self.connectionID = connectionID
+        self.shared = SharedContentModel(connectionID: connectionID)
     }
 
     var timeline: [TimelineItem] {
@@ -106,9 +106,10 @@ final class PeerProfileModel {
         async let identity: Void = loadProfile()
         async let history: Void = loadEncounters()
         async let notes: Void = loadJournal()
-        async let shared: Void = loadTabs()
+        async let content: Void = loadTabs()
         async let hangouts: Void = loadPendingHangouts()
-        _ = await (identity, history, notes, shared, hangouts)
+        async let linkList: Void = loadLinks()
+        _ = await (identity, history, notes, content, hangouts, linkList)
     }
 
     // MARK: - Relationship actions
@@ -223,47 +224,33 @@ final class PeerProfileModel {
     }
 
     func loadTabs() async {
-        guard let environment, let connectionID else {
-            tabs.markUnavailable("Shared content appears once you're connected.")
-            return
-        }
-        // Paint the stored tabs at once; refetch only when they're over two minutes old.
-        let viewerID = environment.session.currentSession?.userId ?? ""
-        let key = "profile.tabs.\(connectionID)"
-        if tabs.value == nil, let stored = LocalStore.shared.load(SharedTabs.self, key: key, userID: viewerID) {
-            tabs.seed(stored.value)
-            await loadMediaItems(stored.value)
-            if Date().timeIntervalSince(stored.savedAt) < 120 {
-                tabs.succeedKeepingValue()
-                return
-            }
-        }
-        tabs.begin()
-        do {
-            let fresh = try await environment.profiles.sharedTabs(connectionID: connectionID)
-            tabs.succeed(fresh)
-            LocalStore.shared.save(fresh, key: key, userID: viewerID)
-            await loadMediaItems(fresh)
-        } catch {
-            tabs.fail(error)
+        guard let environment else { return }
+        let userID = userID
+        await shared.load(environment) { [connectionID, weak self] tabs in
+            guard let connectionID else { return nil }
+            return ConversationIdentity(chatID: tabs.chatID.nonEmptyTrimmed ?? connectionID, connectionID: connectionID,
+                                        peerUserID: userID, peerDisplayName: self?.profile.value?.displayName ?? "Click user")
         }
     }
 
     /// Links are extracted on this device from decrypted messages; the server cannot read v2
-    /// message text (spec §47.6). Only http(s) URLs are kept.
-    func loadLinks(peerName: String) async {
+    /// message text (spec §47.6). Only http(s) URLs are kept. The on-device timeline paints them
+    /// at once; the latest page then refreshes them.
+    func loadLinks() async {
         guard links.value == nil, let environment, let connectionID,
               let currentUserID = environment.session.currentSession?.userId else {
             if connectionID == nil { links.markUnavailable("Links appear once you're connected.") }
             return
         }
+        let stored = LocalStore.shared.latestMessages(conversation: connectionID, userID: currentUserID, limit: 200)
+        if !stored.isEmpty { links.seed(Self.extractLinks(from: stored.map(\.content))) }
         links.begin()
         do {
             let conversation = ConversationIdentity(
                 chatID: connectionID,
                 connectionID: connectionID,
                 peerUserID: userID,
-                peerDisplayName: peerName
+                peerDisplayName: profile.value?.displayName ?? "Click user"
             )
             let messages = try await environment.chat.fetchMessages(
                 conversation: conversation,
@@ -275,56 +262,6 @@ final class PeerProfileModel {
         } catch {
             links.fail(error)
         }
-    }
-
-    private var conversation: ConversationIdentity? {
-        guard let connectionID else { return nil }
-        return ConversationIdentity(
-            chatID: tabs.value?.chatID.nonEmptyTrimmed ?? connectionID,
-            connectionID: connectionID,
-            peerUserID: userID,
-            peerDisplayName: profile.value?.displayName ?? "Click user"
-        )
-    }
-
-    /// Fetches the next (older) page of shared media/files and appends it; called as the grid
-    /// nears its end, so the user never waits at the bottom.
-    private(set) var isLoadingMoreMedia = false
-
-    func loadMoreMedia() async {
-        guard !isLoadingMoreMedia, let environment, let connectionID, let current = tabs.value,
-              current.hasMore == true, let cursor = current.oldestAttachment,
-              let conversation, let viewerID = environment.session.currentSession?.userId else { return }
-        isLoadingMoreMedia = true
-        defer { isLoadingMoreMedia = false }
-        guard let page = try? await environment.profiles.sharedTabs(connectionID: connectionID, before: cursor) else { return }
-        let merged = current.appending(page)
-        tabs.succeed(merged)
-        LocalStore.shared.save(merged, key: "profile.tabs.\(connectionID)", userID: viewerID)
-        let known = Set((mediaItems + fileItems).map(\.id))
-        mediaItems += await environment.chat.items(fromRows: page.mediaRows, conversation: conversation, currentUserID: viewerID)
-            .filter { $0.media != nil && !known.contains($0.id) }
-        fileItems += await environment.chat.items(fromRows: page.fileRows, conversation: conversation, currentUserID: viewerID)
-            .filter { $0.media != nil && !known.contains($0.id) }
-    }
-
-    private func loadMediaItems(_ tabs: SharedTabs) async {
-        guard let environment, let conversation, let viewerID = environment.session.currentSession?.userId else { return }
-        mediaItems = await environment.chat.items(fromRows: tabs.mediaRows, conversation: conversation, currentUserID: viewerID)
-            .filter { $0.media != nil }
-        fileItems = await environment.chat.items(fromRows: tabs.fileRows, conversation: conversation, currentUserID: viewerID)
-            .filter { $0.media != nil }
-    }
-
-    /// Decrypted local file for a shared item (downloaded once, then vault-cached).
-    func mediaURL(for item: ChatMessageItem) async throws -> URL {
-        if let url = mediaURLs[item.id] { return url }
-        guard let environment, let conversation, let viewerID = environment.session.currentSession?.userId else {
-            throw ChatRepositoryError.mediaUnavailable
-        }
-        let url = try await environment.chat.loadMedia(for: item, conversation: conversation, currentUserID: viewerID)
-        mediaURLs[item.id] = url
-        return url
     }
 
     // MARK: - Journal mutations

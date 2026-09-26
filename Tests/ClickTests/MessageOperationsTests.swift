@@ -179,8 +179,10 @@ struct MessageOperationsTests {
 }
 
 /// Serves a fixed history with the server's paging rules (`GET /api/chat/messages`).
-private final class HistoryRepo: ChatRepositoryProtocol, @unchecked Sendable {
+final class HistoryRepo: ChatRepositoryProtocol, @unchecked Sendable {
     let all: [ChatMessageItem]   // oldest first
+    /// Tombstones every delta carries (the server sends all deleted since, however old).
+    var deltaTombstones: [ChatMessageItem] = []
     init(_ all: [ChatMessageItem]) { self.all = all }
 
     private func ms(_ item: ChatMessageItem) -> Int64 { Int64((item.createdAt.timeIntervalSince1970 * 1000).rounded()) }
@@ -191,7 +193,7 @@ private final class HistoryRepo: ChatRepositoryProtocol, @unchecked Sendable {
         return Array(rows.suffix(limit).reversed())
     }
     func fetchMessages(conversation: ConversationIdentity, currentUserID: String, since: Int64, limit: Int) async throws -> [ChatMessageItem] {
-        Array(all.filter { ms($0) > since }.prefix(limit).reversed())
+        deltaTombstones + Array(all.filter { ms($0) > since }.prefix(limit).reversed())
     }
     func fetchMessages(around messageID: String, conversation: ConversationIdentity, currentUserID: String, limit: Int) async throws -> [ChatMessageItem] { [] }
     func sendMessage(conversation: ConversationIdentity, currentUserID: String, currentUserName: String, content: String,
