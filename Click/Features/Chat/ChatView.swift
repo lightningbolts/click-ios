@@ -263,12 +263,14 @@ public struct ChatView: View {
         }
         .navigationBarTitleDisplayMode(.inline)
         .toolbar {
-            ToolbarItem(placement: .principal) {
-                conversationTitle
-                    // Sized from the window up front: a width that changed after the first
-                    // layout was only applied on the bar's next relayout (a cancelled back
-                    // swipe), shifting the avatar then.
-                    .frame(width: max(120, Self.windowWidth - 132), alignment: .leading)
+            // Leading, right after the back button: laid out left to right at a fixed spacing.
+            // (As the centered title the bar re-nudged it clear of the back button after a
+            // cancelled back swipe, shifting the avatar.) No glass capsule around it.
+            if #available(iOS 26.0, *) {
+                ToolbarItem(placement: .topBarLeading) { sizedTitle }
+                    .sharedBackgroundVisibility(.hidden)
+            } else {
+                ToolbarItem(placement: .topBarLeading) { sizedTitle }
             }
             ToolbarItem(placement: .topBarTrailing) {
                 conversationMenu
@@ -323,12 +325,12 @@ public struct ChatView: View {
         withAnimation(ClickMotion.content) { pinNotice = added }
     }
 
-    /// The key window's width, known before the first layout.
-    private static var windowWidth: CGFloat {
-        UIApplication.shared.connectedScenes
-            .compactMap { $0 as? UIWindowScene }
-            .flatMap(\.windows)
-            .first { $0.isKeyWindow }?.bounds.width ?? 390
+    /// The title given the bar's width between back button and menu (a leading item is
+    /// otherwise squeezed to its minimum).
+    private var sizedTitle: some View {
+        let window = UIApplication.shared.connectedScenes.compactMap { $0 as? UIWindowScene }
+            .flatMap(\.windows).first { $0.isKeyWindow }?.bounds.width ?? 390
+        return conversationTitle.frame(width: max(120, window - 150), alignment: .leading)
     }
 
     private func prefetchProfile() {
