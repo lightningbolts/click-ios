@@ -165,6 +165,7 @@ public struct ClicksView: View {
                 ConversationRow(
                     item: item,
                     preview: model.previewText(for: item),
+                    isMuted: model.isMuted([item.chatID, item.connectionID]),
                     onOpen: { isArchived ? openProfile(item) : openChat(item) },
                     onProfile: { openProfile(item) }
                 )
@@ -424,6 +425,7 @@ private struct InboxFilterChip: View {
 struct ConversationRow: View {
     let item: ConnectionItem
     let preview: String
+    var isMuted = false
     let onOpen: () -> Void
     let onProfile: () -> Void
 
@@ -447,6 +449,12 @@ struct ConversationRow: View {
                                 .font(.caption2)
                                 .foregroundStyle(ClickColors.accentForeground)
                                 .accessibilityHidden(true)
+                        }
+                        if isMuted {
+                            Image(systemName: "bell.slash.fill")
+                                .font(.caption2)
+                                .foregroundStyle(ClickColors.textTertiary)
+                                .accessibilityLabel("Muted")
                         }
                         Spacer(minLength: 8)
                         if let date = item.lastActivityAt {

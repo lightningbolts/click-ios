@@ -43,6 +43,9 @@ final class ConversationListModel {
     private(set) var hubs: [JoinedHub] = []
 
     /// True once groups came from a successful server read (never inferred from an empty list).
+    /// Muted conversations (chat or hub ID → until; nil = until turned back on).
+    private(set) var mutes: [String: Date?] = [:]
+
     private(set) var groupsLoaded = false
     private(set) var groupsError: String?
 
@@ -93,6 +96,7 @@ final class ConversationListModel {
         guard let environment, let userID else { return }
         refreshError = nil
         Task { await refreshHubs(environment, userID: userID) }
+        Task { if let fresh = try? await environment.me.chatMutes() { mutes = fresh } }
         async let clicksTask = Transport.refreshing { try await environment.phase3.refreshClicks(for: userID) }
         async let groupsTask = Transport.refreshing { try await environment.groups.groups(userID: userID) }
         let groups: [CliqueItem]?
@@ -341,6 +345,29 @@ final class ConversationListModel {
     func connection(connectionID: String?) -> ConnectionItem? {
         guard let connectionID, !connectionID.isEmpty, let snapshot else { return nil }
         return (snapshot.connections + snapshot.archived).first { $0.connectionID == connectionID }
+    }
+
+    /// Whether pushes for this conversation are muted right now (any of its IDs).
+    func isMuted(_ ids: [String?], now: Date = .now) -> Bool {
+        ids.compactMap { $0 }.contains { id in
+            guard let entry = mutes[id] else { return false }
+            return entry.map { $0 > now } ?? true
+        }
+    }
+
+    /// Mutes for `duration` (nil: until turned back on) or unmutes; shown at once, undone if
+    /// the server refuses.
+    func setMuted(chatID: String, duration: TimeInterval?, muted: Bool) async throws {
+        guard let environment else { return }
+        let previous = mutes[chatID]
+        let until = duration.map { Date().addingTimeInterval($0) }
+        if muted { mutes[chatID] = .some(until) } else { mutes[chatID] = nil }
+        do {
+            try await environment.me.setChatMute(chatID: chatID, muted: muted, until: until)
+        } catch {
+            mutes[chatID] = previous
+            throw error
+        }
     }
 
     func group(chatID: String) -> CliqueItem? {

@@ -47,6 +47,10 @@ struct CreateBeaconSheet: View {
     @State private var musicURL = ""
     /// The song the link resolved to (title, artist, preview, artwork), looked up as you type.
     @State private var song: SoundtrackMatch?
+    /// The link `song` was resolved from. Form sections are rebuilt as they scroll back into
+    /// view (restarting their tasks); an already-resolved link must not look up again, or the
+    /// card flickers to "Finding the song…" and shifts.
+    @State private var resolvedMusicURL: String?
     @State private var isResolvingSong = false
     /// The title was filled from the song (so a new link may replace it; a typed one stays).
     @State private var titleIsFromSong = false
@@ -214,8 +218,10 @@ struct CreateBeaconSheet: View {
 
     /// Debounced lookup; autofills the title unless the user typed their own.
     private func resolveSong() async {
+        guard musicURL != resolvedMusicURL else { return }
         guard BeaconFormRules.isMusicLink(musicURL) else {
             song = nil
+            resolvedMusicURL = nil
             isResolvingSong = false
             return
         }
@@ -226,6 +232,7 @@ struct CreateBeaconSheet: View {
         guard !Task.isCancelled else { return }
         isResolvingSong = false
         song = match
+        resolvedMusicURL = musicURL
         if let match, title.nonEmptyTrimmed == nil || titleIsFromSong {
             title = match.trackName
             titleIsFromSong = true

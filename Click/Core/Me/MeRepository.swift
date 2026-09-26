@@ -183,6 +183,27 @@ public actor MeRepository {
         return recap
     }
 
+    // MARK: - Conversation notifications
+
+    /// Your muted conversations: chat (or hub) ID → muted until (nil: until turned back on).
+    public func chatMutes() async throws -> [String: Date?] {
+        let (data, _) = try await api.executeRaw(APIRequest(path: "/api/chat/notifications"))
+        var mutes: [String: Date?] = [:]
+        for row in JSONFields.rows(try JSONFields.object(data)["mutes"]) {
+            guard let chatID = JSONFields.string(row["chat_id"]) else { continue }
+            mutes[chatID] = JSONFields.date(row["muted_until"])
+        }
+        return mutes
+    }
+
+    /// Mutes a conversation until `until` (nil: until turned back on), or unmutes it.
+    public func setChatMute(chatID: String, muted: Bool, until: Date?) async throws {
+        var body: [String: Any] = ["chat_id": chatID, "muted": muted]
+        if muted, let until { body["muted_until"] = ISO8601DateFormatter().string(from: until) }
+        _ = try await api.executeRaw(APIRequest(path: "/api/chat/notifications", method: .put,
+                                                body: try JSONSerialization.data(withJSONObject: body), idempotent: true))
+    }
+
     // MARK: - Nudges
 
     public func cachedNudges(userID: String) async -> [InboxNudge]? {

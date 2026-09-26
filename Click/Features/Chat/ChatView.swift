@@ -610,8 +610,37 @@ public struct ChatView: View {
         }
     }
 
-    /// The same action list as the inbox row (one implementation, spec §29.7).
+    /// Push notifications for this conversation (enforced server-side, on every device).
     @ViewBuilder
+    private func notificationsMenu(_ conversations: ConversationListModel) -> some View {
+        let chatID = model.identity.chatID
+        let muted = conversations.isMuted([chatID, model.identity.connectionID])
+        Menu {
+            if muted {
+                Button("Unmute", systemImage: "bell") { setMute(conversations, chatID: chatID, duration: nil, muted: false) }
+            } else {
+                Button("For 1 hour") { setMute(conversations, chatID: chatID, duration: 3600, muted: true) }
+                Button("For 8 hours") { setMute(conversations, chatID: chatID, duration: 8 * 3600, muted: true) }
+                Button("For 1 week") { setMute(conversations, chatID: chatID, duration: 7 * 86_400, muted: true) }
+                Button("Until I turn it back on") { setMute(conversations, chatID: chatID, duration: nil, muted: true) }
+            }
+        } label: {
+            Label(muted ? "Muted" : "Mute Notifications", systemImage: muted ? "bell.slash.fill" : "bell.slash")
+        }
+    }
+
+    private func setMute(_ conversations: ConversationListModel, chatID: String, duration: TimeInterval?, muted: Bool) {
+        Task {
+            do {
+                try await conversations.setMuted(chatID: chatID, duration: duration, muted: muted)
+                ClickHaptics.success()
+                await showToast(muted ? "Notifications muted" : "Notifications on")
+            } catch {
+                model.operationError = error.userFacingMessage
+            }
+        }
+    }
+
     /// Days a formerly active group has been quiet (≥ 3 weeks), or nil (no banner).
     private var revivalQuietDays: Int? {
         guard !revivalDismissed, case .group = model.identity.kind, model.items.count >= 10,
@@ -620,6 +649,8 @@ public struct ChatView: View {
         return days >= 21 ? days : nil
     }
 
+    /// The same action list as the inbox row (one implementation, spec §29.7).
+    @ViewBuilder
     private var conversationMenu: some View {
         Menu {
             Button("Search", systemImage: "magnifyingglass") {
@@ -627,6 +658,9 @@ public struct ChatView: View {
             }
             if model.supportsPlans {
                 Button("Plan a Hangout", systemImage: "calendar.badge.plus") { isPlanning = true }
+            }
+            if let conversations {
+                notificationsMenu(conversations)
             }
             switch model.identity.kind {
             case .direct:
