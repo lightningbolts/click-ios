@@ -280,7 +280,7 @@ struct BeaconDetailView: View {
     private func eventActionRow(_ beacon: MapBeacon) -> some View {
         let checkedIn = engagement.value?.checkedIn == true
         let canCheckIn = !isExpired && (rsvp.value?.isGoing == true || beacon.schedule?.isLive() == true || checkedIn)
-        return HStack(spacing: 0) {
+        return HStack(spacing: 10) {
             iconAction("Event chat", systemImage: "bubble.left") {
                 env.router.navigate(to: .eventChat(beaconID: beacon.id))
             }
@@ -306,9 +306,13 @@ struct BeaconDetailView: View {
                 Text(title).font(ClickTypography.supporting)
             }
             .foregroundStyle(tint ?? ClickColors.textPrimary)
-            .frame(maxWidth: .infinity)
-            .padding(.vertical, 6)
-            .contentShape(Rectangle())
+            .frame(maxWidth: .infinity, minHeight: 76)
+            .overlay {
+                // Outlined, like the page's other controls; a tinted state tints its outline too.
+                RoundedRectangle(cornerRadius: 20, style: .continuous)
+                    .strokeBorder(tint?.opacity(0.6) ?? ClickColors.separator, lineWidth: 1.5)
+            }
+            .contentShape(RoundedRectangle(cornerRadius: 20, style: .continuous))
         }
         .buttonStyle(.plain)
     }
@@ -478,7 +482,7 @@ struct BeaconDetailView: View {
 
     @ViewBuilder
     private func beaconActions(_ beacon: MapBeacon) -> some View {
-        HStack(spacing: 0) {
+        HStack(spacing: 10) {
             if beacon.kind == .soundtrack, let raw = beacon.musicURL, let url = URL(string: raw), url.scheme?.hasPrefix("http") == true {
                 iconAction("Open music", systemImage: "music.note") { UIApplication.shared.open(url) }
             }
