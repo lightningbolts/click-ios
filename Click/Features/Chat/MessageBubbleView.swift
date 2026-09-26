@@ -129,16 +129,6 @@ public struct MessageBubbleView: View {
                 content
                     .frame(maxWidth: 320, alignment: message.isOutgoing ? .trailing : .leading)
                     .onGeometryChange(for: CGRect.self) { $0.frame(in: .global) } action: { bubbleFrame = $0 }
-                    // Reactions are an overlay, not another row. The small fixed clearance is
-                    // always present, so the first reaction never changes this message's height.
-                    .overlay(alignment: message.isOutgoing ? .bottomTrailing : .bottomLeading) {
-                        if !message.reactions.isEmpty {
-                            reactionsStrip
-                                .offset(y: Self.reactionClearance)
-                                .transition(.scale(scale: 0.92).combined(with: .opacity))
-                        }
-                    }
-                    .padding(.bottom, Self.reactionClearance)
                     .offset(x: dragOffset)
                     .opacity(isBubbleHidden ? 0 : 1)
                     .overlay(alignment: message.isOutgoing ? .trailing : .leading) { replyHint }
@@ -164,7 +154,15 @@ public struct MessageBubbleView: View {
                         onLongPress?(message, bubbleFrame)
                     }
 
+                // Below the bubble, never over its time or text. The row grows with it, and
+                // the timeline animates that resize (no jump).
+                if !message.reactions.isEmpty {
+                    reactionsStrip
+                        .offset(x: dragOffset)
+                        .transition(.scale(scale: 0.6, anchor: message.isOutgoing ? .topTrailing : .topLeading).combined(with: .opacity))
+                }
             }
+            .animation(ClickMotion.content, value: message.reactions)
 
             if !message.isOutgoing {
                 Spacer(minLength: 58)
@@ -313,8 +311,6 @@ public struct MessageBubbleView: View {
         )
         .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
     }
-
-    private static let reactionClearance: CGFloat = 10
 
     private var reactionsStrip: some View {
         HStack(spacing: 4) {

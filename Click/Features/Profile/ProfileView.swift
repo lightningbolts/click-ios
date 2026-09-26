@@ -1,3 +1,4 @@
+import MapKit
 import SwiftUI
 
 /// The one canonical person profile (spec §47), reached from Clicks, chat headers, map pins,
@@ -44,6 +45,8 @@ public struct ProfileView: View {
                         .frame(maxWidth: .infinity)
                 }
                 commonGround
+                EncounterMapCard(encounters: model.encounters.value ?? [],
+                                 avatarURL: model.profile.value?.avatarURL ?? inboxItem?.avatarUrl, seed: model.userID)
                 Section {
                     tabContent
                 } header: {
@@ -1043,5 +1046,101 @@ extension String {
     var nonEmptyTrimmed: String? {
         let value = trimmingCharacters(in: .whitespacesAndNewlines)
         return value.isEmpty ? nil : value
+    }
+}
+
+
+/// Every located encounter with this person on a map, numbered in the order they happened
+/// (1 = where you first clicked). The card is a still preview; tapping opens it full screen.
+struct EncounterMapCard: View {
+    let encounters: [Encounter]
+    let avatarURL: String?
+    let seed: String
+    @State private var isExpanded = false
+
+    /// Located encounters, oldest first, with their chronological number.
+    private var pins: [EncounterPin] {
+        encounters
+            .sorted { $0.date < $1.date }
+            .enumerated()
+            .compactMap { index, encounter in
+                guard let lat = encounter.latitude, let lon = encounter.longitude,
+                      (lat, lon) != (0, 0), abs(lat) <= 90, abs(lon) <= 180 else { return nil }
+                return EncounterPin(number: index + 1, encounter: encounter,
+                                    coordinate: CLLocationCoordinate2D(latitude: lat, longitude: lon))
+            }
+    }
+
+    var body: some View {
+        let pins = pins
+        if !pins.isEmpty {
+            VStack(alignment: .leading, spacing: 10) {
+                Text(pins.count == 1 ? "Where you met" : "Where you've met")
+                    .font(ClickTypography.bodyEmphasized)
+                EncounterMap(pins: pins, avatarURL: avatarURL, seed: seed, interactive: false)
+                    .frame(height: 190)
+                    .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
+                    // The preview map takes no touches; this layer opens the full one.
+                    .overlay { Color.clear.contentShape(Rectangle()).onTapGesture { isExpanded = true } }
+                    .accessibilityAddTraits(.isButton)
+                    .accessibilityAction { isExpanded = true }
+                    .accessibilityLabel("Map of \(pins.count) encounters. Opens a larger map.")
+            }
+            .padding(18)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .groupedSurface()
+            .sheet(isPresented: $isExpanded) {
+                NavigationStack {
+                    EncounterMap(pins: pins, avatarURL: avatarURL, seed: seed, interactive: true)
+                        .ignoresSafeArea(edges: .bottom)
+                        .navigationTitle("Encounters")
+                        .navigationBarTitleDisplayMode(.inline)
+                        .toolbar {
+                            ToolbarItem(placement: .confirmationAction) { Button("Done") { isExpanded = false } }
+                        }
+                }
+            }
+        }
+    }
+}
+
+private struct EncounterPin: Identifiable {
+    let number: Int
+    let encounter: Encounter
+    let coordinate: CLLocationCoordinate2D
+    var id: String { encounter.id }
+}
+
+/// The map itself: the person's avatar at each spot with its number badge.
+private struct EncounterMap: View {
+    let pins: [EncounterPin]
+    let avatarURL: String?
+    let seed: String
+    let interactive: Bool
+
+    var body: some View {
+        Map(initialPosition: .automatic, interactionModes: interactive ? .all : []) {
+            ForEach(pins) { pin in
+                Annotation(interactive ? (pin.encounter.placeName ?? "") : "", coordinate: pin.coordinate, anchor: .bottom) {
+                    ZStack(alignment: .topTrailing) {
+                        AvatarView(imageURL: avatarURL, seed: seed, initials: "", size: 34)
+                            .overlay(Circle().stroke(.white, lineWidth: 2))
+                            .shadow(color: .black.opacity(0.25), radius: 3, y: 1)
+                        Text("\(pin.number)")
+                            .font(.system(size: 11, weight: .bold).monospacedDigit())
+                            .foregroundStyle(.white)
+                            .frame(minWidth: 18, minHeight: 18)
+                            .background(ClickColors.accentForeground, in: Capsule())
+                            .overlay(Capsule().stroke(.white, lineWidth: 1.5))
+                            .offset(x: 6, y: -6)
+                    }
+                    .accessibilityElement(children: .ignore)
+                    .accessibilityLabel("Encounter \(pin.number)\(pin.encounter.placeName.map { ", \($0)" } ?? ""), \(EncounterLabels.whenLine(pin.encounter.date))")
+                }
+                .annotationTitles(interactive ? .automatic : .hidden)
+            }
+        }
+        .mapStyle(.standard(pointsOfInterest: .excludingAll))
+        .allowsHitTesting(interactive)
     }
 }

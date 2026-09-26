@@ -20,6 +20,8 @@ public struct ChatView: View {
 
     @State private var quickLookURL: URL?
     @State private var sharingBeacon = false
+    @State private var isSchedulingSend = false
+    @State private var showsScheduled = false
     @State private var forwarding: ChatMessageItem?
     @State private var shareFile: ViewerURL?
     @State private var reactorsFor: ReactorsTarget?
@@ -87,6 +89,20 @@ public struct ChatView: View {
                 }
             }
             .sheet(item: $shareFile) { ActivityShareSheet(items: [$0.url]).presentationDetents([.medium, .large]) }
+            .sheet(isPresented: $isSchedulingSend) {
+                ScheduleSendSheet(text: model.composerText) { date in
+                    let text = model.composerText.trimmingCharacters(in: .whitespacesAndNewlines)
+                    let reply = model.replyTarget
+                    Task {
+                        guard await model.schedule(text, at: date, reply: reply) else { return }
+                        // Only clear what was scheduled (the reader may have kept typing).
+                        if model.composerText.trimmingCharacters(in: .whitespacesAndNewlines) == text { model.composerText = "" }
+                        if model.replyTarget?.id == reply?.id { model.replyTarget = nil }
+                        await showToast("Scheduled for \(date.formatted(date: .abbreviated, time: .shortened))")
+                    }
+                }
+            }
+            .sheet(isPresented: $showsScheduled) { ScheduledMessagesSheet(model: model) }
             .sheet(item: $reactorsFor) { target in
                 ReactorsSheet(
                     reactions: target.message.reactions,
@@ -174,7 +190,11 @@ public struct ChatView: View {
         .background { ChatBackground(seed: model.identity.connectionID ?? model.identity.chatID).equatable() }
         .onGeometryChange(for: CGFloat.self) { $0.size.width } action: { screenWidth = $0 }
         .safeAreaInset(edge: .bottom, spacing: 0) {
-            composer
+            VStack(spacing: 0) {
+                ScheduledMessagesBar(scheduled: model.scheduled) { showsScheduled = true }
+                composer
+            }
+            .animation(ClickMotion.content, value: model.scheduled)
         }
         // In-view (not a cover): the chat never disappears underneath, so realtime, audio
         // and the keyboard state are untouched while actions are open.
@@ -249,6 +269,8 @@ public struct ChatView: View {
         var hasher = Hasher()
         hasher.combine(items)
         hasher.combine(model.typingNames)
+        hasher.combine(model.readCursors)
+        let readers = model.readersByMessageID
         let version = hasher.finalize()
         return ChatTimelineView(
             rows: timelineRows,
@@ -266,7 +288,10 @@ public struct ChatView: View {
                     AnyView(typingIndicator)
                 case .message(let stableID):
                     if let index = indexByStableID[stableID], items.indices.contains(index) {
-                        AnyView(bubble(for: items[index], at: index, in: items, byID: byID))
+                        AnyView(VStack(spacing: 0) {
+                            bubble(for: items[index], at: index, in: items, byID: byID)
+                            if let seenBy = readers[items[index].id] { SeenByAvatars(userIDs: seenBy) }
+                        })
                     } else {
                         AnyView(Color.clear.frame(height: 1))
                     }
@@ -528,7 +553,8 @@ public struct ChatView: View {
             staged: model.staged,
             onUnstage: { id in model.unstage(id) },
             photosOnly: model.identity.hubID != nil,
-            replyMediaLoader: { message in try await model.mediaURL(for: message) }
+            replyMediaLoader: { message in try await model.mediaURL(for: message) },
+            onScheduleSend: model.supportsScheduling && model.editTarget == nil ? { isSchedulingSend = true } : nil
         )
         // Dialogs hang off the composer so the main body stays type-checkable.
         .modifier(OptionalConversationActionDialogs(model: conversations, pending: $pendingAction) {

@@ -82,7 +82,7 @@ struct ReactorsSheet: View {
             Text(title)
                 .font(.title3.weight(.semibold))
                 .foregroundStyle(ClickColors.textPrimary)
-                .padding(.top, 8)
+                .padding(.top, 24)
                 .padding(.bottom, 18)
 
             reactionTabs
@@ -557,5 +557,147 @@ struct HorizontalSwipeGesture: UIGestureRecognizerRepresentable {
             }
             return false
         }
+    }
+}
+
+
+/// "Send Later": picks when the composer's text goes out (long-press the send button).
+struct ScheduleSendSheet: View {
+    let text: String
+    let onSchedule: (Date) -> Void
+    @Environment(\.dismiss) private var dismiss
+    @State private var date = Self.defaultDate
+
+    /// The next quarter hour at least 15 minutes out.
+    private static var defaultDate: Date {
+        let soon = Date.now.addingTimeInterval(15 * 60)
+        let minute = Calendar.current.component(.minute, from: soon)
+        return Calendar.current.date(byAdding: .minute, value: (15 - minute % 15) % 15, to: soon) ?? soon
+    }
+
+    var body: some View {
+        NavigationStack {
+            Form {
+                Section {
+                    Text(text)
+                        .lineLimit(4)
+                        .foregroundStyle(ClickColors.textSecondary)
+                }
+                DatePicker("Send at", selection: $date, in: Date.now.addingTimeInterval(60)...Date.now.addingTimeInterval(365 * 86_400))
+                    .datePickerStyle(.graphical)
+            }
+            .navigationTitle("Send Later")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) { Button("Cancel") { dismiss() } }
+                ToolbarItem(placement: .confirmationAction) {
+                    Button("Schedule") {
+                        onSchedule(date)
+                        dismiss()
+                    }
+                }
+            }
+        }
+        .presentationDetents([.large])
+    }
+}
+
+/// Compact bar above the composer: "2 scheduled messages · next Tue 9:00 AM".
+struct ScheduledMessagesBar: View {
+    let scheduled: [ScheduledMessage]
+    let onOpen: () -> Void
+
+    var body: some View {
+        if let next = scheduled.first {
+            Button(action: onOpen) {
+                HStack(spacing: 8) {
+                    Image(systemName: "clock")
+                    Text(scheduled.count == 1 ? "1 scheduled message" : "\(scheduled.count) scheduled messages")
+                        .fontWeight(.semibold)
+                    Text("· next \(next.sendAt.formatted(.relative(presentation: .named)))")
+                        .foregroundStyle(ClickColors.textSecondary)
+                        .lineLimit(1)
+                    Spacer(minLength: 0)
+                    Image(systemName: "chevron.right").font(.caption.weight(.semibold))
+                }
+                .font(ClickTypography.supporting)
+                .foregroundStyle(ClickColors.textPrimary)
+                .padding(.horizontal, 14)
+                .padding(.vertical, 8)
+                .background(ClickColors.fillSubtle, in: Capsule())
+            }
+            .buttonStyle(.plain)
+            .padding(.horizontal, 12)
+            .padding(.bottom, 4)
+            .transition(.move(edge: .bottom).combined(with: .opacity))
+        }
+    }
+}
+
+/// This user's scheduled messages in the chat; swipe (or tap the button) to cancel one.
+struct ScheduledMessagesSheet: View {
+    let model: ConversationModel
+
+    var body: some View {
+        NavigationStack {
+            List {
+                ForEach(model.scheduled) { message in
+                    VStack(alignment: .leading, spacing: 4) {
+                        Text(message.sendAt.formatted(date: .abbreviated, time: .shortened))
+                            .font(ClickTypography.caption)
+                            .foregroundStyle(ClickColors.textSecondary)
+                        Text(message.content)
+                            .foregroundStyle(ClickColors.textPrimary)
+                    }
+                    .swipeActions {
+                        Button("Cancel", systemImage: "trash", role: .destructive) {
+                            Task { await model.cancelScheduled(message) }
+                        }
+                    }
+                }
+            }
+            .overlay {
+                if model.scheduled.isEmpty {
+                    ContentUnavailableView("Nothing scheduled", systemImage: "clock")
+                }
+            }
+            .navigationTitle("Scheduled")
+            .navigationBarTitleDisplayMode(.inline)
+        }
+        .presentationDetents([.medium, .large])
+    }
+}
+
+/// Instagram-style read receipts in groups: tiny avatars of the members whose latest read
+/// message this is, trailing under it.
+struct SeenByAvatars: View {
+    let userIDs: [String]
+    @Environment(AppEnvironment.self) private var env
+    @State private var people: [String: UserIdentity] = [:]
+
+    private static let size: CGFloat = 16
+    private static let maxShown = 6
+
+    var body: some View {
+        HStack(spacing: -4) {
+            ForEach(userIDs.prefix(Self.maxShown), id: \.self) { id in
+                AvatarView(imageURL: people[id]?.avatarURL, seed: id,
+                           initials: String((people[id]?.name ?? "?").prefix(1)), size: Self.size)
+                    .overlay(Circle().stroke(ClickColors.background, lineWidth: 1.5))
+                    .transition(.scale.combined(with: .opacity))
+            }
+            if userIDs.count > Self.maxShown {
+                Text("+\(userIDs.count - Self.maxShown)")
+                    .font(.system(size: 10, weight: .semibold))
+                    .foregroundStyle(ClickColors.textSecondary)
+                    .padding(.leading, 8)
+            }
+        }
+        .frame(maxWidth: .infinity, alignment: .trailing)
+        .padding(.horizontal, 16)
+        .padding(.top, 2)
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel("Seen by \(userIDs.compactMap { people[$0]?.name }.joined(separator: ", "))")
+        .task(id: userIDs) { people = await env.identities.resolve(userIDs) }
     }
 }

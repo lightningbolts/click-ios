@@ -109,12 +109,13 @@ public final class LocalStore: @unchecked Sendable {
             tokenize = 'unicode61 remove_diacritics 2'
         );
         """)
-        // v1: earlier builds stored detached search windows as islands (history pages then
-        // skipped the gap or stopped early). Messages are a cache: drop them once and refetch.
-        if userVersion() < 1 {
+        // Earlier builds stored islands (v1: detached search windows; v2: history pages that
+        // jumped past an old tombstone), so history pages skipped a gap or stopped early with
+        // the start wrongly marked reached. Messages are a cache: drop them once and refetch.
+        if userVersion() < 2 {
             exec("DELETE FROM messages; DELETE FROM conv_meta;")
             if hasFTS { exec("DELETE FROM messages_fts;") }
-            exec("PRAGMA user_version = 1;")
+            exec("PRAGMA user_version = 2;")
         }
     }
 

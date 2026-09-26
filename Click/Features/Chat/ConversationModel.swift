@@ -26,7 +26,7 @@ public final class ConversationModel {
     public private(set) var isLoadingOlder = false
     public private(set) var hasMoreHistory = true
     /// Network page for the latest window and for older history.
-    static let pageSize = 40
+    nonisolated static let pageSize = 40
     /// Rows painted from disk on open (enough to fill two screens).
     static let initialPaintSize = 60
     public var composerText = ""
@@ -171,7 +171,7 @@ public final class ConversationModel {
         if let supabaseURL, let anonKey {
             realtimeManager.subscribe(
                 to: identity.chatID,
-                stream: identity.hubID == nil ? .chat : .hub,
+                stream: identity.hubID != nil ? .hub : (identity.isDirect ? .chat : .groupChat),
                 supabaseURL: supabaseURL,
                 anonKey: anonKey,
                 authToken: authToken
@@ -180,6 +180,76 @@ public final class ConversationModel {
 
         // Always refresh: a cached timeline painted first is updated in place.
         await loadMessages()
+        async let cursors: Void = loadReadCursors()
+        async let scheduledRows: Void = loadScheduled()
+        _ = await (cursors, scheduledRows)
+    }
+
+    // MARK: - Group read receipts
+
+    /// Where each other member of a group chat has read up to (Instagram-style avatars).
+    public private(set) var readCursors: [String: Date] = [:]
+
+    private func loadReadCursors() async {
+        guard identity.hubID == nil, !identity.isDirect,
+              let cursors = try? await chatRepository.readCursors(chatID: identity.chatID) else { return }
+        readCursors = cursors.filter { $0.key != currentUserID }
+    }
+
+    private func moveReadCursor(userID: String, to date: Date) {
+        guard userID != currentUserID, date > readCursors[userID] ?? .distantPast else { return }
+        readCursors[userID] = date
+    }
+
+    /// Readers whose latest read message is each message, by message ID: every member appears
+    /// once, under the newest delivered message created at or before their read.
+    public var readersByMessageID: [String: [String]] {
+        guard !readCursors.isEmpty else { return [:] }
+        let delivered = items.filter { !$0.isDeleted && $0.deliveryStatus != .sending && $0.deliveryStatus != .failed }
+        var result: [String: [String]] = [:]
+        for (userID, readThrough) in readCursors.sorted(by: { $0.key < $1.key }) {
+            // A member's own newest message also shows they've seen everything before it.
+            if let seen = delivered.last(where: { $0.createdAt <= readThrough || $0.senderID == userID }) {
+                result[seen.id, default: []].append(userID)
+            }
+        }
+        return result
+    }
+
+    // MARK: - Scheduled messages
+
+    /// This user's messages waiting to be sent in this chat, soonest first.
+    public private(set) var scheduled: [ScheduledMessage] = []
+
+    public var supportsScheduling: Bool { identity.hubID == nil }
+
+    private func loadScheduled() async {
+        guard supportsScheduling,
+              let rows = try? await chatRepository.scheduledMessages(conversation: identity, currentUserID: currentUserID) else { return }
+        scheduled = rows
+    }
+
+    /// Schedules the composer's text (and reply) for `date`; clears the composer on success.
+    public func schedule(_ text: String, at date: Date, reply: ChatMessageItem?) async -> Bool {
+        do {
+            let row = try await chatRepository.scheduleMessage(conversation: identity, currentUserID: currentUserID,
+                                                               content: text, replyToID: reply?.id, sendAt: date)
+            scheduled = (scheduled + [row]).sorted { $0.sendAt < $1.sendAt }
+            return true
+        } catch {
+            operationError = error.userFacingMessage
+            return false
+        }
+    }
+
+    public func cancelScheduled(_ message: ScheduledMessage) async {
+        do {
+            try await chatRepository.cancelScheduledMessage(id: message.id)
+            scheduled.removeAll { $0.id == message.id }
+        } catch {
+            operationError = error.userFacingMessage
+            await loadScheduled()   // it may have just been sent
+        }
     }
 
     /// Keeps optimistic rows that are still sending when a refresh lands.
@@ -270,19 +340,10 @@ public final class ConversationModel {
             // The latest page doesn't reach back to what we had: fill the gap with deltas so
             // the stored timeline stays contiguous (no silently missing messages).
             if let newestKnown, let oldestFetched = fetched.filter({ !$0.isDeleted }).map(\.createdAt).min(),
-               fetched.count >= Self.pageSize, oldestFetched > newestKnown {
+               Self.isFullPage(fetched), oldestFetched > newestKnown {
                 rows += try await fetchDeltas(after: newestKnown, until: oldestFetched)
             }
-            if !hadItems {
-                hasMoreHistory = fetched.count >= Self.pageSize && hasMoreHistory
-            } else if fetched.count >= Self.pageSize,
-                      let oldestFetched = fetched.map(\.createdAt).min(),
-                      !items.contains(where: { $0.createdAt < oldestFetched }) {
-                // If the currently painted timeline contains only the latest server page, there
-                // may be older history even when a stale persisted reached-start flag said no.
-                // One cursor fetch will cheaply prove the true start and persist it again.
-                hasMoreHistory = true
-            }
+            if !hadItems { hasMoreHistory = Self.isFullPage(fetched) && hasMoreHistory }
             items = mergeFetched(rows)
             resolveReplyQuotes()
             phase = .loaded
@@ -552,7 +613,7 @@ public final class ConversationModel {
             let known = Set(items.map(\.id))
             let fresh = older.filter { !known.contains($0.id) && $0.createdAt <= networkOldest.createdAt }
             // A short page, or a server that ignored the cursor (nothing new), is the start.
-            hasMoreHistory = older.count >= Self.pageSize && !fresh.isEmpty
+            hasMoreHistory = Self.isFullPage(older) && !fresh.isEmpty
             if !hasMoreHistory { store?.setReachedStart(true, conversation: identity.chatID, userID: currentUserID) }
             guard !fresh.isEmpty else { return }
             persist(fresh)
@@ -561,6 +622,11 @@ public final class ConversationModel {
         } catch {
             if !error.isCancellation { operationError = error.userFacingMessage }
         }
+    }
+
+    /// A page with `pageSize` messages (tombstones ride along and don't count).
+    nonisolated static func isFullPage(_ page: [ChatMessageItem]) -> Bool {
+        page.lazy.filter { !$0.isDeleted }.count >= pageSize
     }
 
     /// Shares an event/beacon card into this conversation (optimistic, same send animation).
@@ -858,6 +924,10 @@ public final class ConversationModel {
             }
         }
 
+        realtimeManager.onReadCursor = { [weak self] userID, date in
+            Task { @MainActor in self?.moveReadCursor(userID: userID, to: date) }
+        }
+
         realtimeManager.onTypingChanged = { [weak self] userIDs in
             Task { @MainActor in
                 await self?.typingChanged(userIDs)
@@ -1055,6 +1125,8 @@ public final class ConversationModel {
             } else if !replacingExisting {
                 items.append(decoded)
                 items.sort { $0.createdAt < $1.createdAt }
+                // A scheduled message just went out.
+                if decoded.isOutgoing { scheduled.removeAll { $0.sendAt <= .now } }
             }
             resolveReplyQuotes()
             persist([items.first { $0.id == decoded.id } ?? decoded])

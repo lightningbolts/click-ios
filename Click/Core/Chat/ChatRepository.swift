@@ -1,7 +1,22 @@
 import Foundation
 import CryptoKit
 
+/// A text message waiting on the server to be sent at `sendAt` (decrypted for display).
+public struct ScheduledMessage: Identifiable, Hashable, Sendable {
+    public let id: String
+    public let content: String
+    public let sendAt: Date
+}
+
 extension ChatRepositoryProtocol {
+    // Defaults for conversations (and test doubles) without these features.
+    public func scheduleMessage(conversation: ConversationIdentity, currentUserID: String, content: String, replyToID: String?, sendAt: Date) async throws -> ScheduledMessage {
+        throw ChatRepositoryError.unresolvedChat
+    }
+    public func scheduledMessages(conversation: ConversationIdentity, currentUserID: String) async throws -> [ScheduledMessage] { [] }
+    public func cancelScheduledMessage(id: String) async throws {}
+    public func readCursors(chatID: String) async throws -> [String: Date] { [:] }
+
     public func fetchMessages(conversation: ConversationIdentity, currentUserID: String, since: Int64, limit: Int) async throws -> [ChatMessageItem] {
         try await fetchMessages(conversation: conversation, currentUserID: currentUserID, cursor: nil, limit: limit)
             .filter { Int64($0.createdAt.timeIntervalSince1970 * 1000) > since }
@@ -56,6 +71,12 @@ public protocol ChatRepositoryProtocol: Sendable {
     func fetchMessages(around messageID: String, conversation: ConversationIdentity, currentUserID: String, limit: Int) async throws -> [ChatMessageItem]
     func setReaction(messageID: String, reactionType: String, adding: Bool, conversation: ConversationIdentity) async throws
     func markRead(chatID: String, messageIDs: [String]) async throws
+    /// Each member's read-through time (group read receipts), by user ID.
+    func readCursors(chatID: String) async throws -> [String: Date]
+    /// Encrypts now; the server sends it at `sendAt` (direct and group chats, text only).
+    func scheduleMessage(conversation: ConversationIdentity, currentUserID: String, content: String, replyToID: String?, sendAt: Date) async throws -> ScheduledMessage
+    func scheduledMessages(conversation: ConversationIdentity, currentUserID: String) async throws -> [ScheduledMessage]
+    func cancelScheduledMessage(id: String) async throws
     func markDelivered(chatID: String, messageIDs: [String]) async throws
     func registerDevice() async throws
 
@@ -676,7 +697,7 @@ public actor ChatRepository: ChatRepositoryProtocol {
             await resolveNames(rawResponse.messages.filter { $0.senderName == nil }.map(\.userID))
         }
 
-        return tombstones + rawResponse.messages.map {
+        let messages = rawResponse.messages.map {
             mapRawMessage(
                 $0,
                 canonicalChatID: canonicalChatID,
@@ -687,6 +708,21 @@ public actor ChatRepository: ChatRepositoryProtocol {
                 v2Session: v2Session
             )
         }
+        return Self.tombstones(tombstones, within: messages, cursor: cursor, around: around != nil, since: since != nil, limit: limit) + messages
+    }
+
+    /// The server sends the chat's latest tombstones whatever the page. Outside a delta, keep
+    /// only those inside this page's span: an old "Message deleted" row would otherwise become
+    /// the oldest loaded row, and the next history page would jump past everything between
+    /// (and mark the start reached).
+    nonisolated static func tombstones(_ tombstones: [ChatMessageItem], within messages: [ChatMessageItem],
+                                       cursor: Int64?, around: Bool, since: Bool, limit: Int) -> [ChatMessageItem] {
+        guard !since else { return tombstones }
+        let dates = messages.map(\.createdAt)
+        // A short page reaches the start of the chat (a window around a message never does).
+        let lower = around || messages.count >= limit ? (dates.min() ?? .distantFuture) : .distantPast
+        let upper = around ? (dates.max() ?? .distantPast) : cursor.map { Date(timeIntervalSince1970: Double($0 - 1) / 1000) } ?? .distantFuture
+        return tombstones.filter { $0.createdAt >= lower && $0.createdAt <= upper }
     }
 
     // MARK: - Send / edit
@@ -714,6 +750,56 @@ public actor ChatRepository: ChatRepositoryProtocol {
             )
         }
 
+        let (canonicalChatID, wireContent, post) = try await textPost(
+            conversation: conversation, currentUserID: currentUserID, content: content,
+            replyToID: replyToID, clientMessageID: clientMessageID
+        )
+        let request = APIRequest(
+            path: "/api/chat/messages",
+            method: .post,
+            body: try JSONSerialization.data(withJSONObject: post, options: []),
+            requiresAuth: true
+        )
+        let (data, _) = try await apiClient.executeRaw(request)
+
+        let rawInsert: RawMessageItem
+        if let wrapped = try? JSONDecoder().decode(RawMessageInsertResponse.self, from: data),
+           let message = wrapped.message {
+            rawInsert = message
+        } else if let direct = try? JSONDecoder().decode(RawMessageItem.self, from: data) {
+            rawInsert = direct
+        } else {
+            throw ChatRepositoryError.invalidServerPayload
+        }
+
+        return ChatMessageItem(
+            id: rawInsert.id,
+            chatID: canonicalChatID,
+            senderID: currentUserID,
+            senderName: currentUserName,
+            content: content,
+            rawContent: wireContent,
+            messageType: .text,
+            createdAt: Date(timeIntervalSince1970: Double(rawInsert.timeCreated) / 1000.0),
+            deliveryStatus: .sent,
+            isOutgoing: true,
+            replyToID: replyToID,
+            replyToSnippet: replyToSnippet,
+            replyToSenderName: replyToSenderName,
+            reactions: [],
+            isEdited: false
+        )
+    }
+
+    /// The encrypted `POST /api/chat/messages` body for a text message (also what a scheduled
+    /// message stores, so it's delivered exactly as if sent then).
+    private func textPost(
+        conversation: ConversationIdentity,
+        currentUserID: String,
+        content: String,
+        replyToID: String?,
+        clientMessageID: String
+    ) async throws -> (chatID: String, wireContent: String, body: [String: Any]) {
         let canonicalChatID = try await canonicalChatID(conversation)
         let encrypted = try await encryptText(
             content,
@@ -739,42 +825,57 @@ public actor ChatRepository: ChatRepositoryProtocol {
         if conversation.isDirect, let connectionID = conversation.connectionID, !connectionID.isEmpty {
             post["connection_id"] = connectionID
         }
+        return (canonicalChatID, encrypted.wireContent, post)
+    }
 
-        let request = APIRequest(
-            path: "/api/chat/messages",
+    // MARK: - Scheduled messages
+
+    public func scheduleMessage(conversation: ConversationIdentity, currentUserID: String, content: String, replyToID: String?, sendAt: Date) async throws -> ScheduledMessage {
+        guard conversation.hubID == nil else { throw ChatRepositoryError.unresolvedChat }
+        var (_, _, post) = try await textPost(
+            conversation: conversation, currentUserID: currentUserID, content: content,
+            replyToID: replyToID, clientMessageID: ClickCryptoV2.generateClientMessageId()
+        )
+        post["local_sent_at"] = nil
+        post["send_at"] = Int64(sendAt.timeIntervalSince1970 * 1000)
+        let (data, _) = try await apiClient.executeRaw(APIRequest(
+            path: "/api/chat/scheduled",
             method: .post,
             body: try JSONSerialization.data(withJSONObject: post, options: []),
             requiresAuth: true
-        )
-        let (data, _) = try await apiClient.executeRaw(request)
+        ))
+        guard let row = JSONFields.dictionary(try JSONFields.object(data)["scheduled"]),
+              let id = JSONFields.string(row["id"]) else { throw ChatRepositoryError.invalidServerPayload }
+        return ScheduledMessage(id: id, content: content, sendAt: sendAt)
+    }
 
-        let rawInsert: RawMessageItem
-        if let wrapped = try? JSONDecoder().decode(RawMessageInsertResponse.self, from: data),
-           let message = wrapped.message {
-            rawInsert = message
-        } else if let direct = try? JSONDecoder().decode(RawMessageItem.self, from: data) {
-            rawInsert = direct
-        } else {
-            throw ChatRepositoryError.invalidServerPayload
+    public func scheduledMessages(conversation: ConversationIdentity, currentUserID: String) async throws -> [ScheduledMessage] {
+        guard conversation.hubID == nil else { return [] }
+        let chatID = try await canonicalChatID(conversation)
+        let (data, _) = try await apiClient.executeRaw(APIRequest(
+            path: "/api/chat/scheduled",
+            queryItems: [URLQueryItem(name: "chatId", value: chatID)],
+            requiresAuth: true
+        ))
+        let rows = JSONFields.rows(try JSONFields.object(data)["scheduled"])
+        guard !rows.isEmpty else { return [] }
+        let participantIDs = await participants(for: conversation, currentUserID: currentUserID)
+        let v2Session = try? await resolveV2Session(scope: .chat(chatID), participantUserIDs: participantIDs, allowUpgrade: false)
+        let legacy = await legacyKeys(for: conversation, currentUserID: currentUserID)
+        return rows.compactMap { row in
+            guard let id = JSONFields.string(row["id"]), let sendAt = JSONFields.double(row["send_at"]) else { return nil }
+            let content = decryptWireContent(JSONFields.string(row["content"]) ?? "", legacy: legacy, v2Session: v2Session)
+            return ScheduledMessage(id: id, content: content, sendAt: Date(timeIntervalSince1970: sendAt / 1000))
         }
+    }
 
-        return ChatMessageItem(
-            id: rawInsert.id,
-            chatID: canonicalChatID,
-            senderID: currentUserID,
-            senderName: currentUserName,
-            content: content,
-            rawContent: encrypted.wireContent,
-            messageType: .text,
-            createdAt: Date(timeIntervalSince1970: Double(rawInsert.timeCreated) / 1000.0),
-            deliveryStatus: .sent,
-            isOutgoing: true,
-            replyToID: replyToID,
-            replyToSnippet: replyToSnippet,
-            replyToSenderName: replyToSenderName,
-            reactions: [],
-            isEdited: false
-        )
+    public func cancelScheduledMessage(id: String) async throws {
+        _ = try await apiClient.executeRaw(APIRequest(
+            path: "/api/chat/scheduled",
+            method: .delete,
+            queryItems: [URLQueryItem(name: "id", value: id)],
+            requiresAuth: true
+        ))
     }
 
     public func editMessage(
@@ -938,6 +1039,21 @@ public actor ChatRepository: ChatRepositoryProtocol {
     public func markUnread(chatID: String) async throws {
         let body = try JSONSerialization.data(withJSONObject: ["chat_id": chatID])
         _ = try await apiClient.executeRaw(APIRequest(path: "/api/chat/messages/unread", method: .patch, body: body))
+    }
+
+    public func readCursors(chatID: String) async throws -> [String: Date] {
+        let (data, _) = try await apiClient.executeRaw(APIRequest(
+            path: "/api/chat/messages/read",
+            queryItems: [URLQueryItem(name: "chatId", value: chatID)],
+            requiresAuth: true
+        ))
+        var cursors: [String: Date] = [:]
+        for row in JSONFields.rows(try JSONFields.object(data)["cursors"]) {
+            if let user = JSONFields.string(row["user_id"]), let ms = JSONFields.double(row["read_through"]) {
+                cursors[user] = Date(timeIntervalSince1970: ms / 1000)
+            }
+        }
+        return cursors
     }
 
     public func markRead(chatID: String, messageIDs: [String]) async throws {

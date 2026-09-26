@@ -142,6 +142,9 @@ struct ChatTimelineView: UIViewRepresentable {
 
             let previousRows = currentRows
             currentRows = rows
+            // Same rows with new content (a reaction, an edit): the row resize that follows
+            // glides, and the pinned bottom with it, instead of shifting in one frame.
+            collectionView.animatesLayoutUntil = !rowsChanged && hasPositionedInitially ? CACurrentMediaTime() + 0.4 : 0
             var snapshot = NSDiffableDataSourceSnapshot<Int, ChatTimelineRow>()
             snapshot.appendSections([0])
             snapshot.appendItems(rows)
@@ -384,10 +387,21 @@ final class TimelineCollectionView: UICollectionView {
     var stickToBottom = true
     /// Set while a prepend restores the offset (layout must not re-pin in between).
     var isPreservingPosition = false
+    /// Layout passes before this time animate (rows resizing after a content update).
+    var animatesLayoutUntil: CFTimeInterval = 0
     var onLayout: (() -> Void)?
 
     override func layoutSubviews() {
-        super.layoutSubviews()
-        onLayout?()
+        guard CACurrentMediaTime() < animatesLayoutUntil, !isPreservingPosition, !isTracking, !isDecelerating,
+              !UIAccessibility.isReduceMotionEnabled else {
+            super.layoutSubviews()
+            onLayout?()
+            return
+        }
+        UIView.animate(withDuration: 0.35, delay: 0, usingSpringWithDamping: 0.9, initialSpringVelocity: 0,
+                       options: [.allowUserInteraction, .beginFromCurrentState]) {
+            super.layoutSubviews()
+            self.onLayout?()
+        }
     }
 }

@@ -48,8 +48,10 @@ public struct RealtimeMessagePayload: @unchecked Sendable {
 
 /// Which table a conversation's changes stream from.
 public enum RealtimeStream: Sendable {
-    /// `messages` filtered by `chat_id` (direct and group chats).
+    /// `messages` filtered by `chat_id` (direct chats).
     case chat
+    /// `messages` plus members' `chat_read_cursors` for one group chat (read receipts).
+    case groupChat
     /// `hub_messages` filtered by `hub_id`.
     case hub
     /// Every `messages` row the viewer can read (RLS-scoped); drives inbox freshness.
@@ -79,6 +81,8 @@ public final class ChatRealtimeManager {
     public var onMessageInserted: (@Sendable (RealtimeMessagePayload) -> Void)?
     public var onMessageUpdated: (@Sendable (RealtimeMessagePayload) -> Void)?
     public var onMessageDeleted: (@Sendable (String) -> Void)?
+    /// A member's read cursor moved (`groupChat`): user ID and read-through time.
+    public var onReadCursor: (@Sendable (String, Date) -> Void)?
     public var onTypingChanged: (@Sendable (Set<String>) -> Void)?
     /// Any row change on a non-message stream (`groupMembers`).
     public var onRowChanged: (@Sendable () -> Void)?
@@ -262,7 +266,7 @@ public final class ChatRealtimeManager {
             "config": [
                 "broadcast": ["ack": false, "self": false],
                 "presence": ["key": ""],
-                "postgres_changes": [changeFilter(for: context)]
+                "postgres_changes": changeFilters(for: context)
             ]
         ]
         if let token = context.authToken, !token.isEmpty {
@@ -296,25 +300,30 @@ public final class ChatRealtimeManager {
 
     private func topic(for context: ConnectionContext) -> String {
         switch context.stream {
-        case .chat: "realtime:chat:\(context.chatID)"
+        case .chat, .groupChat: "realtime:chat:\(context.chatID)"
         case .hub: "realtime:hub:\(context.chatID)"
         case .inbox: "realtime:inbox:\(context.chatID)"
         case .groupMembers: "realtime:group-members:\(context.chatID)"
         }
     }
 
-    private func changeFilter(for context: ConnectionContext) -> [String: Any] {
-        switch context.stream {
+    private func changeFilters(for context: ConnectionContext) -> [[String: Any]] {
+        let messages: [String: Any] = ["event": "*", "schema": "public", "table": "messages", "filter": "chat_id=eq.\(context.chatID)"]
+        return switch context.stream {
         case .chat:
-            ["event": "*", "schema": "public", "table": "messages", "filter": "chat_id=eq.\(context.chatID)"]
+            [messages]
+        case .groupChat:
+            [messages, ["event": "*", "schema": "public", "table": Self.readCursorsTable, "filter": "chat_id=eq.\(context.chatID)"]]
         case .hub:
-            ["event": "*", "schema": "public", "table": "hub_messages", "filter": "hub_id=eq.\(context.chatID)"]
+            [["event": "*", "schema": "public", "table": "hub_messages", "filter": "hub_id=eq.\(context.chatID)"]]
         case .inbox:
-            ["event": "INSERT", "schema": "public", "table": "messages"]
+            [["event": "INSERT", "schema": "public", "table": "messages"]]
         case .groupMembers:
-            ["event": "*", "schema": "public", "table": "group_members"]
+            [["event": "*", "schema": "public", "table": "group_members"]]
         }
     }
+
+    private static let readCursorsTable = "chat_read_cursors"
 
     private func listen(task: URLSessionWebSocketTask) {
         task.receive { [weak self, weak task] result in
@@ -399,13 +408,13 @@ public final class ChatRealtimeManager {
             ).uppercased()
             let record = (dataPayload["record"] as? [String: Any]) ?? [:]
             let oldRecord = (dataPayload["old_record"] as? [String: Any]) ?? [:]
-            handleDatabaseChange(type: changeType, record: record, oldRecord: oldRecord)
+            handleDatabaseChange(type: changeType, table: dataPayload["table"] as? String, record: record, oldRecord: oldRecord)
 
         case "INSERT", "UPDATE", "DELETE":
             guard let payload = json["payload"] as? [String: Any] else { return }
             let record = (payload["record"] as? [String: Any]) ?? [:]
             let oldRecord = (payload["old_record"] as? [String: Any]) ?? [:]
-            handleDatabaseChange(type: event, record: record, oldRecord: oldRecord)
+            handleDatabaseChange(type: event, table: payload["table"] as? String, record: record, oldRecord: oldRecord)
 
         case "broadcast":
             guard let outer = json["payload"] as? [String: Any] else { return }
@@ -432,11 +441,18 @@ public final class ChatRealtimeManager {
 
     private func handleDatabaseChange(
         type: String,
+        table: String?,
         record: [String: Any],
         oldRecord: [String: Any]
     ) {
         if context?.stream == .groupMembers {
             onRowChanged?()
+            return
+        }
+        if table == Self.readCursorsTable {
+            if let userID = record["user_id"] as? String, let readThrough = Self.int64(record["read_through"]) {
+                onReadCursor?(userID, Date(timeIntervalSince1970: Double(readThrough) / 1000))
+            }
             return
         }
         switch type {

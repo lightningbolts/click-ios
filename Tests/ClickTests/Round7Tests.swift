@@ -226,3 +226,41 @@ struct SoundtrackTests {
         #expect(merged.appending(page).hasMore == false)   // nothing new: stop paging
     }
 }
+
+@Suite("History paging with tombstones")
+struct HistoryTombstoneTests {
+    private func row(_ id: String, _ seconds: Double, deleted: Bool = false) -> ChatMessageItem {
+        var item = ChatMessageItem(id: id, chatID: "c", senderID: "peer", senderName: "Peer", content: "x",
+                                   createdAt: Date(timeIntervalSince1970: seconds), deliveryStatus: .read, isOutgoing: false)
+        item.isDeleted = deleted
+        return item
+    }
+
+    @Test func oldTombstoneStaysOutOfALaterPage() {
+        // A full page spanning 100…139s; the server also sent a tombstone from 5s.
+        let page = (0..<40).map { row("m\($0)", 100 + Double($0)) }
+        let tombstones = [row("t-old", 5, deleted: true), row("t-in", 120.5, deleted: true)]
+        let kept = ChatRepository.tombstones(tombstones, within: page, cursor: nil, around: false, since: false, limit: 40)
+        #expect(kept.map(\.id) == ["t-in"])
+    }
+
+    @Test func olderPageKeepsOnlyTombstonesBelowTheCursor() {
+        let page = (0..<40).map { row("m\($0)", 100 + Double($0)) }
+        let tombstones = [row("t-new", 150, deleted: true), row("t-in", 110, deleted: true)]
+        let kept = ChatRepository.tombstones(tombstones, within: page, cursor: 140_000, around: false, since: false, limit: 40)
+        #expect(kept.map(\.id) == ["t-in"])
+    }
+
+    @Test func shortPageReachesTheStartAndDeltasKeepEverything() {
+        let page = [row("m1", 100)]
+        let old = [row("t-old", 5, deleted: true)]
+        #expect(ChatRepository.tombstones(old, within: page, cursor: nil, around: false, since: false, limit: 40).count == 1)
+        #expect(ChatRepository.tombstones(old, within: [], cursor: nil, around: false, since: true, limit: 40).count == 1)
+    }
+
+    @Test func tombstonesDontMakeAPageFull() {
+        let short = (0..<39).map { row("m\($0)", Double($0)) } + [row("t", 50, deleted: true)]
+        #expect(!ConversationModel.isFullPage(short))
+        #expect(ConversationModel.isFullPage((0..<40).map { row("m\($0)", Double($0)) }))
+    }
+}

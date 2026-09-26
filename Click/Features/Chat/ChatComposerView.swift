@@ -22,6 +22,8 @@ public struct ChatComposerView: View {
     /// Attachments waiting to be sent; the send button sends them, then the text as a caption.
     let staged: [StagedAttachment]
     let onUnstage: (UUID) -> Void
+    /// Long-press on send offers "Send Later" (text only). Nil where scheduling isn't supported.
+    let onScheduleSend: (() -> Void)?
 
     @FocusState private var isFocused: Bool
     @State private var recorder = VoiceNoteRecorder()
@@ -43,8 +45,10 @@ public struct ChatComposerView: View {
         staged: [StagedAttachment] = [],
         onUnstage: @escaping (UUID) -> Void = { _ in },
         photosOnly: Bool = false,
-        replyMediaLoader: ((ChatMessageItem) async throws -> URL)? = nil
+        replyMediaLoader: ((ChatMessageItem) async throws -> URL)? = nil,
+        onScheduleSend: (() -> Void)? = nil
     ) {
+        self.onScheduleSend = onScheduleSend
         self.photosOnly = photosOnly
         self.replyMediaLoader = replyMediaLoader
         self.staged = staged
@@ -105,6 +109,11 @@ public struct ChatComposerView: View {
             .buttonStyle(.plain)
             .disabled(mode == .disabled)
             .accessibilityLabel(mode == .save ? "Save edit" : "Send message")
+            .contextMenu {
+                if mode == .send, staged.isEmpty, let onScheduleSend {
+                    Button("Send Later", systemImage: "clock", action: onScheduleSend)
+                }
+            }
         }
     }
 

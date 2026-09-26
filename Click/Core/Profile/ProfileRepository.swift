@@ -67,6 +67,9 @@ public struct Encounter: Codable, Equatable, Identifiable, Sendable {
     public var batteryLevel: Int? = nil
     /// Optional `vibe_capture` text written by KMP's vibe check.
     public var vibeCapture: String? = nil
+    /// `gps_lat` / `gps_lon` (the profile's encounter map).
+    public var latitude: Double? = nil
+    public var longitude: Double? = nil
 
     /// Venue name, else the first component of the stored label (never a full address).
     public var placeName: String? {
@@ -103,7 +106,9 @@ public struct Encounter: Codable, Equatable, Identifiable, Sendable {
             displayLocation: JSONFields.place(row["display_location"]),
             compassAzimuth: JSONFields.double(row["compass_azimuth"]),
             batteryLevel: JSONFields.int(row["battery_level"]),
-            vibeCapture: JSONFields.string(row["vibe_capture"])
+            vibeCapture: JSONFields.string(row["vibe_capture"]),
+            latitude: JSONFields.double(row["gps_lat"]),
+            longitude: JSONFields.double(row["gps_lon"])
         )
     }
 }
