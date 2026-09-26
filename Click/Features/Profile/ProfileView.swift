@@ -36,7 +36,10 @@ public struct ProfileView: View {
 
     public var body: some View {
         ScrollView {
-            LazyVStack(alignment: .leading, spacing: 20, pinnedViews: [.sectionHeaders]) {
+            // Eager, not lazy: a lazy stack estimates the sections it hasn't measured yet, and
+            // these differ widely in height, so the scroll bar jumped as each was measured. The
+            // grids inside stay lazy.
+            VStack(alignment: .leading, spacing: 20) {
                 identity
                 if !isSelf { actions }
                 if let notice {
@@ -63,11 +66,13 @@ public struct ProfileView: View {
                     )
                 }
                 chatBackdrop
-                Section {
-                    tabContent
-                } header: {
-                    tabChips
-                }
+                // Sticky: once the chips reach the top they're held there, over the content.
+                tabChips
+                    .visualEffect { content, proxy in
+                        content.offset(y: max(0, -proxy.frame(in: .scrollView(axis: .vertical)).minY))
+                    }
+                    .zIndex(1)
+                tabContent
             }
             .padding(.horizontal, ClickSpacing.screenGutter)
             .padding(.bottom, 32)
