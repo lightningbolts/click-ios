@@ -716,7 +716,8 @@ extension View {
     /// The single owner of an inbox row's list insets and background (the row itself owns
     /// only its vertical padding), shared by direct, group and hub rows.
     func inboxRowChrome() -> some View {
-        listRowInsets(EdgeInsets(top: 0, leading: ClickSpacing.screenGutter, bottom: 0, trailing: ClickSpacing.screenGutter))
+        touchRipple(bleed: ClickSpacing.screenGutter)
+            .listRowInsets(EdgeInsets(top: 0, leading: ClickSpacing.screenGutter, bottom: 0, trailing: ClickSpacing.screenGutter))
             .listRowBackground(Color.clear)
     }
 }

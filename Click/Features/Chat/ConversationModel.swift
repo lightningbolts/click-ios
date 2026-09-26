@@ -899,6 +899,7 @@ public final class ConversationModel {
             $0.reactionType == reactionType && $0.userReacted
         }
 
+        if adding { ReactionPop.mark(messageID: item.id, reaction: reactionType) }
         items[index].reactions = Self.mutatedReactions(
             original,
             reactionType: reactionType,

@@ -40,8 +40,10 @@ public struct ChatView: View {
     /// Index into the current matches (oldest first); nil until the reader steps.
     @State private var searchPosition: Int?
     @State private var highlightedID: String?
-    /// Which pin the pinned banner shows (advances on each tap).
-    @State private var pinCursor = 0
+    /// A pin that just appeared (yours, or live / since your last visit), shown for 3 s.
+    @State private var pinNotice: MessagePin?
+    /// Pins already seen on this screen (nil until the first pins arrive).
+    @State private var knownPinIDs: Set<String>?
     /// Short confirmation capsule ("Your Click Drop developed").
     @State private var toast: String?
 
@@ -183,6 +185,8 @@ public struct ChatView: View {
                 if nearBottom { unseenCount = 0 }
             }
             .onChange(of: highlightedID) { timeline.refreshVisibleRows() }
+            .onChange(of: model.pins) { _, pins in pinsChanged(pins) }
+            .onAppear { if model.hasLoadedPins { knownPinIDs = Set(model.pins.map(\.messageID)) } }
             .onChange(of: actionTarget?.id) { timeline.refreshVisibleRows() }
             .onChange(of: scenePhase) { _, phase in
                 if phase == .active { Task { await model.resume() } }
@@ -236,8 +240,8 @@ public struct ChatView: View {
                     .padding(.horizontal, 12)
                     .padding(.top, 8)
                     .transition(.move(edge: .top).combined(with: .opacity))
-            } else if !model.pins.isEmpty {
-                pinnedBanner
+            } else if let pin = pinNotice {
+                pinnedBanner(pin)
                     .padding(.horizontal, 12)
                     .padding(.top, 8)
                     .transition(.move(edge: .top).combined(with: .opacity))
@@ -284,18 +288,30 @@ public struct ChatView: View {
         return ChatBackdrops.shared.style(for: backdropKey, resolved: resolved)
     }
 
-    /// The pin shown in the banner; each tap jumps to it and moves on to the next.
-    private var pinnedBanner: some View {
-        let index = pinCursor % model.pins.count
-        let pin = model.pins[index]
+    /// A short notice for a new pin (pins live in the profile, not over the chat); tap to see it.
+    private func pinnedBanner(_ pin: MessagePin) -> some View {
+        let isMine = pin.pinnedBy == env.session.currentSession?.userId
+        let name = model.items.first { $0.senderID == pin.pinnedBy }?.senderName
         return PinnedMessageBanner(
-            text: model.items.first { $0.id == pin.messageID }.map(ConversationModel.quoteText),
-            position: index,
-            count: model.pins.count
+            title: isMine ? "You pinned a message" : "\(name.flatMap(HomeFeedModel.firstName) ?? "Someone") pinned a message",
+            text: model.items.first { $0.id == pin.messageID }.map(ConversationModel.quoteText)
         ) {
-            pinCursor = index + 1
+            withAnimation(ClickMotion.content) { pinNotice = nil }
             Task { await jump(to: pin.messageID) }
         }
+        .task(id: pin.messageID) {
+            try? await Task.sleep(for: .seconds(3))
+            guard !Task.isCancelled else { return }
+            withAnimation(ClickMotion.content) { if pinNotice == pin { pinNotice = nil } }
+        }
+    }
+
+    /// Notices a pin that wasn't there before (the first pins seen here are the baseline).
+    private func pinsChanged(_ pins: [MessagePin]) {
+        let ids = Set(pins.map(\.messageID))
+        defer { knownPinIDs = ids }
+        guard let known = knownPinIDs, let added = pins.first(where: { !known.contains($0.messageID) }) else { return }
+        withAnimation(ClickMotion.content) { pinNotice = added }
     }
 
     private func prefetchProfile() {

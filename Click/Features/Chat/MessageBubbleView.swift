@@ -159,11 +159,13 @@ public struct MessageBubbleView: View {
                     }
 
                 // Below the bubble, never over its time or text. The row grows with it, and
-                // the timeline animates that resize (no jump).
+                // the timeline animates that resize (no jump). No insertion transition: inside a
+                // timeline cell it stalls (invisible until the row next re-renders); a new
+                // reaction grows in on its own instead (`ReactionChip`).
                 if !stripReactions.isEmpty {
                     reactionsStrip
                         .offset(x: dragOffset)
-                        .transition(.scale(scale: 0.6, anchor: message.isOutgoing ? .topTrailing : .topLeading).combined(with: .opacity))
+                        .transition(.asymmetric(insertion: .identity, removal: Self.reactionRemoval(outgoing: message.isOutgoing)))
                 }
             }
             .animation(ClickMotion.content, value: message.reactions)
@@ -366,6 +368,10 @@ public struct MessageBubbleView: View {
         return message.reactions.filter { $0.reactionType != HangoutPlan.goingReaction && $0.reactionType != HangoutPlan.declinedReaction }
     }
 
+    private static func reactionRemoval(outgoing: Bool) -> AnyTransition {
+        .scale(scale: 0.6, anchor: outgoing ? .topTrailing : .topLeading).combined(with: .opacity)
+    }
+
     private var reactionsStrip: some View {
         HStack(spacing: 4) {
             ForEach(stripReactions) { reaction in
@@ -373,6 +379,8 @@ public struct MessageBubbleView: View {
                     ClickHaptics.impact(.light)
                     onShowReactions?(message, reaction.reactionType)
                 } label: {
+                    ReactionChip(isFresh: ReactionPop.isFresh(messageID: message.id, reaction: reaction.reactionType),
+                                 anchor: message.isOutgoing ? .trailing : .leading) {
                     HStack(spacing: 3) {
                         Text(reaction.reactionType)
                             .font(.system(size: 13))
@@ -401,8 +409,10 @@ public struct MessageBubbleView: View {
                                 lineWidth: ClickMetrics.strokeWidth
                             )
                     }
+                    }
                 }
                 .buttonStyle(.plain)
+                .transition(.asymmetric(insertion: .identity, removal: .opacity))
                 .accessibilityLabel("\(reaction.reactionType), \(reaction.count)\(reaction.userReacted ? ", including you" : "")")
                 .accessibilityHint("Shows who reacted")
                 .accessibilityAction(named: "Show who reacted") { onShowReactions?(message, reaction.reactionType) }
@@ -652,5 +662,44 @@ private struct UploadStateOverlay: View {
         }
         .buttonStyle(.plain)
         .accessibilityLabel(label)
+    }
+}
+
+/// Reactions this user added moments ago, so their chip grows in (WhatsApp-style) once, while
+/// chips that merely scroll into view appear as they are.
+@MainActor
+enum ReactionPop {
+    private static var added: [String: Date] = [:]
+
+    static func mark(messageID: String, reaction: String) {
+        let now = Date()
+        added = added.filter { now.timeIntervalSince($0.value) < 2 }
+        added[messageID + reaction] = now
+    }
+
+    static func isFresh(messageID: String, reaction: String) -> Bool {
+        added[messageID + reaction].map { Date().timeIntervalSince($0) < 1.5 } ?? false
+    }
+}
+
+/// A reaction chip that springs up from nothing when it's fresh.
+private struct ReactionChip<Content: View>: View {
+    let anchor: UnitPoint
+    let content: Content
+    @State private var scale: CGFloat
+
+    init(isFresh: Bool, anchor: UnitPoint, @ViewBuilder content: () -> Content) {
+        self.anchor = anchor
+        self.content = content()
+        _scale = State(initialValue: isFresh ? 0.01 : 1)
+    }
+
+    var body: some View {
+        content
+            .scaleEffect(scale, anchor: anchor)
+            .onAppear {
+                guard scale < 1 else { return }
+                withAnimation(.spring(response: 0.38, dampingFraction: 0.58)) { scale = 1 }
+            }
     }
 }

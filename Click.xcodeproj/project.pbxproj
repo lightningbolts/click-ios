@@ -79,6 +79,7 @@
 		5644CD79052856D5EBB5002A /* ClickCryptoV1.swift in Sources */ = {isa = PBXBuildFile; fileRef = DF1EEA7316772A0B9800A223 /* ClickCryptoV1.swift */; };
 		589076A2B6B4BD6C55F5EF65 /* ConnectionFlowTelemetry.swift in Sources */ = {isa = PBXBuildFile; fileRef = FD5B79848C6B2337EA8CD816 /* ConnectionFlowTelemetry.swift */; };
 		589EAB6A4BADAE6F53FA105B /* JournalEditor.swift in Sources */ = {isa = PBXBuildFile; fileRef = 17FB03068E701F0CD7FE556B /* JournalEditor.swift */; };
+		5A024A97C03FD52D04F5BD7A /* TouchRipple.swift in Sources */ = {isa = PBXBuildFile; fileRef = 054022733B04F229E07BA230 /* TouchRipple.swift */; };
 		5B7B2613D4B9042F81200881 /* MeTabAvatarModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9E1DF371E97CE2C8CBF99560 /* MeTabAvatarModel.swift */; };
 		5C1D1F2D08A908C936D43701 /* ConversationListModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = B2CF3C0CEF71E64672F79F3E /* ConversationListModel.swift */; };
 		5D126A60DFB2CA03EE19DF9F /* GroupRepository.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4CEBB1A141A8A2E6040D2122 /* GroupRepository.swift */; };
@@ -271,6 +272,7 @@
 		005D701DA8A071928D68AB22 /* HomeView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HomeView.swift; sourceTree = "<group>"; };
 		01DF541D37D451BAB9008186 /* Phase3FeedTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Phase3FeedTests.swift; sourceTree = "<group>"; };
 		04976593E2AA9C9465B4BBB8 /* TabBarTransitionFader.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TabBarTransitionFader.swift; sourceTree = "<group>"; };
+		054022733B04F229E07BA230 /* TouchRipple.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TouchRipple.swift; sourceTree = "<group>"; };
 		059E174F6A0ABD87301344BE /* MessageBubbleView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MessageBubbleView.swift; sourceTree = "<group>"; };
 		05BFAB76DC5E32C164D4C1F8 /* GuestListView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GuestListView.swift; sourceTree = "<group>"; };
 		060946110A08603E44DA7EE0 /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist; path = Info.plist; sourceTree = "<group>"; };
@@ -508,6 +510,7 @@
 				30988D99C421B40B486F5134 /* OfflineNotice.swift */,
 				4C4D554431AED506420BE422 /* SearchLaunchField.swift */,
 				2229C327502C1A82ABD17D9B /* StatusPill.swift */,
+				054022733B04F229E07BA230 /* TouchRipple.swift */,
 			);
 			path = Components;
 			sourceTree = "<group>";
@@ -1481,6 +1484,7 @@
 				4538B728A68E8E3B3EEA9912 /* TapConnectModel.swift in Sources */,
 				D65F1754EA234A84D1056733 /* TapConnectView.swift in Sources */,
 				4708F31411ACBDD9DC20FFA6 /* TelemetryQueue.swift in Sources */,
+				5A024A97C03FD52D04F5BD7A /* TouchRipple.swift in Sources */,
 				B157719AA85CC74638A6B2F4 /* Typography.swift in Sources */,
 				10C0FB52F5A5968652E8AD18 /* UltrasonicService.swift in Sources */,
 				3396C88A0F195A5E0253B73B /* UserProfileSnapshot.swift in Sources */,

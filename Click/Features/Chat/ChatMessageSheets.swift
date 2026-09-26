@@ -330,12 +330,11 @@ struct SayHiPanel: View {
 
 /// Small visual for the message a reply quotes: the photo itself, the event image, or a kind
 /// icon for voice notes and files. Shared by bubble quotes and the composer's reply strip.
-/// The chat's pinned message, above the timeline: tap to jump to it (then to the next pin).
+/// A brief notice above the timeline that a message was pinned: tap to jump to it.
 struct PinnedMessageBanner: View {
+    let title: String
     /// The pinned text when it's in the loaded timeline.
     let text: String?
-    let position: Int
-    let count: Int
     let onTap: () -> Void
 
     var body: some View {
@@ -346,10 +345,9 @@ struct PinnedMessageBanner: View {
                     .foregroundStyle(ClickColors.accentForeground)
                     .rotationEffect(.degrees(45))
                 VStack(alignment: .leading, spacing: 1) {
-                    Text(count > 1 ? "Pinned · \(position + 1) of \(count)" : "Pinned")
+                    Text(title)
                         .font(ClickTypography.metadataEmphasized)
                         .foregroundStyle(ClickColors.accentForeground)
-                        .contentTransition(.numericText())
                     Text(text?.nonEmptyTrimmed ?? "Pinned message")
                         .font(ClickTypography.supporting)
                         .foregroundStyle(ClickColors.textPrimary)
@@ -364,7 +362,7 @@ struct PinnedMessageBanner: View {
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
-        .accessibilityLabel("Pinned message\(count > 1 ? " \(position + 1) of \(count)" : ""): \(text ?? "")")
+        .accessibilityLabel("\(title): \(text ?? "")")
         .accessibilityHint("Shows it in the chat")
     }
 }
