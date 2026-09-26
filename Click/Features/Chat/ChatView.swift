@@ -265,10 +265,10 @@ public struct ChatView: View {
         .toolbar {
             ToolbarItem(placement: .principal) {
                 conversationTitle
-                    // Fills the space between back button and menu (no measured width to change
-                    // after the first layout or a cancelled back swipe), set in a little.
-                    .padding(.leading, 6)
-                    .frame(maxWidth: .infinity, alignment: .leading)
+                    // Sized from the window up front: a width that changed after the first
+                    // layout was only applied on the bar's next relayout (a cancelled back
+                    // swipe), shifting the avatar then.
+                    .frame(width: max(120, Self.windowWidth - 132), alignment: .leading)
             }
             ToolbarItem(placement: .topBarTrailing) {
                 conversationMenu
@@ -321,6 +321,14 @@ public struct ChatView: View {
         defer { knownPinIDs = ids }
         guard let known = knownPinIDs, let added = pins.first(where: { !known.contains($0.messageID) }) else { return }
         withAnimation(ClickMotion.content) { pinNotice = added }
+    }
+
+    /// The key window's width, known before the first layout.
+    private static var windowWidth: CGFloat {
+        UIApplication.shared.connectedScenes
+            .compactMap { $0 as? UIWindowScene }
+            .flatMap(\.windows)
+            .first { $0.isKeyWindow }?.bounds.width ?? 390
     }
 
     private func prefetchProfile() {
