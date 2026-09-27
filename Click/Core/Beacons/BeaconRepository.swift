@@ -9,6 +9,8 @@ public struct NearbyDiscovery: Codable, Equatable, Sendable {
     public let latitude: Double
     public let longitude: Double
     public let fetchedAt: Date
+    /// Cursor for the next page of beacons (`/api/beacons` is paginated); nil once all are loaded.
+    public var nextCursor: String? = nil
 
     /// Real counts per beacon kind, in canonical kind order, omitting empty kinds.
     public func kindCounts(at now: Date = .now) -> [(kind: BeaconKind, count: Int)] {
@@ -29,8 +31,10 @@ public actor BeaconRepository {
     private var known: [String: (beacon: MapBeacon, isExpired: Bool, storedAt: Date)] = [:]
     private var prefetching: [String: Task<Void, Never>] = [:]
 
-    /// Default discovery radius, matching the KMP Nearby feed.
-    public static let discoveryRadiusMeters = 5_000
+    /// Default discovery radius (50 km, the `/api/beacons` maximum).
+    public static let discoveryRadiusMeters = 50_000
+    /// Beacons per `/api/beacons` page.
+    public static let discoveryPageSize = 200
 
     public init(api: ClickAPIClient, cache: CacheStore = .shared) {
         self.api = api
@@ -50,35 +54,63 @@ public actor BeaconRepository {
         radiusMeters: Int = BeaconRepository.discoveryRadiusMeters,
         userID: String
     ) async throws -> NearbyDiscovery {
-        async let beaconsTask = nearbyBeacons(around: coordinate, radiusMeters: radiusMeters)
+        async let beaconsTask = nearbyBeacons(around: coordinate, radiusMeters: radiusMeters, cursor: nil)
         async let hubsTask = nearbyHubs(around: coordinate, radiusMeters: radiusMeters)
-        let beacons = try await beaconsTask
+        let page = try await beaconsTask
         let hubs = (try? await hubsTask) ?? []
         let result = NearbyDiscovery(
-            beacons: beacons,
+            beacons: page.beacons,
             hubs: hubs,
             latitude: coordinate.latitude,
             longitude: coordinate.longitude,
-            fetchedAt: .now
+            fetchedAt: .now,
+            nextCursor: page.nextCursor
         )
         await cache.save(result, key: "nearby", userID: userID)
-        remember(beacons)
+        remember(page.beacons)
         return result
     }
 
-    public func nearbyBeacons(around coordinate: CLLocationCoordinate2D, radiusMeters: Int) async throws -> [MapBeacon] {
-        let request = APIRequest(
-            path: "/api/beacons",
-            method: .get,
-            queryItems: [
-                URLQueryItem(name: "lat", value: String(coordinate.latitude)),
-                URLQueryItem(name: "lon", value: String(coordinate.longitude)),
-                URLQueryItem(name: "radius_meters", value: String(radiusMeters))
-            ]
+    /// The next page of beacons for `discovery`, merged in (nil when it has no more pages).
+    public func moreBeacons(
+        for discovery: NearbyDiscovery,
+        radiusMeters: Int = BeaconRepository.discoveryRadiusMeters,
+        userID: String
+    ) async throws -> NearbyDiscovery? {
+        guard let cursor = discovery.nextCursor else { return nil }
+        let center = CLLocationCoordinate2D(latitude: discovery.latitude, longitude: discovery.longitude)
+        let page = try await nearbyBeacons(around: center, radiusMeters: radiusMeters, cursor: cursor)
+        let seen = Set(discovery.beacons.map(\.id))
+        let result = NearbyDiscovery(
+            beacons: discovery.beacons + page.beacons.filter { !seen.contains($0.id) },
+            hubs: discovery.hubs,
+            latitude: discovery.latitude,
+            longitude: discovery.longitude,
+            fetchedAt: discovery.fetchedAt,
+            nextCursor: page.nextCursor
         )
-        let (data, _) = try await api.executeRaw(request)
+        await cache.save(result, key: "nearby", userID: userID)
+        remember(page.beacons)
+        return result
+    }
+
+    /// One page of beacons, newest first; `nextCursor` is nil on the last page.
+    public func nearbyBeacons(
+        around coordinate: CLLocationCoordinate2D,
+        radiusMeters: Int,
+        cursor: String?
+    ) async throws -> (beacons: [MapBeacon], nextCursor: String?) {
+        var query = [
+            URLQueryItem(name: "lat", value: String(coordinate.latitude)),
+            URLQueryItem(name: "lon", value: String(coordinate.longitude)),
+            URLQueryItem(name: "radius_meters", value: String(radiusMeters)),
+            URLQueryItem(name: "limit", value: String(Self.discoveryPageSize))
+        ]
+        if let cursor { query.append(URLQueryItem(name: "cursor", value: cursor)) }
+        let (data, _) = try await api.executeRaw(APIRequest(path: "/api/beacons", method: .get, queryItems: query))
         let root = try JSONFields.object(data)
-        return JSONFields.rows(root["beacons"]).compactMap(MapBeacon.decode)
+        let next = JSONFields.string(root["next_cursor"]).flatMap { $0.isEmpty ? nil : $0 }
+        return (JSONFields.rows(root["beacons"]).compactMap(MapBeacon.decode), next)
     }
 
     public func nearbyHubs(around coordinate: CLLocationCoordinate2D, radiusMeters: Int) async throws -> [NearbyHub] {
@@ -88,7 +120,9 @@ public actor BeaconRepository {
             queryItems: [
                 URLQueryItem(name: "lat", value: String(coordinate.latitude)),
                 URLQueryItem(name: "lon", value: String(coordinate.longitude)),
-                URLQueryItem(name: "radius_meters", value: String(radiusMeters))
+                URLQueryItem(name: "radius_meters", value: String(radiusMeters)),
+                // The route's maximum; its default (50) would truncate a 50 km area.
+                URLQueryItem(name: "limit", value: "100")
             ]
         )
         let (data, _) = try await api.executeRaw(request)

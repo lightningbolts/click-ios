@@ -35,13 +35,8 @@ struct NearbyLip: View {
             .padding(.bottom, 12)
         }
         .frame(maxWidth: .infinity, minHeight: 64)
-        .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 30, style: .continuous))
-        .clipShape(RoundedRectangle(cornerRadius: 30, style: .continuous))
-        .overlay(
-            RoundedRectangle(cornerRadius: 30, style: .continuous)
-                .stroke(Color.white.opacity(0.08), lineWidth: 0.5)
-        )
-        .shadow(color: .black.opacity(0.22), radius: 18, y: 4)
+        // Same Liquid Glass as the tab bar and toolbar buttons it sits between.
+        .glassPanelBackground(cornerRadius: 30)
         .padding(.horizontal, 8)
         .padding(.bottom, 8)
         .contentShape(RoundedRectangle(cornerRadius: 30, style: .continuous))
@@ -83,14 +78,14 @@ struct NearbyListView: View {
     @Bindable var model: MapFeatureModel
     let pins: [ConnectionPin]
     let onOpen: (MapItem) -> Void
+    /// Filters this list in place (Apple Maps style) rather than opening another sheet.
+    @State private var query = ""
+    @FocusState private var isSearching: Bool
 
     var body: some View {
         VStack(spacing: 0) {
             HStack(spacing: 8) {
-                // Search opens the one global search (people, messages, places, events).
-                SearchLaunchField(prompt: "Search places, events, people") {
-                    model.isNearbyPresented = false
-                }
+                searchField
                 Button {
                     model.refresh()
                 } label: {
@@ -121,6 +116,51 @@ struct NearbyListView: View {
         }
     }
 
+    private var searchField: some View {
+        HStack(spacing: 8) {
+            Image(systemName: "magnifyingglass")
+                .foregroundStyle(ClickColors.textTertiary)
+            TextField("Search places, events, people", text: $query)
+                .focused($isSearching)
+                .submitLabel(.search)
+                .autocorrectionDisabled()
+                .foregroundStyle(ClickColors.textPrimary)
+            if !query.isEmpty {
+                Button {
+                    query = ""
+                } label: {
+                    Image(systemName: "xmark.circle.fill")
+                        .foregroundStyle(ClickColors.textTertiary)
+                }
+                .buttonStyle(.plain)
+                .accessibilityLabel("Clear search")
+            }
+        }
+        .font(ClickTypography.body)
+        .padding(.horizontal, 14)
+        .frame(minHeight: ClickMetrics.searchMinHeight)
+        .background(ClickColors.fillSubtle, in: Capsule())
+        .onChange(of: isSearching) { _, searching in
+            // Room for results above the keyboard.
+            if searching { model.nearbyDetent = .large }
+        }
+    }
+
+    private var trimmedQuery: String { query.trimmingCharacters(in: .whitespacesAndNewlines) }
+
+    private func matches(_ item: MapItem, _ query: String) -> Bool {
+        var fields = [item.title]
+        switch item.kind {
+        case .beacon(let beacon):
+            fields += [beacon.kind.label, beacon.locationName, beacon.description].compactMap { $0 }
+        case .hub:
+            fields.append("Hub")
+        case .person(let pin):
+            fields += [pin.locationName].compactMap { $0 }
+        }
+        return fields.contains { $0.localizedStandardContains(query) }
+    }
+
     private func chip(_ title: String, count: Int?, isOn: Bool, action: @escaping () -> Void) -> some View {
         Button {
             ClickHaptics.selection()
@@ -144,12 +184,29 @@ struct NearbyListView: View {
 
     @ViewBuilder
     private var list: some View {
-        let sections = model.sections(pins: pins)
+        let search = trimmedQuery
+        let sections = model.sections(pins: pins).compactMap { section -> NearbySection? in
+            guard !search.isEmpty else { return section }
+            let items = section.items.filter { matches($0, search) }
+            return items.isEmpty ? nil : NearbySection(id: section.id, title: section.title, items: items)
+        }
         ScrollView {
             LazyVStack(alignment: .leading, spacing: 20) {
                 if sections.isEmpty {
-                    emptyState
+                    if search.isEmpty {
+                        emptyState
+                            .padding(.top, 30)
+                    } else {
+                        VStack(spacing: 6) {
+                            Text("No results for “\(search)”").font(ClickTypography.bodyEmphasized)
+                            Text("Try another name, place or filter.")
+                                .font(ClickTypography.supporting)
+                                .foregroundStyle(ClickColors.textTertiary)
+                        }
+                        .multilineTextAlignment(.center)
+                        .frame(maxWidth: .infinity)
                         .padding(.top, 30)
+                    }
                 }
                 ForEach(sections) { section in
                     VStack(alignment: .leading, spacing: 8) {

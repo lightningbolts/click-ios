@@ -13,8 +13,9 @@ public struct MessageBubbleView: View {
     /// Group and hub timelines label incoming runs with the sender's name.
     let showsSenderName: Bool
     /// Group and hub timelines keep a leading avatar column for incoming messages; the avatar
-    /// itself is drawn beside the run's first message (with the name), the rest keep the inset.
+    /// itself is drawn beside the run's last message (WhatsApp / Instagram), the rest keep the inset.
     let showsSenderAvatarColumn: Bool
+    let showsSenderAvatar: Bool
     /// Hubs have no delivery/read receipts; only pending/failed state is shown.
     let showsReceipts: Bool
     /// Decrypted-media provider and opener; cannot be nil.
@@ -52,6 +53,7 @@ public struct MessageBubbleView: View {
         onRetrySend: ((ChatMessageItem) -> Void)? = nil,
         showsSenderName: Bool = false,
         showsSenderAvatarColumn: Bool = false,
+        showsSenderAvatar: Bool = false,
         showsReceipts: Bool = true,
         mediaLoader: @escaping (ChatMessageItem) async throws -> URL,
         onOpenMedia: ((URL, MessageMedia.Kind) -> Void)? = nil,
@@ -82,6 +84,7 @@ public struct MessageBubbleView: View {
         self.onOpenMedia = onOpenMedia
         self.showsSenderName = showsSenderName
         self.showsSenderAvatarColumn = showsSenderAvatarColumn
+        self.showsSenderAvatar = showsSenderAvatar
         self.showsReceipts = showsReceipts
         self.message = message
         self.onReply = onReply
@@ -103,9 +106,20 @@ public struct MessageBubbleView: View {
     }
 
     private var deletedPlaceholder: some View {
-        HStack {
+        HStack(alignment: .bottom, spacing: 0) {
             if message.isOutgoing { Spacer(minLength: 58) }
-            if hasAvatarColumn { Color.clear.frame(width: Self.avatarSize + Self.avatarSpacing, height: 1) }
+            if hasAvatarColumn {
+                Group {
+                    if showsSenderAvatar {
+                        AvatarView(imageURL: message.senderAvatarURL, seed: message.senderID,
+                                   initials: Phase3Repository.initials(from: message.senderName), size: Self.avatarSize)
+                            .accessibilityHidden(true)
+                    } else {
+                        Color.clear.frame(width: Self.avatarSize, height: 1)
+                    }
+                }
+                .padding(.trailing, Self.avatarSpacing)
+            }
             Label("Message deleted", systemImage: "nosign")
                 .font(ClickTypography.supporting.italic())
                 .foregroundStyle(ClickColors.textTertiary)
@@ -117,7 +131,8 @@ public struct MessageBubbleView: View {
                 )
             if !message.isOutgoing { Spacer(minLength: 58) }
         }
-        .padding(.horizontal, 5)
+        // Group rows line up with the live bubbles' avatar column.
+        .padding(.horizontal, hasAvatarColumn ? 12 : 5)
         .accessibilityLabel(message.isOutgoing ? "You deleted a message" : "\(message.senderName) deleted a message")
     }
 
@@ -138,6 +153,15 @@ public struct MessageBubbleView: View {
                 }
                 content
                     .frame(maxWidth: 320, alignment: message.isOutgoing ? .trailing : .leading)
+                    // Level with the bubble's bottom edge, not the reactions below it.
+                    .overlay(alignment: .bottomLeading) {
+                        if hasAvatarColumn, showsSenderAvatar {
+                            AvatarView(imageURL: message.senderAvatarURL, seed: message.senderID,
+                                       initials: Phase3Repository.initials(from: message.senderName), size: Self.avatarSize)
+                                .offset(x: -(Self.avatarSize + Self.avatarSpacing))
+                                .accessibilityHidden(true)
+                        }
+                    }
                     .onGeometryChange(for: CGRect.self) { $0.frame(in: .global) } action: { bubbleFrame = $0 }
                     .offset(x: dragOffset)
                     .opacity(isBubbleHidden ? 0 : 1)
@@ -179,15 +203,6 @@ public struct MessageBubbleView: View {
             }
             .animation(ClickMotion.content, value: message.reactions)
             .padding(.leading, hasAvatarColumn ? Self.avatarSize + Self.avatarSpacing : 0)
-            // Top-aligned with the sender name, so it stays put when the bubble grows reactions.
-            .overlay(alignment: .topLeading) {
-                if hasAvatarColumn, showsSenderName {
-                    AvatarView(imageURL: message.senderAvatarURL, seed: message.senderID,
-                               initials: Phase3Repository.initials(from: message.senderName), size: Self.avatarSize)
-                        .padding(.top, 6)
-                        .accessibilityHidden(true)
-                }
-            }
 
             if !message.isOutgoing {
                 Spacer(minLength: 58)

@@ -4,16 +4,11 @@ import SwiftUI
 /// same slot always holds the same kind of control. Root-specific actions come first.
 struct RootMenu<Extra: View>: View {
     @Environment(AppEnvironment.self) private var env
-    /// Floating glass circle (Map) instead of a toolbar item.
-    var floating = false
-    /// Roots with their own focused actions (Map) can omit the account shortcuts.
-    var includesAccountItems = true
     @ViewBuilder var extra: () -> Extra
 
     var body: some View {
         Menu {
             extra()
-            if includesAccountItems {
             Section {
                 Button("Saved events", systemImage: "bookmark") { env.router.navigate(to: .savedEvents) }
                 Button("My QR code", systemImage: "qrcode") { env.router.navigate(to: .myQR) }
@@ -25,25 +20,15 @@ struct RootMenu<Extra: View>: View {
                     Label("Open web dashboard", systemImage: "safari")
                 }
             }
-            }
         } label: {
-            if floating {
-                Image(systemName: "ellipsis")
-                    .font(.system(size: 17, weight: .semibold))
-                    .foregroundStyle(ClickColors.accentForeground)
-                    .frame(width: ClickMetrics.minimumHitTarget, height: ClickMetrics.minimumHitTarget)
-                    .glassCircleBackground()
-            } else {
-                Label("Menu", systemImage: "ellipsis")
-            }
+            Label("Menu", systemImage: "ellipsis")
         }
         .accessibilityLabel("Menu")
     }
 }
 
 extension RootMenu where Extra == EmptyView {
-    init(floating: Bool = false) {
-        self.floating = floating
+    init() {
         self.extra = { EmptyView() }
     }
 }

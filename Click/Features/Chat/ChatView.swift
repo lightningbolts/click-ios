@@ -477,6 +477,7 @@ public struct ChatView: View {
             onRetrySend: { target in Task { await model.retrySend(item: target) } },
             showsSenderName: !model.identity.isDirect && Self.startsSenderRun(at: index, in: items),
             showsSenderAvatarColumn: !model.identity.isDirect,
+            showsSenderAvatar: !model.identity.isDirect && Self.endsSenderRun(at: index, in: items),
             showsReceipts: model.identity.supportsReceipts,
             mediaLoader: { message in try await model.mediaURL(for: message) },   // never nil
             onOpenMedia: { url, kind in
@@ -852,6 +853,15 @@ public struct ChatView: View {
         case .direct, .group: "Message \(model.identity.peerDisplayName)…"
         case .hub: "Message everyone here…"
         }
+    }
+
+    private static func endsSenderRun(at index: Int, in items: [ChatMessageItem]) -> Bool {
+        guard items.indices.contains(index) else { return false }
+        guard index < items.count - 1 else { return true }
+        let next = items[index + 1]
+        let current = items[index]
+        return next.senderID != current.senderID
+            || !Calendar.current.isDate(next.createdAt, inSameDayAs: current.createdAt)
     }
 
     private static func startsSenderRun(at index: Int, in items: [ChatMessageItem]) -> Bool {

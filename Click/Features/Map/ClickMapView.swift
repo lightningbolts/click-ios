@@ -70,14 +70,21 @@ public struct ClickMapView: View {
         // The Nearby sheet's search keyboard must not count as bottom inset: `max` above would
         // latch its height and strand the lip and buttons mid-screen after the sheet closes.
         .ignoresSafeArea(.keyboard)
-        // The map is full-bleed: no title bar, just floating glass controls (prototype Map root).
-        .overlay(alignment: .top) {
-            HStack {
-                RootMenu(floating: true, includesAccountItems: false) {
+        // The map is full-bleed under a transparent bar: the menu and layers buttons are the same
+        // toolbar glass buttons, in the same spots, as every other tab root.
+        .navigationTitle("Map")
+        .navigationBarTitleDisplayMode(.inline)
+        .toolbarBackground(.hidden, for: .navigationBar)
+        .toolbar {
+            ToolbarItem(placement: .principal) {
+                // No visible title over the map; the navigation title still names the screen.
+                Color.clear.frame(width: 1, height: 1).accessibilityHidden(true)
+            }
+            ToolbarItem(placement: .topBarLeading) {
+                RootMenu {
                     Button("Center on me", systemImage: "location") { Task { await model.requestLocation() } }
                     Button("Refresh nearby", systemImage: "arrow.clockwise") { model.refresh() }
                     Button("Open Nearby list", systemImage: "list.bullet") { model.isNearbyPresented = true }
-                    Button("Saved events", systemImage: "bookmark") { env.router.navigate(to: .savedEvents) }
                     if model.filter != nil || model.layers.count != MapLayer.allCases.count {
                         Button("Show everything", systemImage: "square.3.layers.3d") {
                             model.filter = nil
@@ -85,14 +92,11 @@ public struct ClickMapView: View {
                         }
                     }
                 }
-                Spacer()
+            }
+            ToolbarItem(placement: .topBarTrailing) {
                 layersMenu
             }
-            .padding(.horizontal, ClickSpacing.screenGutter)
-            .padding(.top, 4)
         }
-        .navigationTitle("Map")
-        .toolbar(.hidden, for: .navigationBar)
         // Fully expanded, Nearby takes over the screen including the tab bar area.
         // The tab bar stays put: hiding it resizes the map area mid-snap and made the sheet flicker.
         .task {
@@ -119,7 +123,7 @@ public struct ClickMapView: View {
             TimelineView(.periodic(from: .now, by: 30)) { context in
                 if env.friction.showsGrassNudge(now: context.date) {
                     grassNudge
-                        .padding(.top, 60)
+                        .padding(.top, 8)
                         .transition(.move(edge: .top).combined(with: .opacity))
                 }
             }
@@ -145,8 +149,6 @@ public struct ClickMapView: View {
             .presentationDragIndicator(.visible)
             .presentationContentInteraction(.scrolls)
             .presentationBackgroundInteraction(.enabled(upThrough: .medium))
-            .presentationBackground(.regularMaterial)
-            .presentationCornerRadius(38)
         }
         .onChange(of: model.isNearbyPresented) { _, open in
             if !open { model.nearbyDetent = .medium }
@@ -244,13 +246,8 @@ public struct ClickMapView: View {
                 }
             }
         } label: {
-            Image(systemName: "square.3.layers.3d")
-                .font(.system(size: 17, weight: .semibold))
-                .foregroundStyle(ClickColors.accentForeground)
-                .frame(width: ClickMetrics.minimumHitTarget, height: ClickMetrics.minimumHitTarget)
-                .glassCircleBackground()
+            Label("Map layers", systemImage: "square.3.layers.3d")
         }
-        .accessibilityLabel("Map layers")
     }
 
     // MARK: - Routing

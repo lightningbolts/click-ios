@@ -241,7 +241,8 @@ final class MapFeatureModel {
         discovery.seed(await environment.beacons.cachedDiscovery(userID: userID))
     }
 
-    /// Coalesces viewport changes: refetches only when the center moved ~1 km from the last fetch.
+    /// Coalesces viewport changes: refetches only when the center moved ~5 km from the last fetch
+    /// (a tenth of the 50 km discovery radius).
     /// Latitude span of the visible region; clustering kicks in when zoomed out.
     private(set) var visibleLatitudeDelta: Double = 0.05
     /// Pin mode stays on until the zoom clearly drops (hysteresis), and a cluster tap sets a
@@ -282,7 +283,7 @@ final class MapFeatureModel {
         if let last = lastFetchCenter {
             let moved = CLLocation(latitude: last.latitude, longitude: last.longitude)
                 .distance(from: CLLocation(latitude: center.latitude, longitude: center.longitude))
-            guard moved > 1_000 else { return }
+            guard moved > 5_000 else { return }
         }
         refresh(around: center)
     }
@@ -299,16 +300,32 @@ final class MapFeatureModel {
         fetchTask?.cancel()
         fetchTask = Task {
             discovery.begin()
+            var firstPageLoaded = false
             do {
-                let fresh = try await environment.beacons.discovery(around: center, userID: userID)
+                var fresh = try await environment.beacons.discovery(around: center, userID: userID)
                 guard !Task.isCancelled else { return }
                 discovery.succeed(fresh)
+                firstPageLoaded = true
+                // The first page shows at once; the rest of the area fills in behind it (map pins
+                // and the Nearby list read the same items). A new fetch cancels this.
+                var pages = 1
+                while pages < Self.maxDiscoveryPages, !Task.isCancelled,
+                      let more = try await environment.beacons.moreBeacons(for: fresh, userID: userID) {
+                    guard !Task.isCancelled else { return }
+                    fresh = more
+                    discovery.succeed(more)
+                    pages += 1
+                }
             } catch {
                 guard !Task.isCancelled else { return }
-                discovery.fail(error)
+                // A later page failing keeps what already loaded.
+                if !firstPageLoaded { discovery.fail(error) }
             }
         }
     }
+
+    /// Safety ceiling for one area (25 × 200 = 5,000 beacons).
+    static let maxDiscoveryPages = 25
 
     // MARK: - Focus & selection
 
