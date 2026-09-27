@@ -26,6 +26,8 @@ public struct ChatComposerView: View {
     let onScheduleSend: (() -> Void)?
     /// "+" menu: plan a hangout (chats, not event hubs).
     let onPlanHangout: (() -> Void)?
+    /// "+" menu: KLIPY GIF search. Nil where GIFs aren't offered.
+    let onPickGif: (() -> Void)?
 
     @FocusState private var isFocused: Bool
     @State private var recorder = VoiceNoteRecorder()
@@ -49,8 +51,10 @@ public struct ChatComposerView: View {
         photosOnly: Bool = false,
         replyMediaLoader: ((ChatMessageItem) async throws -> URL)? = nil,
         onScheduleSend: (() -> Void)? = nil,
-        onPlanHangout: (() -> Void)? = nil
+        onPlanHangout: (() -> Void)? = nil,
+        onPickGif: (() -> Void)? = nil
     ) {
+        self.onPickGif = onPickGif
         self.onScheduleSend = onScheduleSend
         self.onPlanHangout = onPlanHangout
         self.photosOnly = photosOnly
@@ -287,6 +291,7 @@ public struct ChatComposerView: View {
                         onVoice: photosOnly ? nil : { beginRecording(locked: true) },
                         onShareBeacon: onShareBeacon,
                         onPlanHangout: onPlanHangout,
+                        onPickGif: onPickGif,
                         allowsFiles: !photosOnly
                     )
                 }

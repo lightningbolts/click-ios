@@ -31,6 +31,14 @@ extension ChatRepositoryProtocol {
                               content: content, replyToID: nil, replyToSnippet: nil, replyToSenderName: nil,
                               clientMessageID: clientMessageID)
     }
+    public func sendGif(conversation: ConversationIdentity, currentUserID: String, currentUserName: String,
+                        gif: ChatGif, replyToID: String?, clientMessageID: String) async throws -> ChatMessageItem {
+        var sent = try await sendMessage(conversation: conversation, currentUserID: currentUserID, currentUserName: currentUserName,
+                                         content: gif.content, replyToID: replyToID, replyToSnippet: nil, replyToSenderName: nil,
+                                         clientMessageID: clientMessageID)
+        sent.gif = gif
+        return sent
+    }
     public func sendPlan(conversation: ConversationIdentity, currentUserID: String, currentUserName: String,
                          plan: HangoutPlan, clientMessageID: String) async throws -> ChatMessageItem {
         var sent = try await sendMessage(conversation: conversation, currentUserID: currentUserID, currentUserName: currentUserName,
@@ -109,6 +117,9 @@ public protocol ChatRepositoryProtocol: Sendable {
     /// A proposed hangout (text summary + `metadata.plan`), direct and group chats.
     func sendPlan(conversation: ConversationIdentity, currentUserID: String, currentUserName: String,
                   plan: HangoutPlan, clientMessageID: String) async throws -> ChatMessageItem
+    /// A KLIPY GIF: its media URL as the (encrypted) text plus `metadata.gif`. Direct and group chats.
+    func sendGif(conversation: ConversationIdentity, currentUserID: String, currentUserName: String,
+                 gif: ChatGif, replyToID: String?, clientMessageID: String) async throws -> ChatMessageItem
     /// A text message re-sent from another chat, marked "Forwarded" for every reader.
     func sendForwardedText(conversation: ConversationIdentity, currentUserID: String, currentUserName: String,
                            content: String, clientMessageID: String) async throws -> ChatMessageItem
@@ -812,6 +823,15 @@ public actor ChatRepository: ChatRepositoryProtocol {
         return sent
     }
 
+    public func sendGif(conversation: ConversationIdentity, currentUserID: String, currentUserName: String,
+                        gif: ChatGif, replyToID: String?, clientMessageID: String) async throws -> ChatMessageItem {
+        var sent = try await sendText(conversation: conversation, currentUserID: currentUserID, currentUserName: currentUserName,
+                                      content: gif.content, replyToID: replyToID, replyToSnippet: nil, replyToSenderName: nil,
+                                      clientMessageID: clientMessageID, extraMetadata: [ChatGif.metadataKey: gif.wire])
+        sent.gif = gif
+        return sent
+    }
+
     public func sendPlan(conversation: ConversationIdentity, currentUserID: String, currentUserName: String,
                          plan: HangoutPlan, clientMessageID: String) async throws -> ChatMessageItem {
         var sent = try await sendText(conversation: conversation, currentUserID: currentUserID, currentUserName: currentUserName,
@@ -1311,7 +1331,8 @@ public actor ChatRepository: ChatRepositoryProtocol {
             beacon: SharedBeacon.parse(messageType: payload.messageType, metadata: payload.metadata, content: decrypted),
             clientMessageID: string(payload.metadata?["client_message_id"]),
             forwarded: payload.metadata?["forwarded"] as? Bool,
-            plan: HangoutPlan.parse(metadata: payload.metadata)
+            plan: HangoutPlan.parse(metadata: payload.metadata),
+            gif: ChatGif.parse(messageType: payload.messageType, metadata: payload.metadata, content: decrypted)
         )
     }
 
@@ -2229,7 +2250,8 @@ public actor ChatRepository: ChatRepositoryProtocol {
             beacon: SharedBeacon.parse(messageType: raw.messageType ?? "text", metadata: metadata, content: content),
             clientMessageID: raw.metadata?.clientMessageID,
             forwarded: metadata?["forwarded"] as? Bool,
-            plan: HangoutPlan.parse(metadata: metadata)
+            plan: HangoutPlan.parse(metadata: metadata),
+            gif: ChatGif.parse(messageType: raw.messageType ?? "text", metadata: metadata, content: content)
         )
     }
 

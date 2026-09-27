@@ -27,10 +27,11 @@ enum InboxFormatting {
             return "Call"
         default:
             if let decryptedText {
+                if let gif = ChatGif.previewLabel(for: decryptedText) { return gif }
                 return decryptedText.split(whereSeparator: \.isNewline).joined(separator: " ")
             }
             let isEncrypted = ClickCryptoV1.isEncrypted(message.content) || ClickCryptoV2.isEncrypted(message.content)
-            return isEncrypted ? "Message" : message.content
+            return isEncrypted ? "Message" : ChatGif.previewLabel(for: message.content) ?? message.content
         }
     }
 

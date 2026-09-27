@@ -10,6 +10,8 @@
 	<string>$(SUPABASE_URL)</string>
 	<key>SUPABASE_ANON_KEY</key>
 	<string>$(SUPABASE_ANON_KEY)</string>
+	<key>KLIPY_APP_KEY</key>
+	<string>$(KLIPY_APP_KEY)</string>
 	<key>GIDClientID</key>
 	<string>530817233802-crnehf5a9duauov4vos4lgsijkgingdj.apps.googleusercontent.com</string>
 	<key>GIDServerClientID</key>

@@ -94,13 +94,15 @@ public struct ChatMessageItem: Identifiable, Hashable, Sendable, Codable {
     public var isForwarded: Bool { forwarded == true }
     /// A hangout proposed in chat (`metadata.plan`).
     public var plan: HangoutPlan?
+    /// A KLIPY GIF (`metadata.gif`); `content` is its media URL.
+    public var gif: ChatGif?
 
     /// Persisted fields (LocalStore). The local media path and upload progress are
     /// device/session-specific and never stored.
     private enum CodingKeys: String, CodingKey {
         case id, chatID, senderID, senderName, senderAvatarURL, content, rawContent, messageType
         case createdAt, deliveryStatus, isOutgoing, replyToID, replyToSnippet, replyToSenderName
-        case reactions, isEdited, media, beacon, clientMessageID, isDeleted, forwarded, plan
+        case reactions, isEdited, media, beacon, clientMessageID, isDeleted, forwarded, plan, gif
     }
 
     /// The placeholder that replaces a deleted message in place.
@@ -141,10 +143,12 @@ public struct ChatMessageItem: Identifiable, Hashable, Sendable, Codable {
         beacon: SharedBeacon? = nil,
         clientMessageID: String? = nil,
         forwarded: Bool? = nil,
-        plan: HangoutPlan? = nil
+        plan: HangoutPlan? = nil,
+        gif: ChatGif? = nil
     ) {
         self.forwarded = forwarded
         self.plan = plan
+        self.gif = gif
         self.clientMessageID = clientMessageID
         self.beacon = beacon
         self.media = media

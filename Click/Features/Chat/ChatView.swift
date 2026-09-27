@@ -22,6 +22,7 @@ public struct ChatView: View {
     @State private var isSchedulingSend = false
     @State private var showsScheduled = false
     @State private var isPlanning = false
+    @State private var isPickingGif = false
     @State private var revivalDismissed = false
     @State private var forwarding: ChatMessageItem?
     @State private var shareFile: ViewerURL?
@@ -115,6 +116,11 @@ public struct ChatView: View {
                                                                    : model.identity.peerDisplayName,
                                  connectionID: model.identity.isDirect ? model.identity.connectionID : nil) { plan in
                     Task { await model.sendPlan(plan) }
+                }
+            }
+            .sheet(isPresented: $isPickingGif) {
+                GifPickerSheet(userID: env.session.currentSession?.userId ?? "") { gif in
+                    Task { await model.sendGif(gif) }
                 }
             }
             .sheet(item: $reactorsFor) { target in
@@ -569,7 +575,7 @@ public struct ChatView: View {
         }
 
         // Edit: own text messages only (not media, event cards or call logs)
-        if item.isOutgoing && item.messageType == .text && !item.isMedia && item.beacon == nil {
+        if item.isOutgoing && item.messageType == .text && !item.isMedia && item.beacon == nil && item.gif == nil {
             actions.append(MessageAction(id: "edit", title: "Edit", systemImage: "pencil") {
                 withAnimation(ClickMotion.selection) {
                     model.replyTarget = nil
@@ -676,7 +682,8 @@ public struct ChatView: View {
             photosOnly: model.identity.hubID != nil,
             replyMediaLoader: { message in try await model.mediaURL(for: message) },
             onScheduleSend: model.supportsScheduling && model.editTarget == nil ? { isSchedulingSend = true } : nil,
-            onPlanHangout: model.supportsPlans ? { isPlanning = true } : nil
+            onPlanHangout: model.supportsPlans ? { isPlanning = true } : nil,
+            onPickGif: model.supportsGifs ? { isPickingGif = true } : nil
         )
         // Dialogs hang off the composer so the main body stays type-checkable.
         .modifier(OptionalConversationActionDialogs(model: conversations, pending: $pendingAction) {

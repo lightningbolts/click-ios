@@ -1,10 +1,11 @@
 import Foundation
 
-/// What a pending row needs to be (re)sent besides its text: a media draft or a shared beacon.
+/// What a pending row needs to be (re)sent besides its text: a media draft, a shared beacon, a plan, or a GIF.
 public enum PendingSendPayload: Sendable {
     case media(MediaDraft)
     case beacon(MapBeacon)
     case plan(HangoutPlan)
+    case gif(ChatGif)
 }
 
 /// Receives pending-send changes for the conversation currently on screen.

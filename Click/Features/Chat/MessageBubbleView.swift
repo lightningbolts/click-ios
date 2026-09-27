@@ -226,6 +226,32 @@ public struct MessageBubbleView: View {
         } else if let beacon = message.beacon {
             BeaconMessageCard(beacon: beacon, time: message.formattedTime, isOutgoing: message.isOutgoing,
                               onOpen: BubbleTapGate.gated { onOpenBeacon?(beacon) })
+        } else if let gif = message.gif {
+            VStack(alignment: message.isOutgoing ? .trailing : .leading, spacing: 4) {
+                if message.isForwarded {
+                    forwardedLabel(onBubble: false).padding(.horizontal, 4)
+                }
+                if let snippet = message.replyToSnippet, !snippet.isEmpty {
+                    replyQuote(snippet: snippet)
+                        .padding(.horizontal, 10)
+                        .padding(.vertical, 6)
+                        .background(
+                            message.isOutgoing ? ClickColors.messageOutgoing : ClickColors.messageIncoming,
+                            in: RoundedRectangle(cornerRadius: 12, style: .continuous)
+                        )
+                        .frame(maxWidth: 240)
+                }
+                GifMessageView(gif: gif)
+                    .overlay { UploadStateOverlay(message: message, onRetry: onRetrySend, onDiscard: onDiscardFailed) }
+                HStack(spacing: 4) {
+                    Text(message.formattedTime).monospacedDigit()
+                    if showsStatus {
+                        animatedStatusIcon(readTint: ClickColors.accentForeground)
+                    }
+                }
+                .font(ClickTypography.caption)
+                .foregroundStyle(ClickColors.textSecondary)
+            }
         } else if let media = message.media {
             VStack(alignment: message.isOutgoing ? .trailing : .leading, spacing: 4) {
                 if message.isForwarded {

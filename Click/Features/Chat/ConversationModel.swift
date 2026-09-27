@@ -621,6 +621,14 @@ public final class ConversationModel {
                     conversation: identity, currentUserID: currentUserID, currentUserName: currentUserName,
                     plan: plan, clientMessageID: clientID
                 )
+            case .gif(let gif)?:
+                var sent = try await chatRepository.sendGif(
+                    conversation: identity, currentUserID: currentUserID, currentUserName: currentUserName,
+                    gif: gif, replyToID: item.replyToID, clientMessageID: clientID
+                )
+                sent.replyToSnippet = item.replyToSnippet
+                sent.replyToSenderName = item.replyToSenderName
+                server = sent
             case nil:
                 server = try await chatRepository.sendMessage(
                     conversation: identity,
@@ -709,6 +717,21 @@ public final class ConversationModel {
     /// A page with `pageSize` messages (tombstones ride along and don't count).
     nonisolated static func isFullPage(_ page: [ChatMessageItem]) -> Bool {
         page.lazy.filter { !$0.isDeleted }.count >= pageSize
+    }
+
+    // MARK: - GIFs
+
+    /// KLIPY search is offered where GIF messages are understood (not hubs) and a key is set.
+    public var supportsGifs: Bool { identity.hubID == nil && KlipyClient.isConfigured }
+
+    /// Sends a GIF picked from KLIPY (same optimistic row and retry as any message).
+    public func sendGif(_ gif: ChatGif) async {
+        let reply = replyTarget
+        replyTarget = nil
+        let clientID = UUID().uuidString.lowercased()
+        var optimistic = makeOptimistic(content: gif.content, type: .text, reply: reply, clientID: clientID)
+        optimistic.gif = gif
+        await performSend(optimistic, payload: .gif(gif))
     }
 
     // MARK: - Plans
@@ -922,6 +945,7 @@ public final class ConversationModel {
 
     /// Text for a reply quote, never exposing attachment envelopes.
     static func quoteText(_ item: ChatMessageItem) -> String {
+        if item.gif != nil { return "GIF" }
         if let beacon = item.beacon { return beacon.title }
         if let media = item.media { return media.kind == .file ? "📎 \(media.displayName)" : media.displayName }
         return item.content
@@ -1296,6 +1320,7 @@ public final class ConversationModel {
         merged.isEdited = update.isEdited || existing.isEdited
         merged.forwarded = update.forwarded ?? existing.forwarded
         merged.plan = update.plan ?? existing.plan
+        merged.gif = update.gif ?? existing.gif
         // Receipts only move forward (a late "delivered" never un-reads a message).
         let rank: [MessageDeliveryStatus: Int] = [.sent: 1, .delivered: 2, .read: 3]
         if rank[existing.deliveryStatus, default: 0] > rank[update.deliveryStatus, default: 0] {

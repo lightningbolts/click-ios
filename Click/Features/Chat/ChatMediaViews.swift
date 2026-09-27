@@ -241,9 +241,14 @@ final class VoiceNoteRecorder {
 // MARK: - Draft preparation
 
 enum MediaDraftBuilder {
-    /// Downscales and re-encodes a picked photo as JPEG off the main actor.
+    /// Downscales and re-encodes a picked photo as JPEG off the main actor. Animated GIFs are
+    /// sent as-is (re-encoding would flatten them to one frame) when within the media limit.
     static func image(from data: Data) async -> MediaDraft? {
         await Task.detached(priority: .userInitiated) {
+            if AnimatedImageDecoder.isGIF(data), AnimatedImageDecoder.isAnimated(data),
+               data.count <= MediaDraft.maxMediaBytes {
+                return MediaDraft(kind: .image, data: data, mimeType: "image/gif")
+            }
             guard let image = UIImage(data: data) else { return nil }
             let maxSide: CGFloat = 2048
             let scale = min(1, maxSide / max(image.size.width, image.size.height))
@@ -364,9 +369,7 @@ private struct ChatImageView: View {
                         }
                 } else {
                     Button { onOpen(url) } label: {
-                        Image(uiImage: image)
-                            .resizable()
-                            .aspectRatio(image.size, contentMode: .fit)
+                        StillOrAnimatedImage(image: image)
                             .frame(maxWidth: 240, maxHeight: 320)
                     }
                     .buttonStyle(.plain)
@@ -403,6 +406,11 @@ private struct ChatImageView: View {
             // A bubble-sized thumbnail, not the full 2048 px photo: faster and lighter to scroll.
             let isLocked = message.media?.isLocked() == true
             let decoded = await Task.detached(priority: .userInitiated) { () -> (UIImage, UIImage?)? in
+                // Animated GIFs keep their frames (bubble-sized); a locked Click Drop never animates.
+                if !isLocked, let data = try? Data(contentsOf: fileURL), AnimatedImageDecoder.isAnimated(data),
+                   let animated = AnimatedImageDecoder.image(from: data, maxPixelSize: 720) {
+                    return (animated, nil)
+                }
                 guard let image = UIImage(contentsOfFile: fileURL.path) else { return nil }
                 let scale = min(1, 720 / max(image.size.width, image.size.height))
                 let thumbnail = image.preparingThumbnail(of: CGSize(width: image.size.width * scale, height: image.size.height * scale)) ?? image
@@ -599,9 +607,7 @@ struct MediaViewer: View {
             ZStack {
                 Color.black.ignoresSafeArea()
                 if let image {
-                    Image(uiImage: image)
-                        .resizable()
-                        .scaledToFit()
+                    StillOrAnimatedImage(image: image)
                         .scaleEffect(scale)
                         .offset(x: offset.width, y: offset.height + dragDismiss)
                         .gesture(
@@ -644,7 +650,12 @@ struct MediaViewer: View {
             .preferredColorScheme(.dark)
         }
         .task {
-            image = await Task.detached { UIImage(contentsOfFile: url.path) }.value
+            image = await Task.detached { () -> UIImage? in
+                if let data = try? Data(contentsOf: url), AnimatedImageDecoder.isAnimated(data) {
+                    return AnimatedImageDecoder.image(from: data, maxPixelSize: 2048)
+                }
+                return UIImage(contentsOfFile: url.path)
+            }.value
         }
     }
 }
@@ -658,6 +669,7 @@ struct ComposerAttachmentButton: View {
     var onVoice: (() -> Void)?
     var onShareBeacon: (() -> Void)?
     var onPlanHangout: (() -> Void)?
+    var onPickGif: (() -> Void)?
     var allowsFiles = true
 
     private enum Camera: Identifiable {
@@ -678,6 +690,9 @@ struct ComposerAttachmentButton: View {
                 Button("Take Photo", systemImage: "camera") { camera = .photo }
             }
             Button("Photo Library", systemImage: "photo.on.rectangle") { showingPhotos = true }
+            if let onPickGif {
+                Button("GIF", systemImage: "photo.stack") { onPickGif() }
+            }
             if UIPasteboard.general.hasImages {
                 Button("Paste Image", systemImage: "doc.on.clipboard") { pasteImages() }
             }
@@ -752,6 +767,13 @@ struct ComposerAttachmentButton: View {
     }
 
     private func pasteImages() {
+        // A copied GIF keeps its frames only as raw data; `images` would flatten it.
+        if let gif = UIPasteboard.general.data(forPasteboardType: UTType.gif.identifier) {
+            Task {
+                if let draft = await MediaDraftBuilder.image(from: gif) { onDraft(draft) } else { onError("Couldn't prepare that GIF.") }
+            }
+            return
+        }
         let images = UIPasteboard.general.images ?? []
         Task {
             for image in images.prefix(ConversationModel.maxStaged) {

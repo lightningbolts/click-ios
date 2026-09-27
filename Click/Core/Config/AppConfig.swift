@@ -7,6 +7,8 @@ public struct AppConfig: Sendable {
     public let apiBaseURL: URL
     public let supabaseURL: URL
     public let supabaseAnonKey: String
+    /// KLIPY GIF API app key (`KLIPY_APP_KEY`); nil hides GIF search.
+    public let klipyAppKey: String?
 
     public init(bundle: Bundle = .main) {
         self.apiBaseURL = Self.urlValue(
@@ -24,12 +26,14 @@ public struct AppConfig: Sendable {
         // Test hosts and previews intentionally run without production credentials.
         // SupabaseAuthService reports a typed configuration error only when auth is used.
         self.supabaseAnonKey = Self.resolvedValue(key: "SUPABASE_ANON_KEY", bundle: bundle) ?? ""
+        self.klipyAppKey = Self.resolvedValue(key: "KLIPY_APP_KEY", bundle: bundle)
     }
 
-    public init(apiBaseURL: URL, supabaseURL: URL, supabaseAnonKey: String) {
+    public init(apiBaseURL: URL, supabaseURL: URL, supabaseAnonKey: String, klipyAppKey: String? = nil) {
         self.apiBaseURL = apiBaseURL
         self.supabaseURL = supabaseURL
         self.supabaseAnonKey = supabaseAnonKey
+        self.klipyAppKey = klipyAppKey
     }
 
     private static func resolvedValue(key: String, bundle: Bundle) -> String? {
