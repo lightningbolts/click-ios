@@ -166,7 +166,7 @@ public struct ClicksView: View {
                     item: item,
                     preview: model.previewText(for: item),
                     isMuted: model.isMuted([item.chatID, item.connectionID]),
-                    onOpen: { isArchived ? openProfile(item) : openChat(item) },
+                    onOpen: { openChat(item) },
                     onProfile: { openProfile(item) }
                 )
                 .inboxRowChrome()

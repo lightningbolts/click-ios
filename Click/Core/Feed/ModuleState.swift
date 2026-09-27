@@ -109,8 +109,17 @@ extension Error {
         case .notFound: "This is no longer available."
         case .rateLimited: "Too many requests. Try again shortly."
         case .server(_, Transport.connectionFailedCode?, _): "Couldn't reach Click. Try again."
-        case .server, .decoding, .conflict, .validation, .invalidURL, .cancelled, nil:
+        case .server, .decoding, .conflict, .validation, .invalidURL, .cancelled:
             "Something went wrong. Try again."
+        case nil:
+            // Chat, hub and attachment errors carry specific, user-facing wording (e.g. "Move
+            // closer to post"); crypto internals stay generic.
+            switch self {
+            case let error as ChatRepositoryError: error.errorDescription ?? "Something went wrong. Try again."
+            case let error as HubChatError: error.errorDescription ?? "Something went wrong. Try again."
+            case let error as MediaValidator.Rejection: error.errorDescription ?? "Something went wrong. Try again."
+            default: "Something went wrong. Try again."
+            }
         }
     }
 

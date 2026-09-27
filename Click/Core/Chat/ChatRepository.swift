@@ -93,6 +93,9 @@ public protocol ChatRepositoryProtocol: Sendable {
     /// up to 40 newer rows, newest first.
     func fetchMessages(around messageID: String, conversation: ConversationIdentity, currentUserID: String, limit: Int) async throws -> [ChatMessageItem]
     func setReaction(messageID: String, reactionType: String, adding: Bool, conversation: ConversationIdentity) async throws
+    /// Current reactions for `messageIDs` (direct and group chats); every requested ID is keyed,
+    /// with an empty list when it has none.
+    func reactions(messageIDs: [String], currentUserID: String) async throws -> [String: [ReactionSummary]]
     func markRead(chatID: String, messageIDs: [String]) async throws
     /// Each member's read-through time (group read receipts), by user ID.
     func readCursors(chatID: String) async throws -> [String: Date]
@@ -149,6 +152,10 @@ public protocol ChatRepositoryProtocol: Sendable {
 public extension ChatRepositoryProtocol {
     func fetchMessages(around messageID: String, conversation: ConversationIdentity, currentUserID: String, limit: Int) async throws -> [ChatMessageItem] {
         []
+    }
+
+    func reactions(messageIDs: [String], currentUserID: String) async throws -> [String: [ReactionSummary]] {
+        [:]
     }
 
     func sendMedia(
@@ -419,13 +426,17 @@ public actor ChatRepository: ChatRepositoryProtocol {
         scope: V2Scope,
         participantUserIDs: [String],
         allowUpgrade: Bool,
+        requiredEpoch: Int? = nil,
         didRetryDiscovery: Bool = false
     ) async throws -> V2Session? {
         if let cached = v2SessionCache[scope.cacheKey] {
             // Reads always reuse; writes reuse a recent session (direct chats and freshly
-            // opened groups/hubs), otherwise re-check membership and rotation.
+            // opened groups/hubs), otherwise re-check membership and rotation. A message from
+            // an epoch newer than the cached one means a peer rotated since: re-read the epoch
+            // state, or it would read as "unavailable" until the app restarts.
             let fresh = v2SessionResolvedAt[scope.cacheKey].map { Date().timeIntervalSince($0) < Self.sendSessionReuse } ?? false
-            if !allowUpgrade || fresh { return cached }
+            let rotatedSince = requiredEpoch.map { $0 > cached.currentEpoch } ?? false
+            if (!allowUpgrade || fresh), !rotatedSince { return cached }
         }
 
         let identity = try vault.loadOrCreate()
@@ -446,6 +457,7 @@ public actor ChatRepository: ChatRepositoryProtocol {
                 scope: scope,
                 participantUserIDs: participantUserIDs,
                 allowUpgrade: allowUpgrade,
+                requiredEpoch: requiredEpoch,
                 didRetryDiscovery: true
             )
         }
@@ -735,7 +747,12 @@ public actor ChatRepository: ChatRepositoryProtocol {
 
         // Message history should remain readable even if v2 device transfer is not yet available.
         // A missing historical epoch is represented per-message instead of failing the whole thread.
-        let v2Session = await sessionTask
+        var v2Session = await sessionTask
+        if let cached = v2Session,
+           let newest = rawResponse.messages.compactMap({ Self.v2Epoch($0.content) }).max(), newest > cached.currentEpoch {
+            v2Session = (try? await resolveV2Session(scope: .chat(canonicalChatID), participantUserIDs: participantIDs,
+                                                      allowUpgrade: false, requiredEpoch: newest)) ?? cached
+        }
 
         if !conversation.isDirect {
             await resolveNames(rawResponse.messages.filter { $0.senderName == nil }.map(\.userID))
@@ -1114,6 +1131,28 @@ public actor ChatRepository: ChatRepositoryProtocol {
         _ = try await apiClient.executeRaw(request)
     }
 
+    public func reactions(messageIDs: [String], currentUserID: String) async throws -> [String: [ReactionSummary]] {
+        guard !messageIDs.isEmpty else { return [:] }
+        let rows = try await restRows("message_reactions", [
+            URLQueryItem(name: "select", value: "message_id,user_id,reaction_type"),
+            URLQueryItem(name: "message_id", value: "in.(\(messageIDs.joined(separator: ",")))")
+        ])
+        var byMessage: [String: [String: [String]]] = [:]
+        for row in rows {
+            guard let messageID = JSONFields.string(row["message_id"]),
+                  let type = JSONFields.string(row["reaction_type"]),
+                  let userID = JSONFields.string(row["user_id"]) else { continue }
+            byMessage[messageID, default: [:]][type, default: []].append(userID)
+        }
+        return Dictionary(uniqueKeysWithValues: messageIDs.map { id in
+            let summaries = (byMessage[id] ?? [:]).map { type, users in
+                ReactionSummary(reactionType: type, count: users.count, userReacted: users.contains(currentUserID), userIDs: users)
+            }
+            .sorted { $0.reactionType < $1.reactionType }
+            return (id, summaries)
+        })
+    }
+
     /// Marks the latest peer message unread (spec §34.3; `PATCH /api/chat/messages/unread`),
     /// so server unread state matches the inbox badge on every device.
     public func markUnread(chatID: String) async throws {
@@ -1192,7 +1231,8 @@ public actor ChatRepository: ChatRepositoryProtocol {
 
         if let hubID = conversation.hubID {
             let v2Session = ClickCryptoV2.isEncrypted(payload.content)
-                ? try? await resolveV2Session(scope: .hub(hubID), participantUserIDs: hubParticipants[hubID] ?? [], allowUpgrade: false)
+                ? try? await resolveV2Session(scope: .hub(hubID), participantUserIDs: hubParticipants[hubID] ?? [], allowUpgrade: false,
+                                              requiredEpoch: Self.v2Epoch(payload.content))
                 : nil
             await resolveNames([payload.senderID])
             let metadata = payload.metadata ?? [:]
@@ -1236,7 +1276,8 @@ public actor ChatRepository: ChatRepositoryProtocol {
             v2Session = try await resolveV2Session(
                 scope: .chat(canonicalChatID),
                 participantUserIDs: await participants(for: conversation, currentUserID: currentUserID),
-                allowUpgrade: false
+                allowUpgrade: false,
+                requiredEpoch: Self.v2Epoch(payload.content)
             )
         } else {
             v2Session = v2SessionCache[canonicalChatID]
@@ -1828,53 +1869,70 @@ public actor ChatRepository: ChatRepositoryProtocol {
     ) async throws -> ChatMessageItem {
         guard draft.kind == .image else { throw ChatRepositoryError.mediaTypeNotAllowed }
         progress?(.encrypting)
-        guard let session = try await resolveV2Session(scope: .hub(hubID), participantUserIDs: hubParticipants[hubID] ?? [], allowUpgrade: true) else {
-            throw ChatRepositoryError.encryptionUnavailable
-        }
-        guard let epochKey = session.epochKeys[session.currentEpoch] else { throw ChatRepositoryError.currentEpochKeyUnavailable }
-        let encrypted = try ClickCryptoV2.encryptMedia(
-            metadata: .init(chatId: hubID, epoch: session.currentEpoch, senderDeviceId: session.deviceID,
-                            clientMessageId: clientMessageID, mediaCiphertextSha256: ""),
-            epochKey: epochKey,
-            plaintext: draft.data,
-            replayGuard: messageReplayGuard
-        )
-        let location = await hubLocationFields(camelCase: false)
-        let path = try await uploadHubMedia(
-            hubID: hubID,
-            objectPath: Self.hubMediaObjectPath(userID: currentUserID, hubID: hubID),
-            bytes: encrypted.uploadedBytes,
-            fields: location.mapValues { "\($0)" }.merging([
-                "e2ee_v2_envelope": encrypted.authorizationEnvelope,
-                "media_ciphertext_sha256": encrypted.mediaCiphertextSha256,
-                "epoch": String(session.currentEpoch),
-                "sender_device_id": session.deviceID,
-                "client_message_id": clientMessageID
-            ]) { _, new in new },
-            progress: progress
-        )
-
         let label = draft.isClickDrop ? "Click Drop" : "Photo"
-        let body = try encryptV2(label, chatID: hubID, session: session, clientMessageID: clientMessageID)
+        let location = await hubLocationFields(camelCase: false)
         var metadata: [String: Any] = [
-            "media_path": path,
             "media_bucket": "hub-media",
             "is_encrypted_media": true,
-            "original_mime_type": draft.mimeType,
-            "media_chat_id": hubID,
-            "media_epoch": session.currentEpoch,
-            "media_sender_device_id": session.deviceID,
-            "media_client_message_id": clientMessageID,
-            "media_ciphertext_sha256": encrypted.mediaCiphertextSha256,
-            "media_authorization_envelope": encrypted.authorizationEnvelope
+            "original_mime_type": draft.mimeType
         ]
-        metadata.merge(body.metadata) { current, _ in current }
+        let wireBody: String
+        // Hubs that aren't upgraded to v2 (and can't be yet: a participant has no v2 device)
+        // post photos encrypted with the legacy hub keys, which `loadHubMedia` reads; their text
+        // is plaintext too. Upgraded hubs only ever take v2.
+        if let session = try await resolveV2Session(scope: .hub(hubID), participantUserIDs: hubParticipants[hubID] ?? [], allowUpgrade: true) {
+            guard let epochKey = session.epochKeys[session.currentEpoch] else { throw ChatRepositoryError.currentEpochKeyUnavailable }
+            let encrypted = try ClickCryptoV2.encryptMedia(
+                metadata: .init(chatId: hubID, epoch: session.currentEpoch, senderDeviceId: session.deviceID,
+                                clientMessageId: clientMessageID, mediaCiphertextSha256: ""),
+                epochKey: epochKey,
+                plaintext: draft.data,
+                replayGuard: messageReplayGuard
+            )
+            let path = try await uploadHubMedia(
+                hubID: hubID,
+                objectPath: Self.hubMediaObjectPath(userID: currentUserID, hubID: hubID),
+                bytes: encrypted.uploadedBytes,
+                fields: location.mapValues { "\($0)" }.merging([
+                    "e2ee_v2_envelope": encrypted.authorizationEnvelope,
+                    "media_ciphertext_sha256": encrypted.mediaCiphertextSha256,
+                    "epoch": String(session.currentEpoch),
+                    "sender_device_id": session.deviceID,
+                    "client_message_id": clientMessageID
+                ]) { _, new in new },
+                progress: progress
+            )
+            let body = try encryptV2(label, chatID: hubID, session: session, clientMessageID: clientMessageID)
+            wireBody = body.wireContent
+            metadata.merge([
+                "media_path": path,
+                "media_chat_id": hubID,
+                "media_epoch": session.currentEpoch,
+                "media_sender_device_id": session.deviceID,
+                "media_client_message_id": clientMessageID,
+                "media_ciphertext_sha256": encrypted.mediaCiphertextSha256,
+                "media_authorization_envelope": encrypted.authorizationEnvelope
+            ]) { _, new in new }
+            metadata.merge(body.metadata) { current, _ in current }
+        } else {
+            let cipher = try ClickCryptoV1.encryptMediaBytes(draft.data, keys: ClickCryptoV1.deriveKeysForHub(hubID: hubID))
+            let path = try await uploadHubMedia(
+                hubID: hubID,
+                objectPath: Self.hubMediaObjectPath(userID: currentUserID, hubID: hubID),
+                bytes: cipher,
+                fields: location.mapValues { "\($0)" }.merging(["client_message_id": clientMessageID]) { _, new in new },
+                progress: progress
+            )
+            wireBody = label
+            metadata["media_path"] = path
+            metadata["client_message_id"] = clientMessageID
+        }
         metadata.merge(Self.draftMetadata(draft)) { _, new in new }
         if let replyToID { metadata["reply_to_id"] = replyToID }
 
         var post = location
         post["hub_id"] = hubID
-        post["body"] = body.wireContent
+        post["body"] = wireBody
         post["message_type"] = "image"
         post["metadata"] = metadata
         let data: Data
@@ -1892,7 +1950,7 @@ public actor ChatRepository: ChatRepositoryProtocol {
         let local = try? await ChatMediaVault.shared.store(draft.data, messageID: id, fileExtension: media?.fileExtension ?? "jpg")
         return ChatMessageItem(
             id: id, chatID: hubID, senderID: currentUserID, senderName: currentUserName, content: label,
-            rawContent: body.wireContent, messageType: .image, createdAt: JSONFields.date(row["created_at"]) ?? .now,
+            rawContent: wireBody, messageType: .image, createdAt: JSONFields.date(row["created_at"]) ?? .now,
             deliveryStatus: .sent, isOutgoing: true, replyToID: replyToID, media: media, localMediaURL: local
         )
     }
@@ -2173,6 +2231,12 @@ public actor ChatRepository: ChatRepositoryProtocol {
             forwarded: metadata?["forwarded"] as? Bool,
             plan: HangoutPlan.parse(metadata: metadata)
         )
+    }
+
+    /// The epoch a v2 message was encrypted under; nil for anything else.
+    private static func v2Epoch(_ content: String) -> Int? {
+        guard ClickCryptoV2.isEncrypted(content) else { return nil }
+        return (try? ClickCryptoV2.parseMessageEnvelope(wire: content))?.epoch
     }
 
     private func decryptWireContent(

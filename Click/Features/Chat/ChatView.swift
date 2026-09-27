@@ -476,6 +476,7 @@ public struct ChatView: View {
             onToggleReaction: { target, emoji in react(to: target, with: emoji) },
             onRetrySend: { target in Task { await model.retrySend(item: target) } },
             showsSenderName: !model.identity.isDirect && Self.startsSenderRun(at: index, in: items),
+            showsSenderAvatarColumn: !model.identity.isDirect,
             showsReceipts: model.identity.supportsReceipts,
             mediaLoader: { message in try await model.mediaURL(for: message) },   // never nil
             onOpenMedia: { url, kind in

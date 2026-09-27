@@ -241,6 +241,9 @@ final class ConversationListModel {
         } else if let index = archived.firstIndex(where: { $0.chatID == payload.chatID }) {
             let item = archived[index]
             archived[index] = item.with(unreadCount: item.unreadCount + bump, lastMessage: message, lastActivityAt: date)
+            // The server restores the thread once both people have messaged since the archive;
+            // re-read so the row moves back to Active when that happens.
+            scheduleRefresh()
         } else if let index = groups.firstIndex(where: { $0.chatID == payload.chatID }) {
             let group = groups.remove(at: index)
             groups.insert(group.with(unreadCount: group.unreadCount + bump, lastMessage: message, lastActivityAt: date), at: 0)

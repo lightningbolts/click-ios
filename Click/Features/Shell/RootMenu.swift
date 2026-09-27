@@ -32,7 +32,7 @@ struct RootMenu<Extra: View>: View {
                     .font(.system(size: 17, weight: .semibold))
                     .foregroundStyle(ClickColors.accentForeground)
                     .frame(width: ClickMetrics.minimumHitTarget, height: ClickMetrics.minimumHitTarget)
-                    .background(.regularMaterial, in: Circle())
+                    .glassCircleBackground()
             } else {
                 Label("Menu", systemImage: "ellipsis")
             }

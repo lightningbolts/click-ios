@@ -85,6 +85,9 @@ public final class ChatRealtimeManager {
     public var onReadCursor: (@Sendable (String, Date) -> Void)?
     /// A message was pinned or unpinned (`chat`, `groupChat`).
     public var onPinsChanged: (@Sendable () -> Void)?
+    /// A reaction was added (its message ID) or removed (nil: deletes carry only the row ID).
+    /// `message_reactions` has no chat column, so this stream is RLS-scoped, not chat-filtered.
+    public var onReactionsChanged: (@Sendable (String?) -> Void)?
     public var onTypingChanged: (@Sendable (Set<String>) -> Void)?
     /// Any row change on a non-message stream (`groupMembers`).
     public var onRowChanged: (@Sendable () -> Void)?
@@ -312,11 +315,12 @@ public final class ChatRealtimeManager {
     private func changeFilters(for context: ConnectionContext) -> [[String: Any]] {
         let messages: [String: Any] = ["event": "*", "schema": "public", "table": "messages", "filter": "chat_id=eq.\(context.chatID)"]
         let pins: [String: Any] = ["event": "*", "schema": "public", "table": Self.pinsTable, "filter": "chat_id=eq.\(context.chatID)"]
+        let reactions: [String: Any] = ["event": "*", "schema": "public", "table": Self.reactionsTable]
         return switch context.stream {
         case .chat:
-            [messages, pins]
+            [messages, pins, reactions]
         case .groupChat:
-            [messages, pins, ["event": "*", "schema": "public", "table": Self.readCursorsTable, "filter": "chat_id=eq.\(context.chatID)"]]
+            [messages, pins, reactions, ["event": "*", "schema": "public", "table": Self.readCursorsTable, "filter": "chat_id=eq.\(context.chatID)"]]
         case .hub:
             [["event": "*", "schema": "public", "table": "hub_messages", "filter": "hub_id=eq.\(context.chatID)"]]
         case .inbox:
@@ -328,6 +332,7 @@ public final class ChatRealtimeManager {
 
     private static let readCursorsTable = "chat_read_cursors"
     private static let pinsTable = "message_pins"
+    private static let reactionsTable = "message_reactions"
 
     private func listen(task: URLSessionWebSocketTask) {
         task.receive { [weak self, weak task] result in
@@ -455,6 +460,10 @@ public final class ChatRealtimeManager {
         }
         if table == Self.pinsTable {
             onPinsChanged?()
+            return
+        }
+        if table == Self.reactionsTable {
+            onReactionsChanged?(type == "DELETE" ? nil : record["message_id"] as? String)
             return
         }
         if table == Self.readCursorsTable {

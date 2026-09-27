@@ -38,7 +38,7 @@ public struct ClickMapView: View {
                                 .font(.system(size: 17, weight: .semibold))
                                 .foregroundStyle(ClickColors.accentForeground)
                                 .frame(width: ClickMetrics.minimumHitTarget, height: ClickMetrics.minimumHitTarget)
-                                .background(.regularMaterial, in: Circle())
+                                .glassCircleBackground()
                         }
                         .accessibilityLabel("Center on my location")
                         // Create a beacon or event here (prototype map "+").
@@ -67,6 +67,9 @@ public struct ClickMapView: View {
                 stableBottomInset = max(stableBottomInset, inset)
             }
         }
+        // The Nearby sheet's search keyboard must not count as bottom inset: `max` above would
+        // latch its height and strand the lip and buttons mid-screen after the sheet closes.
+        .ignoresSafeArea(.keyboard)
         // The map is full-bleed: no title bar, just floating glass controls (prototype Map root).
         .overlay(alignment: .top) {
             HStack {
@@ -245,7 +248,7 @@ public struct ClickMapView: View {
                 .font(.system(size: 17, weight: .semibold))
                 .foregroundStyle(ClickColors.accentForeground)
                 .frame(width: ClickMetrics.minimumHitTarget, height: ClickMetrics.minimumHitTarget)
-                .background(.regularMaterial, in: Circle())
+                .glassCircleBackground()
         }
         .accessibilityLabel("Map layers")
     }

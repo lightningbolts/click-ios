@@ -59,6 +59,12 @@ public final class ConversationModel {
     private var typingActive = false
     private var typingStopTask: Task<Void, Never>?
     private var acknowledgedReceipts = Set<String>()
+    /// Messages whose own reaction change is still in flight; a realtime refresh must not
+    /// overwrite their optimistic state with a server read taken mid-change.
+    @ObservationIgnored private var reactionsInFlight: [String: Int] = [:]
+    @ObservationIgnored private var staleReactionIDs = Set<String>()
+    @ObservationIgnored private var refreshAllReactions = false
+    @ObservationIgnored private var reactionRefreshTask: Task<Void, Never>?
     /// True between the chat screen's appear and disappear.
     public private(set) var isVisible = false
     /// Reports this user's own sends so the inbox row updates immediately (set by AppEnvironment).
@@ -720,16 +726,97 @@ public final class ConversationModel {
     /// Going / can't make it: exclusive reactions on the plan message, plus a local reminder
     /// an hour before for plans you're going to.
     public func rsvp(to item: ChatMessageItem, going: Bool) async {
-        guard let plan = item.plan else { return }
-        let live = items.first { $0.id == item.id } ?? item
+        guard let plan = item.plan, let index = items.firstIndex(where: { $0.id == item.id }) else { return }
         let add = going ? HangoutPlan.goingReaction : HangoutPlan.declinedReaction
         let remove = going ? HangoutPlan.declinedReaction : HangoutPlan.goingReaction
-        let mine = Set(live.reactions.filter(\.userReacted).map(\.reactionType))
-        if mine.contains(remove) { await toggleReaction(item: live, reactionType: remove) }
-        let current = items.first { $0.id == item.id } ?? live
-        if !mine.contains(add) { await toggleReaction(item: current, reactionType: add) }
+        let original = items[index].reactions
+        let mine = Set(original.filter(\.userReacted).map(\.reactionType))
+        let removing = mine.contains(remove)
+        let adding = !mine.contains(add)
+        if removing || adding {
+            // Both halves of the switch land on screen at once; the requests follow.
+            var updated = original
+            if removing { updated = Self.mutatedReactions(updated, reactionType: remove, adding: false, userID: currentUserID) }
+            if adding {
+                ReactionPop.mark(messageID: item.id, reaction: add)
+                updated = Self.mutatedReactions(updated, reactionType: add, adding: true, userID: currentUserID)
+            }
+            items[index].reactions = updated
+            beginReactionChange(item.id)
+            defer { endReactionChange(item.id) }
+            do {
+                if removing {
+                    try await chatRepository.setReaction(messageID: item.id, reactionType: remove, adding: false, conversation: identity)
+                }
+                if adding {
+                    try await chatRepository.setReaction(messageID: item.id, reactionType: add, adding: true, conversation: identity)
+                }
+                if let current = items.first(where: { $0.id == item.id }) { persist([current]) }
+                operationError = nil
+            } catch {
+                if let currentIndex = items.firstIndex(where: { $0.id == item.id }) {
+                    items[currentIndex].reactions = original
+                }
+                // A half-applied switch (removed, then the add failed) is corrected from the server.
+                if removing { reactionsChanged(messageID: item.id) }
+                operationError = error.userFacingMessage
+                return
+            }
+        }
         await PlanReminders.update(messageID: item.id, plan: plan, going: going, chatID: identity.chatID,
                                    connectionID: identity.connectionID, chatName: identity.peerDisplayName)
+    }
+
+    private func beginReactionChange(_ messageID: String) {
+        reactionsInFlight[messageID, default: 0] += 1
+    }
+
+    private func endReactionChange(_ messageID: String) {
+        let remaining = (reactionsInFlight[messageID] ?? 1) - 1
+        reactionsInFlight[messageID] = remaining > 0 ? remaining : nil
+        // Changes by others that arrived meanwhile were skipped; pick them up now.
+        if remaining <= 0, staleReactionIDs.contains(messageID) { reactionsChanged(messageID: messageID) }
+    }
+
+    /// Someone reacted (or un-reacted) somewhere this user can see. Refreshes this timeline's
+    /// counts, coalescing bursts into one read.
+    private func reactionsChanged(messageID: String?) {
+        guard identity.hubID == nil else { return }
+        if let messageID {
+            guard items.contains(where: { $0.id == messageID }) else { return }
+            staleReactionIDs.insert(messageID)
+        } else {
+            refreshAllReactions = true
+        }
+        reactionRefreshTask?.cancel()
+        reactionRefreshTask = Task { [weak self] in
+            try? await Task.sleep(for: .milliseconds(250))
+            guard !Task.isCancelled else { return }
+            await self?.refreshReactions()
+        }
+    }
+
+    private func refreshReactions() async {
+        var ids = staleReactionIDs
+        if refreshAllReactions {
+            // Deletes don't say which message: re-read the recent, reacted-to window.
+            let recent = items.suffix(80).filter { !$0.reactions.isEmpty || $0.plan != nil }
+            ids.formUnion(recent.map(\.id))
+        }
+        let loaded = Set(items.lazy.filter { $0.deliveryStatus != .sending && $0.deliveryStatus != .failed && !$0.isDeleted }.map(\.id))
+        let requested = ids.intersection(loaded).filter { reactionsInFlight[$0] == nil }
+        staleReactionIDs.subtract(requested)
+        staleReactionIDs.formIntersection(loaded)
+        refreshAllReactions = false
+        guard !requested.isEmpty,
+              let fresh = try? await chatRepository.reactions(messageIDs: Array(requested), currentUserID: currentUserID) else { return }
+        var changed: [ChatMessageItem] = []
+        for (id, reactions) in fresh where reactionsInFlight[id] == nil {
+            guard let index = items.firstIndex(where: { $0.id == id }), items[index].reactions != reactions else { continue }
+            items[index].reactions = reactions
+            changed.append(items[index])
+        }
+        if !changed.isEmpty { persist(changed) }
     }
 
     /// Shares an event/beacon card into this conversation (optimistic, same send animation).
@@ -906,6 +993,8 @@ public final class ConversationModel {
             adding: adding,
             userID: currentUserID
         )
+        beginReactionChange(item.id)
+        defer { endReactionChange(item.id) }
 
         do {
             try await chatRepository.setReaction(
@@ -1009,6 +1098,9 @@ public final class ConversationModel {
                 await self?.syncNewer()
                 await self?.loadPins()
             }
+        }
+        realtimeManager.onReactionsChanged = { [weak self] messageID in
+            Task { @MainActor in self?.reactionsChanged(messageID: messageID) }
         }
         realtimeManager.onPinsChanged = { [weak self] in
             Task { @MainActor in await self?.loadPins() }
