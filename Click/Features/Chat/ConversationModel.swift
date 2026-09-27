@@ -268,6 +268,7 @@ public final class ConversationModel {
 
     private func moveReadCursor(userID: String, to date: Date) {
         guard userID != currentUserID, date > readCursors[userID] ?? .distantPast else { return }
+        FreshPop.mark(FreshPop.seenKey(userID: userID))
         readCursors[userID] = date
     }
 
@@ -761,7 +762,7 @@ public final class ConversationModel {
             var updated = original
             if removing { updated = Self.mutatedReactions(updated, reactionType: remove, adding: false, userID: currentUserID) }
             if adding {
-                ReactionPop.mark(messageID: item.id, reaction: add)
+                FreshPop.mark(FreshPop.reactionKey(messageID: item.id, reaction: add))
                 updated = Self.mutatedReactions(updated, reactionType: add, adding: true, userID: currentUserID)
             }
             items[index].reactions = updated
@@ -1010,7 +1011,7 @@ public final class ConversationModel {
             $0.reactionType == reactionType && $0.userReacted
         }
 
-        if adding { ReactionPop.mark(messageID: item.id, reaction: reactionType) }
+        if adding { FreshPop.mark(FreshPop.reactionKey(messageID: item.id, reaction: reactionType)) }
         items[index].reactions = Self.mutatedReactions(
             original,
             reactionType: reactionType,

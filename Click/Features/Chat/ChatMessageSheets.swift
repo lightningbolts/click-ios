@@ -778,27 +778,36 @@ struct ScheduledMessagesSheet: View {
     }
 }
 
-/// Instagram-style read receipts in groups: tiny avatars of the members whose latest read
-/// message this is, trailing under it.
+/// Instagram-style read receipts in groups: small avatars of the members whose latest read
+/// message this is, trailing under it. A receipt that just moved here grows in (`FreshPop`).
 struct SeenByAvatars: View {
     let userIDs: [String]
     @Environment(AppEnvironment.self) private var env
-    @State private var people: [String: UserIdentity] = [:]
+    @State private var people: [String: UserIdentity]
 
-    private static let size: CGFloat = 16
+    /// Identities already resolved, so a receipt moving to a newer message (a new view) shows
+    /// the photo straight away instead of flashing initials first.
+    private static var known: [String: UserIdentity] = [:]
+    private static let size: CGFloat = 20
     private static let maxShown = 6
 
+    init(userIDs: [String]) {
+        self.userIDs = userIDs
+        _people = State(initialValue: Self.known.filter { userIDs.contains($0.key) })
+    }
+
     var body: some View {
-        HStack(spacing: -4) {
+        HStack(spacing: -5) {
             ForEach(userIDs.prefix(Self.maxShown), id: \.self) { id in
-                AvatarView(imageURL: people[id]?.avatarURL, seed: id,
-                           initials: String((people[id]?.name ?? "?").prefix(1)), size: Self.size)
-                    .overlay(Circle().stroke(ClickColors.background, lineWidth: 1.5))
-                    .transition(.scale.combined(with: .opacity))
+                PopIn(isFresh: FreshPop.isFresh(FreshPop.seenKey(userID: id)), anchor: .center) {
+                    AvatarView(imageURL: people[id]?.avatarURL, seed: id,
+                               initials: String((people[id]?.name ?? "?").prefix(1)), size: Self.size)
+                        .overlay(Circle().stroke(ClickColors.background, lineWidth: 1.5))
+                }
             }
             if userIDs.count > Self.maxShown {
                 Text("+\(userIDs.count - Self.maxShown)")
-                    .font(.system(size: 10, weight: .semibold))
+                    .font(.system(size: 11, weight: .semibold))
                     .foregroundStyle(ClickColors.textSecondary)
                     .padding(.leading, 8)
             }
@@ -808,6 +817,9 @@ struct SeenByAvatars: View {
         .padding(.top, 2)
         .accessibilityElement(children: .ignore)
         .accessibilityLabel("Seen by \(userIDs.compactMap { people[$0]?.name }.joined(separator: ", "))")
-        .task(id: userIDs) { people = await env.identities.resolve(userIDs) }
+        .task(id: userIDs) {
+            people = await env.identities.resolve(userIDs)
+            Self.known.merge(people) { _, new in new }
+        }
     }
 }

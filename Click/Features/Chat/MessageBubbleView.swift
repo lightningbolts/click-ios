@@ -194,7 +194,7 @@ public struct MessageBubbleView: View {
                 // Below the bubble, never over its time or text. The row grows with it, and
                 // the timeline animates that resize (no jump). No insertion transition: inside a
                 // timeline cell it stalls (invisible until the row next re-renders); a new
-                // reaction grows in on its own instead (`ReactionChip`).
+                // reaction grows in on its own instead (`PopIn`).
                 if !stripReactions.isEmpty {
                     reactionsStrip
                         .offset(x: dragOffset)
@@ -243,14 +243,7 @@ public struct MessageBubbleView: View {
                 }
                 GifMessageView(gif: gif)
                     .overlay { UploadStateOverlay(message: message, onRetry: onRetrySend, onDiscard: onDiscardFailed) }
-                HStack(spacing: 4) {
-                    Text(message.formattedTime).monospacedDigit()
-                    if showsStatus {
-                        animatedStatusIcon(readTint: ClickColors.accentForeground)
-                    }
-                }
-                .font(ClickTypography.caption)
-                .foregroundStyle(ClickColors.textSecondary)
+                mediaMetaRow
             }
         } else if let media = message.media {
             VStack(alignment: message.isOutgoing ? .trailing : .leading, spacing: 4) {
@@ -274,14 +267,7 @@ public struct MessageBubbleView: View {
                     onOpen: { url in if BubbleTapGate.allowsTap { onOpenMedia?(url, media.kind) } }
                 )
                 .overlay { UploadStateOverlay(message: message, onRetry: onRetrySend, onDiscard: onDiscardFailed) }
-                HStack(spacing: 4) {
-                    Text(message.formattedTime).monospacedDigit()
-                    if showsStatus {
-                        animatedStatusIcon(readTint: ClickColors.accentForeground)
-                    }
-                }
-                .font(ClickTypography.caption)
-                .foregroundStyle(ClickColors.textSecondary)
+                mediaMetaRow
             }
         } else {
             bubbleContainer
@@ -305,9 +291,11 @@ public struct MessageBubbleView: View {
                 .textSelection(.disabled)
                 // Links take the bubble's text color on our own (colored) bubbles.
                 .tint(message.isOutgoing ? foreground : ClickColors.accentForeground)
-                .overlay(alignment: .bottomTrailing) {
-                    metaRow.offset(y: 3)
-                }
+        }
+        // Pinned to the bubble's corner, not the text's: when a quote or "Forwarded" is wider
+        // than the text, the time still lines up with every other bubble's (WhatsApp).
+        .overlay(alignment: .bottomTrailing) {
+            metaRow.offset(y: 3)
         }
         .padding(.horizontal, 12)
         .padding(.top, 8)
@@ -392,6 +380,20 @@ public struct MessageBubbleView: View {
         .foregroundStyle(message.isOutgoing ? ClickColors.messageOutgoingForeground.opacity(0.72) : ClickColors.textSecondary)
     }
 
+    /// Time and receipt under a photo, video or GIF, inset like a text bubble's so every
+    /// message's time sits in the same column.
+    private var mediaMetaRow: some View {
+        HStack(spacing: 4) {
+            Text(message.formattedTime).monospacedDigit()
+            if showsStatus {
+                animatedStatusIcon(readTint: ClickColors.accentForeground)
+            }
+        }
+        .font(ClickTypography.caption)
+        .foregroundStyle(ClickColors.textSecondary)
+        .padding(.horizontal, 12)
+    }
+
     private func replyQuote(snippet: String) -> some View {
         HStack(alignment: .center, spacing: 8) {
             RoundedRectangle(cornerRadius: 2)
@@ -444,7 +446,7 @@ public struct MessageBubbleView: View {
                     ClickHaptics.impact(.light)
                     onShowReactions?(message, reaction.reactionType)
                 } label: {
-                    ReactionChip(isFresh: ReactionPop.isFresh(messageID: message.id, reaction: reaction.reactionType),
+                    PopIn(isFresh: FreshPop.isFresh(FreshPop.reactionKey(messageID: message.id, reaction: reaction.reactionType)),
                                  anchor: message.isOutgoing ? .trailing : .leading) {
                     HStack(spacing: 3) {
                         Text(reaction.reactionType)
@@ -730,25 +732,30 @@ private struct UploadStateOverlay: View {
     }
 }
 
-/// Reactions this user added moments ago, so their chip grows in (WhatsApp-style) once, while
-/// chips that merely scroll into view appear as they are.
+/// Things that appeared moments ago (a reaction this user added, a read receipt that moved), so
+/// they grow in (WhatsApp / Instagram-style) once, while ones that merely scroll into view appear
+/// as they are.
 @MainActor
-enum ReactionPop {
+enum FreshPop {
     private static var added: [String: Date] = [:]
 
-    static func mark(messageID: String, reaction: String) {
+    static func reactionKey(messageID: String, reaction: String) -> String { messageID + reaction }
+    static func seenKey(userID: String) -> String { "seen:" + userID }
+
+    static func mark(_ key: String) {
         let now = Date()
         added = added.filter { now.timeIntervalSince($0.value) < 2 }
-        added[messageID + reaction] = now
+        added[key] = now
     }
 
-    static func isFresh(messageID: String, reaction: String) -> Bool {
-        added[messageID + reaction].map { Date().timeIntervalSince($0) < 1.5 } ?? false
+    static func isFresh(_ key: String) -> Bool {
+        added[key].map { Date().timeIntervalSince($0) < 1.5 } ?? false
     }
 }
 
-/// A reaction chip that springs up from nothing when it's fresh.
-private struct ReactionChip<Content: View>: View {
+/// Content (a reaction chip, a read-receipt avatar) that springs up from nothing when it's fresh.
+/// Insertion transitions stall inside timeline cells, so it animates itself on appear.
+struct PopIn<Content: View>: View {
     let anchor: UnitPoint
     let content: Content
     @State private var scale: CGFloat

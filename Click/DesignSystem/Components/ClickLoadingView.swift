@@ -16,9 +16,12 @@ public struct ClickLoadingView: View {
 
     /// - Parameters:
     ///   - caption: optional line under the mark ("Opening hub…").
-    ///   - size: mark size; 44 for screens, ~28 for sections.
+    ///   - size: mark size; `launchSize` for the app's launch screens, 44 for screens, ~28 for sections.
     ///   - fillsSpace: centers in all available space (screens) vs. a compact row (sections).
     ///   - appearDelay: how long to wait before showing anything (space is still reserved).
+    /// The launch screen's mark, as large as Instagram's / WhatsApp's splash logo.
+    public static let launchSize: CGFloat = 84
+
     public init(_ caption: String? = nil, size: CGFloat = 44, fillsSpace: Bool = true, appearDelay: Duration = .milliseconds(200)) {
         self.caption = caption
         self.size = size

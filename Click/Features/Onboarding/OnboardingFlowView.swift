@@ -101,7 +101,7 @@ private struct LaunchLoadingShimmerView: View {
     var body: some View {
         ZStack {
             ClickColors.background.ignoresSafeArea()
-            ClickLoadingView(size: 52)
+            ClickLoadingView(size: ClickLoadingView.launchSize)
         }
     }
 }
