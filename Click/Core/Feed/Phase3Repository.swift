@@ -274,7 +274,7 @@ public actor Phase3Repository {
                 presenceKnown: false,
                 lastActiveRelative: activity.map { relativeDescription($0, now: now) } ?? "",
                 encounterLocation: location,
-                encounterCount: encounters.count,
+                encounterCount: Encounter.merged(encounters.compactMap(Encounter.decode), viewerID: currentUserID).count,
                 chatID: preview?.chatID,
                 lastMessage: preview?.lastMessage,
                 lastActivityAt: activity,

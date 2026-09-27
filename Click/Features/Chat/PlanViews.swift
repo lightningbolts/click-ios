@@ -199,7 +199,7 @@ struct PlanHangoutSheet: View {
                 search.region = env.location.lastFix.map {
                     MKCoordinateRegion(center: $0.coordinate, latitudinalMeters: 20_000, longitudinalMeters: 20_000)
                 }
-                guard let connectionID, let encounters = try? await env.profiles.encounters(connectionID: connectionID) else { return }
+                guard let connectionID, let encounters = try? await env.profiles.encounters(connectionID: connectionID, viewerID: env.session.currentSession?.userId) else { return }
                 metSpots = FriendshipStats.compute(encounters).spots
                     .filter { $0.name != nil }
                     .sorted { $0.visits > $1.visits }

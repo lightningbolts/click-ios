@@ -31,9 +31,13 @@ public enum ContextTagTaxonomy {
     public static let extendedHangout = "Extended Hangout"
     public static let maxCustomLength = 25
 
+    public nonisolated static func isExtendedHangout(_ id: String) -> Bool {
+        id.caseInsensitiveCompare(extendedHangout) == .orderedSame || id == "extended_hangout"
+    }
+
     /// Human label for a stored tag id (custom tags are stored as their label).
     public nonisolated static func label(for id: String) -> String {
-        if id.caseInsensitiveCompare(extendedHangout) == .orderedSame || id == "extended_hangout" { return "Extended hangout" }
+        if isExtendedHangout(id) { return "Extended hangout" }
         if id == "at_event" { return "At event" }
         if let known = all.first(where: { $0.id == id }) { return "\(known.emoji) \(known.label)" }
         // Legacy ids ("met_face_to_face") read as words; custom tags are kept as written.

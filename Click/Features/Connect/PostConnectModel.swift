@@ -87,7 +87,7 @@ final class PostConnectModel {
     /// enrichments: a failure just leaves them out.
     func load(_ env: AppEnvironment) async {
         guard let connectionID = match.connectionID, !isGroup else { return }
-        async let history = try? env.profiles.encounters(connectionID: connectionID)
+        async let history = try? env.profiles.encounters(connectionID: connectionID, viewerID: env.session.currentSession?.userId)
         async let suggestion = try? env.encounterContext.eventRecommendation(
             connectionID: connectionID,
             latitude: env.location.lastFix?.coordinate.latitude,
@@ -101,7 +101,7 @@ final class PostConnectModel {
                 // The server debounces a same-place, same-12-hour reconnect into the previous
                 // row and tags it "Extended Hangout"; a row older than this tap means that.
                 isExtendedHangout = match.isReconnect
-                    && latest.contextTags.contains { $0.caseInsensitiveCompare(ContextTagTaxonomy.extendedHangout) == .orderedSame }
+                    && latest.contextTags.contains(where: ContextTagTaxonomy.isExtendedHangout)
             }
         }
         recommendation = await suggestion ?? nil

@@ -30,7 +30,7 @@ enum EventReminderScheduler {
             content.title = title
             let lead = trigger.minutes == 60 ? "Starts in an hour" : "Starts in 15 minutes"
             content.body = lead + (place.map { " · \($0)" } ?? "")
-            content.sound = .default
+            content.sound = .click
             content.userInfo = ["type": "event_reminder", "beacon_id": beaconID]
             let components = Calendar.current.dateComponents([.year, .month, .day, .hour, .minute], from: trigger.date)
             let request = UNNotificationRequest(

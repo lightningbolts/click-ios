@@ -40,13 +40,13 @@ public struct PeerProfile: Codable, Equatable, Sendable {
 public struct Encounter: Codable, Equatable, Identifiable, Sendable {
     public let id: String
     public let date: Date
-    public let place: String?
+    public var place: String?
     /// Present only when the server's per-viewer eligibility (RSVP + check-in) allows it.
-    public let eventTitle: String?
-    public let eventBeaconID: String?
-    public let contextTags: [String]
-    public let noiseLevel: String?
-    public let elevation: String?
+    public var eventTitle: String?
+    public var eventBeaconID: String?
+    public var contextTags: [String]
+    public var noiseLevel: String?
+    public var elevation: String?
     /// Named place from reverse geocoding ("Gas Works Park"), preferred over street addresses.
     public var venue: String? = nil
     public var temperatureCelsius: Double? = nil
@@ -70,6 +70,62 @@ public struct Encounter: Codable, Equatable, Identifiable, Sendable {
     /// `gps_lat` / `gps_lon` (the profile's encounter map).
     public var latitude: Double? = nil
     public var longitude: Double? = nil
+    /// `reporting_user_id`: each participant's device records its own row for the same tap.
+    public var reportingUserID: String? = nil
+    /// Other participants' rows for this same moment, folded in by `merged(_:viewerID:)`.
+    public var mergedIDs: [String]? = nil
+
+    /// Every row this entry shows; tag edits apply to all of them.
+    public var rowIDs: [String] { [id] + (mergedIDs ?? []) }
+
+    /// One entry per real-world moment. A tap records one row per participant (every member of
+    /// a group), so rows from different reporters within `window` are the same moment. The
+    /// viewer's own row (else the most detailed) is shown as is; the others only fill its gaps.
+    static func merged(_ encounters: [Encounter], viewerID: String?, window: TimeInterval = 10 * 60) -> [Encounter] {
+        var moments: [[Encounter]] = []
+        for encounter in encounters.sorted(by: { $0.date < $1.date }) {
+            if let reporter = encounter.reportingUserID, let last = moments.last, let anchor = last.first,
+               encounter.date.timeIntervalSince(anchor.date) <= window,
+               last.allSatisfy({ $0.reportingUserID != nil && $0.reportingUserID != reporter }) {
+                moments[moments.count - 1].append(encounter)
+            } else {
+                moments.append([encounter])
+            }
+        }
+        return moments.map { rows in
+            let ranked = rows.sorted { ($0.reportingUserID == viewerID ? 1 : 0, $0.detailCount) > ($1.reportingUserID == viewerID ? 1 : 0, $1.detailCount) }
+            var moment = ranked.dropFirst().reduce(into: ranked[0]) { $0.fill(from: $1) }
+            // The second tap of a mutual tap debounces into this same moment and tags only some
+            // of its rows "Extended Hangout"; a real one (a later tap) tags every row.
+            if !rows.allSatisfy({ $0.contextTags.contains(where: ContextTagTaxonomy.isExtendedHangout) }) {
+                moment.contextTags.removeAll(where: ContextTagTaxonomy.isExtendedHangout)
+            }
+            return moment
+        }.sorted { $0.date > $1.date }
+    }
+
+    /// Non-empty optional fields: how much this row recorded.
+    private var detailCount: Int {
+        Mirror(reflecting: self).children.filter {
+            let value = Mirror(reflecting: $0.value)
+            return value.displayStyle != .optional || !value.children.isEmpty
+        }.count
+    }
+
+    /// Takes `other`'s values only where this row has none.
+    private mutating func fill(from other: Encounter) {
+        func take<T>(_ key: WritableKeyPath<Encounter, T?>) {
+            if self[keyPath: key] == nil { self[keyPath: key] = other[keyPath: key] }
+        }
+        take(\.place); take(\.eventTitle); take(\.eventBeaconID); take(\.noiseLevel); take(\.elevation)
+        take(\.venue); take(\.temperatureCelsius); take(\.weatherCondition); take(\.relativeAltitudeMeters)
+        take(\.neighbourhood); take(\.city); take(\.noiseDecibels); take(\.barometricElevationMeters)
+        take(\.lux); take(\.motionVariance); take(\.windKph); take(\.windDirectionDegrees)
+        take(\.locationName); take(\.displayLocation); take(\.compassAzimuth); take(\.batteryLevel)
+        take(\.vibeCapture); take(\.latitude); take(\.longitude)
+        if contextTags.isEmpty { contextTags = other.contextTags }
+        mergedIDs = (mergedIDs ?? []) + [other.id]
+    }
 
     /// Venue name, else the first component of the stored label (never a full address).
     public var placeName: String? {
@@ -108,7 +164,8 @@ public struct Encounter: Codable, Equatable, Identifiable, Sendable {
             batteryLevel: JSONFields.int(row["battery_level"]),
             vibeCapture: JSONFields.string(row["vibe_capture"]),
             latitude: JSONFields.double(row["gps_lat"]),
-            longitude: JSONFields.double(row["gps_lon"])
+            longitude: JSONFields.double(row["gps_lon"]),
+            reportingUserID: JSONFields.string(row["reporting_user_id"])
         )
     }
 }
@@ -250,7 +307,7 @@ public actor ProfileRepository {
         )
     }
 
-    public func encounters(connectionID: String) async throws -> [Encounter] {
+    public func encounters(connectionID: String, viewerID: String?) async throws -> [Encounter] {
         let (data, _) = try await api.executeRaw(APIRequest(
             path: "/api/connections",
             method: .get,
@@ -259,9 +316,8 @@ public actor ProfileRepository {
         guard let connection = JSONFields.dictionary(try JSONFields.object(data)["connection"]) else {
             throw APIError.notFound
         }
-        return JSONFields.rows(connection["connection_encounters"])
-            .compactMap(Encounter.decode)
-            .sorted { $0.date > $1.date }
+        return Encounter.merged(JSONFields.rows(connection["connection_encounters"]).compactMap(Encounter.decode),
+                                viewerID: viewerID)
     }
 
     // MARK: - Journal

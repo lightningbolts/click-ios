@@ -194,7 +194,9 @@ public struct ChatView: View {
             .onAppear { if model.hasLoadedPins { knownPinIDs = Set(model.pins.map(\.messageID)) } }
             .onChange(of: actionTarget?.id) { timeline.refreshVisibleRows() }
             .onChange(of: scenePhase) { _, phase in
-                if phase == .active { Task { await model.resume() } }
+                guard phase == .active else { return }
+                markOnScreen()
+                Task { await model.resume() }
             }
             .task(id: model.nextClickDropReveal?.date) {
                 // Local, in-chat only: the server's `disposable_reveal` push covers the background.
@@ -354,10 +356,12 @@ public struct ChatView: View {
         }
     }
 
-    /// Tells the inbox and push presentation which conversation the reader is looking at.
+    /// Tells the inbox and push presentation which conversation the reader is looking at, and
+    /// clears that conversation's delivered pushes.
     private func markOnScreen() {
         env.activeChatID = model.identity.chatID
         env.activeConnectionID = model.identity.connectionID
+        Task { await ClickNotificationCoordinator.shared.clearDeliveredForOpenConversation() }
     }
 
     /// Rows for the timeline: day headers, the "New messages" divider, messages, typing.

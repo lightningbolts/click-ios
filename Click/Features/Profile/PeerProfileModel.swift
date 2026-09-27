@@ -199,7 +199,7 @@ final class PeerProfileModel {
         }
         encounters.begin()
         do {
-            let fresh = try await environment.profiles.encounters(connectionID: connectionID)
+            let fresh = try await environment.profiles.encounters(connectionID: connectionID, viewerID: environment.session.currentSession?.userId)
             encounters.succeed(fresh)
             if let viewerID = environment.session.currentSession?.userId {
                 await CacheStore.shared.save(fresh, key: "encounters.\(userID)", userID: viewerID)

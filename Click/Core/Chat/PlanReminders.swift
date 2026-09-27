@@ -18,7 +18,7 @@ enum PlanReminders {
         content.title = plan.title
         content.body = "Starts at \(plan.startsAt.formatted(date: .omitted, time: .shortened))"
             + (plan.placeName.map { " · \($0)" } ?? "") + " with \(chatName)"
-        content.sound = .default
+        content.sound = .click
         content.threadIdentifier = "plans"
         // Opens the chat the plan was made in (same routing as a message push).
         var info: [String: String] = ["type": "chat_message", "chat_id": chatID]

@@ -102,7 +102,7 @@ final class ClickAppDelegate: NSObject, UIApplicationDelegate, UNUserNotificatio
     ) async -> UNNotificationPresentationOptions {
         // Realtime owns the open conversation's timeline: a push for it would only repeat the
         // message the reader is looking at. Everything else still shows while in the app.
-        let payload = Self.stringPayload(notification.request.content.userInfo)
+        let payload = ClickNotificationCoordinator.stringPayload(notification.request.content.userInfo)
         let isOnScreen = await ClickNotificationCoordinator.shared.isForVisibleConversation(payload)
         return isOnScreen ? [] : [.banner, .sound, .badge]
     }
@@ -112,26 +112,19 @@ final class ClickAppDelegate: NSObject, UIApplicationDelegate, UNUserNotificatio
         didReceive response: UNNotificationResponse,
         withCompletionHandler completionHandler: @escaping () -> Void
     ) {
-        let payload = Self.stringPayload(response.notification.request.content.userInfo)
+        let payload = ClickNotificationCoordinator.stringPayload(response.notification.request.content.userInfo)
         completionHandler()
 
         Task { @MainActor in
             await ClickNotificationCoordinator.shared.handleNotificationTap(payload)
         }
     }
+}
 
-    nonisolated private static func stringPayload(_ source: [AnyHashable: Any]) -> [String: String] {
-        var payload: [String: String] = [:]
-        for (key, value) in source {
-            guard let key = key as? String else { continue }
-            if let string = value as? String {
-                payload[key] = string
-            } else if let number = value as? NSNumber {
-                payload[key] = number.stringValue
-            }
-        }
-        return payload
-    }
+extension UNNotificationSound {
+    /// Click's chime (`Resources/Sounds/click.caf`); the server names the same file for pushes.
+    /// The system plays it only when the ringer is on, and falls back to the default if missing.
+    static var click: UNNotificationSound { UNNotificationSound(named: UNNotificationSoundName("click.caf")) }
 }
 
 /// Standard-APNs registration and typed notification routing.
@@ -304,10 +297,26 @@ final class ClickNotificationCoordinator {
         }
     }
 
-    /// True when the push is about the conversation currently on screen (direct chat, group
-    /// or hub), matched by chat, connection or hub ID.
+    /// True when the push is about the conversation currently on screen in the active app.
     func isForVisibleConversation(_ payload: [String: String]) -> Bool {
-        guard let environment, UIApplication.shared.applicationState == .active else { return false }
+        UIApplication.shared.applicationState == .active && isForOpenConversation(payload)
+    }
+
+    /// Opening a conversation reads it: drop its delivered pushes from Notification Center.
+    func clearDeliveredForOpenConversation() async {
+        let center = UNUserNotificationCenter.current()
+        let identifiers = await center.deliveredNotifications()
+            .filter { isForOpenConversation(Self.stringPayload($0.request.content.userInfo)) }
+            .map(\.request.identifier)
+        if !identifiers.isEmpty {
+            center.removeDeliveredNotifications(withIdentifiers: identifiers)
+        }
+    }
+
+    /// True when the push is about the open conversation (direct chat, group or hub), matched
+    /// by chat, connection or hub ID.
+    private func isForOpenConversation(_ payload: [String: String]) -> Bool {
+        guard let environment else { return false }
         let onScreen = Set([environment.activeChatID, environment.activeConnectionID].compactMap { $0 })
         guard !onScreen.isEmpty else { return false }
         switch Self.tapRoute(for: payload) {
@@ -393,6 +402,19 @@ final class ClickNotificationCoordinator {
         // conversation from authenticated data.
         environment.router.selectedTab = .connections
         environment.router.connectionsPath.removeAll()
+    }
+
+    nonisolated static func stringPayload(_ source: [AnyHashable: Any]) -> [String: String] {
+        var payload: [String: String] = [:]
+        for (key, value) in source {
+            guard let key = key as? String else { continue }
+            if let string = value as? String {
+                payload[key] = string
+            } else if let number = value as? NSNumber {
+                payload[key] = number.stringValue
+            }
+        }
+        return payload
     }
 
     nonisolated private static func firstValue(_ payload: [String: String], keys: [String]) -> String? {

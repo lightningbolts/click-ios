@@ -176,6 +176,7 @@
 		C35D4CA69701CF662C7B7BA6 /* BeaconRepository.swift in Sources */ = {isa = PBXBuildFile; fileRef = F96CCA59CCC5C8B399A2E1C6 /* BeaconRepository.swift */; };
 		C3963FF6783D0509A84F407F /* GroupProfileView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5887556DE388CBF75CF2F477 /* GroupProfileView.swift */; };
 		C47D3FFBBB3736906CCB13AC /* AppRouteDestination.swift in Sources */ = {isa = PBXBuildFile; fileRef = FF26912F27B4E25BACF33C07 /* AppRouteDestination.swift */; };
+		C5D97BA64D2128078C803D5A /* click.caf in Resources */ = {isa = PBXBuildFile; fileRef = D6D2AECD03E66F3B3547CDBE /* click.caf */; };
 		C68531D7713EDA163E2840E8 /* OnboardingShellChrome.swift in Sources */ = {isa = PBXBuildFile; fileRef = 578E139F248C9CF1F7B64C32 /* OnboardingShellChrome.swift */; };
 		C7E3044705CB8DDF9A10AF7D /* RevisionTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 30DD4C9A7E9B5D5321C8F98A /* RevisionTests.swift */; };
 		CBCEC7903522CD120AA3D4CA /* ChatMediaTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 32BD46ADA2DA64954FABB048 /* ChatMediaTests.swift */; };
@@ -189,6 +190,7 @@
 		DA964C45F465551076944CB1 /* AudioSessionController.swift in Sources */ = {isa = PBXBuildFile; fileRef = 72D81EDF1823BF01D30A9CE9 /* AudioSessionController.swift */; };
 		DCF918349766112AF4A11269 /* PermissionCoordinator.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2C5A7CE7107D552FF7C4C6AC /* PermissionCoordinator.swift */; };
 		DFCC9DF32D532A6567CFF401 /* Manrope-SemiBold.ttf in Resources */ = {isa = PBXBuildFile; fileRef = 24F8E9B9D0F0B51D39CA35F3 /* Manrope-SemiBold.ttf */; };
+		E010C0DE392C7E161105210F /* EncounterMergeTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3FBD98425A5A6DCFF4A41259 /* EncounterMergeTests.swift */; };
 		E13CF95370E4E460DCD559FD /* EventDetailTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1129F5B0BDFF83F9CE1A6759 /* EventDetailTests.swift */; };
 		E197A818076E9D0C8B49A2A2 /* RootMenu.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4BA2A78AFE90FD55C2B3B50A /* RootMenu.swift */; };
 		E1A32FEA2DD05DDE9CC3991B /* SettingsStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7A2429F10776DF1079D326B5 /* SettingsStore.swift */; };
@@ -337,6 +339,7 @@
 		3D2EBB1A2205878F093380E1 /* HubRepository.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HubRepository.swift; sourceTree = "<group>"; };
 		3D70677902656DA92DEB50B3 /* NotificationService.appex */ = {isa = PBXFileReference; includeInIndex = 0; lastKnownFileType = "wrapper.app-extension"; path = NotificationService.appex; sourceTree = BUILT_PRODUCTS_DIR; };
 		3F45F0FEE3AA9FAC0DF8A5CA /* ContextTagPicker.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ContextTagPicker.swift; sourceTree = "<group>"; };
+		3FBD98425A5A6DCFF4A41259 /* EncounterMergeTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = EncounterMergeTests.swift; sourceTree = "<group>"; };
 		42726C3E89949B1741E4C897 /* InboxRowLayoutTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = InboxRowLayoutTests.swift; sourceTree = "<group>"; };
 		43B915D15511AD49D780AE8B /* JoinedHubStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = JoinedHubStore.swift; sourceTree = "<group>"; };
 		44BBCF2EF6726AA37BDF9851 /* ConversationActions.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ConversationActions.swift; sourceTree = "<group>"; };
@@ -453,6 +456,7 @@
 		CFDEEB947FE11EAC6206E3B0 /* ChatMessageSheets.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ChatMessageSheets.swift; sourceTree = "<group>"; };
 		D01BDDB7FD2547E8DFE08814 /* ContactDiscoveryService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ContactDiscoveryService.swift; sourceTree = "<group>"; };
 		D037086EDE795B72EE43A547 /* ChatComposerView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ChatComposerView.swift; sourceTree = "<group>"; };
+		D6D2AECD03E66F3B3547CDBE /* click.caf */ = {isa = PBXFileReference; path = click.caf; sourceTree = "<group>"; };
 		D8FC9A8E3F2EF66F73BBAEF4 /* SettingsPages.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SettingsPages.swift; sourceTree = "<group>"; };
 		D96864E512FF90DCA0D3AF9E /* GlobalSearchTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GlobalSearchTests.swift; sourceTree = "<group>"; };
 		DA0BA02DE0FE06FB525A130A /* RootGateView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RootGateView.swift; sourceTree = "<group>"; };
@@ -626,6 +630,7 @@
 				4907E577393871CB14533954 /* Fonts */,
 				F1E64F3B58D637A809FDC3AD /* NotificationService */,
 				03950F3931FFAFAC9B390203 /* Resources */,
+				DE4B2968FF6A11AAC90992E9 /* Sounds */,
 				A50918281D6FB4CAE1ED041F /* Products */,
 			);
 			sourceTree = "<group>";
@@ -782,6 +787,7 @@
 				AB9A71018D3F776F0EF48368 /* ClickCryptoTests.swift */,
 				C617AC86021B01BE0BE320EA /* ClickDropTests.swift */,
 				74BFF7B0D6FD295C17BDCAFD /* ClicksInboxTests.swift */,
+				3FBD98425A5A6DCFF4A41259 /* EncounterMergeTests.swift */,
 				1129F5B0BDFF83F9CE1A6759 /* EventDetailTests.swift */,
 				D96864E512FF90DCA0D3AF9E /* GlobalSearchTests.swift */,
 				08AA20450324A4CA55FE6A68 /* GroupsHubsSettingsTests.swift */,
@@ -1007,6 +1013,15 @@
 				83C5FC83E94C4D0DD1DBBF1D /* PriorConnectionsView.swift */,
 			);
 			path = Connections;
+			sourceTree = "<group>";
+		};
+		DE4B2968FF6A11AAC90992E9 /* Sounds */ = {
+			isa = PBXGroup;
+			children = (
+				D6D2AECD03E66F3B3547CDBE /* click.caf */,
+			);
+			name = Sounds;
+			path = Resources/Sounds;
 			sourceTree = "<group>";
 		};
 		E23BB2E3D49D245B40369901 /* Identity */ = {
@@ -1324,6 +1339,7 @@
 				80E0FD617F57A87BEB475744 /* Manrope-Medium.ttf in Resources */,
 				275EFE64B076F48A594C5D37 /* Manrope-Regular.ttf in Resources */,
 				DFCC9DF32D532A6567CFF401 /* Manrope-SemiBold.ttf in Resources */,
+				C5D97BA64D2128078C803D5A /* click.caf in Resources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -1537,6 +1553,7 @@
 				1ED39C3ECEE0BD874E98A0BC /* ClickCryptoTests.swift in Sources */,
 				9860E542B517457217E2C247 /* ClickDropTests.swift in Sources */,
 				78E23D9CF63E068FA3ADFF76 /* ClicksInboxTests.swift in Sources */,
+				E010C0DE392C7E161105210F /* EncounterMergeTests.swift in Sources */,
 				E13CF95370E4E460DCD559FD /* EventDetailTests.swift in Sources */,
 				99792F8C19DC5B5E730BAB56 /* GlobalSearchTests.swift in Sources */,
 				FEF90A5A9FF3E2503A3054DE /* GroupsHubsSettingsTests.swift in Sources */,

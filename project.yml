@@ -22,6 +22,7 @@ targets:
       - path: Click
       - path: Resources/Assets.xcassets
       - path: Resources/Fonts
+      - path: Resources/Sounds
     configFiles:
       Debug: Config/Debug.xcconfig
       Release: Config/Release.xcconfig

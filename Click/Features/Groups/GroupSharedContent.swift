@@ -200,10 +200,11 @@ final class GroupSpaceModel {
 
     private func loadHangouts(_ env: AppEnvironment, memberConnections: [String: String]) async {
         var tagged: [(userID: String, encounter: Encounter)] = []
+        let viewerID = env.session.currentSession?.userId
         await withTaskGroup(of: [(String, Encounter)].self) { group in
             for (memberID, connectionID) in memberConnections {
                 group.addTask {
-                    let encounters = (try? await env.profiles.encounters(connectionID: connectionID)) ?? []
+                    let encounters = (try? await env.profiles.encounters(connectionID: connectionID, viewerID: viewerID)) ?? []
                     return encounters.map { (memberID, $0) }
                 }
             }

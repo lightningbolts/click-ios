@@ -950,7 +950,10 @@ private struct EncounterTagEditor: View {
         saving = true
         defer { saving = false }
         do {
-            try await env.encounterContext.setTags(encounterID: encounter.id, tags: ContextTagPicker.resolved(selected: selected, custom: custom))
+            let tags = ContextTagPicker.resolved(selected: selected, custom: custom)
+            for id in encounter.rowIDs {
+                try await env.encounterContext.setTags(encounterID: id, tags: tags)
+            }
             onSaved()
             dismiss()
         } catch {
