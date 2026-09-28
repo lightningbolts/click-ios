@@ -664,10 +664,9 @@ struct EditProfileView: View {
         }
         .navigationTitle("Edit profile")
         .navigationBarTitleDisplayMode(.inline)
-        .confirmationDialog("Remove your photo?", isPresented: $confirmRemovePhoto, titleVisibility: .visible) {
+        .confirmation("Remove your photo?", isPresented: $confirmRemovePhoto, keep: "Keep Photo",
+                      message: "People will see your initials instead.") {
             Button("Remove photo", role: .destructive) { Task { await removePhoto() } }
-        } message: {
-            Text("People will see your initials instead.")
         }
         .toolbar {
             ToolbarItem(placement: .confirmationAction) {

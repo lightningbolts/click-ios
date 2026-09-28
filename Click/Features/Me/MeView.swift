@@ -23,6 +23,8 @@ public struct MeView: View {
     @State private var isConfirmingDelete = false
     @State private var isSigningOut = false
     @State private var showsCompactTitle = false
+    /// Upcoming plans from every chat, from the on-device timelines.
+    @State private var hangouts: [ChatMessageItem] = []
 
     public init() {}
 
@@ -33,6 +35,11 @@ public struct MeView: View {
                 coreSection
             }
             socialSection
+            if !hangouts.isEmpty {
+                Section("Hangouts") {
+                    UpcomingPlansList(plans: hangouts) { env.router.navigate(to: $0.route) }
+                }
+            }
             preferencesSection
             appearanceSection
             accountSection
@@ -87,13 +94,12 @@ public struct MeView: View {
                 onSkip: { isEditingPhoto = false }
             )
         }
-        .confirmationDialog("Sign out of Click?", isPresented: $isConfirmingSignOut, titleVisibility: .visible) {
+        .confirmation("Sign out of Click?", isPresented: $isConfirmingSignOut, keep: "Stay Signed In") {
             Button("Sign out", role: .destructive) { signOut() }
         }
-        .confirmationDialog("Delete your Click account?", isPresented: $isConfirmingDelete, titleVisibility: .visible) {
+        .confirmation("Delete your Click account?", isPresented: $isConfirmingDelete, keep: "Keep Account",
+                      message: "Deleting your account permanently removes your profile, connections, and messages. For your security, you'll confirm deletion on joinclick.co while signed in there.") {
             Button("Continue on joinclick.co", role: .destructive) { openAccountDeletion() }
-        } message: {
-            Text("Deleting your account permanently removes your profile, connections, and messages. For your security, you'll confirm deletion on joinclick.co while signed in there.")
         }
         .alert("Couldn't save", isPresented: Binding(get: { alertMessage != nil }, set: { if !$0 { alertMessage = nil } })) {
             Button("OK", role: .cancel) {}
@@ -371,6 +377,7 @@ public struct MeView: View {
     /// Paints the shared copy instantly; refetches only what is older than a minute, so
     /// returning to Me doesn't cost three requests every time.
     private func bootstrap() async {
+        await loadHangouts()
         await env.selfData.seedIfNeeded()
         if let cached = profile.value {
             meTabAvatar?.update(avatarURL: cached.avatarURL)
@@ -379,7 +386,13 @@ public struct MeView: View {
         if let fresh = profile.value { meTabAvatar?.update(avatarURL: fresh.avatarURL) }
     }
 
+    private func loadHangouts() async {
+        guard let userID = env.session.currentSession?.userId else { return }
+        hangouts = await UpcomingPlans.everywhere(userID: userID)
+    }
+
     private func refresh() async {
+        await loadHangouts()
         await env.selfData.refresh(force: true)
         if let fresh = profile.value { meTabAvatar?.update(avatarURL: fresh.avatarURL) }
     }

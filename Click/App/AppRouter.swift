@@ -227,6 +227,11 @@ public final class AppRouter {
     /// (interaction contract 3), owned by the shell — one modal owner.
     public var presentedSheet: SheetRoute?
 
+    /// The Map's Nearby sheet stack; nil while the sheet is closed. While it's open, whatever
+    /// the feed opens (and any event or beacon opened from there) pushes inside the sheet, so
+    /// the feed and its scroll position stay one back-swipe away.
+    public var nearbyPath: [AppRoute]?
+
     /// The one global search surface. Every search control (Home, Clicks, Nearby, Map) opens
     /// this, presented by the shell, so results route identically everywhere.
     public var searchRequest: SearchRequest?
@@ -235,6 +240,7 @@ public final class AppRouter {
 
     public func presentSearch(query: String = "") {
         presentedSheet = nil
+        nearbyPath = nil
         searchRequest = SearchRequest(query: query)
     }
 
@@ -275,18 +281,30 @@ public final class AppRouter {
     /// profile → "Message", or a push for the chat that's open), the stack pops back to it.
     public func navigate(to route: AppRoute) {
         if route.presentsAsSheet {
-            presentedSheet = SheetRoute(route: route)
+            if nearbyPath != nil { pushInNearby(route) } else { presentedSheet = SheetRoute(route: route) }
             return
         }
         // Continuing elsewhere from a detail sheet closes it first.
         presentedSheet = nil
-        if case let .conversation(chatID, messageID?) = route {
-            pendingMessageFocus = MessageFocus(conversationIDs: [chatID], messageID: messageID)
-        }
+        nearbyPath = nil
+        queueMessageFocus(for: route)
         if let index = openIndex(of: route, in: selectedTab) {
             self[path: selectedTab].removeSubrange((index + 1)...)
         } else {
             self[path: selectedTab].append(route)
+        }
+    }
+
+    /// Pushes `route` inside the open Nearby sheet (navigates normally when it's closed).
+    public func pushInNearby(_ route: AppRoute) {
+        guard let path = nearbyPath else { return navigate(to: route) }
+        queueMessageFocus(for: route)
+        if path.last != route { nearbyPath = path + [route] }
+    }
+
+    private func queueMessageFocus(for route: AppRoute) {
+        if case let .conversation(chatID, messageID?) = route {
+            pendingMessageFocus = MessageFocus(conversationIDs: [chatID], messageID: messageID)
         }
     }
 

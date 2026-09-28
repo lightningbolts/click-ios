@@ -11,9 +11,10 @@ public struct ClickMapView: View {
     @State private var model = MapFeatureModel()
     @State private var creating = false
     @State private var mapCenter: CLLocationCoordinate2D?
-    /// The tab bar's inset, remembered. While a pushed screen hides the tab bar the map root's
-    /// safe area briefly loses it (during the back-swipe too); anchoring to the remembered
-    /// value keeps the Nearby lip and buttons from dropping under the bar and jumping back.
+    /// The tab bar's inset, held while a screen is pushed: a pushed screen hides the tab bar and
+    /// the map root's safe area briefly loses it (during the back-swipe too), and holding it
+    /// keeps the lip and buttons from dropping and jumping back. Otherwise it follows the real
+    /// inset, so it fits every device rather than latching a stale maximum.
     @State private var stableBottomInset: CGFloat = 0
 
     public init() {}
@@ -26,11 +27,11 @@ public struct ClickMapView: View {
                 map
                     .ignoresSafeArea()
 
-                VStack(spacing: 10) {
+                // One column, so the buttons always sit above the lip whatever its height (device,
+                // Display Zoom, Dynamic Type) and the lip sits right on the tab bar.
+                VStack(spacing: 12) {
                     Spacer()
-                    HStack(alignment: .bottom) {
-                        Spacer()
-                        VStack(spacing: 12) {
+                    VStack(spacing: 12) {
                         Button {
                             Task { await model.requestLocation() }
                         } label: {
@@ -47,28 +48,28 @@ public struct ClickMapView: View {
                                 .font(.system(size: 22, weight: .semibold))
                                 .foregroundStyle(ClickColors.primaryActionForeground)
                                 .frame(width: 56, height: 56)
-                                .background(ClickColors.primaryActionFill, in: Circle())
-                                .shadow(color: ClickColors.primaryActionFill.opacity(0.4), radius: 10, y: 4)
+                                .glassCircleBackground(tint: ClickColors.primaryActionFill)
                         }
+                        .buttonStyle(.plain)
                         .accessibilityLabel("Create beacon or event")
-                        }
                     }
+                    .frame(maxWidth: .infinity, alignment: .trailing)
+                    .padding(.horizontal, ClickSpacing.screenGutter)
+
+                    NearbyLip(model: model, pins: pins)
                 }
-                .padding(.horizontal, ClickSpacing.screenGutter)
-                .padding(.bottom, 84 + 12)
                 .padding(.bottom, stableBottomInset)
                 .ignoresSafeArea(.container, edges: .bottom)
-
-                NearbyLip(model: model, pins: pins)
-                    .padding(.bottom, stableBottomInset)
-                    .ignoresSafeArea(.container, edges: .bottom)
             }
             .onChange(of: proxy.safeAreaInsets.bottom, initial: true) { _, inset in
-                stableBottomInset = max(stableBottomInset, inset)
+                if env.router.mapPath.isEmpty { stableBottomInset = inset }
+            }
+            .onChange(of: env.router.mapPath.isEmpty) { _, isRoot in
+                if isRoot { stableBottomInset = proxy.safeAreaInsets.bottom }
             }
         }
-        // The Nearby sheet's search keyboard must not count as bottom inset: `max` above would
-        // latch its height and strand the lip and buttons mid-screen after the sheet closes.
+        // The Nearby sheet's search keyboard must not count as bottom inset: it would lift the
+        // lip and buttons mid-screen behind the sheet.
         .ignoresSafeArea(.keyboard)
         // The map is full-bleed under a transparent bar: the menu and layers buttons are the same
         // toolbar glass buttons, in the same spots, as every other tab root.
@@ -141,9 +142,11 @@ public struct ClickMapView: View {
             }
         }
         .sheet(isPresented: $model.isNearbyPresented) {
-            NearbyListView(model: model, pins: pins) { item in
-                model.isNearbyPresented = false
-                Task { try? await Task.sleep(for: .milliseconds(350)); open(item) }
+            // Rows open inside the sheet, over the feed: back returns to the same scroll spot.
+            NavigationStack(path: nearbyPath) {
+                NearbyListView(model: model, pins: pins, onOpen: open)
+                    .toolbar(.hidden, for: .navigationBar)
+                    .appRouteDestinations()
             }
             .presentationDetents([.medium, .large], selection: $model.nearbyDetent)
             .presentationDragIndicator(.visible)
@@ -258,14 +261,27 @@ public struct ClickMapView: View {
         await model.consume(focus)
     }
 
+    /// The Nearby sheet's own stack, owned by the router so anything opened from it lands here.
+    private var nearbyPath: Binding<[AppRoute]> {
+        Binding(
+            get: { env.router.nearbyPath ?? [] },
+            // A closing sheet writes back an empty path; that must not reopen it.
+            set: { path in if env.router.nearbyPath != nil { env.router.nearbyPath = path } }
+        )
+    }
+
+    /// Opens a Nearby row inside the sheet (chats and profiles at full height) and brings
+    /// its spot into view on the map behind.
     private func open(_ item: MapItem) {
-        model.select(item.id, at: item.coordinate)
+        model.focusCamera(on: item.coordinate)
+        if !item.route.presentsAsSheet { model.nearbyDetent = .large }
+        env.router.pushInNearby(item.route)
     }
 
     private func openProfile(for item: MapItem) {
-        guard case .person(let pin) = item.kind else { return }
+        guard case .person = item.kind else { return }
         model.selection = nil
-        env.router.navigate(to: .userProfile(userID: pin.userID, connectionID: pin.connectionID))
+        env.router.navigate(to: item.route)
     }
 
     /// Zooms into a cluster far enough that its members draw as pins (KMP cluster tap).
@@ -323,21 +339,15 @@ public struct ClickMapView: View {
             return
         }
         switch selection {
-        case .beacon(let id):
-            let isEvent = model.items(pins: pins, applyingFilter: false).contains {
-                if case .beacon(let beacon) = $0.kind { return beacon.id == id && beacon.isEvent }
-                return false
-            }
-            env.router.navigate(to: isEvent ? .event(beaconID: id) : .beacon(beaconID: id))
-        case .hub(let id):
-            model.selection = nil
-            env.router.navigate(to: .hub(hubID: id))
-        case .person:
-            // First tap shows the callout ("Priya Raman · first met here"); tapping it opens
-            // the profile.
+        case .person, nil:
+            // First tap on a person shows the callout ("Priya Raman · first met here"); tapping
+            // it opens the profile.
             break
-        case nil:
-            break
+        case .beacon, .hub, .hangout:
+            guard let item = model.items(pins: pins, applyingFilter: false).first(where: { $0.id == selection }) else { return }
+            // Detail sheets keep the pin selected until they close; pushed screens don't.
+            if !item.route.presentsAsSheet { model.selection = nil }
+            env.router.navigate(to: item.route)
         }
     }
 }
@@ -393,10 +403,12 @@ private struct MapPinView: View {
                         .scaleEffect(0.8)
                         .offset(y: -8)
                 }
-            case .hub(let hub):
-                EventVisual(seed: hub.id, symbol: MapLayer.hubs.systemImage, cornerRadius: 20)
-                    .frame(width: 40, height: 40)
+            case .hub:
+                MapItemThumbnail(item: item, size: 40)
                     .overlay(Circle().stroke(.white, lineWidth: 3))
+            case .hangout:
+                MapItemThumbnail(item: item, size: 40)
+                    .overlay(RoundedRectangle(cornerRadius: 12, style: .continuous).stroke(.white, lineWidth: 3))
             }
         }
         .shadow(color: .black.opacity(0.25), radius: 4, y: 2)
@@ -422,22 +434,13 @@ private struct OverlappingPinsChooser: View {
                     onPick(item)
                 } label: {
                     HStack(spacing: 12) {
-                        switch item.kind {
-                        case .person(let pin):
-                            AvatarView(imageURL: pin.avatarURL, seed: pin.userID, initials: pin.initials, size: 44)
-                        case .beacon(let beacon):
-                            EventVisual(seed: beacon.id, imageURL: beacon.imageURL, symbol: beacon.kind.systemImage, cornerRadius: 10)
-                                .frame(width: 44, height: 44)
-                        case .hub(let hub):
-                            EventVisual(seed: hub.id, symbol: MapLayer.hubs.systemImage, cornerRadius: 22)
-                                .frame(width: 44, height: 44)
-                        }
+                        MapItemThumbnail(item: item, size: 44, cornerRadius: 10)
                         VStack(alignment: .leading, spacing: 2) {
                             Text(item.title)
                                 .font(ClickTypography.bodyEmphasized)
                                 .foregroundStyle(ClickColors.textPrimary)
                                 .lineLimit(2)
-                            Text(subtitle(item))
+                            Text(item.subtitle)
                                 .font(ClickTypography.supporting)
                                 .foregroundStyle(ClickColors.textSecondary)
                                 .lineLimit(1)
@@ -458,14 +461,6 @@ private struct OverlappingPinsChooser: View {
                     .padding(.horizontal, ClickSpacing.screenGutter)
                     .padding(.bottom, 4)
             }
-        }
-    }
-
-    private func subtitle(_ item: MapItem) -> String {
-        switch item.kind {
-        case .person(let pin): pin.locationName.map { "Met at \($0)" } ?? "My network"
-        case .beacon(let beacon): beacon.kind.label
-        case .hub: "Hub"
         }
     }
 }

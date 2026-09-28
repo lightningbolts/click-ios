@@ -9,6 +9,8 @@ struct BeaconDetailView: View {
     @Environment(\.dismiss) private var dismiss
 
     let beaconID: String
+    /// Root of a detail sheet (closes it) rather than pushed onto a stack (goes back).
+    var isSheetRoot = false
 
     @State private var beacon = ModuleState<MapBeacon>()
     @State private var isExpired = false
@@ -18,7 +20,6 @@ struct BeaconDetailView: View {
     @State private var bookmarkPending = false
     @State private var checkInPending = false
     @State private var notice: String?
-    @State private var showingDirectory = false
     /// Album art resolved on device for a soundtrack the server couldn't enrich.
     @State private var resolvedArtwork: String?
     @State private var confirmCancelRSVP = false
@@ -50,6 +51,8 @@ struct BeaconDetailView: View {
         .onDisappear { SoundtrackPreviewPlayer.shared.stop() }
         .navigationTitle(beacon.value?.title ?? "")
         .toolbar(.hidden, for: .navigationBar)
+        // No bar, so keep the edge swipe back when pushed.
+        .background { if !isSheetRoot { SwipeBackEnabler().frame(width: 0, height: 0) } }
         .task { if beacon.value == nil { await load() } }
         .task(id: rsvp.value?.request) { await watchPendingRequest() }
         .alert("Event", isPresented: Binding(get: { notice != nil }, set: { if !$0 { notice = nil } })) {
@@ -70,7 +73,7 @@ struct BeaconDetailView: View {
                     .frame(height: 250)
                     .frame(maxWidth: .infinity)
                     .clipped()
-                    .overlay(alignment: .topTrailing) { headerButtons(beacon).padding(14) }
+                    .overlay(alignment: .top) { headerButtons(beacon).padding(14) }
 
                 VStack(alignment: .leading, spacing: 18) {
                     pills(beacon)
@@ -140,8 +143,10 @@ struct BeaconDetailView: View {
         }
         .ignoresSafeArea(edges: .top)
         .background(ClickColors.surface)
-        .navigationDestination(isPresented: $showingDirectory) {
-            EventDirectoryView(beaconID: beacon.id, preloaded: people.value)
+        // A value route like every other push: an `isPresented` push here got out of step with
+        // the stack when a person was opened from it, bouncing back and stacking duplicates.
+        .navigationDestination(for: EventPeopleRoute.self) { route in
+            EventDirectoryView(beaconID: route.beaconID, preloaded: people.value)
         }
         .sheet(isPresented: $sharingToChat) {
             ShareToChatSheet(beacon: beacon)
@@ -152,15 +157,15 @@ struct BeaconDetailView: View {
                 resolvedPlace = nil
             }
         }
-        .confirmationDialog("Cancel your RSVP?", isPresented: $confirmCancelRSVP, titleVisibility: .visible) {
+        .confirmation(rsvp.value?.isGoing == true ? "Cancel your RSVP?" : "Withdraw your request?", isPresented: $confirmCancelRSVP,
+                      keep: rsvp.value?.isGoing == true ? "Keep RSVP" : "Keep Request") {
             Button(rsvp.value?.isGoing == true ? "Cancel RSVP" : "Withdraw request", role: .destructive) {
                 Task { await cancelRSVP(beacon) }
             }
         }
-        .confirmationDialog("Delete \(beacon.title)?", isPresented: $confirmDelete, titleVisibility: .visible) {
+        .confirmation("Delete \(beacon.title)?", isPresented: $confirmDelete, keep: "Keep It",
+                      message: "It will be removed for everyone.") {
             Button("Delete", role: .destructive) { Task { await delete(beacon) } }
-        } message: {
-            Text("It will be removed for everyone.")
         }
     }
 
@@ -242,10 +247,18 @@ struct BeaconDetailView: View {
         .accessibilityHint(isActive ? "Double-tap to cancel" : "")
     }
 
-    /// Save · Share · Close float over the hero (prototype event sheet header).
+    /// Back (when pushed) and Save · Share · Close float over the hero (prototype event sheet
+    /// header), in Liquid Glass like the rest of the app's floating controls.
     private func headerButtons(_ beacon: MapBeacon) -> some View {
         let saved = engagement.value?.bookmarked == true
         return HStack(spacing: 10) {
+            if !isSheetRoot {
+                Button { dismiss() } label: {
+                    Image(systemName: "chevron.left").headerCircle(tint: .white)
+                }
+                .accessibilityLabel("Back")
+            }
+            Spacer()
             if beacon.isEvent {
                 Button { Task { await toggleBookmark(beacon) } } label: {
                     Image(systemName: saved ? "bookmark.fill" : "bookmark")
@@ -268,10 +281,12 @@ struct BeaconDetailView: View {
                 Image(systemName: "square.and.arrow.up").headerCircle(tint: .white)
             }
             .accessibilityLabel("Share")
-            Button { dismiss() } label: {
-                Image(systemName: "xmark").headerCircle(tint: .white)
+            if isSheetRoot {
+                Button { dismiss() } label: {
+                    Image(systemName: "xmark").headerCircle(tint: .white)
+                }
+                .accessibilityLabel("Close")
             }
-            .accessibilityLabel("Close")
         }
         .buttonStyle(.plain)
     }
@@ -343,7 +358,7 @@ struct BeaconDetailView: View {
             .buttonStyle(.plain)
             if beacon.isEvent {
                 Divider().padding(.leading, 56)
-                Button { showingDirectory = true } label: {
+                NavigationLink(value: EventPeopleRoute(beaconID: beacon.id)) {
                     infoRow(systemImage: "person.2", title: peopleTitle(beacon), subtitle: peopleSubtitle(beacon), chevron: true)
                 }
                 .buttonStyle(.plain)
@@ -434,7 +449,7 @@ struct BeaconDetailView: View {
             let ranked = EventDirectoryView.bestMatch(others)
             let mutuals = others.filter { $0.relationship == .connection || $0.relationship == .mutual }.count
             VStack(alignment: .leading, spacing: 12) {
-                Button { showingDirectory = true } label: {
+                NavigationLink(value: EventPeopleRoute(beaconID: beaconID)) {
                     HStack(alignment: .firstTextBaseline) {
                         VStack(alignment: .leading, spacing: 2) {
                             Text("People here")
@@ -685,13 +700,18 @@ struct BeaconDetailView: View {
 
 private extension Image {
     /// 44 pt glass circle used for controls floating over the hero image.
-    func headerCircle(tint: Color) -> some View {
+    @MainActor func headerCircle(tint: Color) -> some View {
         self.font(.system(size: 16, weight: .semibold))
             .foregroundStyle(tint)
             .frame(width: 44, height: 44)
-            .background(.ultraThinMaterial, in: Circle())
+            .glassCircleBackground()
             .environment(\.colorScheme, .dark)
     }
+}
+
+/// The event's "People here" directory, pushed from the detail.
+private struct EventPeopleRoute: Hashable {
+    let beaconID: String
 }
 
 /// Event people directory (spec §57). Default order is best match — shared interests plus

@@ -8,6 +8,23 @@ enum MapSelection: Hashable {
     case beacon(String)
     case hub(String)
     case person(String)
+    case hangout(String)
+}
+
+/// A plan made in a chat with a place set: on the map and in Nearby until it ends.
+struct PlannedHangout: Equatable {
+    let message: ChatMessageItem
+    let plan: HangoutPlan
+    let latitude: Double
+    let longitude: Double
+
+    init?(_ message: ChatMessageItem) {
+        guard !message.isDeleted, let plan = message.plan, let latitude = plan.latitude, let longitude = plan.longitude else { return nil }
+        self.message = message
+        self.plan = plan
+        self.latitude = latitude
+        self.longitude = longitude
+    }
 }
 
 /// One annotation on the map. Identity is the underlying entity ID, so refreshes update pins
@@ -17,6 +34,7 @@ struct MapItem: Identifiable, Equatable {
         case beacon(MapBeacon)
         case hub(NearbyHub)
         case person(ConnectionPin)
+        case hangout(PlannedHangout)
     }
 
     let kind: Kind
@@ -26,6 +44,7 @@ struct MapItem: Identifiable, Equatable {
         case .beacon(let beacon): .beacon(beacon.id)
         case .hub(let hub): .hub(hub.id)
         case .person(let pin): .person(pin.userID)
+        case .hangout(let hangout): .hangout(hangout.message.id)
         }
     }
 
@@ -34,6 +53,7 @@ struct MapItem: Identifiable, Equatable {
         case .beacon(let beacon): beacon.coordinate
         case .hub(let hub): hub.coordinate
         case .person(let pin): CLLocationCoordinate2D(latitude: pin.latitude, longitude: pin.longitude)
+        case .hangout(let hangout): CLLocationCoordinate2D(latitude: hangout.latitude, longitude: hangout.longitude)
         }
     }
 
@@ -42,6 +62,7 @@ struct MapItem: Identifiable, Equatable {
         case .beacon(let beacon): MapLayer(kind: beacon.kind)
         case .hub: .hubs
         case .person: .people
+        case .hangout: .hangouts
         }
     }
 
@@ -50,6 +71,35 @@ struct MapItem: Identifiable, Equatable {
         case .beacon(let beacon): beacon.title
         case .hub(let hub): hub.name
         case .person(let pin): pin.displayName
+        case .hangout(let hangout): hangout.plan.title
+        }
+    }
+
+    /// Where opening this item goes (map pin, Nearby row, "Which pin?" chooser).
+    var route: AppRoute {
+        switch kind {
+        case .beacon(let beacon): beacon.isEvent ? .event(beaconID: beacon.id) : .beacon(beaconID: beacon.id)
+        case .hub(let hub): .hub(hubID: hub.id)
+        case .person(let pin): .userProfile(userID: pin.userID, connectionID: pin.connectionID)
+        case .hangout(let hangout): hangout.message.route
+        }
+    }
+
+    /// One line under the title (Nearby rows, "Which pin?" chooser).
+    var subtitle: String {
+        switch kind {
+        case .beacon(let beacon):
+            if let schedule = beacon.schedule, beacon.isEvent {
+                return EventFormatting.whenAndWhere(schedule, place: beacon.locationName)
+            }
+            return [beacon.kind.label, beacon.locationName].compactMap { $0 }.joined(separator: " · ")
+        case .hub(let hub):
+            return hub.participantCount == 1 ? "Hub · 1 here" : "Hub · \(hub.participantCount) here"
+        case .person(let pin):
+            return pin.locationName.map { "Met at \($0)" } ?? "Your Click"
+        case .hangout(let hangout):
+            return ([PlanCardView.whenText(hangout.plan.startsAt, until: hangout.plan.endsAt)] + [hangout.plan.placeName].compactMap { $0 })
+                .joined(separator: " · ")
         }
     }
 }
@@ -80,12 +130,21 @@ final class MapFeatureModel {
     private(set) var discovery = ModuleState<NearbyDiscovery>()
     /// Beacons fetched individually for a focus intent (e.g. an event outside the fetched radius).
     private(set) var focusedBeacons: [MapBeacon] = []
+    /// Your plans with a place, from the on-device chat timelines.
+    private(set) var hangouts: [PlannedHangout] = []
 
     var layers: Set<MapLayer> = Set(MapLayer.allCases)
     /// Single-layer filter chosen from Nearby chips; applies to the map too.
     var filter: MapLayer?
     var selection: MapSelection?
-    var isNearbyPresented = false
+    /// Mirrors the router's Nearby stack: the sheet is open exactly while that stack exists.
+    var isNearbyPresented: Bool {
+        get { environment?.router.nearbyPath != nil }
+        set {
+            guard newValue != isNearbyPresented else { return }
+            environment?.router.nearbyPath = newValue ? [] : nil
+        }
+    }
     var nearbyDetent: PresentationDetent = .medium
 
     private var environment: AppEnvironment?
@@ -110,6 +169,7 @@ final class MapFeatureModel {
         let all = beacons.map { MapItem(kind: .beacon($0)) }
             + (discovery.value?.hubs ?? []).map { MapItem(kind: .hub($0)) }
             + pins.map { MapItem(kind: .person($0)) }
+            + hangouts.filter { $0.plan.endsOrAssumedEnd > now }.map { MapItem(kind: .hangout($0)) }
         return all.filter { item in
             layers.contains(item.layer)
                 && (!applyingFilter || filter == nil || filter == item.layer)
@@ -127,8 +187,10 @@ final class MapFeatureModel {
         let upcoming = beaconItems { $0.isEvent && $0.schedule?.isLive(at: now) != true }
             .sorted { lhs, rhs in startDate(lhs) < startDate(rhs) }
         let hubs = visible.filter { if case .hub = $0.kind { return true }; return false }
+        let hangouts = visible.filter { if case .hangout = $0.kind { return true }; return false }
         var sections = [
             NearbySection(id: "live", title: "Happening now", items: live),
+            NearbySection(id: "hangouts", title: MapLayer.hangouts.label, items: hangouts),
             NearbySection(id: "events", title: "Events", items: upcoming),
             NearbySection(id: "hubs", title: "Hubs", items: hubs)
         ]
@@ -239,6 +301,12 @@ final class MapFeatureModel {
     func loadCached() async {
         guard let environment, let userID = environment.session.currentSession?.userId else { return }
         discovery.seed(await environment.beacons.cachedDiscovery(userID: userID))
+        await loadHangouts()
+    }
+
+    func loadHangouts() async {
+        guard let userID = environment?.session.currentSession?.userId else { return }
+        hangouts = await UpcomingPlans.everywhere(userID: userID).compactMap(PlannedHangout.init)
     }
 
     /// Coalesces viewport changes: refetches only when the center moved ~5 km from the last fetch
@@ -289,6 +357,7 @@ final class MapFeatureModel {
     }
 
     func refresh() {
+        Task { await loadHangouts() }
         if let center = userCoordinate ?? lastFetchCenter {
             refresh(around: center)
         }
@@ -351,9 +420,7 @@ final class MapFeatureModel {
             }
             layers.insert(MapLayer(kind: beacon.kind))
             isNearbyPresented = false
-            withAnimation {
-                camera = .region(MKCoordinateRegion(center: beacon.coordinate, latitudinalMeters: 1200, longitudinalMeters: 1200))
-            }
+            focusCamera(on: beacon.coordinate)
         case .beacon(let id):
             if let beacon = (discovery.value?.beacons ?? []).first(where: { $0.id == id }) {
                 select(.beacon(id), at: beacon.coordinate)
@@ -369,6 +436,10 @@ final class MapFeatureModel {
     func select(_ selection: MapSelection, at coordinate: CLLocationCoordinate2D) {
         self.selection = selection
         isNearbyPresented = false
+        focusCamera(on: coordinate)
+    }
+
+    func focusCamera(on coordinate: CLLocationCoordinate2D) {
         withAnimation {
             camera = .region(MKCoordinateRegion(center: coordinate, latitudinalMeters: 1200, longitudinalMeters: 1200))
         }

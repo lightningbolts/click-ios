@@ -66,15 +66,14 @@ struct GroupProfileView: View {
             VStack(spacing: 22) {
                 headerSection(group)
                 rotationSection(group)
-                GroupTogetherSection(
-                    group: group,
-                    model: space,
-                    currentUserID: currentUserID,
+                GroupTogetherSection(group: group, model: space, currentUserID: currentUserID)
+                HangoutsSection(
+                    plans: space.upcomingPlans,
+                    onOpen: { env.router.navigate(to: $0.route) },
                     onPlan: {
                         env.pendingPlanChatKey = group.chatID
                         env.router.navigate(to: .groupChat(group.chatRoute))
-                    },
-                    onOpenPlan: { message in env.router.navigate(to: .conversation(chatID: group.chatID, messageID: message.id)) }
+                    }
                 )
                 membersSection(group, isCreator: isCreator)
                 GroupedSection("Common interests") { GroupCommonInterests(members: group.members) }
@@ -92,29 +91,27 @@ struct GroupProfileView: View {
         }
         .background(ClickColors.background.ignoresSafeArea())
         .overlay { if isWorking { ProgressView() } }
-        .confirmationDialog(
+        .confirmation(
             "Remove \(pendingRemoval?.name ?? "member")?",
             isPresented: Binding(get: { pendingRemoval != nil }, set: { if !$0 { pendingRemoval = nil } }),
-            titleVisibility: .visible
+            keep: "Keep in Group",
+            message: "They won't be able to read new messages in this group."
         ) {
             Button("Remove", role: .destructive) {
                 if let member = pendingRemoval { Task { await remove(member, from: group) } }
             }
-        } message: {
-            Text("They won't be able to read new messages in this group.")
         }
-        .confirmationDialog("Leave \(group.name)?", isPresented: $confirmLeave, titleVisibility: .visible) {
+        .confirmation("Leave \(group.name)?", isPresented: $confirmLeave, keep: "Stay in Group") {
             Button("Leave Group", role: .destructive) { Task { await leave(group) } }
         }
-        .confirmationDialog("Delete \(group.name)?", isPresented: $confirmDelete, titleVisibility: .visible) {
+        .confirmation("Delete \(group.name)?", isPresented: $confirmDelete, keep: "Keep Group",
+                      message: "The group and its conversation are removed for everyone.") {
             Button("Delete Group", role: .destructive) { Task { await delete(group) } }
-        } message: {
-            Text("The group and its conversation are removed for everyone.")
         }
         .alert("Rename group", isPresented: $renaming) {
             TextField("Group name", text: $draftName)
-            Button("Save") { Task { await rename(group) } }
             Button("Cancel", role: .cancel) {}
+            PreferredButton("Save") { Task { await rename(group) } }
         }
         .sheet(isPresented: $showingAddMembers) {
             GroupMemberPickerSheet(

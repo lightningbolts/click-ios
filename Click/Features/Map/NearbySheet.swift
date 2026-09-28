@@ -90,9 +90,12 @@ struct NearbyListView: View {
                     model.refresh()
                 } label: {
                     Image(systemName: "arrow.clockwise")
-                        .frame(width: 36, height: 36)
-                        .background(ClickColors.fillSubtle, in: Circle())
+                        .font(.system(size: 17, weight: .semibold))
+                        .frame(width: ClickMetrics.searchMinHeight, height: ClickMetrics.searchMinHeight)
+                        .glassCircleBackground()
                 }
+                .buttonStyle(.plain)
+                .foregroundStyle(ClickColors.accentForeground)
                 .accessibilityLabel("Refresh nearby")
             }
             .padding(.horizontal, 20)
@@ -157,6 +160,8 @@ struct NearbyListView: View {
             fields.append("Hub")
         case .person(let pin):
             fields += [pin.locationName].compactMap { $0 }
+        case .hangout(let hangout):
+            fields += [MapLayer.hangouts.label, hangout.plan.placeName].compactMap { $0 }
         }
         return fields.contains { $0.localizedStandardContains(query) }
     }
@@ -225,7 +230,9 @@ struct NearbyListView: View {
                                 }
                             }
                         }
-                        .groupedSurface()
+                        // A translucent fill, not an opaque surface: it reads the same over the
+                        // sheet's glass at the medium height as over its solid full height.
+                        .background(ClickColors.fillSubtle, in: RoundedRectangle(cornerRadius: ClickRadius.surface, style: .continuous))
                     }
                 }
             }
@@ -264,8 +271,7 @@ private struct NearbyRow: View {
 
     var body: some View {
         HStack(spacing: 14) {
-            visual
-                .frame(width: 48, height: 48)
+            MapItemThumbnail(item: item)
             VStack(alignment: .leading, spacing: 2) {
                 HStack(spacing: 6) {
                     Text(item.title)
@@ -276,7 +282,7 @@ private struct NearbyRow: View {
                         StatusPill("LIVE", style: .live)
                     }
                 }
-                Text(subtitle)
+                Text(item.subtitle)
                     .font(ClickTypography.supporting)
                     .foregroundStyle(ClickColors.textTertiary)
                     .lineLimit(1)
@@ -295,37 +301,34 @@ private struct NearbyRow: View {
         .accessibilityElement(children: .combine)
     }
 
-    @ViewBuilder
-    private var visual: some View {
-        switch item.kind {
-        case .beacon(let beacon):
-            EventVisual(seed: beacon.id, imageURL: beacon.imageURL, symbol: beacon.kind.systemImage)
-        case .hub(let hub):
-            EventVisual(seed: hub.id, symbol: MapLayer.hubs.systemImage)
-        case .person(let pin):
-            AvatarView(imageURL: pin.avatarURL, seed: pin.userID, initials: pin.initials, size: 48)
-        }
-    }
-
-    private var subtitle: String {
-        switch item.kind {
-        case .beacon(let beacon):
-            if let schedule = beacon.schedule, beacon.isEvent {
-                return EventFormatting.whenAndWhere(schedule, place: beacon.locationName)
-            }
-            return [beacon.kind.label, beacon.locationName].compactMap { $0 }.joined(separator: " · ")
-        case .hub(let hub):
-            return hub.participantCount == 1 ? "Hub · 1 here" : "Hub · \(hub.participantCount) here"
-        case .person(let pin):
-            return pin.locationName ?? "Your Click"
-        }
-    }
-
     private var distance: String? {
         guard let userCoordinate else { return nil }
         let meters = CLLocation(latitude: userCoordinate.latitude, longitude: userCoordinate.longitude)
             .distance(from: CLLocation(latitude: item.coordinate.latitude, longitude: item.coordinate.longitude))
         return Measurement(value: meters, unit: UnitLength.meters)
             .formatted(.measurement(width: .abbreviated, usage: .road, numberFormatStyle: .number.precision(.fractionLength(0...1))))
+    }
+}
+
+/// An item's square/round thumbnail: avatar for people, deterministic visual otherwise.
+struct MapItemThumbnail: View {
+    let item: MapItem
+    var size: CGFloat = 48
+    var cornerRadius: CGFloat = 12
+
+    var body: some View {
+        switch item.kind {
+        case .person(let pin):
+            AvatarView(imageURL: pin.avatarURL, seed: pin.userID, initials: pin.initials, size: size)
+        case .beacon(let beacon):
+            EventVisual(seed: beacon.id, imageURL: beacon.imageURL, symbol: beacon.kind.systemImage, cornerRadius: cornerRadius)
+                .frame(width: size, height: size)
+        case .hub(let hub):
+            EventVisual(seed: hub.id, symbol: MapLayer.hubs.systemImage, cornerRadius: size / 2)
+                .frame(width: size, height: size)
+        case .hangout(let hangout):
+            EventVisual(seed: hangout.message.id, symbol: MapLayer.hangouts.systemImage, cornerRadius: cornerRadius)
+                .frame(width: size, height: size)
+        }
     }
 }

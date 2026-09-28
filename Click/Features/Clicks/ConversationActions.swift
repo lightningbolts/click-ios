@@ -201,23 +201,22 @@ struct ConversationActionDialogs: ViewModifier {
 
     func body(content: Content) -> some View {
         content
-            .confirmationDialog(
+            .confirmation(
                 title,
                 isPresented: Binding(get: { pending != nil && !isRename }, set: { if !$0 { pending = nil } }),
-                titleVisibility: .visible,
-                presenting: pending
-            ) { action in
-                switch action {
-                case .report:
+                keep: keepLabel,
+                message: pending.map(message)
+            ) {
+                switch pending {
+                case .report?:
                     ForEach(ReportReason.allCases) { reason in
-                        Button(reason.rawValue) { run(action, reason: reason.rawValue) }
+                        Button(reason.rawValue) { if let action = pending { run(action, reason: reason.rawValue) } }
                     }
-                default:
+                case let action?:
                     Button(confirmLabel(action), role: .destructive) { run(action) }
+                case nil:
+                    EmptyView()
                 }
-                Button("Cancel", role: .cancel) { pending = nil }
-            } message: { action in
-                Text(message(action))
             }
             .onChange(of: pending?.id) { _, _ in
                 if case .renameGroup(let group)? = pending {
@@ -228,14 +227,14 @@ struct ConversationActionDialogs: ViewModifier {
             }
             .alert("Rename group", isPresented: Binding(get: { renaming != nil }, set: { if !$0 { renaming = nil } })) {
                 TextField("Group name", text: $renameText)
-                Button("Save") {
+                Button("Cancel", role: .cancel) { renaming = nil }
+                PreferredButton("Save") {
                     guard let group = renaming, let name = renameText.nonEmptyTrimmed else { return }
                     renaming = nil
                     Task {
                         do { try await model.renameGroup(group, to: name) } catch { failure = "Couldn't rename the group. \(error.userFacingMessage)" }
                     }
                 }
-                Button("Cancel", role: .cancel) { renaming = nil }
             }
             .alert("That didn't go through", isPresented: Binding(get: { failure != nil }, set: { if !$0 { failure = nil } })) {
                 Button("OK", role: .cancel) {}
@@ -259,6 +258,18 @@ struct ConversationActionDialogs: ViewModifier {
         case .leaveHub(let hub)?: "Leave \(hub.name)?"
         case .deleteHub(let hub)?: "Delete \(hub.name)?"
         case .renameGroup?, nil: ""
+        }
+    }
+
+    /// The highlighted way back out.
+    private var keepLabel: String {
+        switch pending {
+        case .remove?: "Keep Connection"
+        case .block?: "Don't Block"
+        case .leaveGroup?, .leaveHub?: "Stay"
+        case .deleteGroup?: "Keep Group"
+        case .deleteHub?: "Keep Hub"
+        case .report?, .renameGroup?, nil: "Cancel"
         }
     }
 

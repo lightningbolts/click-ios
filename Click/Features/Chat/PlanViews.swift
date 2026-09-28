@@ -169,7 +169,7 @@ struct PlanHangoutSheet: View {
             .alert("New idea", isPresented: $isAddingIdea) {
                 TextField("🎮 Game night", text: $newIdea)
                 Button("Cancel", role: .cancel) { newIdea = "" }
-                Button("Add") {
+                PreferredButton("Add") {
                     let idea = String(newIdea.trimmingCharacters(in: .whitespacesAndNewlines).prefix(40))
                     guard !idea.isEmpty else { return }
                     settings.planIdeas = [idea] + settings.planIdeas.filter { $0 != idea }

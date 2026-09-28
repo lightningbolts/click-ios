@@ -7,6 +7,24 @@ import Foundation
 struct AppRouterTests {
     let router = AppRouter()
 
+    @Test("With Nearby open, details push inside it; leaving for a full screen closes it")
+    func nearbyHostsDetails() {
+        router.selectedTab = .map
+        router.nearbyPath = []
+        router.navigate(to: .event(beaconID: "e1"))
+        router.pushInNearby(.userProfile(userID: "u1", connectionID: nil))
+        router.pushInNearby(.userProfile(userID: "u1", connectionID: nil))
+        #expect(router.presentedSheet == nil)
+        #expect(router.nearbyPath == [.event(beaconID: "e1"), .userProfile(userID: "u1", connectionID: nil)])
+
+        router.navigate(to: .eventChat(beaconID: "e1"))
+        #expect(router.nearbyPath == nil)
+        #expect(router.mapPath == [.eventChat(beaconID: "e1")])
+
+        router.navigate(to: .event(beaconID: "e2"))
+        #expect(router.presentedSheet?.route == .event(beaconID: "e2"))
+    }
+
     @Test("Parses click:// custom scheme connection URL with parameters")
     func parseClickCustomSchemeConnection() {
         let url = URL(string: "click://c/usr_123456?token=tok_abc&exp=1700000000&iat=1699990000&venue=ven_42")!

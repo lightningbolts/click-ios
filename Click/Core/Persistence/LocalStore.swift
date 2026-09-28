@@ -302,6 +302,21 @@ public final class LocalStore: @unchecked Sendable {
         }
     }
 
+    /// The newest `limit` messages carrying a plan (`metadata.plan`), across every conversation.
+    func planMessages(userID: String, limit: Int = 300) async -> [ChatMessageItem] {
+        await withCheckedContinuation { continuation in
+            queue.async {
+                guard self.ensureOpen(userID), let db = self.db,
+                      let statement = Statement(db, "SELECT json FROM messages WHERE CAST(json AS TEXT) LIKE '%\"plan\":{%' ORDER BY created_ms DESC LIMIT ?") else {
+                    continuation.resume(returning: [])
+                    return
+                }
+                statement.bind([limit])
+                continuation.resume(returning: self.decodeMessages(statement))
+            }
+        }
+    }
+
     /// Stored messages by ID, in no particular order.
     func messages(ids: [String], conversation: String, userID: String) async -> [ChatMessageItem] {
         await withCheckedContinuation { continuation in

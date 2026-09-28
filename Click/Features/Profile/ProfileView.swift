@@ -60,10 +60,11 @@ public struct ProfileView: View {
                         onDecline: { hangout in Task { await model.decline(hangout) } },
                         onLog: { isLoggingHangout = true },
                         onPlan: planHangout,
-                        onStory: { showsStory = true },
-                        upcomingPlans: model.upcomingPlans,
-                        onOpenPlan: { message in env.router.navigate(to: .conversation(chatID: message.chatID, messageID: message.id)) }
+                        onStory: { showsStory = true }
                     )
+                    if !model.upcomingPlans.isEmpty {
+                        HangoutsSection(plans: model.upcomingPlans) { env.router.navigate(to: $0.route) }
+                    }
                 }
                 chatBackdrop
                 // Sticky: once the chips reach the top they're held there, over the content.
@@ -133,26 +134,25 @@ public struct ProfileView: View {
                 try await model.saveJournal(body: body, visibility: visibility, editing: target.entry)
             }
         }
-        .confirmationDialog(safetyTitle, isPresented: Binding(
+        .confirmation(safetyTitle, isPresented: Binding(
             get: { safetyAction == .remove || safetyAction == .block },
             set: { if !$0 { safetyAction = nil } }
-        ), titleVisibility: .visible) {
+        ), keep: safetyAction == .block ? "Don't Block" : "Keep Click",
+           message: safetyAction == .block
+                 ? "They won't be able to message you, and they'll be removed from your Clicks."
+                 : "This Click is removed from your inbox and map. It can't be undone.") {
             Button(safetyAction == .block ? "Block" : "Remove", role: .destructive) {
                 Task { await performSafety() }
             }
-        } message: {
-            Text(safetyAction == .block
-                 ? "They won't be able to message you, and they'll be removed from your Clicks."
-                 : "This Click is removed from your inbox and map. It can't be undone.")
         }
         .alert("Report \(model.profile.value?.firstName ?? "this person")", isPresented: Binding(
             get: { safetyAction == .report },
             set: { if !$0 { safetyAction = nil; reportReason = "" } }
         )) {
             TextField("What happened?", text: $reportReason)
-            Button("Submit") { Task { await performSafety() } }
-                .disabled(reportReason.trimmingCharacters(in: .whitespaces).isEmpty)
             Button("Cancel", role: .cancel) {}
+            PreferredButton("Submit") { Task { await performSafety() } }
+                .disabled(reportReason.trimmingCharacters(in: .whitespaces).isEmpty)
         } message: {
             Text("Reports are private and reviewed by the Click team.")
         }

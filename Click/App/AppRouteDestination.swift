@@ -9,6 +9,8 @@ import SwiftUI
 struct AppRouteDestination: View {
     @Environment(AppEnvironment.self) private var env
     let route: AppRoute
+    /// Shown as the root of the shell's detail sheet rather than pushed.
+    var isSheetRoot = false
 
     var body: some View {
         Group {
@@ -26,7 +28,7 @@ struct AppRouteDestination: View {
             case .eventChat(let beaconID):
                 EventChatView(beaconID: beaconID)
             case .event(let beaconID), .beacon(let beaconID):
-                BeaconDetailView(beaconID: beaconID)
+                BeaconDetailView(beaconID: beaconID, isSheetRoot: isSheetRoot)
             case .hub(let hubID):
                 HubChatView(hubID: hubID)
             case .myQR:

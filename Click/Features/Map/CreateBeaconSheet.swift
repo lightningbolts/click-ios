@@ -189,10 +189,9 @@ struct CreateBeaconSheet: View {
                     Button("Cancel") {
                         if hasUnsavedChanges { confirmingDiscard = true } else { dismiss() }
                     }
-                    .confirmationDialog(isEditing ? "Discard your changes?" : "Discard this \(kind == .event ? "event" : "beacon")?",
-                                        isPresented: $confirmingDiscard, titleVisibility: .visible) {
+                    .confirmation(isEditing ? "Discard your changes?" : "Discard this \(kind == .event ? "event" : "beacon")?",
+                                  isPresented: $confirmingDiscard, keep: "Keep Editing") {
                         Button(isEditing ? "Discard Changes" : "Discard", role: .destructive) { dismiss() }
-                        Button("Keep Editing", role: .cancel) {}
                     }
                 }
                 ToolbarItem(placement: .confirmationAction) {

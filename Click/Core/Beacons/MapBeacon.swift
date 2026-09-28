@@ -331,6 +331,7 @@ public struct NearbyHub: Codable, Identifiable, Hashable, Sendable {
 public enum MapLayer: String, Codable, CaseIterable, Hashable, Sendable {
     case people
     case events
+    case hangouts
     case social
     case soundtracks
     case alerts
@@ -351,6 +352,7 @@ public enum MapLayer: String, Codable, CaseIterable, Hashable, Sendable {
         switch self {
         case .people: "My network"
         case .events: "Events"
+        case .hangouts: "Hangouts"
         case .social: "Social"
         case .soundtracks: "Soundtracks"
         case .alerts: "Alerts & utilities"
@@ -363,6 +365,7 @@ public enum MapLayer: String, Codable, CaseIterable, Hashable, Sendable {
         switch self {
         case .people: "person.2.fill"
         case .events: "calendar"
+        case .hangouts: "figure.2"
         case .social: "sparkles"
         case .soundtracks: "music.note"
         case .alerts: "exclamationmark.triangle.fill"

@@ -247,7 +247,16 @@ struct GroupHangout: Equatable, Identifiable {
 /// they show instantly and offline).
 enum UpcomingPlans {
     static func `in`(chatID: String, userID: String, now: Date = .now) -> [ChatMessageItem] {
-        LocalStore.shared.latestMessages(conversation: chatID, userID: userID, limit: 400)
+        upcoming(LocalStore.shared.latestMessages(conversation: chatID, userID: userID, limit: 400), now: now)
+    }
+
+    /// Every chat's upcoming plans (Me, and the Map's hangouts).
+    static func everywhere(userID: String, now: Date = .now) async -> [ChatMessageItem] {
+        upcoming(await LocalStore.shared.planMessages(userID: userID), now: now)
+    }
+
+    private static func upcoming(_ messages: [ChatMessageItem], now: Date) -> [ChatMessageItem] {
+        messages
             .filter { !$0.isDeleted && ($0.plan?.endsOrAssumedEnd ?? .distantPast) > now }
             .sorted { $0.plan!.startsAt < $1.plan!.startsAt }
     }

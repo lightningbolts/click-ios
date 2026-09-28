@@ -51,18 +51,17 @@ struct HubChatView: View {
                     .sheet(isPresented: $showingInfo) {
                         HubInfoView(hub: hub) { Task { await reload() } }
                     }
-                    .confirmationDialog("Leave \(hub.name)?", isPresented: $confirmLeave, titleVisibility: .visible) {
+                    .confirmation("Leave \(hub.name)?", isPresented: $confirmLeave, keep: "Stay in Hub") {
                         Button("Leave Hub", role: .destructive) { Task { await leave(hub) } }
                     }
-                    .confirmationDialog("Delete \(hub.name)?", isPresented: $confirmDelete, titleVisibility: .visible) {
+                    .confirmation("Delete \(hub.name)?", isPresented: $confirmDelete, keep: "Keep Hub",
+                                  message: "Everyone loses access to this hub and its chat.") {
                         Button("Delete Hub", role: .destructive) { Task { await delete(hub) } }
-                    } message: {
-                        Text("Everyone loses access to this hub and its chat.")
                     }
                     .alert("Rename hub", isPresented: $renaming) {
                         TextField("Name", text: $draftName)
-                        Button("Save") { Task { await rename(hub) } }
                         Button("Cancel", role: .cancel) {}
+                        PreferredButton("Save") { Task { await rename(hub) } }
                     }
             }
         }

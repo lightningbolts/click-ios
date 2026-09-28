@@ -139,17 +139,15 @@ public struct ChatView: View {
                     react(to: target, with: emoji)
                 }
             }
-            .confirmationDialog("Delete for everyone?", isPresented: Binding(
+            .confirmation("Delete for everyone?", isPresented: Binding(
                 get: { confirmingDeleteMessage != nil },
                 set: { if !$0 { confirmingDeleteMessage = nil } }
-            ), titleVisibility: .visible) {
+            ), keep: "Keep Message", message: "Everyone in this chat will see \"Message deleted\" instead.") {
                 Button("Delete", role: .destructive) {
                     if let target = confirmingDeleteMessage {
                         Task { await model.deleteMessage(item: target) }
                     }
                 }
-            } message: {
-                Text("Everyone in this chat will see \"Message deleted\" instead.")
             }
             .sheet(isPresented: $sharingBeacon) {
                 BeaconSharePicker { beacon in Task { await model.sendBeacon(beacon) } }

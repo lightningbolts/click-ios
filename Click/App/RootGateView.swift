@@ -187,7 +187,7 @@ public struct MainTabShellView: View {
         .tint(ClickColors.accentForeground)
         .sheet(item: $r.presentedSheet) { item in
             NavigationStack {
-                AppRouteDestination(route: item.route)
+                AppRouteDestination(route: item.route, isSheetRoot: true)
                     .appRouteDestinations()
             }
             .presentationDetents([.medium, .large])

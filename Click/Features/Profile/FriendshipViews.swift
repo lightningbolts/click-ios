@@ -17,8 +17,6 @@ struct FriendshipSection: View {
     let onLog: () -> Void
     let onPlan: () -> Void
     let onStory: () -> Void
-    var upcomingPlans: [ChatMessageItem] = []
-    var onOpenPlan: (ChatMessageItem) -> Void = { _ in }
 
     var body: some View {
         let stats = FriendshipStats.compute(encounters)
@@ -33,7 +31,6 @@ struct FriendshipSection: View {
                 let person = GroupMember(userID: seed, name: peerName, avatarURL: avatarURL)
                 EncounterMapPreview(encounters: encounters, stats: stats) { _ in [person] }
             }
-            UpcomingPlansList(plans: upcomingPlans, onOpen: onOpenPlan)
             HStack(spacing: 8) {
                 pill("Log hangout", systemImage: "plus.circle", action: onLog)
                 pill("Plan", systemImage: "calendar.badge.plus", action: onPlan)
@@ -636,7 +633,7 @@ struct UpcomingPlansList: View {
     let onOpen: (ChatMessageItem) -> Void
 
     var body: some View {
-        ForEach(plans.prefix(3)) { message in
+        ForEach(plans) { message in
             if let plan = message.plan {
                 Button { onOpen(message) } label: {
                     HStack(spacing: 10) {
@@ -667,6 +664,30 @@ struct UpcomingPlansList: View {
     }
 }
 
+extension ChatMessageItem {
+    /// Opens this message in its chat (plans, pins, search hits).
+    var route: AppRoute { .conversation(chatID: chatID, messageID: id) }
+}
+
+/// Upcoming hangouts (plans made in chat) as their own profile section.
+struct HangoutsSection: View {
+    let plans: [ChatMessageItem]
+    let onOpen: (ChatMessageItem) -> Void
+    /// Shows a "Plan" row when set.
+    var onPlan: (() -> Void)?
+
+    var body: some View {
+        GroupedSection("Hangouts") {
+            UpcomingPlansList(plans: plans, onOpen: onOpen)
+            if let onPlan {
+                Button(action: onPlan) {
+                    Label(plans.isEmpty ? "Plan something" : "Plan another", systemImage: "calendar.badge.plus")
+                }
+            }
+        }
+    }
+}
+
 // MARK: - Group together
 
 /// A group's shared life, not a copy of the one-to-one view: how often you're together as a
@@ -676,8 +697,6 @@ struct GroupTogetherSection: View {
     let group: CliqueItem
     let model: GroupSpaceModel
     let currentUserID: String?
-    let onPlan: () -> Void
-    let onOpenPlan: (ChatMessageItem) -> Void
 
     private var representatives: [Encounter] { model.hangouts.map(\.representative) }
 
@@ -726,10 +745,6 @@ struct GroupTogetherSection: View {
                     EncounterMapPreview(encounters: representatives, stats: stats, faces: hangoutMembers)
                 }
                 .padding(.vertical, 4)
-            }
-            UpcomingPlansList(plans: model.upcomingPlans, onOpen: onOpenPlan)
-            Button(action: onPlan) {
-                Label(model.upcomingPlans.isEmpty ? "Plan something" : "Plan another", systemImage: "calendar.badge.plus")
             }
         }
     }
