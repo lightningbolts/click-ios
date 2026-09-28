@@ -87,6 +87,53 @@ struct AppRouterTests {
         #expect(router.selectedTab == .addClick)
         #expect(router.addClickPath.first == .connectionInvocation(expected))
     }
+
+    private func chat(_ chatID: String? = "chat_1", connectionID: String? = "conn_1", peer: String = "usr_peer") -> AppRoute {
+        .chat(DirectChatRoute(chatID: chatID, connectionID: connectionID, peerUserID: peer, peerDisplayName: "Lena"))
+    }
+
+    @Test("Chat → profile → Message pops back to the open chat instead of stacking a copy")
+    func messageFromProfilePopsBack() {
+        router.selectedTab = .connections
+        router.navigate(to: chat())
+        router.navigate(to: .userProfile(userID: "usr_peer", connectionID: "conn_1"))
+        router.navigate(to: chat(nil))
+        #expect(router.connectionsPath == [chat()])
+    }
+
+    @Test("A push for the open chat keeps one copy, even when it names the chat differently")
+    func pushForOpenChatDoesNotDuplicate() {
+        router.selectedTab = .connections
+        router.navigate(to: chat(nil))
+        router.resolveRoute(chat("chat_1", connectionID: nil))
+        #expect(router.connectionsPath.count == 1)
+        router.resolveRoute(.conversation(chatID: "conn_1", messageID: nil))
+        #expect(router.connectionsPath.count == 1)
+    }
+
+    @Test("A push for an open chat on another tab stays on that tab")
+    func pushStaysOnTabHostingChat() {
+        router.selectedTab = .home
+        router.navigate(to: chat())
+        router.resolveRoute(chat())
+        #expect(router.selectedTab == .home)
+        #expect(router.homePath == [chat()])
+        #expect(router.connectionsPath.isEmpty)
+    }
+
+    @Test("Different conversations and profiles still push; a focus is queued for message links")
+    func differentScreensPush() {
+        router.selectedTab = .connections
+        router.navigate(to: chat())
+        router.navigate(to: .userProfile(userID: "usr_peer", connectionID: "conn_1"))
+        router.navigate(to: chat("chat_2", connectionID: "conn_2", peer: "usr_other"))
+        #expect(router.connectionsPath.count == 3)
+        router.navigate(to: .userProfile(userID: "usr_peer", connectionID: nil))
+        #expect(router.connectionsPath.count == 2)
+        router.navigate(to: .conversation(chatID: "chat_1", messageID: "m_1"))
+        #expect(router.connectionsPath == [chat()])
+        #expect(router.pendingMessageFocus == MessageFocus(conversationIDs: ["chat_1"], messageID: "m_1"))
+    }
 }
 
 

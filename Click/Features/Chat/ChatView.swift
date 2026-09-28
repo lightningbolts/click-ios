@@ -79,12 +79,10 @@ public struct ChatView: View {
                     anonKey: AppConfig.shared.supabaseAnonKey,
                     authToken: env.session.currentSession?.jwt
                 )
-                // A search result opened this chat: bring that message into view.
-                if let focus = env.pendingMessageFocus, focus.matches(model.identity) {
-                    env.pendingMessageFocus = nil
-                    await jump(to: focus.messageID)
-                }
+                await consumeMessageFocus()
             }
+            // Also while on screen: a pin, plan or search hit in this chat pops back here.
+            .onChange(of: env.pendingMessageFocus) { Task { await consumeMessageFocus() } }
             .fullScreenCover(item: $viewerURL) { item in
                 MediaViewer(url: item.url)
             }
@@ -354,6 +352,13 @@ public struct ChatView: View {
         case .hub:
             break
         }
+    }
+
+    /// A search result, pin or plan opened this chat: bring that message into view.
+    private func consumeMessageFocus() async {
+        guard model.isVisible, let focus = env.pendingMessageFocus, focus.matches(model.identity) else { return }
+        env.pendingMessageFocus = nil
+        await jump(to: focus.messageID)
     }
 
     /// Tells the inbox and push presentation which conversation the reader is looking at, and

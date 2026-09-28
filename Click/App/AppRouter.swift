@@ -193,6 +193,17 @@ public struct ConnectionInvocation: Hashable, Sendable {
     }
 }
 
+private enum ScreenKey: Hashable {
+    case conversation(String)
+    case eventChat(String)
+    case profile(String)
+    case groupProfile(String)
+    case route(AppRoute)
+
+    /// The alias a direct conversation is known by through its peer (one chat per pair).
+    static func peer(_ userID: String) -> String? { userID.isEmpty ? nil : "user:" + userID }
+}
+
 /// Coordinates navigation stacks, modal presentations, and deep-link routing.
 @Observable
 @MainActor
@@ -259,6 +270,9 @@ public final class AppRouter {
 
     /// Navigates to a typed route within the active tab's stack. Every stack registers the
     /// canonical `AppRouteDestination`, so any route may be pushed onto any tab.
+    ///
+    /// A screen is never stacked twice: if the destination is already in the stack (chat →
+    /// profile → "Message", or a push for the chat that's open), the stack pops back to it.
     public func navigate(to route: AppRoute) {
         if route.presentsAsSheet {
             presentedSheet = SheetRoute(route: route)
@@ -266,7 +280,44 @@ public final class AppRouter {
         }
         // Continuing elsewhere from a detail sheet closes it first.
         presentedSheet = nil
-        self[path: selectedTab].append(route)
+        if case let .conversation(chatID, messageID?) = route {
+            pendingMessageFocus = MessageFocus(conversationIDs: [chatID], messageID: messageID)
+        }
+        if let index = openIndex(of: route, in: selectedTab) {
+            self[path: selectedTab].removeSubrange((index + 1)...)
+        } else {
+            self[path: selectedTab].append(route)
+        }
+    }
+
+    /// A message to scroll to when its conversation is next on screen (search, pins, plans).
+    public var pendingMessageFocus: MessageFocus?
+
+    /// Expands a conversation ID to every ID its live conversation is known by (chat,
+    /// connection, hub), so routes naming one chat differently still match. Set by the environment.
+    @ObservationIgnored var conversationAliases: (String) -> Set<String> = { [$0] }
+
+    /// Where `route`'s screen already sits in `tab`'s stack, if it does.
+    private func openIndex(of route: AppRoute, in tab: MainTab) -> Int? {
+        let keys = screenKeys(route)
+        return self[path: tab].lastIndex { !screenKeys($0).isDisjoint(with: keys) }
+    }
+
+    /// Which screen a route shows. A conversation is named by every ID it's known by (a chat
+    /// arrives by chat, connection, peer or hub ID); a profile by its person.
+    private func screenKeys(_ route: AppRoute) -> Set<ScreenKey> {
+        let conversation = { (ids: [String?]) in
+            Set(ids.compactMap { $0 }.flatMap(self.conversationAliases).filter { !$0.isEmpty }.map(ScreenKey.conversation))
+        }
+        switch route {
+        case .chat(let chat): return conversation([chat.chatID, chat.connectionID, ScreenKey.peer(chat.peerUserID)])
+        case .groupChat(let group): return conversation([group.chatID])
+        case .conversation(let id, _), .hub(let id): return conversation([id])
+        case .eventChat(let beaconID): return [.eventChat(beaconID)]
+        case .userProfile(let userID, _), .publicProfile(let userID): return [.profile(userID)]
+        case .groupProfile(let chatID): return [.groupProfile(chatID)]
+        default: return [.route(route)]
+        }
     }
 
     /// Handles a tab-bar selection. Re-selecting the active tab pops it to its root.
@@ -427,9 +478,12 @@ public final class AppRouter {
         }
     }
 
-    /// Resolves and executes a queued or active route on its canonical tab.
+    /// Resolves and executes a queued or active route on its canonical tab, or on the current
+    /// tab when that screen is already open there (never a second copy elsewhere).
     public func resolveRoute(_ route: AppRoute) {
-        selectedTab = route.canonicalTab
+        if openIndex(of: route, in: selectedTab) == nil {
+            selectedTab = route.canonicalTab
+        }
         navigate(to: route)
     }
 

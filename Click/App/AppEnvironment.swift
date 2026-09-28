@@ -43,7 +43,10 @@ public final class AppEnvironment {
     /// The latest in-person Click Drop window (post-connect), so Drops sent in it carry the encounter.
     public var clickDropSession: ClickDropSession?
     /// A message to scroll to when its conversation next opens (search deep links).
-    public var pendingMessageFocus: MessageFocus?
+    public var pendingMessageFocus: MessageFocus? {
+        get { router.pendingMessageFocus }
+        set { router.pendingMessageFocus = newValue }
+    }
 
     /// One live model per conversation for the session: re-entering a chat shows exactly what was
     /// on screen (timeline, decrypted media, older pages) and refreshes in place.
@@ -93,6 +96,17 @@ public final class AppEnvironment {
 
     /// The Clicks inbox model owned by the shell (weak: the shell owns it).
     weak var inbox: ConversationListModel?
+
+    /// Every ID the live conversation named by `id` is known by, so the router spots a chat
+    /// that's already open even when it's reached by a different ID.
+    private func conversationAliases(_ id: String) -> Set<String> {
+        guard let model = conversationModels[id] ?? conversationModels.values.first(where: {
+            [$0.identity.chatID, $0.identity.connectionID, $0.identity.hubID].contains(id)
+        }) else { return [id] }
+        let identity = model.identity
+        return Set([id, identity.chatID, identity.connectionID, identity.hubID,
+                    identity.isDirect && !identity.peerUserID.isEmpty ? "user:" + identity.peerUserID : nil].compactMap { $0 })
+    }
 
     private func liveModel(chatID: String) -> ConversationModel? {
         conversationModels[chatID] ?? conversationModels.values.first { $0.identity.chatID == chatID }
@@ -209,6 +223,7 @@ public final class AppEnvironment {
         session.onPostAuthResolved = { [weak self] in
             self?.handlePostAuthResolved()
         }
+        router.conversationAliases = { [weak self] in self?.conversationAliases($0) ?? [$0] }
     }
 
     /// Everything user-scoped that lives outside the Keychain and settings store.

@@ -72,9 +72,7 @@ private struct ConversationByIDView: View {
             }
         }
         .task {
-            if let messageID {
-                env.pendingMessageFocus = MessageFocus(conversationIDs: [chatID], messageID: messageID)
-            }
+            // `messageID` focus is queued by the router when this route is navigated to.
             if let identity = lookup() {
                 resolved = identity
                 return
