@@ -30,6 +30,23 @@ struct CreateBeaconSheet: View {
         var symbol: String { BeaconKind(raw: rawValue).systemImage }
     }
 
+    /// `recurrence.frequency` values accepted by `POST /api/beacons` (click-web `eventRecurrence.ts`).
+    enum Repeat: String, CaseIterable, Identifiable {
+        case daily, weekly, biweekly, monthly
+        var id: String { rawValue }
+        var label: String {
+            switch self {
+            case .daily: "Daily"
+            case .weekly: "Weekly"
+            case .biweekly: "Every 2 Weeks"
+            case .monthly: "Monthly"
+            }
+        }
+    }
+
+    /// Total occurrences, including the first (server bounds).
+    static let occurrenceRange = 2...26
+
     static let categories = ["Social", "Tech", "Music", "Sports", "Food", "Study", "Arts", "Outdoors", "Networking", "Party", "Wellness", "Gaming"]
 
     @State private var kind: Kind = .event
@@ -64,6 +81,33 @@ struct CreateBeaconSheet: View {
     @State private var isSaving = false
     @State private var error: String?
     @State private var didPrefill = false
+    @State private var repeatRule: Repeat?
+    @State private var occurrences = 4
+    /// The form as it opened; anything else is unsaved work a stray swipe must not throw away.
+    @State private var baseline: Draft?
+    @State private var confirmingDiscard = false
+
+    /// Everything the user fills in (the kind chip alone is not work worth guarding).
+    private struct Draft: Equatable {
+        var title, details, customCategory, visibility, capacityText, musicURL: String
+        var place: BeaconPlace?
+        var start, end: Date
+        var categories: Set<String>
+        var approvalRequired, hostsOnlyGuestList, showName, hasNewPhoto, removeExistingImage: Bool
+        var hours: Double
+        var repeatRule: Repeat?
+        var occurrences: Int
+    }
+
+    private var draft: Draft {
+        Draft(title: title, details: details, customCategory: customCategory, visibility: visibility,
+              capacityText: capacityText, musicURL: musicURL, place: place, start: start, end: end,
+              categories: categories, approvalRequired: approvalRequired, hostsOnlyGuestList: hostsOnlyGuestList,
+              showName: showName, hasNewPhoto: photo != nil, removeExistingImage: removeExistingImage,
+              hours: hours, repeatRule: repeatRule, occurrences: occurrences)
+    }
+
+    private var hasUnsavedChanges: Bool { baseline.map { $0 != draft } ?? false }
 
     private var isEditing: Bool { editing != nil }
 
@@ -100,6 +144,15 @@ struct CreateBeaconSheet: View {
                                 }
                             }
                         DatePicker("Ends", selection: $end, in: start...)
+                        if !isEditing {
+                            Picker("Repeats", selection: $repeatRule) {
+                                Text("Never").tag(Repeat?.none)
+                                ForEach(Repeat.allCases) { Text($0.label).tag(Repeat?.some($0)) }
+                            }
+                            if repeatRule != nil {
+                                Stepper("\(occurrences) events", value: $occurrences, in: Self.occurrenceRange)
+                            }
+                        }
                     }
                     categoriesSection
                     Section("Who can join") {
@@ -132,13 +185,23 @@ struct CreateBeaconSheet: View {
             .navigationTitle(isEditing ? "Edit" : (kind == .event ? "New Event" : "Drop a Beacon"))
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
-                ToolbarItem(placement: .cancellationAction) { Button("Cancel") { dismiss() } }
+                ToolbarItem(placement: .cancellationAction) {
+                    Button("Cancel") {
+                        if hasUnsavedChanges { confirmingDiscard = true } else { dismiss() }
+                    }
+                    .confirmationDialog(isEditing ? "Discard your changes?" : "Discard this \(kind == .event ? "event" : "beacon")?",
+                                        isPresented: $confirmingDiscard, titleVisibility: .visible) {
+                        Button(isEditing ? "Discard Changes" : "Discard", role: .destructive) { dismiss() }
+                        Button("Keep Editing", role: .cancel) {}
+                    }
+                }
                 ToolbarItem(placement: .confirmationAction) {
                     Button(isSaving ? (isEditing ? "Saving…" : "Posting…") : (isEditing ? "Save" : "Post")) { Task { await save() } }
                         .disabled(!canPost)
                 }
             }
-            .interactiveDismissDisabled(isSaving)
+            // A swipe down must not silently throw away a half-filled form; Cancel asks first.
+            .interactiveDismissDisabled(isSaving || hasUnsavedChanges)
             // The preview keeps playing while the form scrolls; it stops when the form closes.
             .onDisappear { SoundtrackPreviewPlayer.shared.stop() }
             .onAppear(perform: prefill)
@@ -353,6 +416,7 @@ struct CreateBeaconSheet: View {
     private func prefill() {
         guard !didPrefill else { return }
         didPrefill = true
+        defer { baseline = draft }
         guard let beacon = editing else { return }
         kind = Kind(rawValue: beacon.rawType) ?? (beacon.isEvent ? .event : .other)
         title = beacon.title
@@ -430,6 +494,9 @@ struct CreateBeaconSheet: View {
             body["guest_list_visibility"] = hostsOnlyGuestList ? "hosts_only" : "public"
             if let capacity = Int(capacityText), capacity > 0 { body["event_capacity"] = capacity }
             body["event_timezone"] = TimeZone.current.identifier
+            if !isEditing, let repeatRule {
+                body["recurrence"] = ["frequency": repeatRule.rawValue, "count": occurrences]
+            }
         case .soundtrack:
             guard BeaconFormRules.isMusicLink(musicURL) else {
                 error = "Add a song link from a music service."
