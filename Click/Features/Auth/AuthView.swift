@@ -1,6 +1,5 @@
 import SwiftUI
 import AuthenticationServices
-import CryptoKit
 
 public enum AuthMode: String, CaseIterable, Identifiable {
     case signIn = "Sign In"
@@ -29,7 +28,6 @@ public struct AuthView: View {
     @State private var errorMessage: String?
     @State private var infoMessage: String?
     @State private var appleRawNonce: String?
-    @State private var googleAuthSession: ASWebAuthenticationSession?
 
     public init(initialMode: AuthMode = .signIn) {
         self._mode = State(initialValue: initialMode)
@@ -283,9 +281,9 @@ public struct AuthView: View {
                             .signIn,
                             onRequest: { request in
                                 request.requestedScopes = [.fullName, .email]
-                                let rawNonce = makeAppleNonce()
+                                let rawNonce = AuthCrypto.randomToken()
                                 appleRawNonce = rawNonce
-                                request.nonce = sha256(rawNonce)
+                                request.nonce = AuthCrypto.sha256Hex(rawNonce)
                             },
                             onCompletion: { result in
                                 handleAppleSignIn(result)
@@ -304,23 +302,6 @@ public struct AuthView: View {
                         }
                         .buttonStyle(.clickSecondary)
 
-                        #if DEBUG
-                        // Demo Mode Bypass (strictly debug-only per Section 9)
-                        Button {
-                            env.session.signIn(
-                                snapshot: SessionSnapshot(
-                                    userId: "usr_demo_\(UUID().uuidString.prefix(6))",
-                                    jwt: "demo_jwt_token",
-                                    refreshToken: "demo_refresh_token"
-                                )
-                            )
-                        } label: {
-                            Text("Fast Demo Sign-In")
-                                .font(ClickTypography.supportingEmphasized)
-                                .foregroundStyle(ClickColors.textSecondary)
-                                .padding(.top, ClickSpacing.sm)
-                        }
-                        #endif
                     }
                     .padding(.horizontal, ClickSpacing.lg)
                 }
@@ -408,132 +389,23 @@ public struct AuthView: View {
         }
     }
 
+    /// Google's own sign-in page for Click's iOS client, then the ID token goes to Supabase.
     private func handleGoogleOAuthSignIn() {
-        var components = URLComponents(
-            url: AppConfig.shared.supabaseURL.appendingPathComponent("/auth/v1/authorize"),
-            resolvingAgainstBaseURL: false
-        )
-        components?.queryItems = [
-            URLQueryItem(name: "provider", value: "google"),
-            URLQueryItem(name: "redirect_to", value: "click://login")
-        ]
-        guard let authURL = components?.url else {
-            errorMessage = "Unable to start Google sign-in."
-            return
-        }
-
-        let session = ASWebAuthenticationSession(
-            url: authURL,
-            callbackURLScheme: "click"
-        ) { callbackURL, error in
-            Task { @MainActor in
-                self.googleAuthSession = nil
-
-                if let error {
-                    let nsError = error as NSError
-                    if nsError.code != ASWebAuthenticationSessionError.canceledLogin.rawValue {
-                        self.errorMessage = error.localizedDescription
-                    }
-                    return
-                }
-
-                guard let url = callbackURL else {
-                    self.errorMessage = "Google authentication did not return to Click."
-                    return
-                }
-                self.processOAuthCallback(url)
+        isLoading = true
+        errorMessage = nil
+        Task {
+            do {
+                let credential = try await GoogleSignIn.signIn()
+                let snapshot = try await SupabaseAuthService().signInWithGoogle(idToken: credential.idToken, nonce: credential.nonce)
+                env.session.signIn(snapshot: snapshot)
+                ClickHaptics.success()
+            } catch is CancellationError {
+                // Closed the sheet: nothing to report.
+            } catch {
+                errorMessage = error.localizedDescription
+                ClickHaptics.error()
             }
+            isLoading = false
         }
-
-        session.presentationContextProvider = AuthContextProvider.shared
-        session.prefersEphemeralWebBrowserSession = false
-        googleAuthSession = session
-        if !session.start() {
-            googleAuthSession = nil
-            errorMessage = "Unable to start Google sign-in."
-        }
-    }
-
-    private func makeAppleNonce() -> String {
-        let key = SymmetricKey(size: .bits256)
-        return key.withUnsafeBytes { rawBuffer in
-            Data(rawBuffer)
-                .base64EncodedString()
-                .replacingOccurrences(of: "+", with: "-")
-                .replacingOccurrences(of: "/", with: "_")
-                .replacingOccurrences(of: "=", with: "")
-        }
-    }
-
-    private func sha256(_ value: String) -> String {
-        SHA256.hash(data: Data(value.utf8))
-            .map { String(format: "%02x", $0) }
-            .joined()
-    }
-
-    private func processOAuthCallback(_ url: URL) {
-        // Parse fragment or query string: access_token, refresh_token, expires_in
-        let urlString = url.absoluteString
-        var params: [String: String] = [:]
-
-        let delimiter = urlString.contains("#") ? "#" : "?"
-        let parts = urlString.components(separatedBy: delimiter)
-        if parts.count > 1 {
-            let pairs = parts[1].components(separatedBy: "&")
-            for pair in pairs {
-                let kv = pair.split(separator: "=", maxSplits: 1, omittingEmptySubsequences: false)
-                if kv.count == 2,
-                   let key = String(kv[0]).removingPercentEncoding,
-                   let val = String(kv[1]).removingPercentEncoding {
-                    params[key] = val
-                }
-            }
-        }
-
-        if let providerError = params["error_description"] ?? params["error"] {
-            errorMessage = providerError
-            return
-        }
-
-        guard let accessToken = params["access_token"],
-              let refreshToken = params["refresh_token"] else {
-            errorMessage = "Google authentication did not return valid session tokens."
-            return
-        }
-
-        guard let userId = LegacyKMPStateMigrator.extractSubFromJWT(accessToken) else {
-            errorMessage = "Unable to determine identity from Google authentication token."
-            return
-        }
-
-        let expiresAt: Date?
-        if let expString = params["expires_in"], let seconds = Double(expString) {
-            expiresAt = Date().addingTimeInterval(seconds)
-        } else {
-            expiresAt = nil
-        }
-
-        let snapshot = SessionSnapshot(
-            userId: userId,
-            jwt: accessToken,
-            refreshToken: refreshToken,
-            expiresAt: expiresAt
-        )
-
-        env.session.signIn(snapshot: snapshot)
-        ClickHaptics.success()
-    }
-}
-
-/// Provides anchor window for ASWebAuthenticationSession
-private final class AuthContextProvider: NSObject, ASWebAuthenticationPresentationContextProviding {
-    static let shared = AuthContextProvider()
-
-    func presentationAnchor(for session: ASWebAuthenticationSession) -> ASPresentationAnchor {
-        guard let windowScene = UIApplication.shared.connectedScenes.first as? UIWindowScene,
-              let window = windowScene.windows.first(where: { $0.isKeyWindow }) else {
-            return ASPresentationAnchor()
-        }
-        return window
     }
 }

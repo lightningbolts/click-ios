@@ -95,6 +95,7 @@
 		625357C7B3AC7DD95115FC6B /* ChatMessage.swift in Sources */ = {isa = PBXBuildFile; fileRef = BEC22CD1ECDF9E342ACCC942 /* ChatMessage.swift */; };
 		632401178D9A54865EF78E3D /* Phase3Repository.swift in Sources */ = {isa = PBXBuildFile; fileRef = 78C43D61D08B8E0F50B37997 /* Phase3Repository.swift */; };
 		635A0005B6B6C6FDF9BF014B /* Colors.swift in Sources */ = {isa = PBXBuildFile; fileRef = 51597966A20F5807BFB28499 /* Colors.swift */; };
+		65913BCA1A985F6B26D21130 /* GoogleSignIn.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5DA2D2CEE9D761201C9D0652 /* GoogleSignIn.swift */; };
 		66183F4443BC0B96D86C9FED /* ClickToast.swift in Sources */ = {isa = PBXBuildFile; fileRef = C299FC0C972D362E0E78AF60 /* ClickToast.swift */; };
 		67871D20191C2CA0E9166391 /* BeaconForm.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5ADA68357CD58D4E2E660244 /* BeaconForm.swift */; };
 		68F468332244E066F1EA92F1 /* OnboardingFlowView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5014EBC6865CB5371A01F981 /* OnboardingFlowView.swift */; };
@@ -364,6 +365,7 @@
 		5ADA68357CD58D4E2E660244 /* BeaconForm.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BeaconForm.swift; sourceTree = "<group>"; };
 		5B25B865B17C60099FB2E33C /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist; path = Info.plist; sourceTree = "<group>"; };
 		5CE872BED60D02250BA16BD1 /* Debug.xcconfig */ = {isa = PBXFileReference; lastKnownFileType = text.xcconfig; path = Debug.xcconfig; sourceTree = "<group>"; };
+		5DA2D2CEE9D761201C9D0652 /* GoogleSignIn.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GoogleSignIn.swift; sourceTree = "<group>"; };
 		5FFF30E5C1CD35BF6388FFDA /* InterestsPickerView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = InterestsPickerView.swift; sourceTree = "<group>"; };
 		625A527B98598B022044B468 /* HubChatView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HubChatView.swift; sourceTree = "<group>"; };
 		62B7E583D5D077E8643F61A6 /* AnimatedImage.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AnimatedImage.swift; sourceTree = "<group>"; };
@@ -1114,6 +1116,7 @@
 		F64F09F5FC4B40C90C936EF0 /* Auth */ = {
 			isa = PBXGroup;
 			children = (
+				5DA2D2CEE9D761201C9D0652 /* GoogleSignIn.swift */,
 				9F622E14222722E2ACC13BEF /* KeychainSessionVault.swift */,
 				E6948B635825154782DB64D8 /* LegacyKMPStateMigrator.swift */,
 				BC196177165E6C102B1932B4 /* SessionController.swift */,
@@ -1437,6 +1440,7 @@
 				26B0F1A9285726FAABC332E7 /* GifViews.swift in Sources */,
 				619B213920BF476FE52ECC38 /* GlassCircle.swift in Sources */,
 				9059C7BC731D34781013C8E7 /* GlobalSearchView.swift in Sources */,
+				65913BCA1A985F6B26D21130 /* GoogleSignIn.swift in Sources */,
 				4B24696C76DA27D9F45A29E6 /* GroupAvatarView.swift in Sources */,
 				C3963FF6783D0509A84F407F /* GroupProfileView.swift in Sources */,
 				5D126A60DFB2CA03EE19DF9F /* GroupRepository.swift in Sources */,
