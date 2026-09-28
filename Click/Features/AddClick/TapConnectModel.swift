@@ -130,6 +130,11 @@ final class TapConnectModel {
                 if match.isGroup { track(.cliqueCreated, peerCount: match.peers.count, isGroup: true) }
                 await finish(with: match)
             } catch {
+                // Another phone in the same tap may have confirmed first; its match includes us.
+                if case .matched(let match)? = try? await environment.proximity.recover(pendingID: pendingID) {
+                    await finish(with: match)
+                    return
+                }
                 track(.failed, reason: "confirm_selection_failed")
                 phase = .failed("Couldn't create the group. \(error.userFacingMessage)")
             }
