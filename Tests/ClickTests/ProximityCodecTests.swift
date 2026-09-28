@@ -82,6 +82,15 @@ struct ProximityResultTests {
         #expect(match.connectionID == "c1")
         #expect(!match.isNewConnection)
         #expect(match.peers.first?.name == "Theo Park")
+        #expect(match.pendingID == nil)
+    }
+
+    @Test("A match keeps its tap ID so the result can switch to a late joiner's group")
+    func matchedKeepsTapID() throws {
+        let result = try parse(#"{"success":true,"pending_handshake_id":"p7","connection_id":"g1","is_new_connection":true,"is_group":true,"encounter_logged":true,"matches":[{"id":"a","name":"A"},{"id":"b","name":"B"}]}"#)
+        guard case .matched(let match) = result else { Issue.record("expected match"); return }
+        #expect(match.pendingID == "p7")
+        #expect(match.isGroup)
     }
 
     @Test("First-time multi-peer taps require host selection before anything is created")

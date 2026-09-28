@@ -56,6 +56,8 @@ final class TapConnectModel {
     private static let selfBleedGuard: Duration = .milliseconds(900)
     private static let recoveryAttempts = 12
     private static let recoveryInterval: Duration = .milliseconds(2500)
+    /// Covers the server's late-join window plus the late phone's "Who was in this tap?" pick.
+    private static let groupWatchWindow: Duration = .seconds(60)
 
     func attach(_ environment: AppEnvironment) {
         self.environment = environment
@@ -287,7 +289,26 @@ final class TapConnectModel {
         ClickHaptics.impact(.heavy)
         ClickHaptics.success()
         phase = .connected(match)
-        runTask = nil
+        runTask = match.pendingID.map { id in Task { await watchForGroup(pendingID: id, shown: match) } }
+    }
+
+    /// Someone who tapped a few seconds later can turn this result into a group (or a bigger
+    /// one) after it is shown. The server records the group on this tap, so poll briefly while
+    /// the result is on screen and switch to the group as soon as it exists.
+    private func watchForGroup(pendingID: String, shown: ProximityMatch) async {
+        guard let environment else { return }
+        var shown = shown
+        let deadline = ContinuousClock.now + Self.groupWatchWindow
+        while ContinuousClock.now < deadline {
+            try? await Task.sleep(for: Self.recoveryInterval)
+            guard !Task.isCancelled, phase == .connected(shown) else { return }
+            guard case .matched(let match)? = try? await environment.proximity.recover(pendingID: pendingID),
+                  match.isGroup, match.connectionID != shown.connectionID,
+                  !Task.isCancelled, phase == .connected(shown) else { continue }
+            shown = match
+            ClickHaptics.success()
+            phase = .connected(match)
+        }
     }
 
     // MARK: - Telemetry (spec §71.2)

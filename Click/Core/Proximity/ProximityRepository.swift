@@ -74,6 +74,8 @@ public struct ProximityMatch: Equatable, Sendable {
     /// The encounter row created or updated by this tap, and the Click Drop session end.
     public var encounterID: String? = nil
     public var collaborationEndsAt: Date? = nil
+    /// This tap's server row; polled after the result so a late joiner's group shows up.
+    public var pendingID: String? = nil
 
     public var isReconnect: Bool { !isNewConnection }
 }
@@ -218,7 +220,8 @@ public actor ProximityRepository {
             encounterLogged: logged,
             rateLimited: rateLimited,
             encounterID: JSONFields.string(root["encounter_id"]),
-            collaborationEndsAt: JSONFields.date(root["collaboration_ttl"])
+            collaborationEndsAt: JSONFields.date(root["collaboration_ttl"]),
+            pendingID: JSONFields.string(root["pending_handshake_id"])
         ))
     }
 
