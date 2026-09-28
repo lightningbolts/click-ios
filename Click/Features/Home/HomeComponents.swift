@@ -173,7 +173,7 @@ struct HomeOpportunitySection: View {
         VStack(alignment: .leading, spacing: 0) {
             Button { onOpenEvent(event.id) } label: {
                 VStack(alignment: .leading, spacing: 0) {
-                    EventVisual(seed: event.id, imageURL: event.imageURL, cornerRadius: 0)
+                    BeaconVisual(beaconID: event.id, imageURL: event.imageURL, symbol: nil, cornerRadius: 0)
                         .frame(height: 148)
                         .frame(maxWidth: .infinity)
                         .clipped()
@@ -354,7 +354,7 @@ struct SavedEventRow: View {
 
     var body: some View {
         HStack(spacing: 14) {
-            EventVisual(seed: event.beaconID, symbol: "calendar")
+            BeaconVisual(beaconID: event.beaconID)
                 .frame(width: 50, height: 50)
             VStack(alignment: .leading, spacing: 1) {
                 Text(event.title ?? "Unavailable event")
