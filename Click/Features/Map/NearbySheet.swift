@@ -84,23 +84,6 @@ struct NearbyListView: View {
 
     var body: some View {
         VStack(spacing: 0) {
-            HStack(spacing: 8) {
-                searchField
-                Button {
-                    model.refresh()
-                } label: {
-                    Image(systemName: "arrow.clockwise")
-                        .font(.system(size: 17, weight: .semibold))
-                        .frame(width: ClickMetrics.searchMinHeight, height: ClickMetrics.searchMinHeight)
-                        .glassCircleBackground()
-                }
-                .buttonStyle(.plain)
-                .foregroundStyle(ClickColors.accentForeground)
-                .accessibilityLabel("Refresh nearby")
-            }
-            .padding(.horizontal, 20)
-            .padding(.top, 16)
-
             ScrollView(.horizontal) {
                 HStack(spacing: 8) {
                     chip("All", count: nil, isOn: model.filter == nil) { model.filter = nil }
@@ -116,6 +99,20 @@ struct NearbyListView: View {
             .scrollIndicators(.hidden)
 
             list
+        }
+        // Search and refresh live in a real (transparent) navigation bar rather than a hidden
+        // one: every screen opened from here has a bar, so a hidden one popped in on each push
+        // and shifted everything.
+        .navigationTitle("Nearby")
+        .navigationBarTitleDisplayMode(.inline)
+        .toolbarBackground(.hidden, for: .navigationBar)
+        .toolbar {
+            ToolbarItem(placement: .principal) {
+                searchField.frame(maxWidth: .infinity)
+            }
+            ToolbarItem(placement: .topBarTrailing) {
+                Button("Refresh nearby", systemImage: "arrow.clockwise") { model.refresh() }
+            }
         }
     }
 

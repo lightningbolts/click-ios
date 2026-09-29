@@ -145,7 +145,6 @@ public struct ClickMapView: View {
             // Rows open inside the sheet, over the feed: back returns to the same scroll spot.
             NavigationStack(path: nearbyPath) {
                 NearbyListView(model: model, pins: pins, onOpen: open)
-                    .toolbar(.hidden, for: .navigationBar)
                     .appRouteDestinations()
             }
             .environment(\.isInSheet, true)
