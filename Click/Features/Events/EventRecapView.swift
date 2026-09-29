@@ -251,9 +251,8 @@ struct EventRecapView: View {
                 guard let url = urls[drop.id] else { continue }
                 let look = drop.look
                 group.addTask {
-                    guard let (data, response) = try? await URLSession.shared.data(from: url),
-                          (response as? HTTPURLResponse)?.statusCode == 200,
-                          let natural = Self.decode(data, maxPixels: 1600),
+                    guard let data = try? await ClickDropService.loadOriginalData(url),
+                          let natural = ClickDropService.thumbnail(data, maxPixels: 1600),
                           let lookData = look.render(jpeg: data, maxDimension: 1600),
                           let looked = UIImage(data: lookData) else { return (drop.id, nil) }
                     return (drop.id, RecapPhoto(natural: natural, look: looked))
@@ -263,12 +262,6 @@ struct EventRecapView: View {
                 if let photo { photos[id] = photo } else { failed.insert(id) }
             }
         }
-    }
-
-    private nonisolated static func decode(_ data: Data, maxPixels: CGFloat) -> UIImage? {
-        guard let image = UIImage(data: data) else { return nil }
-        let scale = min(1, maxPixels / max(image.size.width, image.size.height))
-        return image.preparingThumbnail(of: CGSize(width: image.size.width * scale, height: image.size.height * scale)) ?? image
     }
 
     /// The first time a drop shows, its pixels resolve (light haptic); Reduce Motion cross-fades.

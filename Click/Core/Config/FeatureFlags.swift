@@ -12,6 +12,7 @@ public final class FeatureFlags {
         case soundtrackPresence = "soundtrack_presence"
         case eventDrops = "event_drops"
         case eventHistory = "event_history"
+        case sharedDrops = "shared_drops"
     }
 
     private struct Resolved: Decodable {

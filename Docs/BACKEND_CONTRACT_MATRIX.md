@@ -34,6 +34,8 @@ Authoritative ledger of backend HTTP endpoints, authorization requirements, and 
 | `/api/beacons/{id}/drops/{dropId}` | DELETE | Bearer JWT | Event drops | Poster only |
 | `/api/beacons/{id}/drops/settings` | PUT `{show_to_absentees}` | Bearer JWT | Event drops | Poster's per-event "What you missed" choice |
 | `/api/drops/report` | POST `{kind, id, reason}` | Bearer JWT | Moderation | Quiet report on any visible drop |
+| `/api/me/shared-drops` | GET / POST `{client_drop_id, audience: all\|core, mime_type, original_b64, preview_b64, width?, height?}` | Bearer JWT | Shared drops (flag `shared_drops`) | GET `{teaser, drops[{id, user, is_mine, audience?, connection_id, created_at, reveal_at, developed_at, preview_url}]}` (bounded strip); POST 409 daily cap; same `client_drop_id` = same drop |
+| `/api/me/shared-drops/{id}` | DELETE | Bearer JWT | Shared drops | Poster only |
 | `/api/me/event-history` | GET `?filter=all\|went\|rsvpd\|saved\|hosted&cursor` | Bearer JWT | History (flag `event_history`) | `{events[{beacon_id, title, starts_at, ends_at, location_name, image_url, relation, recap}], next_cursor}` |
 | `/api/me/event-history/recap-card` | GET | Bearer JWT | Home | `{card}` for an event you were at in the last ~48 h, else `{card: null}` |
 | `/api/users/{id}/events-together` | GET | Bearer JWT | Profile | Only events both people checked in to |
