@@ -94,7 +94,7 @@ struct NearbyListView: View {
                     }
                 }
                 .padding(.horizontal, 20)
-                .padding(.vertical, 10)
+                .padding(.top, 10)
             }
             .scrollIndicators(.hidden)
             // The chips sit under the bar but never scroll under it: no scroll-edge hairline.
@@ -239,7 +239,22 @@ struct NearbyListView: View {
             .padding(.bottom, 40)
         }
         .scrollDismissesKeyboard(.interactively)
+        // Rows dissolve under the chips instead of being cut on a hard line. A fade of the
+        // content itself (not a colored band) so it works over the sheet's glass; the matching
+        // top margin keeps anything from being faded at rest.
+        .contentMargins(.top, Self.edgeFade, for: .scrollContent)
+        .mask {
+            VStack(spacing: 0) {
+                LinearGradient(colors: [.clear, .black], startPoint: .top, endPoint: .bottom)
+                    .frame(height: Self.edgeFade)
+                Color.black
+            }
+            // Rows keep drawing into the bottom safe area, as they did unmasked.
+            .padding(.bottom, -200)
+        }
     }
+
+    private static let edgeFade: CGFloat = 12
 
     @ViewBuilder
     private var emptyState: some View {
