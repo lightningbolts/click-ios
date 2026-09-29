@@ -1,10 +1,10 @@
 import SwiftUI
 
-/// Saved Events (spec §65.7): server-backed bookmarks, hydrated from cache on cold start,
-/// each row opening the canonical Event Detail.
+/// Saved Events (spec §65.7): server-backed bookmarks, each row opening the canonical Event
+/// Detail. Reads the list Me and the event pages share (already in memory, so it opens filled).
 struct SavedEventsView: View {
     @Environment(AppEnvironment.self) private var env
-    @State private var events = ModuleState<[SavedEvent]>()
+    private var events: ModuleState<[SavedEvent]> { env.selfData.savedEvents }
 
     var body: some View {
         List {
@@ -24,6 +24,10 @@ struct SavedEventsView: View {
                             }
                             .buttonStyle(.plain)
                             .disabled(!event.isAvailable)
+                            // Warms the detail as the row shows, so the event opens filled.
+                            .task(id: event.beaconID) {
+                                if event.isAvailable { await env.beacons.prefetch(id: event.beaconID) }
+                            }
                         }
                     }
                 }
@@ -53,7 +57,10 @@ struct SavedEventsView: View {
         }
         .navigationTitle("Saved events")
         .navigationBarTitleDisplayMode(.inline)
-        .task { await load() }
+        .task {
+            await env.selfData.seedIfNeeded()
+            await env.selfData.loadSavedEvents()
+        }
         .refreshable { await load() }
     }
 
@@ -65,13 +72,6 @@ struct SavedEventsView: View {
     }
 
     private func load() async {
-        guard let userID = env.session.currentSession?.userId else { return }
-        events.seed(await env.beacons.cachedBookmarks(userID: userID))
-        events.begin()
-        do {
-            events.succeed(try await env.beacons.bookmarks(userID: userID))
-        } catch {
-            events.fail(error)
-        }
+        await env.selfData.loadSavedEvents(force: true)
     }
 }

@@ -229,7 +229,11 @@ public struct MainTabShellView: View {
             // Loaded at the shell so the Clicks badge is right before the tab is opened.
             conversations.attach(env)
             conversations.startRealtime()
+            // Saved events drive the Save state on every event page; have them before one opens.
+            async let saved: Void = env.selfData.seedIfNeeded()
             await conversations.load()
+            await saved
+            await env.selfData.loadSavedEvents()
             // Replay Tap to Connect captures that were saved while offline (same user only).
             if let userID = env.session.currentSession?.userId,
                !(await env.proximity.flushQueue(userID: userID)).isEmpty {

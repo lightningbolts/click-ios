@@ -22,6 +22,8 @@ struct BeaconDetailView: View {
     @State private var bookmarkPending = false
     /// The latest local answer (optimistic toggle, then the server's confirmation).
     @State private var savedOverride: Bool?
+    /// Loaded once per screen (coming back from People or a profile doesn't reload).
+    @State private var hasLoaded = false
     @State private var checkInPending = false
     @State private var notice: String?
     /// Album art resolved on device for a soundtrack the server couldn't enrich.
@@ -61,7 +63,13 @@ struct BeaconDetailView: View {
         .toolbarBackground(.hidden, for: .navigationBar)
         .toolbarColorScheme(.dark, for: .navigationBar)
         .toolbar { headerButtons }
-        .task { if beacon.value == nil { await load() } }
+        // What this session already knows paints before the first frame; the network refreshes it.
+        .onAppear(perform: seedFromCache)
+        .task {
+            guard !hasLoaded else { return }
+            hasLoaded = true
+            await load()
+        }
         .task(id: rsvp.value?.request) { await watchPendingRequest() }
         .alert("Event", isPresented: Binding(get: { notice != nil }, set: { if !$0 { notice = nil } })) {
             Button("OK", role: .cancel) {}
@@ -490,6 +498,9 @@ struct BeaconDetailView: View {
                                 .frame(width: 66)
                             }
                             .buttonStyle(.plain)
+                            .onAppear {
+                                env.profiles.primePublicProfile(userID: person.userID, name: person.name, avatarURL: person.avatarURL)
+                            }
                         }
                     }
                 }
@@ -519,14 +530,26 @@ struct BeaconDetailView: View {
 
     // MARK: - Loading & writes
 
-    /// Paints from the beacon cache instantly (chat card, map, Home), then refreshes. For an
-    /// event whose kind is already known, RSVP/engagement/people load in parallel with it.
+    /// Seeds the beacon and, for an event, its RSVP, saved state and people from memory
+    /// (discovery, chat cards, earlier opens), synchronously so the first frame has them.
+    private func seedFromCache() {
+        guard beacon.value == nil, let cached = env.beacons.cachedBeacon(id: beaconID) else { return }
+        beacon.seed(cached.beacon)
+        isExpired = cached.isExpired
+        if cached.beacon.isEvent { seedEngagement() }
+    }
+
+    private func seedEngagement() {
+        if let cached = env.events.cachedRSVP(beaconID: beaconID) { rsvp.seed(cached) }
+        if let cached = env.events.cachedEngagement(beaconID: beaconID) { engagement.seed(cached) }
+        if let cached = env.events.cachedDirectory(beaconID: beaconID) { people.seed(cached) }
+    }
+
+    /// Refreshes what `seedFromCache` painted. For an event whose kind is already known,
+    /// RSVP/engagement/people load in parallel with it.
     private func load() async {
-        let cached = await env.beacons.cachedBeacon(id: beaconID)
-        if let cached {
-            beacon.seed(cached.beacon)
-            isExpired = cached.isExpired
-        }
+        seedFromCache()
+        let cached = env.beacons.cachedBeacon(id: beaconID)
         beacon.begin()
         async let engagementTask: Void = cached?.beacon.isEvent == true ? loadEngagement() : ()
         if cached?.isFresh == true {
@@ -545,9 +568,7 @@ struct BeaconDetailView: View {
     }
 
     private func loadEngagement() async {
-        if let cached = await env.events.cachedRSVP(beaconID: beaconID) { rsvp.seed(cached) }
-        if let cached = await env.events.cachedEngagement(beaconID: beaconID) { engagement.seed(cached) }
-        if let cached = await env.events.cachedDirectory(beaconID: beaconID) { people.seed(cached) }
+        seedEngagement()
         rsvp.begin()
         engagement.begin()
         async let rsvpTask = env.events.rsvpState(beaconID: beaconID)
@@ -792,11 +813,11 @@ struct EventDirectoryView: View {
                 }
             }
         }
-        .task {
-            // The event detail already cached who's going: paint that, then refresh.
-            if directory.value == nil, let cached = await env.events.cachedDirectory(beaconID: beaconID) { directory.seed(cached) }
-            await load()
+        // The event detail already cached who's going: paint that on the first frame, then refresh.
+        .onAppear {
+            if directory.value == nil, let cached = env.events.cachedDirectory(beaconID: beaconID) { directory.seed(cached) }
         }
+        .task { await load() }
     }
 
     /// Sort control, pinned above the list.

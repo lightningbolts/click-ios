@@ -80,12 +80,11 @@ private struct ConversationByIDView: View {
                 ClickLoadingView()
             }
         }
+        // The inbox is in memory: a known conversation paints on the first frame.
+        .onAppear { if resolved == nil { resolved = lookup() } }
         .task {
             // `messageID` focus is queued by the router when this route is navigated to.
-            if let identity = lookup() {
-                resolved = identity
-                return
-            }
+            guard resolved == nil else { return }
             await conversations?.refresh()
             if let identity = lookup() { resolved = identity } else { missing = true }
         }

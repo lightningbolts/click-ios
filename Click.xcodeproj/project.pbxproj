@@ -89,6 +89,7 @@
 		5D126A60DFB2CA03EE19DF9F /* GroupRepository.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4CEBB1A141A8A2E6040D2122 /* GroupRepository.swift */; };
 		5D9054E6B1AB171F564850EF /* SelfDataStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = EEFED58F5E81E796610F3FC7 /* SelfDataStore.swift */; };
 		5EAF68E2372DE07743841C1E /* RootGateView.swift in Sources */ = {isa = PBXBuildFile; fileRef = DA0BA02DE0FE06FB525A130A /* RootGateView.swift */; };
+		5FDB728DAEC48C8F6842ADC4 /* MemoryCache.swift in Sources */ = {isa = PBXBuildFile; fileRef = B505B5487244EEC2DA1E81B1 /* MemoryCache.swift */; };
 		6116461327D4FF1806AC2945 /* HubMediaTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2CCD86C374B9F8179E86EDE2 /* HubMediaTests.swift */; };
 		619B213920BF476FE52ECC38 /* GlassCircle.swift in Sources */ = {isa = PBXBuildFile; fileRef = C0EEFAB074A9D2D9EB6AA5B9 /* GlassCircle.swift */; };
 		61EE65603B29E4220E02CBA5 /* ClickLog.swift in Sources */ = {isa = PBXBuildFile; fileRef = F63751F6535F913F9900FA93 /* ClickLog.swift */; };
@@ -434,6 +435,7 @@
 		B22B0A3012F4CC56A01188C7 /* ChatMediaViews.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ChatMediaViews.swift; sourceTree = "<group>"; };
 		B2CF3C0CEF71E64672F79F3E /* ConversationListModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ConversationListModel.swift; sourceTree = "<group>"; };
 		B39C832A9686736D37D9EB13 /* NotificationService.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = NotificationService.entitlements; sourceTree = "<group>"; };
+		B505B5487244EEC2DA1E81B1 /* MemoryCache.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MemoryCache.swift; sourceTree = "<group>"; };
 		B5503A75FDC271224C037F0F /* ConversationModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ConversationModel.swift; sourceTree = "<group>"; };
 		B67AD6209B5DAB6EC962D28A /* ButtonStyles.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ButtonStyles.swift; sourceTree = "<group>"; };
 		B707F36DD15A7BDA013381B5 /* NotificationService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NotificationService.swift; sourceTree = "<group>"; };
@@ -899,6 +901,7 @@
 				003194C59DD7C08710C713C1 /* CacheStore.swift */,
 				AEF2CAC62F36511082C94869 /* FreshnessCache.swift */,
 				3CCC3D3C78411FA8933E0013 /* LocalStore.swift */,
+				B505B5487244EEC2DA1E81B1 /* MemoryCache.swift */,
 				7A2429F10776DF1079D326B5 /* SettingsStore.swift */,
 			);
 			path = Persistence;
@@ -1475,6 +1478,7 @@
 				5B7B2613D4B9042F81200881 /* MeTabAvatarModel.swift in Sources */,
 				724C7C8B838896AB2B8A7CE2 /* MeView.swift in Sources */,
 				94B7ABF583A435F507645E2F /* MediaValidator.swift in Sources */,
+				5FDB728DAEC48C8F6842ADC4 /* MemoryCache.swift in Sources */,
 				97BBC1D22AC5414DC303337C /* MessageActionOverlay.swift in Sources */,
 				92F8F1122F82982A3FD0193D /* MessageBubbleView.swift in Sources */,
 				FC356859F3A30B0B78840011 /* ModuleState.swift in Sources */,

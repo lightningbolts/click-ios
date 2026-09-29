@@ -47,6 +47,7 @@ struct PublicProfileView: View {
         .background(ClickColors.background.ignoresSafeArea())
         .navigationTitle(profile.value?.displayName ?? "Profile")
         .navigationBarTitleDisplayMode(.inline)
+        .onAppear { profile.seed(env.profiles.cachedPublicProfile(userID: userID)) }
         .task { await load() }
     }
 
@@ -69,7 +70,8 @@ struct PublicProfileView: View {
     private func load() async {
         profile.begin()
         do {
-            profile.succeed(try await env.profiles.publicProfile(userID: userID))
+            let fresh = try await env.profiles.publicProfile(userID: userID)
+            withAnimation(ClickMotion.content) { profile.succeed(fresh) }
         } catch {
             profile.fail(error)
         }

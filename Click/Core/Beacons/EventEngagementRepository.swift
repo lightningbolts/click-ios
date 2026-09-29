@@ -80,19 +80,20 @@ public actor EventEngagementRepository {
         self.api = api
     }
 
-    private var rsvpCache: [String: RSVPState] = [:]
-    private var engagementCache: [String: EventEngagement] = [:]
-    private var directoryCache: [String: EventDirectory] = [:]
+    // Synchronously readable, so an event paints its RSVP, saved state and people on its first frame.
+    private nonisolated let rsvpCache = MemoryCache<String, RSVPState>()
+    private nonisolated let engagementCache = MemoryCache<String, EventEngagement>()
+    private nonisolated let directoryCache = MemoryCache<String, EventDirectory>()
 
-    public func cachedRSVP(beaconID: String) -> RSVPState? {
+    public nonisolated func cachedRSVP(beaconID: String) -> RSVPState? {
         rsvpCache[beaconID]
     }
 
-    public func cachedEngagement(beaconID: String) -> EventEngagement? {
+    public nonisolated func cachedEngagement(beaconID: String) -> EventEngagement? {
         engagementCache[beaconID]
     }
 
-    public func cachedDirectory(beaconID: String) -> EventDirectory? {
+    public nonisolated func cachedDirectory(beaconID: String) -> EventDirectory? {
         directoryCache[beaconID]
     }
 

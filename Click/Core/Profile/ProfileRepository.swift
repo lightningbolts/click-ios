@@ -299,12 +299,29 @@ public actor ProfileRepository {
     public func publicProfile(userID: String) async throws -> PublicProfile {
         let (data, _) = try await api.executeRaw(APIRequest(path: "/api/users/\(userID)/public-profile", requiresAuth: false))
         let root = try JSONFields.object(data)
-        return PublicProfile(
+        let profile = PublicProfile(
             userID: userID,
             displayName: JSONFields.string(root["display_name"]) ?? "Click user",
             avatarURL: JSONFields.string(root["avatar_url"]),
             auraColors: JSONFields.stringArray(root["aura_colors"])
         )
+        publicProfiles[userID] = profile
+        return profile
+    }
+
+    /// Public profiles seen this session, read synchronously for the profile's first frame.
+    private nonisolated let publicProfiles = MemoryCache<String, PublicProfile>()
+
+    public nonisolated func cachedPublicProfile(userID: String) -> PublicProfile? {
+        publicProfiles[userID]
+    }
+
+    /// Seeds a profile's name and avatar from where it's listed (e.g. an event's people), so
+    /// opening it shows them at once; the full profile replaces it when it loads.
+    public nonisolated func primePublicProfile(userID: String, name: String, avatarURL: String?) {
+        if publicProfiles[userID] == nil {
+            publicProfiles[userID] = PublicProfile(userID: userID, displayName: name, avatarURL: avatarURL, auraColors: [])
+        }
     }
 
     public func encounters(connectionID: String, viewerID: String?) async throws -> [Encounter] {

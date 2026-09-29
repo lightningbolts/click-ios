@@ -28,7 +28,14 @@ public actor BeaconRepository {
     private let cache: CacheStore
     /// Recently seen beacons (discovery, detail, chat-card prefetch) so detail opens instantly
     /// and refreshes in the background (`CachePolicy.beaconDetail`). Session memory only.
-    private var known: [String: (beacon: MapBeacon, isExpired: Bool, storedAt: Date)] = [:]
+    /// Synchronously readable, so detail paints cached content on its first frame.
+    private nonisolated let known = MemoryCache<String, KnownBeacon>()
+
+    private struct KnownBeacon: Sendable {
+        let beacon: MapBeacon
+        let isExpired: Bool
+        let storedAt: Date
+    }
     private var prefetching: [String: Task<Void, Never>] = [:]
 
     /// Default discovery radius (50 km, the `/api/beacons` maximum).
@@ -43,8 +50,12 @@ public actor BeaconRepository {
 
     // MARK: - Nearby discovery
 
+    /// The last discovery on disk; its beacons also seed the detail cache, so events on Home
+    /// and the Map open instantly right after launch.
     public func cachedDiscovery(userID: String) async -> NearbyDiscovery? {
-        await cache.load(NearbyDiscovery.self, key: "nearby", userID: userID)
+        let stored = await cache.load(NearbyDiscovery.self, key: "nearby", userID: userID)
+        if let stored { remember(stored.beacons) }
+        return stored
     }
 
     /// Beacons (`GET /api/beacons`) and hubs (`GET /api/hub/nearby`) around a coordinate.
@@ -165,14 +176,14 @@ public actor BeaconRepository {
             throw APIError.decoding
         }
         let expired = JSONFields.bool(root["expired"]) ?? false
-        known[id] = (beacon, expired, .now)
+        known[id] = KnownBeacon(beacon: beacon, isExpired: expired, storedAt: .now)
         return (beacon, expired)
     }
 
     // MARK: - Beacon cache (instant detail)
 
     /// A cached beacon and whether it is still inside its freshness window.
-    public func cachedBeacon(id: String, now: Date = .now) -> (beacon: MapBeacon, isExpired: Bool, isFresh: Bool)? {
+    public nonisolated func cachedBeacon(id: String, now: Date = .now) -> (beacon: MapBeacon, isExpired: Bool, isFresh: Bool)? {
         guard let entry = known[id] else { return nil }
         return (entry.beacon, entry.isExpired, now.timeIntervalSince(entry.storedAt) < CachePolicy.beaconDetail)
     }
@@ -181,13 +192,9 @@ public actor BeaconRepository {
     public func remember(_ beacons: [MapBeacon]) {
         let now = Date()
         for beacon in beacons where known[beacon.id] == nil {
-            known[beacon.id] = (beacon, false, now)
+            known[beacon.id] = KnownBeacon(beacon: beacon, isExpired: false, storedAt: now)
         }
-        if known.count > 300 {
-            for key in known.sorted(by: { $0.value.storedAt < $1.value.storedAt }).prefix(known.count - 300).map(\.key) {
-                known[key] = nil
-            }
-        }
+        known.trim(to: 300, by: \.storedAt)
     }
 
     /// The beacon's banner image (`metadata.image_url`), from the detail cache when present
@@ -236,7 +243,7 @@ public actor BeaconRepository {
         let (data, _) = try await api.executeRaw(APIRequest(path: "/api/beacons/\(id)", method: .patch, body: json))
         let root = try JSONFields.object(data)
         if let row = JSONFields.dictionary(root["beacon"]), let beacon = MapBeacon.decode(row) {
-            known[id] = (beacon, false, .now)
+            known[id] = KnownBeacon(beacon: beacon, isExpired: false, storedAt: .now)
             return beacon
         }
         // Some deployments answer `{ok:true}`; read back the canonical row.
