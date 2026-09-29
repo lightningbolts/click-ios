@@ -35,8 +35,14 @@ struct ReactionBar: View {
                     Text(emoji)
                         .font(.system(size: 26))
                         .frame(maxWidth: .infinity, minHeight: 44)
-                        .background(chosen ? ClickColors.accentForeground.opacity(0.16) : ClickColors.fillSubtle,
+                        .background(chosen ? ClickColors.accentForeground.opacity(0.22) : ClickColors.fillSubtle,
                                     in: RoundedRectangle(cornerRadius: 12, style: .continuous))
+                        .overlay {
+                            if chosen {
+                                RoundedRectangle(cornerRadius: 12, style: .continuous)
+                                    .strokeBorder(ClickColors.accentForeground, lineWidth: 2)
+                            }
+                        }
                         .scaleEffect(popped == emoji ? 1.25 : 1)
                 }
                 .buttonStyle(.plain)

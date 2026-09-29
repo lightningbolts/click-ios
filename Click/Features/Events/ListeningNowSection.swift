@@ -29,31 +29,26 @@ struct ListeningNowSection: View {
                     .font(ClickTypography.supporting)
                     .foregroundStyle(ClickColors.textSecondary)
                     .contentTransition(.opacity)
-                Spacer(minLength: 0)
-            }
-
-            Button {
-                Task { await toggle() }
-            } label: {
-                HStack(spacing: 8) {
-                    if toggling { ProgressView().controlSize(.small) } else {
-                        Image(systemName: state.value?.isListening == true ? "headphones.circle.fill" : "headphones")
+                Spacer(minLength: 8)
+                let listening = state.value?.isListening == true
+                Button {
+                    Task { await toggle() }
+                } label: {
+                    HStack(spacing: 6) {
+                        if toggling { ProgressView().controlSize(.mini) } else { Image(systemName: listening ? "headphones.circle.fill" : "headphones") }
+                        Text(listening ? "Listening" : "Listen")
                     }
-                    Text(state.value?.isListening == true ? "Listening" : "I'm listening")
-                        .font(ClickTypography.supportingEmphasized)
+                    .font(ClickTypography.supportingEmphasized)
+                    .foregroundStyle(listening ? .white : ClickColors.textPrimary)
+                    .padding(.horizontal, 14)
+                    .frame(minHeight: 36)
+                    .background(listening ? ClickColors.primaryActionFill : ClickColors.fillSubtle, in: Capsule())
                 }
-                .foregroundStyle(state.value?.isListening == true ? ClickColors.accentForeground : ClickColors.textPrimary)
-                .frame(maxWidth: .infinity, minHeight: 48)
-                .overlay {
-                    RoundedRectangle(cornerRadius: 16, style: .continuous)
-                        .strokeBorder(state.value?.isListening == true ? ClickColors.accentForeground.opacity(0.6) : ClickColors.separator,
-                                      lineWidth: 1.5)
-                }
-                .contentShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
+                .buttonStyle(.plain)
+                .disabled(toggling || state.value == nil)
+                .accessibilityLabel(listening ? "Listening. Double tap to stop." : "Listen")
+                .accessibilityHint("Adds you to the count while you listen.")
             }
-            .buttonStyle(.plain)
-            .disabled(toggling || state.value == nil)
-            .accessibilityHint("Adds you to the count while you listen.")
 
             ReactionBar(target: .soundtrack, id: beacon.id)
 

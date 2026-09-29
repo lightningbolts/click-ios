@@ -153,7 +153,7 @@ private struct HistoryRow: View {
     }
 
     private var subtitle: String {
-        [item.detail, item.at?.formatted(date: .abbreviated, time: .omitted), item.place]
+        [item.detail, item.at?.formatted(.dateTime.month(.abbreviated).day()), item.place]
             .compactMap { $0 }.filter { !$0.isEmpty }.joined(separator: " · ")
     }
 

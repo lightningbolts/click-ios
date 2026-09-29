@@ -17,6 +17,8 @@ public struct HomeView: View {
     @State private var isEditingAvailability = false
     @State private var reconnectTick = 0
     @State private var showsCompactTitle = false
+    @State private var reconnectNudge: ReconnectNearbyNudge?
+    @State private var recapCard: PastEvent?
 
     public init() {}
 
@@ -49,10 +51,10 @@ public struct HomeView: View {
                         .frame(height: HomeFeedModel.opportunityPlaceholderHeight)
                         .accessibilityHidden(true)
                 }
-                if env.features.isEnabled(.reconnectNearby) { ReconnectNearbyCard() }
+                if let nudge = reconnectNudge { ReconnectNearbyCard(nudge: nudge) { reconnectNudge = nil } }
                 recentPeopleSection(promoted: opportunity)
                 if env.features.isEnabled(.sharedDrops) { SharedDropsStrip() }
-                if env.features.isEnabled(.eventHistory) { HomeEventRecapCard() }
+                if let recapCard { HomeEventRecapCard(card: recapCard) }
                 recapSection
                 savedSection(promotedID: promotedEventID(opportunity))
                 nearbySection
@@ -105,6 +107,14 @@ public struct HomeView: View {
         .task {
             model.attach(env)
             await model.loadIfNeeded()
+        }
+        // Flag-gated cards load here (a view that starts empty would never run its own task).
+        .task(id: [env.features.isEnabled(.reconnectNearby), env.features.isEnabled(.eventHistory)]) {
+            if env.features.isEnabled(.eventHistory) { recapCard = try? await env.beacons.eventRecapCard() }
+            if env.features.isEnabled(.reconnectNearby) {
+                let nudge = await ReconnectNearbyCard.load(env)
+                withAnimation(ClickMotion.subtleFade) { reconnectNudge = nudge }
+            }
         }
         // Re-asks when the viewer's plans or their Clicks change.
         .task(id: [model.intents.value?.map(\.id).joined() ?? "", String(conversations.active.count)]) {
