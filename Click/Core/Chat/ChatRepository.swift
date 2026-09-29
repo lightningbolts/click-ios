@@ -125,6 +125,8 @@ public protocol ChatRepositoryProtocol: Sendable {
                            content: String, clientMessageID: String) async throws -> ChatMessageItem
     func markDelivered(chatID: String, messageIDs: [String]) async throws
     func registerDevice() async throws
+    /// Shares this device's historical chat keys with the account's email-approved newer devices.
+    func shareHistoryWithApprovedDevices(currentUserID: String) async -> Int
 
     func decodeRealtimeMessage(
         _ payload: RealtimeMessagePayload,
@@ -168,6 +170,8 @@ public extension ChatRepositoryProtocol {
     func reactions(messageIDs: [String], currentUserID: String) async throws -> [String: [ReactionSummary]] {
         [:]
     }
+
+    func shareHistoryWithApprovedDevices(currentUserID: String) async -> Int { 0 }
 
     func sendMedia(
         conversation: ConversationIdentity,
@@ -392,6 +396,115 @@ public actor ChatRepository: ChatRepositoryProtocol {
         }
         deviceRegistered = true
         UserDefaults.standard.set(true, forKey: registeredKey)
+    }
+
+    // MARK: - Email-approved history for this account's newer devices
+
+    /// A historical epoch key wrapped for one of the user's newer devices.
+    struct HistoryEnvelope: Equatable, Sendable {
+        let epoch: Int
+        let recipientDeviceID: String
+        let senderDeviceID: String
+        let envelope: String
+    }
+
+    /// Wraps the requested [epochs] this device holds for the recipient; unheld epochs are skipped.
+    static func historyEnvelopes(
+        chatID: String,
+        epochs: [Int],
+        recipientDeviceID: String,
+        recipientPublicKey: String,
+        senderDeviceID: String,
+        epochKeys: [Int: Data],
+        wrap: (ClickCryptoV2.EpochKeyWrapMetadata, Data, String) throws -> String = { metadata, key, recipientKey in
+            try ClickCryptoV2.wrapEpochKey(metadata: metadata, epochKey: key, recipientPublicKeySpkiBase64: recipientKey)
+        }
+    ) rethrows -> [HistoryEnvelope] {
+        try Array(Set(epochs)).sorted().compactMap { epoch in
+            guard let key = epochKeys[epoch] else { return nil }
+            let metadata = ClickCryptoV2.EpochKeyWrapMetadata(
+                chatId: chatID,
+                epoch: epoch,
+                senderDeviceId: senderDeviceID,
+                recipientDeviceId: recipientDeviceID
+            )
+            return HistoryEnvelope(
+                epoch: epoch,
+                recipientDeviceID: recipientDeviceID,
+                senderDeviceID: senderDeviceID,
+                envelope: try wrap(metadata, key, recipientPublicKey)
+            )
+        }
+    }
+
+    /// Epochs referenced by v2 message [contents] that are not in [held].
+    static func missingEpochs(in contents: [String], held: Set<Int>) -> Set<Int> {
+        Set(contents.compactMap { try? ClickCryptoV2.parseMessageEnvelope(wire: $0).epoch }).subtracting(held)
+    }
+
+    /// When a history re-read last ran per chat (keys shared later by another of the user's devices).
+    private var sharedHistoryRefreshAt: [String: Date] = [:]
+
+    /// Re-reads this device's envelopes once a minute at most, so keys shared by the user's other
+    /// devices after an email approval become usable without restarting the app.
+    private func refreshSessionForSharedHistory(chatID: String, participantUserIDs: [String]) async -> V2Session? {
+        let key = V2Scope.chat(chatID).cacheKey
+        if let last = sharedHistoryRefreshAt[key], Date().timeIntervalSince(last) < 60 { return nil }
+        sharedHistoryRefreshAt[key] = Date()
+        v2SessionCache[key] = nil
+        return try? await resolveV2Session(scope: .chat(chatID), participantUserIDs: participantUserIDs, allowUpgrade: false)
+    }
+
+    /// Registers this device, then wraps the historical epoch keys it holds for the account's
+    /// newer devices whose history sharing was approved by email, and uploads them. The server
+    /// only relays envelopes and enforces own-devices + approval (`approve_chat_key_transfer`).
+    public func shareHistoryWithApprovedDevices(currentUserID: String) async -> Int {
+        guard !currentUserID.isEmpty, let identity = try? vault.loadOrCreate() else { return 0 }
+        try? await registerDevice()
+        let lookup = APIRequest(
+            path: "/api/chat/devices/history-backfill",
+            method: .get,
+            queryItems: [URLQueryItem(name: "device_id", value: identity.info.deviceID)],
+            requiresAuth: true
+        )
+        guard let lookupResult = try? await apiClient.executeRaw(lookup),
+              let response = try? JSONDecoder().decode(HistoryBackfillResponse.self, from: lookupResult.0) else { return 0 }
+
+        var shared = 0
+        for item in response.items where item.recipientDeviceID != identity.info.deviceID && !item.epochs.isEmpty {
+            // Fresh read so every key this device was given is available to share.
+            v2SessionCache[V2Scope.chat(item.chatID).cacheKey] = nil
+            guard let session = try? await resolveV2Session(
+                scope: .chat(item.chatID),
+                participantUserIDs: [currentUserID],
+                allowUpgrade: false
+            ) else { continue }
+            guard let envelopes = try? Self.historyEnvelopes(
+                chatID: item.chatID,
+                epochs: item.epochs,
+                recipientDeviceID: item.recipientDeviceID,
+                recipientPublicKey: item.recipientPublicKey,
+                senderDeviceID: identity.info.deviceID,
+                epochKeys: session.epochKeys
+            ), !envelopes.isEmpty else { continue }
+            let payload: [String: Any] = [
+                "chat_id": item.chatID,
+                "approving_device_id": identity.info.deviceID,
+                "recipient_device_id": item.recipientDeviceID,
+                "historical_envelopes": envelopes.map {
+                    [
+                        "epoch": $0.epoch,
+                        "recipient_device_id": $0.recipientDeviceID,
+                        "sender_device_id": $0.senderDeviceID,
+                        "envelope": $0.envelope
+                    ] as [String: Any]
+                }
+            ]
+            guard let body = try? JSONSerialization.data(withJSONObject: payload, options: []) else { continue }
+            let transfer = APIRequest(path: "/api/chat/key-transfer", method: .post, body: body, requiresAuth: true)
+            if (try? await apiClient.executeRaw(transfer)) != nil { shared += 1 }
+        }
+        return shared
     }
 
     /// Where a v2 epoch lives: chat routes (direct + group) or hub routes. Hub envelopes bind to
@@ -763,6 +876,13 @@ public actor ChatRepository: ChatRepositoryProtocol {
            let newest = rawResponse.messages.compactMap({ Self.v2Epoch($0.content) }).max(), newest > cached.currentEpoch {
             v2Session = (try? await resolveV2Session(scope: .chat(canonicalChatID), participantUserIDs: participantIDs,
                                                       allowUpgrade: false, requiredEpoch: newest)) ?? cached
+        }
+        // Rows from epochs this device doesn't hold yet may have been shared since the session was
+        // cached (email-approved history from the user's other device): re-read once.
+        if let current = v2Session,
+           !Self.missingEpochs(in: rawResponse.messages.map(\.content), held: Set(current.epochKeys.keys)).isEmpty,
+           let refreshed = await refreshSessionForSharedHistory(chatID: canonicalChatID, participantUserIDs: participantIDs) {
+            v2Session = refreshed
         }
 
         if !conversation.isDirect {
@@ -2477,6 +2597,24 @@ public actor ChatRepository: ChatRepositoryProtocol {
             case recipientDeviceID = "recipient_device_id"
             case senderDeviceID = "sender_device_id"
             case envelope
+        }
+    }
+
+    private struct HistoryBackfillResponse: Decodable {
+        let items: [Item]
+
+        struct Item: Decodable {
+            let recipientDeviceID: String
+            let recipientPublicKey: String
+            let chatID: String
+            let epochs: [Int]
+
+            enum CodingKeys: String, CodingKey {
+                case recipientDeviceID = "recipient_device_id"
+                case recipientPublicKey = "recipient_public_key"
+                case chatID = "chat_id"
+                case epochs
+            }
         }
     }
 

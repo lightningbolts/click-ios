@@ -296,6 +296,7 @@ public final class AppEnvironment {
         }
 
         guard let snapshot = session.currentSession else { return }
+        syncDeviceHistory()
         let coordinator = onboardingCoordinator(for: snapshot.userId)
         if !coordinator.needsOnboarding {
             router.flushPendingRoute()
@@ -352,6 +353,19 @@ public final class AppEnvironment {
     /// Hangout detection (opt-in): on returning to the app, share a fresh position so Clicks
     /// who are with you right now (and opted in) both get "Hanging out?". At most every 10
     /// minutes, and never without a recent, reasonably precise fix.
+    @ObservationIgnored private var lastDeviceHistorySync: Date?
+
+    /// On sign-in and on every foreground: register this device (an additional device makes
+    /// click-web email the account an approval link) and share chat history with this account's
+    /// email-approved newer devices.
+    func syncDeviceHistory() {
+        guard let userID = session.currentSession?.userId else { return }
+        if let last = lastDeviceHistorySync, Date().timeIntervalSince(last) < 60 { return }
+        lastDeviceHistorySync = Date()
+        let chat = self.chat
+        Task(priority: .utility) { _ = await chat.shareHistoryWithApprovedDevices(currentUserID: userID) }
+    }
+
     func reportPresenceIfEnabled() {
         guard settings.hangoutDetectionOptIn, location.isAuthorized, session.currentSession != nil else { return }
         if let last = lastPresencePing, Date().timeIntervalSince(last) < 600 { return }
