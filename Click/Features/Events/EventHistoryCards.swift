@@ -5,11 +5,9 @@ import SwiftUI
 /// Past events.
 struct HomeEventRecapCard: View {
     @Environment(AppEnvironment.self) private var env
-    @State private var card: PastEvent?
+    let card: PastEvent
 
     var body: some View {
-        Group {
-            if let card {
                 Button {
                     env.router.navigate(to: card.recap == nil ? .event(beaconID: card.beaconID) : .eventRecap(beaconID: card.beaconID))
                 } label: {
@@ -34,9 +32,6 @@ struct HomeEventRecapCard: View {
                 }
                 .buttonStyle(.plain)
                 .transition(.opacity)
-            }
-        }
-        .task { card = try? await env.beacons.eventRecapCard() }
     }
 
     private func caption(_ card: PastEvent) -> String {
@@ -51,13 +46,9 @@ struct HomeEventRecapCard: View {
 
 /// On a profile: events you and this person both went to — never their full attendance.
 struct EventsTogetherSection: View {
-    @Environment(AppEnvironment.self) private var env
-    let userID: String
-    @State private var events: [PastEvent] = []
+    let events: [PastEvent]
 
     var body: some View {
-        Group {
-            if !events.isEmpty {
                 VStack(alignment: .leading, spacing: 8) {
                     Text("Events together")
                         .font(ClickTypography.sectionTitle)
@@ -68,8 +59,49 @@ struct EventsTogetherSection: View {
                     }
                 }
                 .transition(.opacity)
+    }
+}
+
+/// One past event: when, where, how you took part, and its recap when there is one.
+struct PastEventRow: View {
+    @Environment(AppEnvironment.self) private var env
+    let event: PastEvent
+
+    var body: some View {
+        Button {
+            env.router.navigate(to: .event(beaconID: event.beaconID))
+        } label: {
+            HStack(spacing: 12) {
+                EventVisual(seed: event.beaconID, imageURL: event.imageURL, symbol: "calendar", cornerRadius: 12)
+                    .frame(width: 52, height: 52)
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(event.title).font(ClickTypography.bodyEmphasized).foregroundStyle(ClickColors.textPrimary).lineLimit(1)
+                    Text(subtitle).font(ClickTypography.supporting).foregroundStyle(ClickColors.textSecondary).lineLimit(1)
+                }
+                Spacer(minLength: 0)
+                if let recap = event.recap {
+                    Button {
+                        env.router.navigate(to: .eventRecap(beaconID: event.beaconID))
+                    } label: {
+                        Label(recap == .ready ? "Recap" : "Developing", systemImage: recap == .ready ? "sparkles" : "hourglass")
+                            .font(ClickTypography.metadataEmphasized)
+                    }
+                    .buttonStyle(.bordered)
+                    .tint(ClickColors.accentForeground)
+                }
             }
         }
-        .task(id: userID) { events = (try? await env.beacons.eventsTogether(userID: userID)) ?? [] }
+        .buttonStyle(.plain)
+    }
+
+    private var subtitle: String {
+        var parts: [String] = []
+        if let ends = event.endsAt { parts.append(ends.formatted(date: .abbreviated, time: .omitted)) }
+        if let relation = event.relation {
+            if relation.hosted { parts.append("Hosted") } else if relation.went { parts.append("Went") }
+            else if relation.rsvpd { parts.append("RSVP'd") } else if relation.saved { parts.append("Saved") }
+        }
+        if let place = event.locationName { parts.append(place) }
+        return parts.joined(separator: " · ")
     }
 }

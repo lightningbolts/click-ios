@@ -27,4 +27,20 @@ struct ListeningNowTests {
         #expect(ListeningNow.parse(["heartbeat_seconds": 5]).heartbeatSeconds == 60)
         #expect(ListeningNow.parse([:]).heartbeatSeconds == 360)
     }
+
+    @Test("Reactions parse mine, reactors and ownership")
+    func parsesReactions() {
+        let state = ReactionsState.parse(["mine": "🔥", "is_owner": false,
+                                          "reactions": [["user_id": "u1", "name": "Maya Chen", "emoji": "😂"]]])
+        #expect(state.mine == "🔥")
+        #expect(state.reactions.first?.emoji == "😂")
+        #expect(!state.isOwner)
+        #expect(ReactionsState.palette.count == 6)
+    }
+
+    @Test("The reconnect reminder opens the chat with that Click")
+    func reconnectTapRoute() {
+        let route = ClickNotificationCoordinator.tapRoute(for: ["type": "reconnect_nearby", "connection_id": "c1", "peer_user_id": "u1", "sender_name": "Maya"])
+        #expect(route == .chat(chatID: nil, connectionID: "c1", senderUserID: "u1", senderName: "Maya"))
+    }
 }

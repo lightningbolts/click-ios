@@ -111,8 +111,8 @@ public enum AppRoute: Hashable, Sendable {
     case savedEvents
     /// An event's Click Drops recap (spec F1).
     case eventRecap(beaconID: String)
-    /// Your past events (spec F2).
-    case eventHistory
+    /// Everything you've been part of: events, beacons, hangouts, saved events (spec F2).
+    case history
     case settings(SettingsRoute)
     case connectionInvocation(ConnectionInvocation)
     /// A conversation known only by its chat ID (search hits, `click://chat/{id}`), resolved
@@ -129,7 +129,7 @@ public enum AppRoute: Hashable, Sendable {
             .map
         case .myQR, .scanQR, .tapConnect, .connectionInvocation:
             .addClick
-        case .savedEvents, .settings, .eventHistory:
+        case .savedEvents, .settings, .history:
             .settings
         }
     }

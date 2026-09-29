@@ -10,6 +10,7 @@ public struct ProfileView: View {
     @Environment(\.dismiss) private var dismiss
 
     @State private var model: PeerProfileModel
+    @State private var eventsTogether: [PastEvent] = []
     @State private var tab: ProfileTab = .timeline
     @State private var journalEditor: JournalEditorTarget?
     @State private var taggingEncounter: Encounter?
@@ -70,9 +71,7 @@ public struct ProfileView: View {
                         HangoutsSection(plans: model.upcomingPlans) { env.router.navigate(to: $0.route) }
                     }
                 }
-                if !isSelf, env.features.isEnabled(.eventHistory) {
-                    EventsTogetherSection(userID: model.userID)
-                }
+                if !eventsTogether.isEmpty { EventsTogetherSection(events: eventsTogether) }
                 chatBackdrop
                 // Sticky: once the chips reach the top they're held there, over the content.
                 tabChips
@@ -95,6 +94,10 @@ public struct ProfileView: View {
         .scrollEdgeEffectHiddenIfAvailable(stripPinned, for: .top)
         .background(ClickColors.background.ignoresSafeArea())
         .clickToast($model.relationshipNotice)
+        .task(id: model.userID) {
+            guard !isSelf, env.features.isEnabled(.eventHistory) else { return }
+            eventsTogether = (try? await env.beacons.eventsTogether(userID: model.userID)) ?? []
+        }
         .confirmation("Delete this note?", isPresented: Binding(get: { deletingJournal != nil }, set: { if !$0 { deletingJournal = nil } }),
                       keep: "Keep Note", message: "It's removed for everyone who can see it.") {
             Button("Delete", role: .destructive) {

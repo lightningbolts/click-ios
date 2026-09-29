@@ -42,6 +42,7 @@ targets:
       INFOPLIST_KEY_NSCalendarsUsageDescription: "Click reads your calendar to find mutual free time when you reconnect with a friend."
       INFOPLIST_KEY_NSContactsUsageDescription: "Click hashes phone numbers and emails on this device to find people you already know. Your address book never leaves your phone."
       INFOPLIST_KEY_NSLocationWhenInUseUsageDescription: "Click uses your location for tether pings, maps, and nearby connection features."
+      INFOPLIST_KEY_NSLocationAlwaysAndWhenInUseUsageDescription: "If you turn on Past meeting spots, Click is told when you arrive somewhere so it can remind you of a Click you met there. Your location is never stored or shown to anyone."
       INFOPLIST_KEY_NSCameraUsageDescription: "Click uses your camera to scan QR codes and capture photos."
       INFOPLIST_KEY_NSPhotoLibraryUsageDescription: "Click accesses your photo library to select photos for profile and chat."
       INFOPLIST_KEY_NSPhotoLibraryAddUsageDescription: "Click saves photos to your photo library."

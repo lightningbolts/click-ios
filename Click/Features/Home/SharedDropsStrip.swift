@@ -37,8 +37,9 @@ struct SharedDropsStrip: View {
                     ForEach(uploads) { uploadTile($0) }
                     ForEach(drops.value ?? []) { tile($0) }
                 }
-                .padding(.horizontal, 4)
+                .padding(.horizontal, ClickSpacing.screenGutter)
             }
+            .padding(.horizontal, -ClickSpacing.screenGutter)
             if let message {
                 Text(message).font(ClickTypography.supporting).foregroundStyle(ClickColors.textSecondary).padding(.horizontal, 4)
             }
@@ -85,16 +86,18 @@ struct SharedDropsStrip: View {
                 Text("Share a drop").font(ClickTypography.caption)
             }
             .foregroundStyle(ClickColors.textPrimary)
-            .frame(width: 96, height: 128)
+            .frame(width: Self.tileSize.width, height: Self.tileSize.height)
             .overlay {
-                RoundedRectangle(cornerRadius: 14, style: .continuous)
+                RoundedRectangle(cornerRadius: 16, style: .continuous)
                     .strokeBorder(ClickColors.separator, style: StrokeStyle(lineWidth: 1.5, dash: [5, 4]))
             }
-            .contentShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
+            .contentShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
         }
         .buttonStyle(.plain)
         .accessibilityHint("Takes a photo that develops for your connections in 24 hours.")
     }
+
+    private static let tileSize = CGSize(width: 104, height: 140)
 
     private func tile(_ drop: SharedDrop) -> some View {
         let state = drop.state()
@@ -105,47 +108,72 @@ struct SharedDropsStrip: View {
             case .pending: break
             }
         } label: {
-            ZStack(alignment: .bottomLeading) {
+            // A fixed frame with overlays: a filling photo never pushes the labels out of the tile.
+            Group {
                 if state == .developed, let image = originals[drop.id] {
-                    Image(uiImage: image).resizable().scaledToFill()
+                    Color.clear.overlay { Image(uiImage: image).resizable().scaledToFill() }
                 } else {
                     PixelatedPreview(url: drop.previewURL)
                 }
-                VStack(alignment: .leading, spacing: 2) {
-                    label(for: drop, state: state)
-                    Text(drop.isMine ? "You" : drop.userName)
+            }
+            .frame(width: Self.tileSize.width, height: Self.tileSize.height)
+            .overlay(alignment: .topTrailing) { badge(for: drop, state: state).padding(6) }
+            .overlay(alignment: .bottomLeading) {
+                HStack(spacing: 5) {
+                    AvatarView(imageURL: drop.avatarURL, seed: drop.userID, initials: Phase3Repository.initials(from: drop.userName), size: 18)
+                    Text(drop.isMine ? "You" : drop.userName.split(separator: " ").first.map(String.init) ?? drop.userName)
                         .font(ClickTypography.metadataEmphasized)
                         .lineLimit(1)
                 }
                 .foregroundStyle(.white)
-                .padding(.horizontal, 8)
-                .padding(.vertical, 5)
-                .background(.black.opacity(0.45), in: RoundedRectangle(cornerRadius: 8, style: .continuous))
+                .padding(.leading, 3)
+                .padding(.trailing, 8)
+                .padding(.vertical, 3)
+                .background(.black.opacity(0.45), in: Capsule())
                 .padding(6)
             }
-            .frame(width: 96, height: 128)
-            .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
+            .overlay {
+                if state == .ready {
+                    RoundedRectangle(cornerRadius: 16, style: .continuous).strokeBorder(ClickColors.accentForeground, lineWidth: 2)
+                }
+            }
+            .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
         }
         .buttonStyle(.plain)
         .disabled(state.isPending || developing.contains(drop.id))
         .accessibilityLabel(accessibility(drop, state: state))
     }
 
+    /// Pending: a short countdown ("5h"). Ready: a sparkle to tap. Developed: nothing.
     @ViewBuilder
-    private func label(for drop: SharedDrop, state: ClickDropDevelopState) -> some View {
-        switch state {
-        case .pending(let reveal):
-            Label(reveal.formatted(.relative(presentation: .named)), systemImage: "hourglass")
-                .font(ClickTypography.caption).labelStyle(.titleAndIcon)
-        case .ready:
-            if developing.contains(drop.id) {
-                ProgressView().tint(.white).controlSize(.small)
-            } else {
-                Label("Tap to develop", systemImage: "sparkles").font(ClickTypography.caption)
-            }
-        case .developed:
-            EmptyView()
+    private func badge(for drop: SharedDrop, state: ClickDropDevelopState) -> some View {
+        let content: (String?, String)? = switch state {
+        case .pending(let reveal): (Self.shortCountdown(to: reveal), "hourglass")
+        case .ready: (nil, "sparkles")
+        case .developed: nil
         }
+        if let content {
+            HStack(spacing: 3) {
+                if developing.contains(drop.id) {
+                    ProgressView().controlSize(.mini).tint(.white)
+                } else {
+                    Image(systemName: content.1)
+                }
+                if let text = content.0 { Text(text).monospacedDigit() }
+            }
+            .font(ClickTypography.badge)
+            .foregroundStyle(.white)
+            .padding(.horizontal, 7)
+            .padding(.vertical, 4)
+            .background(state == .ready ? ClickColors.primaryActionFill : .black.opacity(0.45), in: Capsule())
+        }
+    }
+
+    /// "5h", "20m", "<1m".
+    static func shortCountdown(to date: Date, now: Date = .now) -> String {
+        let minutes = Int(date.timeIntervalSince(now) / 60)
+        if minutes >= 60 { return "\(minutes / 60)h" }
+        return minutes >= 1 ? "\(minutes)m" : "<1m"
     }
 
     private func accessibility(_ drop: SharedDrop, state: ClickDropDevelopState) -> String {
@@ -176,8 +204,8 @@ struct SharedDropsStrip: View {
                 ProgressView()
             }
         }
-        .frame(width: 96, height: 128)
-        .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
+        .frame(width: Self.tileSize.width, height: Self.tileSize.height)
+        .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
     }
 
     // MARK: - Loading & writes
@@ -295,17 +323,31 @@ struct SharedDropViewer: View {
     @State private var confirmDelete = false
     @State private var reporting = false
     @State private var notice: String?
+    @State private var sharp: UIImage?
+
+    private func caption(_ shared: Date) -> String {
+        let when = "Shared \(shared.formatted(.relative(presentation: .named)))"
+        guard let audience = drop.audience else { return when }
+        return when + (audience == .core ? " · Core connections" : " · All connections")
+    }
 
     var body: some View {
         NavigationStack {
             VStack(spacing: 16) {
-                if let image {
+                if let image = sharp ?? image {
                     Image(uiImage: image).resizable().scaledToFit()
                         .clipShape(RoundedRectangle(cornerRadius: ClickRadius.surface, style: .continuous))
                         .accessibilityLabel(drop.isMine ? "Your drop" : "Drop from \(drop.userName)")
                 } else {
-                    ProgressView().frame(maxHeight: .infinity)
+                    ProgressView().frame(maxWidth: .infinity, minHeight: 240)
                 }
+                if let shared = drop.createdAt {
+                    Text(caption(shared))
+                        .font(ClickTypography.supporting)
+                        .foregroundStyle(ClickColors.textSecondary)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                }
+                if image != nil { ReactionBar(target: .sharedDrop, id: drop.id) }
                 if !drop.isMine, let connectionID = drop.connectionID {
                     Button {
                         dismiss()
@@ -320,8 +362,14 @@ struct SharedDropViewer: View {
                     .tint(ClickColors.primaryActionFill)
                 }
                 if let notice { Text(notice).font(ClickTypography.supporting).foregroundStyle(ClickColors.textSecondary) }
+                Spacer(minLength: 0)
             }
             .padding(16)
+            // The strip holds a small thumbnail; the viewer shows the original at full size.
+            .task(id: drop.id) {
+                guard let url = try? await env.drops.develop([ClickDropRef(kind: .shared, id: drop.id)]).first?.originalURL else { return }
+                sharp = try? await ClickDropService.loadOriginal(url)
+            }
             .navigationTitle(drop.isMine ? "Your drop" : drop.userName)
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {

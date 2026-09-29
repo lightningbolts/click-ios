@@ -1,7 +1,7 @@
 import SwiftUI
 
-/// Who's listening to a soundtrack here right now (spec F5): a count, your connections by name,
-/// and a toggle to add yourself while you're near the pin. It lapses on its own when you leave.
+/// Who's listening to a soundtrack right now (spec F5): a count, your connections by name, a
+/// toggle to add yourself (from anywhere), and reactions. Listening lapses on its own.
 struct ListeningNowSection: View {
     @Environment(AppEnvironment.self) private var env
     @Environment(\.scenePhase) private var scenePhase
@@ -25,35 +25,32 @@ struct ListeningNowSection: View {
                     }
                     .accessibilityHidden(true)
                 }
-                Text(state.value?.summary ?? "Nobody's listening here right now")
+                Text(state.value?.summary ?? "Nobody's listening right now")
                     .font(ClickTypography.supporting)
                     .foregroundStyle(ClickColors.textSecondary)
                     .contentTransition(.opacity)
-                Spacer(minLength: 0)
+                Spacer(minLength: 8)
+                let listening = state.value?.isListening == true
+                Button {
+                    Task { await toggle() }
+                } label: {
+                    HStack(spacing: 6) {
+                        if toggling { ProgressView().controlSize(.mini) } else { Image(systemName: listening ? "headphones.circle.fill" : "headphones") }
+                        Text(listening ? "Listening" : "Listen")
+                    }
+                    .font(ClickTypography.supportingEmphasized)
+                    .foregroundStyle(listening ? .white : ClickColors.textPrimary)
+                    .padding(.horizontal, 14)
+                    .frame(minHeight: 36)
+                    .background(listening ? ClickColors.primaryActionFill : ClickColors.fillSubtle, in: Capsule())
+                }
+                .buttonStyle(.plain)
+                .disabled(toggling || state.value == nil)
+                .accessibilityLabel(listening ? "Listening. Double tap to stop." : "Listen")
+                .accessibilityHint("Adds you to the count while you listen.")
             }
 
-            Button {
-                Task { await toggle() }
-            } label: {
-                HStack(spacing: 8) {
-                    if toggling { ProgressView().controlSize(.small) } else {
-                        Image(systemName: state.value?.isListening == true ? "headphones.circle.fill" : "headphones")
-                    }
-                    Text(state.value?.isListening == true ? "Listening here" : "I'm listening here")
-                        .font(ClickTypography.supportingEmphasized)
-                }
-                .foregroundStyle(state.value?.isListening == true ? ClickColors.accentForeground : ClickColors.textPrimary)
-                .frame(maxWidth: .infinity, minHeight: 48)
-                .overlay {
-                    RoundedRectangle(cornerRadius: 16, style: .continuous)
-                        .strokeBorder(state.value?.isListening == true ? ClickColors.accentForeground.opacity(0.6) : ClickColors.separator,
-                                      lineWidth: 1.5)
-                }
-                .contentShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
-            }
-            .buttonStyle(.plain)
-            .disabled(toggling || state.value == nil)
-            .accessibilityHint("Adds you to the count while you're near this pin.")
+            ReactionBar(target: .soundtrack, id: beacon.id)
 
             if let message {
                 Text(message).font(ClickTypography.supporting).foregroundStyle(ClickColors.textSecondary)
@@ -101,19 +98,11 @@ struct ListeningNowSection: View {
     }
 
     private func beat() async {
-        guard env.location.isAuthorized,
-              let fix = await env.location.currentLocation(maximumAge: 120, acceptableAccuracy: 100, timeout: .seconds(6)) else {
-            message = "Your location is needed to listen here."
-            return
-        }
         do {
-            state.succeed(try await env.beacons.heartbeat(beaconID: beacon.id, at: fix.coordinate))
+            state.succeed(try await env.beacons.heartbeat(beaconID: beacon.id))
             message = nil
         } catch {
-            if !error.isCancellation {
-                message = (error as? ListeningOutOfRange)?.errorDescription ?? error.userFacingMessage
-                // Out of range while listening: the server keeps the old heartbeat until it lapses.
-            }
+            if !error.isCancellation { message = error.userFacingMessage }
         }
     }
 }

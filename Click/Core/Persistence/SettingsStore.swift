@@ -20,6 +20,7 @@ public final class SettingsStore {
         static let ambientNoiseOptIn = "ambient_noise_opt_in"
         static let barometricContextOptIn = "barometric_context_opt_in"
         static let hangoutDetectionOptIn = "hangout_detection_opt_in"
+        static let reconnectAlertsOptIn = "reconnect_alerts_opt_in"
         static let planIdeas = "plan_custom_ideas"
         static let locationExplainerSeen = "location_explainer_seen"
         static let onboardingState = "onboarding_state"
@@ -39,6 +40,7 @@ public final class SettingsStore {
         self.ambientNoiseOptIn = defaults.bool(forKey: Key.ambientNoiseOptIn)
         self.barometricContextOptIn = defaults.bool(forKey: Key.barometricContextOptIn)
         self.hangoutDetectionOptIn = defaults.bool(forKey: Key.hangoutDetectionOptIn)
+        self.reconnectAlertsOptIn = defaults.bool(forKey: Key.reconnectAlertsOptIn)
         self.planIdeas = defaults.stringArray(forKey: Key.planIdeas) ?? []
     }
 
@@ -93,6 +95,11 @@ public final class SettingsStore {
     /// app opens so mutual Clicks nearby (who also opted in) can log the hangout. Off by default.
     public var hangoutDetectionOptIn: Bool {
         didSet { defaults.set(hangoutDetectionOptIn, forKey: Key.hangoutDetectionOptIn) }
+    }
+
+    /// "Near a past meeting spot" reminders (spec F6 §8b): visit monitoring + at most one a day. Off by default.
+    public var reconnectAlertsOptIn: Bool {
+        didSet { defaults.set(reconnectAlertsOptIn, forKey: Key.reconnectAlertsOptIn) }
     }
 
     /// Your own plan categories ("🎮 Game night"), shown before the built-in ideas.

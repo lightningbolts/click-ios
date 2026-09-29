@@ -188,29 +188,64 @@ public struct PastEvent: Identifiable, Sendable, Equatable {
     }
 }
 
-public enum EventHistoryFilter: String, CaseIterable, Sendable, Identifiable {
-    case all, went, rsvpd, saved, hosted
+/// One entry in your History: an event you were part of, a beacon you dropped / reacted to /
+/// confirmed, or a hangout you logged (`GET /api/me/history`).
+public struct HistoryItem: Identifiable, Sendable, Equatable {
+    public enum Kind: String, Sendable { case event, beacon, hangout }
+
+    public let kind: Kind
+    public let id: String
+    public let title: String
+    public let detail: String
+    public let at: Date?
+    public let place: String?
+    public let imageURL: String?
+    public let beaconID: String?
+    public let beaconType: String?
+    public let connectionID: String?
+    public let peerID: String?
+    public let peerName: String?
+    public let peerAvatarURL: String?
+    public let recap: PastEvent.Recap?
+
+    static func parse(_ row: [String: Any]) -> HistoryItem? {
+        guard let kind = JSONFields.string(row["kind"]).flatMap(Kind.init(rawValue:)), let id = JSONFields.string(row["id"]) else { return nil }
+        let peer = JSONFields.dictionary(row["peer"])
+        let recap = JSONFields.dictionary(row["recap"]).map { recap -> PastEvent.Recap in
+            JSONFields.string(recap["state"]) == "ready" ? .ready : .developing(revealAt: JSONFields.date(recap["reveal_at"]))
+        }
+        return HistoryItem(kind: kind, id: id, title: JSONFields.string(row["title"]) ?? "", detail: JSONFields.string(row["detail"]) ?? "",
+                           at: JSONFields.date(row["at"]), place: JSONFields.string(row["place"]), imageURL: JSONFields.string(row["image_url"]),
+                           beaconID: JSONFields.string(row["beacon_id"]), beaconType: JSONFields.string(row["beacon_type"]),
+                           connectionID: JSONFields.string(row["connection_id"]), peerID: peer.flatMap { JSONFields.string($0["id"]) },
+                           peerName: peer.flatMap { JSONFields.string($0["name"]) }, peerAvatarURL: peer.flatMap { JSONFields.string($0["avatar_url"]) },
+                           recap: recap)
+    }
+}
+
+public enum HistoryFilter: String, CaseIterable, Sendable, Identifiable {
+    case all, events, beacons, hangouts, saved
 
     public var id: String { rawValue }
     public var label: String {
         switch self {
         case .all: "All"
-        case .went: "Went"
-        case .rsvpd: "RSVP'd"
+        case .events: "Events"
+        case .beacons: "Beacons"
+        case .hangouts: "Hangouts"
         case .saved: "Saved"
-        case .hosted: "Hosted"
         }
     }
 }
 
 extension BeaconRepository {
-    /// The caller's past events (private to them), most recent first.
-    public func eventHistory(filter: EventHistoryFilter, cursor: String?) async throws -> (events: [PastEvent], nextCursor: String?) {
-        var query = [URLQueryItem(name: "filter", value: filter.rawValue)]
+    /// Your history (private to you), newest first. `.saved` is served by Saved events instead.
+    public func history(_ filter: HistoryFilter, cursor: String?) async throws -> (items: [HistoryItem], nextCursor: String?) {
+        var query = [URLQueryItem(name: "kind", value: filter == .saved ? "all" : filter.rawValue)]
         if let cursor { query.append(URLQueryItem(name: "cursor", value: cursor)) }
-        let (data, _) = try await api.executeRaw(APIRequest(path: "/api/me/event-history", queryItems: query))
+        let (data, _) = try await api.executeRaw(APIRequest(path: "/api/me/history", queryItems: query))
         let root = try JSONFields.object(data)
-        return (JSONFields.rows(root["events"]).compactMap(PastEvent.parse), JSONFields.string(root["next_cursor"]))
+        return (JSONFields.rows(root["items"]).compactMap(HistoryItem.parse), JSONFields.string(root["next_cursor"]))
     }
 
     /// The one Home recap card (an event you were at in the last ~48 h), if any.

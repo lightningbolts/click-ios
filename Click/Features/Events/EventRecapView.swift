@@ -137,11 +137,9 @@ struct EventRecapView: View {
     @ViewBuilder
     private func photo(_ drop: EventDrop) -> some View {
         if let frame {
-            Image(uiImage: frame).resizable().interpolation(.none).scaledToFit()
+            Color.clear.overlay { Image(uiImage: frame).resizable().interpolation(.none).scaledToFill() }
         } else if let photo = photos[drop.id] {
-            Image(uiImage: natural ? photo.natural : photo.look)
-                .resizable()
-                .scaledToFit()
+            Color.clear.overlay { Image(uiImage: natural ? photo.natural : photo.look).resizable().scaledToFill() }
                 .transition(.opacity)
                 .accessibilityLabel(drop.isMine ? "Your drop" : "Drop from \(drop.userName)")
         } else if failed.contains(drop.id) {

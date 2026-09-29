@@ -22,11 +22,10 @@ struct EventDropsSection: View {
     }
 
     var body: some View {
-        Group {
+        // A container that always exists, so the load runs even while there's nothing to show.
+        VStack(spacing: 0) {
             if let current = state.value, isRelevant(current) {
                 content(current)
-            } else if state.errorMessage != nil, state.value == nil {
-                EmptyView()
             }
         }
         .task(id: beacon.id) { await load() }
@@ -237,17 +236,19 @@ struct PixelatedPreview: View {
     @State private var image: UIImage?
 
     var body: some View {
-        ZStack {
-            ClickColors.fillSubtle
-            if let image {
-                Image(uiImage: image).resizable().interpolation(.none).scaledToFill()
-            } else if url != nil {
-                ProgressView()
+        // The fill takes the proposed size; the image fills inside it and never grows the view.
+        ClickColors.fillSubtle
+            .overlay {
+                if let image {
+                    Image(uiImage: image).resizable().interpolation(.none).scaledToFill()
+                } else if url != nil {
+                    ProgressView()
+                }
             }
-        }
-        .task(id: url) {
-            guard let url, image == nil else { return }
-            image = await ImagePipeline.shared.image(for: url, maxPixelSize: 480)
-        }
+            .clipped()
+            .task(id: url) {
+                guard let url, image == nil else { return }
+                image = await ImagePipeline.shared.image(for: url, maxPixelSize: 480)
+            }
     }
 }

@@ -93,18 +93,22 @@ struct EventDropsTests {
         #expect(drop.isMine)
     }
 
-    @Test("History parses relation and recap state")
+    @Test("History parses events, beacons and hangouts")
     func parsesHistory() async throws {
-        EventDropsMockURLProtocol.handler = { _ in (200, """
-        {"events":[{"beacon_id":"e1","title":"Launch","ends_at":"2026-10-03T05:00:00Z",
-          "relation":{"went":true,"rsvpd":true,"saved":false,"hosted":false},
-          "recap":{"state":"ready","reveal_at":"2026-10-03T17:00:00Z"}}],
-         "next_cursor":"2026-10-03T05:00:00.000Z"}
-        """) }
-        let page = try await repository().eventHistory(filter: .went, cursor: nil)
-        #expect(page.events.first?.relation?.went == true)
-        #expect(page.events.first?.recap == .ready)
-        #expect(page.nextCursor == "2026-10-03T05:00:00.000Z")
+        EventDropsMockURLProtocol.handler = { request in
+            #expect(request.url?.query?.contains("kind=hangouts") == true)
+            return (200, """
+            {"items":[
+              {"kind":"event","id":"e1","title":"Launch","detail":"Went","at":"2026-10-03T05:00:00Z","recap":{"state":"ready","reveal_at":"2026-10-03T17:00:00Z"}},
+              {"kind":"hangout","id":"h1","title":"Hangout with Maya","detail":"Hangout","at":"2026-10-02T05:00:00Z","connection_id":"c1","peer":{"id":"u1","name":"Maya"}}
+            ],"next_cursor":null}
+            """)
+        }
+        let page = try await repository().history(.hangouts, cursor: nil)
+        #expect(page.items.map(\.kind) == [.event, .hangout])
+        #expect(page.items[0].recap == .ready)
+        #expect(page.items[1].peerName == "Maya")
+        #expect(page.nextCursor == nil)
     }
 
     @Test("The recap push opens the recap")

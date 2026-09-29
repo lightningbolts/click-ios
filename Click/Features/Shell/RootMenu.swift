@@ -10,7 +10,11 @@ struct RootMenu<Extra: View>: View {
         Menu {
             extra()
             Section {
-                Button("Saved events", systemImage: "bookmark") { env.router.navigate(to: .savedEvents) }
+                if env.features.isEnabled(.eventHistory) {
+                    Button("History", systemImage: "clock.arrow.circlepath") { env.router.navigate(to: .history) }
+                } else {
+                    Button("Saved events", systemImage: "bookmark") { env.router.navigate(to: .savedEvents) }
+                }
                 Button("My QR code", systemImage: "qrcode") { env.router.navigate(to: .myQR) }
                 Button("Alerts", systemImage: "bell") { env.router.navigate(to: .settings(.alerts)) }
                 Button("Privacy & data", systemImage: "hand.raised") { env.router.navigate(to: .settings(.privacy)) }

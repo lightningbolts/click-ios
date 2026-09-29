@@ -50,8 +50,8 @@ struct AppRouteDestination: View {
                 SavedEventsView()
             case .eventRecap(let beaconID):
                 EventRecapView(beaconID: beaconID)
-            case .eventHistory:
-                EventHistoryView()
+            case .history:
+                HistoryView()
             case .settings(let page):
                 SettingsPageView(page: page)
             case .conversation(let chatID, let messageID):

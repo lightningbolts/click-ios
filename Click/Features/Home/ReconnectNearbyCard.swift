@@ -4,11 +4,11 @@ import SwiftUI
 /// one a day. "Say hi" opens your chat with a starter; "Not now" can also mute the person or place.
 struct ReconnectNearbyCard: View {
     @Environment(AppEnvironment.self) private var env
-    @State private var nudge: ReconnectNearbyNudge?
+    let nudge: ReconnectNearbyNudge
+    /// The card was dismissed or acted on (Home removes it).
+    let onDone: () -> Void
 
     var body: some View {
-        Group {
-            if let nudge {
                 VStack(alignment: .leading, spacing: 12) {
                     HStack(spacing: 12) {
                         AvatarView(imageURL: nudge.avatarURL, seed: nudge.userID,
@@ -41,20 +41,17 @@ struct ReconnectNearbyCard: View {
                 .padding(14)
                 .background(ClickColors.surface, in: RoundedRectangle(cornerRadius: 18, style: .continuous))
                 .transition(.opacity)
-            }
-        }
-        .task { await load() }
     }
 
-    private func load() async {
+    /// Home's load: only when location is already allowed (it never asks), at most one a day.
+    static func load(_ env: AppEnvironment) async -> ReconnectNearbyNudge? {
         guard env.location.isAuthorized,
-              let fix = await env.location.currentLocation(maximumAge: 300, acceptableAccuracy: 200, timeout: .seconds(5)) else { return }
-        let loaded = try? await env.relationships.reconnectNearby(at: fix.coordinate)
-        withAnimation(ClickMotion.subtleFade) { nudge = loaded }
+              let fix = await env.location.currentLocation(maximumAge: 300, acceptableAccuracy: 200, timeout: .seconds(5)) else { return nil }
+        return try? await env.relationships.reconnectNearby(at: fix.coordinate)
     }
 
     private func dismiss(_ nudge: ReconnectNearbyNudge, mute: ReconnectNearbyMute?) async {
-        withAnimation(ClickMotion.subtleFade) { self.nudge = nil }
+        withAnimation(ClickMotion.subtleFade) { onDone() }
         try? await env.relationships.resolveReconnectNearby(id: nudge.id, acted: false, mute: mute)
     }
 
@@ -68,7 +65,7 @@ struct ReconnectNearbyCard: View {
             model.composerText = starter(nudge)
         }
         env.router.navigate(to: .chat(route))
-        withAnimation(ClickMotion.subtleFade) { self.nudge = nil }
+        withAnimation(ClickMotion.subtleFade) { onDone() }
         try? await env.relationships.resolveReconnectNearby(id: nudge.id, acted: true)
     }
 
