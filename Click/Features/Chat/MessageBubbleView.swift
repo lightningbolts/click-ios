@@ -20,6 +20,8 @@ public struct MessageBubbleView: View {
     let showsReceipts: Bool
     /// Decrypted-media provider and opener; cannot be nil.
     let mediaLoader: (ChatMessageItem) async throws -> URL
+    /// Develop controls when this message is a Click Drop photo (spec §2).
+    var clickDrop: ClickDropControls?
     let onOpenMedia: ((URL, MessageMedia.Kind) -> Void)?
     let onOpenBeacon: ((SharedBeacon) -> Void)?
     /// Removes a failed outgoing row (✕ on a failed attachment).
@@ -56,6 +58,7 @@ public struct MessageBubbleView: View {
         showsSenderAvatar: Bool = false,
         showsReceipts: Bool = true,
         mediaLoader: @escaping (ChatMessageItem) async throws -> URL,
+        clickDrop: ClickDropControls? = nil,
         onOpenMedia: ((URL, MessageMedia.Kind) -> Void)? = nil,
         onOpenBeacon: ((SharedBeacon) -> Void)? = nil,
         onDiscardFailed: ((ChatMessageItem) -> Void)? = nil,
@@ -81,6 +84,7 @@ public struct MessageBubbleView: View {
         self.onDiscardFailed = onDiscardFailed
         self.onOpenBeacon = onOpenBeacon
         self.mediaLoader = mediaLoader
+        self.clickDrop = clickDrop
         self.onOpenMedia = onOpenMedia
         self.showsSenderName = showsSenderName
         self.showsSenderAvatarColumn = showsSenderAvatarColumn
@@ -264,6 +268,7 @@ public struct MessageBubbleView: View {
                     message: message,
                     media: media,
                     load: { try await mediaLoader(message) },
+                    clickDrop: clickDrop,
                     onOpen: { url in if BubbleTapGate.allowsTap { onOpenMedia?(url, media.kind) } }
                 )
                 .overlay { UploadStateOverlay(message: message, onRetry: onRetrySend, onDiscard: onDiscardFailed) }

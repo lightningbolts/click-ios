@@ -24,6 +24,10 @@ public final class AppEnvironment {
     public let hubs: HubRepository
     public let encounterContext: EncounterContextRepository
     public let relationships: RelationshipRepository
+    /// Server-driven feature flags (`/api/me/features`); everything new ships dark behind one.
+    public let features: FeatureFlags
+    /// Click Drop develop state (`/api/drops/*`).
+    public let drops: ClickDropService
     public let telemetryQueue = TelemetryQueue()
     public let connectionTelemetry: ConnectionFlowTelemetry
     public let friction: FrictionTelemetry
@@ -80,7 +84,9 @@ public final class AppEnvironment {
             timelineCache: timelineCache,
             pendingSends: pendingSends,
             identities: identities,
-            store: .shared
+            store: .shared,
+            drops: drops,
+            features: features
         )
         model.onLocalSend = { [weak self] chatID, messageID, content, type, date in
             self?.inbox?.applyLocalSend(chatID: chatID, messageID: messageID, content: content, messageType: type, date: date)
@@ -162,6 +168,8 @@ public final class AppEnvironment {
             }
         )
         self.api = resolvedAPI
+        self.features = FeatureFlags(api: resolvedAPI)
+        self.drops = ClickDropService(api: resolvedAPI)
         let identities = IdentityCache(api: resolvedAPI)
         self.identities = identities
         self.onboardingRepository = OnboardingRepository(client: resolvedAPI, settings: settings)

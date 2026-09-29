@@ -158,6 +158,10 @@ public protocol ChatRepositoryProtocol: Sendable {
 
     /// Returns a decrypted local file for a media message, downloading at most once (spec §37.3).
     func loadMedia(for message: ChatMessageItem, conversation: ConversationIdentity, currentUserID: String) async throws -> URL
+
+    /// The decrypted original of a developed gated Click Drop (spec §2), from a develop-issued URL.
+    func loadDropOriginal(for message: ChatMessageItem, from signedURL: URL?, conversation: ConversationIdentity,
+                          currentUserID: String) async throws -> URL
 }
 
 public extension ChatRepositoryProtocol {
@@ -194,6 +198,11 @@ public extension ChatRepositoryProtocol {
     }
 
     func loadMedia(for message: ChatMessageItem, conversation: ConversationIdentity, currentUserID: String) async throws -> URL {
+        throw ChatRepositoryError.mediaUnsupported
+    }
+
+    func loadDropOriginal(for message: ChatMessageItem, from signedURL: URL?, conversation: ConversationIdentity,
+                          currentUserID: String) async throws -> URL {
         throw ChatRepositoryError.mediaUnsupported
     }
 
@@ -1442,6 +1451,17 @@ public actor ChatRepository: ChatRepositoryProtocol {
         progress?(.encrypting)
         let chatID = try await canonicalChatID(conversation)
         let fileName = draft.fileName ?? "\(draft.kind.rawValue).\(MessageMedia.fileExtension(forMIME: draft.mimeType))"
+        // A gated Click Drop sends only its pixelated preview as the message's media; the original
+        // goes to private drop storage and is fetched through /api/drops/develop after reveal.
+        let gated = draft.isClickDrop && draft.gatesOriginal && draft.kind == .image
+        let primaryData: Data
+        if gated {
+            guard let preview = ClickDropPixelation.previewJPEG(from: draft.data) else { throw ChatRepositoryError.mediaTypeNotAllowed }
+            primaryData = preview
+        } else {
+            primaryData = draft.data
+        }
+        var dropFields: [String: Any] = [:]
 
         var metadata: [String: Any] = [:]
         let content: String
@@ -1453,13 +1473,42 @@ public actor ChatRepository: ChatRepositoryProtocol {
             allowUpgrade: true
         ) {
             guard let epochKey = session.epochKeys[session.currentEpoch] else { throw ChatRepositoryError.currentEpochKeyUnavailable }
+            if gated {
+                // Its own client message ID, so the original's AAD and replay identity differ from the preview's.
+                let originalID = "\(clientMessageID).original"
+                let original = try ClickCryptoV2.encryptMedia(
+                    metadata: .init(chatId: chatID, epoch: session.currentEpoch, senderDeviceId: session.deviceID,
+                                    clientMessageId: originalID, mediaCiphertextSha256: ""),
+                    epochKey: epochKey,
+                    plaintext: draft.data,
+                    replayGuard: messageReplayGuard
+                )
+                let uploaded = try await upload(draft, progress: progress, bytes: original.uploadedBytes, chatID: chatID, fileName: fileName, extra: [
+                    "drop_original": true,
+                    "e2ee_v2_envelope": original.authorizationEnvelope,
+                    "media_ciphertext_sha256": original.mediaCiphertextSha256,
+                    "epoch": session.currentEpoch,
+                    "sender_device_id": session.deviceID,
+                    "client_message_id": originalID
+                ])
+                guard let path = uploaded.path else { throw ChatRepositoryError.invalidServerPayload }
+                dropFields = [
+                    "drop_original_path": path,
+                    "drop_original": [
+                        "epoch": session.currentEpoch,
+                        "sender_device_id": session.deviceID,
+                        "client_message_id": originalID,
+                        "media_ciphertext_sha256": original.mediaCiphertextSha256
+                    ] as [String: Any]
+                ]
+            }
             // The media authorization and the message envelope share one client message ID;
             // the server rejects a media message whose IDs differ.
             let encrypted = try ClickCryptoV2.encryptMedia(
                 metadata: .init(chatId: chatID, epoch: session.currentEpoch, senderDeviceId: session.deviceID,
                                 clientMessageId: clientMessageID, mediaCiphertextSha256: ""),
                 epochKey: epochKey,
-                plaintext: draft.data,
+                plaintext: primaryData,
                 replayGuard: messageReplayGuard
             )
             let v2Fields: [String: Any] = [
@@ -1469,7 +1518,7 @@ public actor ChatRepository: ChatRepositoryProtocol {
                 "sender_device_id": session.deviceID,
                 "client_message_id": clientMessageID
             ]
-            let uploaded = try await upload(draft, progress: progress, bytes: encrypted.uploadedBytes, chatID: chatID, fileName: fileName, extra: v2Fields)
+            let uploaded = try await upload(draft, progress: gated ? nil : progress, bytes: encrypted.uploadedBytes, chatID: chatID, fileName: fileName, extra: v2Fields)
             guard let path = uploaded.path else { throw ChatRepositoryError.invalidServerPayload }
             metadata = [
                 "media_chat_id": chatID,
@@ -1499,8 +1548,15 @@ public actor ChatRepository: ChatRepositoryProtocol {
             }
             switch draft.kind {
             case .image, .audio:
-                let cipher = try ClickCryptoV1.encryptMediaBytes(draft.data, keys: try Self.mediaKeys(legacy))
-                let uploaded = try await upload(draft, progress: progress, bytes: cipher, chatID: chatID, fileName: fileName, extra: [:])
+                if gated {
+                    let original = try ClickCryptoV1.encryptMediaBytes(draft.data, keys: try Self.mediaKeys(legacy))
+                    let uploaded = try await upload(draft, progress: progress, bytes: original, chatID: chatID, fileName: fileName,
+                                                    extra: ["drop_original": true])
+                    guard let path = uploaded.path else { throw ChatRepositoryError.invalidServerPayload }
+                    dropFields = ["drop_original_path": path]
+                }
+                let cipher = try ClickCryptoV1.encryptMediaBytes(primaryData, keys: try Self.mediaKeys(legacy))
+                let uploaded = try await upload(draft, progress: gated ? nil : progress, bytes: cipher, chatID: chatID, fileName: fileName, extra: [:])
                 guard let url = uploaded.url else { throw ChatRepositoryError.invalidServerPayload }
                 metadata["media_url"] = url
                 content = " "
@@ -1530,6 +1586,7 @@ public actor ChatRepository: ChatRepositoryProtocol {
             metadata["original_mime_type"] = draft.mimeType
             metadata["is_encrypted_media"] = true
             metadata.merge(Self.draftMetadata(draft)) { _, new in new }
+            metadata.merge(dropFields) { _, new in new }
             if let duration = draft.durationSeconds { metadata["duration_seconds"] = duration }
             if draft.kind == .audio, let waveform = draft.waveform { metadata["waveform"] = VoiceWaveform.wire(waveform) }
         case .file:
@@ -1561,12 +1618,21 @@ public actor ChatRepository: ChatRepositoryProtocol {
         let root = try JSONFields.object(data)
         let row = JSONFields.dictionary(root["message"]) ?? root
         guard let id = JSONFields.string(row["id"]) else { throw ChatRepositoryError.invalidServerPayload }
-        let media = MessageMedia.parse(messageType: draft.kind.rawValue, metadata: metadata, decryptedContent: content, chatID: chatID)
-        let local = try? await ChatMediaVault.shared.store(
-            draft.data,
-            messageID: id,
-            fileExtension: media?.fileExtension ?? MessageMedia.fileExtension(forMIME: draft.mimeType)
-        )
+        var serverMetadata = metadata
+        if gated {
+            // The server stores `drop_gated` in place of the path, and stamps the reveal time.
+            serverMetadata.removeValue(forKey: "drop_original_path")
+            serverMetadata["drop_gated"] = true
+            let serverMeta = JSONFields.dictionary(row["metadata"]) ?? [:]
+            if let reveal = serverMeta["reveal_at"] { serverMetadata["reveal_at"] = reveal }
+        }
+        let media = MessageMedia.parse(messageType: draft.kind.rawValue, metadata: serverMetadata, decryptedContent: content, chatID: chatID)
+        let fileExtension = media?.fileExtension ?? MessageMedia.fileExtension(forMIME: draft.mimeType)
+        let local = try? await ChatMediaVault.shared.store(draft.data, messageID: id, fileExtension: fileExtension)
+        if gated {
+            // The sender already has the original: developing their own drop needs no download.
+            _ = try? await ChatMediaVault.shared.store(draft.data, messageID: Self.dropOriginalVaultKey(id), fileExtension: fileExtension)
+        }
         return ChatMessageItem(
             id: id,
             chatID: chatID,
@@ -1670,6 +1736,37 @@ public actor ChatRepository: ChatRepositoryProtocol {
             plain = try ClickCryptoV1.decryptMediaBytes(raw, keys: try Self.mediaKeys(legacy))
         }
         return try await ChatMediaVault.shared.store(plain, messageID: message.id, fileExtension: media.fileExtension)
+    }
+
+    static func dropOriginalVaultKey(_ messageID: String) -> String { "\(messageID)-original" }
+
+    /// The decrypted original of a developed gated Click Drop, from the signed URL
+    /// `/api/drops/develop` returned. Cached, so each device downloads it once.
+    public func loadDropOriginal(for message: ChatMessageItem, from signedURL: URL?, conversation: ConversationIdentity,
+                                 currentUserID: String) async throws -> URL {
+        guard let media = message.media, media.isGatedDrop else { throw ChatRepositoryError.mediaUnavailable }
+        let key = Self.dropOriginalVaultKey(message.id)
+        if let cached = await ChatMediaVault.shared.cachedURL(messageID: key, fileExtension: media.fileExtension) { return cached }
+        guard let signedURL else { throw ChatRepositoryError.mediaUnavailable }
+        let raw = try await Self.fetch(signedURL)
+        let plain: Data
+        if let v2 = media.dropOriginalV2 {
+            guard v2.chatId == message.chatID,
+                  let session = try await resolveV2Session(
+                    scope: .chat(message.chatID),
+                    participantUserIDs: await participants(for: conversation, currentUserID: currentUserID),
+                    allowUpgrade: false
+                  ),
+                  let epochKey = session.epochKeys[v2.epoch]
+            else { throw ChatRepositoryError.currentEpochKeyUnavailable }
+            plain = try ClickCryptoV2.decryptMedia(metadata: v2, epochKey: epochKey, uploadedBytes: raw, replayGuard: messageReplayGuard)
+        } else {
+            guard let legacy = await legacyKeys(for: conversation, currentUserID: currentUserID) else {
+                throw ChatRepositoryError.encryptionUnavailable
+            }
+            plain = try ClickCryptoV1.decryptMediaBytes(Self.normalizedMediaPayload(raw), keys: try Self.mediaKeys(legacy))
+        }
+        return try await ChatMediaVault.shared.store(plain, messageID: key, fileExtension: media.fileExtension)
     }
 
     private static func mediaKeys(_ legacy: LegacyKeys) throws -> ClickCryptoV1.DerivedKeys {

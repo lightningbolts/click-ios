@@ -67,6 +67,17 @@ public final class ConversationModel {
     @ObservationIgnored private var reactionRefreshTask: Task<Void, Never>?
     /// True between the chat screen's appear and disappear.
     public private(set) var isVisible = false
+    /// Click Drop develop state (spec §2): when this viewer developed each drop, synced server-side.
+    public private(set) var dropDevelopedAt: [String: Date] = [:]
+    /// Drops whose develop request is in flight (their bubbles show progress, not a second tap).
+    public private(set) var developingDropIDs: Set<String> = []
+    /// Drops developed on this screen just now: their bubbles play the develop animation once.
+    public private(set) var freshlyDevelopedDropIDs: Set<String> = []
+    /// Develop-issued signed URLs for gated originals (short-lived; re-requested when stale).
+    @ObservationIgnored private var dropOriginalSignedURLs: [String: URL] = [:]
+    @ObservationIgnored private var dropOriginalURLs: [String: URL] = [:]
+    private let drops: ClickDropService?
+    private let features: FeatureFlags?
     /// Reports this user's own sends so the inbox row updates immediately (set by AppEnvironment).
     var onLocalSend: ((_ chatID: String, _ messageID: String, _ content: String, _ messageType: String, _ date: Date) -> Void)?
 
@@ -80,8 +91,12 @@ public final class ConversationModel {
         timelineCache: ConversationTimelineCache? = nil,
         pendingSends: PendingSendStore? = nil,
         identities: IdentityCache? = nil,
-        store: LocalStore? = nil
+        store: LocalStore? = nil,
+        drops: ClickDropService? = nil,
+        features: FeatureFlags? = nil
     ) {
+        self.drops = drops
+        self.features = features
         self.store = currentUserID.isEmpty ? nil : store
         self.identities = identities
         self.timelineCache = timelineCache
@@ -424,6 +439,7 @@ public final class ConversationModel {
             saveToCache()
             operationError = nil
             await captureUnreadAndMarkRead()
+            await refreshDropStates()
         } catch {
             if error.isCancellation {
                 if phase == .loading { phase = items.isEmpty ? .initial : .loaded }
@@ -1257,6 +1273,100 @@ public final class ConversationModel {
             return (revealAt, item.isOutgoing)
         }
         .min { $0.0 < $1.0 }
+    }
+
+    // MARK: - Click Drop develop (spec §2)
+
+    /// Gated drops always develop through the server; legacy drops do when `drops_develop` is on.
+    /// Otherwise a legacy drop keeps its original behavior: it develops by itself at reveal.
+    private func usesDevelopFlow(_ media: MessageMedia) -> Bool {
+        drops != nil && (media.isGatedDrop || features?.isEnabled(.dropsDevelop) == true)
+    }
+
+    /// This viewer's develop state for a Click Drop photo in the develop flow; nil for anything
+    /// else, including legacy drops outside `drops_develop` (they keep developing on their own).
+    public func dropState(for item: ChatMessageItem, now: Date = .now) -> ClickDropDevelopState? {
+        guard let media = item.media, media.isDisposable, media.kind == .image, usesDevelopFlow(media) else { return nil }
+        guard item.deliveryStatus != .sending, item.deliveryStatus != .failed else {
+            return .pending(revealAt: media.revealAt ?? .distantFuture)
+        }
+        return .resolve(revealAt: media.revealAt, developedAt: dropDevelopedAt[item.id], now: now)
+    }
+
+    /// Ready drops on screen, oldest first ("Develop all").
+    public var readyDrops: [ChatMessageItem] {
+        items.filter { dropState(for: $0) == .ready }
+    }
+
+    /// Loads which revealed drops this viewer already developed (on any device).
+    func refreshDropStates() async {
+        guard let drops else { return }
+        let ids = items.compactMap { item -> String? in
+            guard let media = item.media, media.isDisposable, usesDevelopFlow(media), !media.isLocked(),
+                  dropDevelopedAt[item.id] == nil, item.deliveryStatus != .sending, item.deliveryStatus != .failed
+            else { return nil }
+            return item.id
+        }
+        guard !ids.isEmpty, let developed = try? await drops.developedAt(kind: .chat, ids: ids) else { return }
+        dropDevelopedAt.merge(developed) { current, _ in current }
+    }
+
+    /// Tap to develop, "Develop all", or live develop at zero. Pending drops stay pending.
+    public func develop(_ targets: [ChatMessageItem]) async {
+        guard let drops else { return }
+        let ready = targets.filter { dropState(for: $0) == .ready && !developingDropIDs.contains($0.id) }
+        guard !ready.isEmpty else { return }
+        developingDropIDs.formUnion(ready.map(\.id))
+        defer { developingDropIDs.subtract(ready.map(\.id)) }
+        do {
+            let results = try await drops.develop(ready.map { ClickDropRef(kind: .chat, id: $0.id) })
+            for result in results where result.status == .developed {
+                dropDevelopedAt[result.ref.id] = result.developedAt ?? .now
+                freshlyDevelopedDropIDs.insert(result.ref.id)
+                if let url = result.originalURL { dropOriginalSignedURLs[result.ref.id] = url }
+            }
+        } catch {
+            if !error.isCancellation { operationError = "Couldn't develop right now. Try again in a moment." }
+        }
+    }
+
+    /// Live develop: drops that reach zero while this chat is on screen develop by themselves.
+    /// False when none did (legacy drops, which develop on their own).
+    @discardableResult
+    public func developDropsRevealedWhileVisible(now: Date = .now) async -> Bool {
+        guard isVisible else { return false }
+        let justRevealed = readyDrops.filter { item in
+            guard let reveal = item.media?.revealAt else { return false }
+            return now.timeIntervalSince(reveal) < 5
+        }
+        guard !justRevealed.isEmpty else { return false }
+        await develop(justRevealed)
+        return true
+    }
+
+    /// The bubble finished its develop animation.
+    public func didShowDevelop(_ id: String) {
+        freshlyDevelopedDropIDs.remove(id)
+    }
+
+    /// The developed photo: a gated drop's original (fetched once, then cached on disk), or a
+    /// legacy drop's own media.
+    public func developedDropURL(for item: ChatMessageItem) async throws -> URL {
+        guard let media = item.media, media.isGatedDrop else { return try await mediaURL(for: item) }
+        if let url = dropOriginalURLs[item.id] { return url }
+        let url: URL
+        do {
+            url = try await chatRepository.loadDropOriginal(for: item, from: dropOriginalSignedURLs[item.id],
+                                                            conversation: identity, currentUserID: currentUserID)
+        } catch {
+            // No (or an expired) signed URL: developing again is idempotent and issues a fresh one.
+            guard let drops, let fresh = try await drops.develop([ClickDropRef(kind: .chat, id: item.id)]).first?.originalURL
+            else { throw error }
+            dropOriginalSignedURLs[item.id] = fresh
+            url = try await chatRepository.loadDropOriginal(for: item, from: fresh, conversation: identity, currentUserID: currentUserID)
+        }
+        dropOriginalURLs[item.id] = url
+        return url
     }
 
     // MARK: - Forward (spec §33)

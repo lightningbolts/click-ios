@@ -26,6 +26,9 @@ Authoritative ledger of backend HTTP endpoints, authorization requirements, and 
 | `/api/me/event-bookmarks` | GET `?limit` | Bearer JWT | Events | Saved events, denormalized (`{ bookmarks, next_cursor }`); deleted beacons return `title: "Unavailable event"` and `created_at: null` |
 | `/api/me/recap` | GET `?window=day\|week` | Bearer JWT | Home | `{ recap: {...counts} }`; client treats missing `recap` or any error as failure (never zeros) |
 | `/api/me/nudges` | GET | Bearer JWT | Home/Inbox | Undismissed nudges (`reconnect_lull`, `shared_upcoming_event`) with server copy |
+| `/api/me/features` | GET | Bearer JWT | Flags | `{ features: { [key]: { enabled, config } } }`; unknown or failed flags are off (`FeatureFlags`) |
+| `/api/drops/develop` | POST `{drops: [{kind: chat\|event\|shared, id}]}` (1–50) | Bearer JWT | Click Drops | Per item: `developed {developed_at, url?}` (url = 10-min signed gated original), `pending {reveal_at}`, or `not_found`. Idempotent |
+| `/api/drops/views` | GET `?kind&ids=a,b` (≤100) | Bearer JWT | Click Drops | `{ developed: { [id]: developed_at } }` for this viewer |
 | `/api/me/nudges/{id}/dismiss`, `/acted` | POST | Bearer JWT | Home/Inbox | Resolve a nudge; client prunes its cache on success |
 | `/api/user/availability-intents` | GET / POST `{intent_tag≤25, durationMs, timeframe}` / DELETE `?id` | Bearer JWT | Availability | Active intents; server owns expiry |
 | `/api/users/{id}/profile` | PATCH `{first_name,last_name,tags,personality_tags}` | Bearer JWT | Profile | Self-only; `tags` upserts `user_interests` |
@@ -52,6 +55,7 @@ Authoritative ledger of backend HTTP endpoints, authorization requirements, and 
 | `/api/beacons/{id}/event-chat` | GET | Bearer JWT | Event chat | 200 `{event_id, hub_id, title, creator_id}` · 403 RSVP required · 404 unavailable · 409 not ready · 410 ended |
 | `rpc/create_verified_clique` | POST `{target_user_ids, encrypted_keys, initial_group_name}` | Bearer JWT + apikey | Groups | Returns group UUID; each key row sealed with the member↔wrap-peer pairwise v1 key |
 | `/api/chat/media` | POST `{chat_id, mime_type, file_b64, e2ee_v2_envelope?, media_ciphertext_sha256?, epoch?, sender_device_id?, client_message_id?}` | Bearer JWT | Chat media | 201 `{url, path, ttl_seconds}`; ≤25 MiB; image/audio MIME allow-list; v2 authorization required once the chat is upgraded |
+| `/api/chat/media` + `drop_original: true` | POST (same fields; flag `drops_develop`) | Bearer JWT | Click Drops | Gated original to private storage: 201 `{url: null, path}`. The message then sends `metadata.drop_original_path` (server moves it out, stores `drop_gated: true`) and `metadata.drop_original {epoch, sender_device_id, client_message_id: "<cmid>.original", media_ciphertext_sha256}`; the message media itself is the pixelated preview |
 | `/api/chat/attachments` | POST `{chat_id, mime_type, file_name, file_b64, e2ee_v2_*?}` | Bearer JWT | Chat files | 201 `{path, url}`; ≤2 MiB plaintext; file MIME allow-list |
 | `/api/chat/attachments/sign` | POST `{path}` | Bearer JWT | Chat media | `{url, ttl_seconds}` (10 min) for `chatId/userId/...` paths |
 | `/api/beacons/{id}/rsvp` | GET · POST `{source, platform}` · DELETE | Bearer JWT | Events | `{current_user_signed_up, request_status, rsvp_count}`; POST → going or `{request_status: pending|waitlisted}`; 403 invite-only/closed, 409 full |

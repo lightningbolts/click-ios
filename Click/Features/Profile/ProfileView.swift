@@ -294,6 +294,7 @@ public struct ProfileView: View {
         guard let conversation = directConversation, let userID = env.session.currentSession?.userId,
               let data = image.jpegData(compressionQuality: 0.9), var draft = await MediaDraftBuilder.image(from: data) else { return }
         draft.isClickDrop = true
+        draft.gatesOriginal = env.features.isEnabled(.dropsDevelop)
         do {
             _ = try await env.chat.sendMedia(conversation: conversation, currentUserID: userID, currentUserName: "You",
                                              draft: draft, replyToID: nil, clientMessageID: UUID().uuidString.lowercased())

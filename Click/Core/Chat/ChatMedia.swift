@@ -29,6 +29,14 @@ public struct MessageMedia: Hashable, Sendable, Codable {
     /// Voice-note amplitude envelope (`metadata.waveform`, 0...1). iOS-written and additive;
     /// clients that don't know it (KMP) ignore it, and bubbles without it draw a flat bar.
     public var waveform: [Double]? = nil
+    /// A gated Click Drop (`metadata.drop_gated`): this message's media is only the pixelated
+    /// preview; the original comes from `/api/drops/develop` after reveal.
+    public var dropGated: Bool? = nil
+    /// How to decrypt the gated original (`metadata.drop_original`): its own v2 media fields, or
+    /// nil for a legacy (v1) chat, whose original uses the chat's legacy media keys.
+    public var dropOriginalV2: ClickCryptoV2.MediaMetadata? = nil
+
+    public var isGatedDrop: Bool { isDisposable && dropGated == true }
 
     public func isLocked(now: Date = .now) -> Bool {
         guard isDisposable else { return false }
@@ -96,8 +104,10 @@ public struct MessageMedia: Hashable, Sendable, Codable {
                 fileKey: nil,
                 plaintextSha256: nil,
                 isDisposable: JSONFields.bool(meta["disposable_roll"]) ?? false,
-                revealAt: JSONFields.date(meta["collaboration_ttl"]),
-                waveform: isImage ? nil : VoiceWaveform.parse(meta["waveform"])
+                revealAt: JSONFields.date(meta["reveal_at"]) ?? JSONFields.date(meta["collaboration_ttl"]),
+                waveform: isImage ? nil : VoiceWaveform.parse(meta["waveform"]),
+                dropGated: isImage ? JSONFields.bool(meta["drop_gated"]) : nil,
+                dropOriginalV2: isImage ? dropOriginalMetadata(meta["drop_original"], chatID: chatID) : nil
             )
         case "file", "document":
             let descriptor = AttachmentEnvelope.decode(decryptedContent)
@@ -119,6 +129,19 @@ public struct MessageMedia: Hashable, Sendable, Codable {
         default:
             return nil
         }
+    }
+
+    /// `metadata.drop_original` = `{ epoch, sender_device_id, client_message_id, media_ciphertext_sha256 }`.
+    static func dropOriginalMetadata(_ value: Any?, chatID: String) -> ClickCryptoV2.MediaMetadata? {
+        guard
+            let fields = JSONFields.dictionary(value),
+            let digest = JSONFields.string(fields, "media_ciphertext_sha256"),
+            let epoch = JSONFields.int(fields["epoch"]),
+            let device = JSONFields.string(fields, "sender_device_id"),
+            let client = JSONFields.string(fields, "client_message_id")
+        else { return nil }
+        return ClickCryptoV2.MediaMetadata(chatId: chatID, epoch: epoch, senderDeviceId: device,
+                                           clientMessageId: client, mediaCiphertextSha256: digest)
     }
 
     static func v2Metadata(_ meta: [String: Any], chatID: String) -> ClickCryptoV2.MediaMetadata? {
@@ -221,6 +244,9 @@ public struct MediaDraft: Sendable {
     public var waveform: [Double]?
     /// A Click Drop photo: revealed to everyone 24 hours after it is taken.
     public var isClickDrop = false
+    /// Send it gated (flag `drops_develop`): the message carries only a pixelated preview and the
+    /// original goes to the server's private drop storage until reveal.
+    public var gatesOriginal = false
     /// The in-person encounter a Click Drop belongs to (`metadata.encounter_id`), when one is active.
     public var encounterID: String?
     /// Re-sent from another chat (`metadata.forwarded`).
