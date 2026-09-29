@@ -42,7 +42,7 @@ public enum HangoutConfirmation: Equatable, Sendable {
 /// Relationship actions that aren't messages: logging and confirming hangouts, waves, and the
 /// opt-in presence pings behind hangout detection.
 public actor RelationshipRepository {
-    private let api: ClickAPIClient
+    let api: ClickAPIClient
 
     public init(api: ClickAPIClient) {
         self.api = api

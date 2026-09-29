@@ -13,6 +13,7 @@ public final class FeatureFlags {
         case eventDrops = "event_drops"
         case eventHistory = "event_history"
         case sharedDrops = "shared_drops"
+        case reconnectNearby = "reconnect_nearby"
     }
 
     private struct Resolved: Decodable {

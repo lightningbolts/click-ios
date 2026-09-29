@@ -18,6 +18,7 @@
 		07E26E70DB1B5BEE2525D0AB /* ClicksView.swift in Sources */ = {isa = PBXBuildFile; fileRef = AAC9E2A2A2CF84BFD5B7C9B3 /* ClicksView.swift */; };
 		0807AC2E7C11A5B869C9A575 /* APIRequest.swift in Sources */ = {isa = PBXBuildFile; fileRef = 235AD70ADF109B4932E8BC15 /* APIRequest.swift */; };
 		081AA9386D6FCC4DC3B03DA0 /* Haptics.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8C61BB3F2BA82EA2E549C314 /* Haptics.swift */; };
+		08C081B65D049D493CB2C9AD /* ReconnectNearbyTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 249A21200E0C4184F6CE567E /* ReconnectNearbyTests.swift */; };
 		09303B5DAA631E6B94E780FD /* AppEnvironment.swift in Sources */ = {isa = PBXBuildFile; fileRef = 504D5490D94A3C3BD8F57912 /* AppEnvironment.swift */; };
 		09B424FA14F8AFB0370CA393 /* SupabaseAuthService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 221590AAFE8AE01E4E75711D /* SupabaseAuthService.swift */; };
 		0E3138ECD4C16DB66E34A053 /* NearbyMapTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 33388B555994FAC30B7DA7C1 /* NearbyMapTests.swift */; };
@@ -136,9 +137,11 @@
 		8620D4210F7FE5EDE5A99A95 /* PostConnectView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0F37F164483F60E35B52EF4F /* PostConnectView.swift */; };
 		8A07FC1B9619FAE67BD81910 /* ClickDropFilter.swift in Sources */ = {isa = PBXBuildFile; fileRef = E242ED11CC7420590A7C5777 /* ClickDropFilter.swift */; };
 		8A9F4D30BB33AF8EA16ADF1B /* ConversationTimelineCache.swift in Sources */ = {isa = PBXBuildFile; fileRef = C359DA574B092111354A9753 /* ConversationTimelineCache.swift */; };
+		8C166A1ABF13BFA568BBA824 /* ReconnectNearby.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1D7B1781FA659F420B17320E /* ReconnectNearby.swift */; };
 		8D429531C644A536648D8BC5 /* StatusPill.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2229C327502C1A82ABD17D9B /* StatusPill.swift */; };
 		8D75F15C30FE0E789CC024BD /* GroupedSurface.swift in Sources */ = {isa = PBXBuildFile; fileRef = CEEFE47A4CBAB925D04FB0E9 /* GroupedSurface.swift */; };
 		8DD8D0AEB2396A470B9CBC66 /* HomeView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 005D701DA8A071928D68AB22 /* HomeView.swift */; };
+		8E4604871BC266A12C9B018F /* ReconnectNearbyCard.swift in Sources */ = {isa = PBXBuildFile; fileRef = FFFD67D7FE88321EBB61258B /* ReconnectNearbyCard.swift */; };
 		9059C7BC731D34781013C8E7 /* GlobalSearchView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9A1DDAF186000D4AB6CC00E9 /* GlobalSearchView.swift */; };
 		92E8BB4744E0DC418DC3813B /* NetworkingTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8B1EC4A055326A9384062E22 /* NetworkingTests.swift */; };
 		92F27DA0C01DD9C90070F34F /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = 32BCA700988129E7FE7DC06B /* Assets.xcassets */; };
@@ -325,6 +328,7 @@
 		1C333634F9CA36EC7340B6CD /* GroupSharedContent.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GroupSharedContent.swift; sourceTree = "<group>"; };
 		1C9CE28A98189AEC8BC639BD /* ChatRepository.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ChatRepository.swift; sourceTree = "<group>"; };
 		1CD6B7EAD7CCC02356A0BB25 /* Manrope-Bold.ttf */ = {isa = PBXFileReference; lastKnownFileType = file; path = "Manrope-Bold.ttf"; sourceTree = "<group>"; };
+		1D7B1781FA659F420B17320E /* ReconnectNearby.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ReconnectNearby.swift; sourceTree = "<group>"; };
 		1F74BDA9B286768CEF719A6F /* MessageOperationsTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MessageOperationsTests.swift; sourceTree = "<group>"; };
 		20EC856E20FF0D26024AD575 /* ChatKindsTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ChatKindsTests.swift; sourceTree = "<group>"; };
 		221590AAFE8AE01E4E75711D /* SupabaseAuthService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SupabaseAuthService.swift; sourceTree = "<group>"; };
@@ -332,6 +336,7 @@
 		235AD70ADF109B4932E8BC15 /* APIRequest.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = APIRequest.swift; sourceTree = "<group>"; };
 		2363F153118BAC82700FA97A /* OnboardingHeaderView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OnboardingHeaderView.swift; sourceTree = "<group>"; };
 		24923300FE8FCED3010533B3 /* TelemetryTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TelemetryTests.swift; sourceTree = "<group>"; };
+		249A21200E0C4184F6CE567E /* ReconnectNearbyTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ReconnectNearbyTests.swift; sourceTree = "<group>"; };
 		24F8E9B9D0F0B51D39CA35F3 /* Manrope-SemiBold.ttf */ = {isa = PBXFileReference; lastKnownFileType = file; path = "Manrope-SemiBold.ttf"; sourceTree = "<group>"; };
 		25BDF9FB87DD4FEC1F9E4C99 /* ModuleState.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ModuleState.swift; sourceTree = "<group>"; };
 		27C70F0B022CECE823326ED9 /* UltrasonicService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = UltrasonicService.swift; sourceTree = "<group>"; };
@@ -539,6 +544,7 @@
 		FCB1638F35F178E0F0FE80F1 /* EventReminderScheduler.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = EventReminderScheduler.swift; sourceTree = "<group>"; };
 		FD5B79848C6B2337EA8CD816 /* ConnectionFlowTelemetry.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ConnectionFlowTelemetry.swift; sourceTree = "<group>"; };
 		FF26912F27B4E25BACF33C07 /* AppRouteDestination.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppRouteDestination.swift; sourceTree = "<group>"; };
+		FFFD67D7FE88321EBB61258B /* ReconnectNearbyCard.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ReconnectNearbyCard.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXGroup section */
@@ -852,6 +858,7 @@
 				BB1A77E8E59821A8087FC2A2 /* OnboardingTests.swift */,
 				01DF541D37D451BAB9008186 /* Phase3FeedTests.swift */,
 				7CB3BD1B60178FAB0356E7F1 /* ProximityCodecTests.swift */,
+				249A21200E0C4184F6CE567E /* ReconnectNearbyTests.swift */,
 				30DD4C9A7E9B5D5321C8F98A /* RevisionTests.swift */,
 				3768AC3A65EACD0273F1F050 /* Round7Tests.swift */,
 				F7952CF4B73D0A54B59F8315 /* Round8Tests.swift */,
@@ -989,6 +996,7 @@
 				A1E86F5EC0AC5CAC94C17F8F /* HomeComponents.swift */,
 				8BE0A7042C675D3713023C20 /* HomeFeedModel.swift */,
 				005D701DA8A071928D68AB22 /* HomeView.swift */,
+				FFFD67D7FE88321EBB61258B /* ReconnectNearbyCard.swift */,
 				F98A417595AD773FE33925C7 /* SharedDropsStrip.swift */,
 			);
 			path = Home;
@@ -1107,6 +1115,7 @@
 				E667F8D1F4DAC876F8758433 /* EncounterContextRepository.swift */,
 				8BF0B2661A42F5C41AC15B6F /* EncounterSensorSampler.swift */,
 				2D86CA8A6FA2B7E8EBFE6A97 /* FriendshipStats.swift */,
+				1D7B1781FA659F420B17320E /* ReconnectNearby.swift */,
 				E3F99966A30696562944AC52 /* RelationshipRepository.swift */,
 			);
 			path = Connections;
@@ -1579,6 +1588,8 @@
 				FE73E5CDA34C6AAF260E376A /* ProximityCodec.swift in Sources */,
 				BE3AB54FA800C115DED3B3CE /* ProximityRepository.swift in Sources */,
 				70CC21D749BB5C6216BD983F /* PublicProfileView.swift in Sources */,
+				8C166A1ABF13BFA568BBA824 /* ReconnectNearby.swift in Sources */,
+				8E4604871BC266A12C9B018F /* ReconnectNearbyCard.swift in Sources */,
 				1674DC91D8258520146789E9 /* RelationshipRepository.swift in Sources */,
 				5EAF68E2372DE07743841C1E /* RootGateView.swift in Sources */,
 				E197A818076E9D0C8B49A2A2 /* RootMenu.swift in Sources */,
@@ -1656,6 +1667,7 @@
 				4162BB108AA253929551DACC /* OnboardingTests.swift in Sources */,
 				15E1002EACD031C0520ECBB1 /* Phase3FeedTests.swift in Sources */,
 				03B037B570CBC883E6BEB1A7 /* ProximityCodecTests.swift in Sources */,
+				08C081B65D049D493CB2C9AD /* ReconnectNearbyTests.swift in Sources */,
 				C7E3044705CB8DDF9A10AF7D /* RevisionTests.swift in Sources */,
 				1BB1A6936D5CD5CA154FE1B0 /* Round7Tests.swift in Sources */,
 				CFD3788C048BFEAEDD9C8FAE /* Round8Tests.swift in Sources */,
