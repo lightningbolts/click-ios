@@ -9,6 +9,7 @@ public final class FeatureFlags {
     public enum Key: String, CaseIterable, Sendable {
         case dropsDevelop = "drops_develop"
         case alertConfirmations = "alert_confirmations"
+        case soundtrackPresence = "soundtrack_presence"
     }
 
     private struct Resolved: Decodable {

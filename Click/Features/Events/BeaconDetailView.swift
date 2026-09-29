@@ -131,6 +131,9 @@ struct BeaconDetailView: View {
                         SoundtrackBeaconSection(beacon: beacon) { art in
                             withAnimation(ClickMotion.subtleFade) { resolvedArtwork = art }
                         }
+                        if !isExpired, env.features.isEnabled(.soundtrackPresence) {
+                            ListeningNowSection(beacon: beacon)
+                        }
                     }
 
                     infoCard(beacon)

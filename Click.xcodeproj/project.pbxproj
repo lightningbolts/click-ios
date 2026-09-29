@@ -28,6 +28,7 @@
 		125A0ECF1618D0BEABC3CB90 /* SharedEpochKeyStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7397D64654AEA12241696678 /* SharedEpochKeyStore.swift */; };
 		12CEB6414B495389B44F2C0A /* ChatView.swift in Sources */ = {isa = PBXBuildFile; fileRef = F96A5E440B359E2A2F052A29 /* ChatView.swift */; };
 		141635CE6697C819553C2786 /* ClickApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = 464D8F9F85AB107124A0DFC4 /* ClickApp.swift */; };
+		14437A6CB4D284779CF6E680 /* ListeningNowSection.swift in Sources */ = {isa = PBXBuildFile; fileRef = 803C6B9126875C3963F55A69 /* ListeningNowSection.swift */; };
 		14A9ABE1E8C63C81429603EB /* AuthView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 352CD16A8EB0AD27BC1F46F7 /* AuthView.swift */; };
 		15E1002EACD031C0520ECBB1 /* Phase3FeedTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 01DF541D37D451BAB9008186 /* Phase3FeedTests.swift */; };
 		1674DC91D8258520146789E9 /* RelationshipRepository.swift in Sources */ = {isa = PBXBuildFile; fileRef = E3F99966A30696562944AC52 /* RelationshipRepository.swift */; };
@@ -194,6 +195,7 @@
 		D3FBC1FCACB9E37591FF9776 /* OnboardingState.swift in Sources */ = {isa = PBXBuildFile; fileRef = BC148FF19C5BC80D4271B273 /* OnboardingState.swift */; };
 		D5294C030B43DFEE5786F7A0 /* AppRouterTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 51101C30845F8D2118C1B819 /* AppRouterTests.swift */; };
 		D65F1754EA234A84D1056733 /* TapConnectView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 29EBB7C286167B5DB91976F5 /* TapConnectView.swift */; };
+		DA3BDB6CF8285305A5A70733 /* ListeningNowTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = B9707587A0701F1884D349C6 /* ListeningNowTests.swift */; };
 		DA964C45F465551076944CB1 /* AudioSessionController.swift in Sources */ = {isa = PBXBuildFile; fileRef = 72D81EDF1823BF01D30A9CE9 /* AudioSessionController.swift */; };
 		DCF918349766112AF4A11269 /* PermissionCoordinator.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2C5A7CE7107D552FF7C4C6AC /* PermissionCoordinator.swift */; };
 		DFCC9DF32D532A6567CFF401 /* Manrope-SemiBold.ttf in Resources */ = {isa = PBXBuildFile; fileRef = 24F8E9B9D0F0B51D39CA35F3 /* Manrope-SemiBold.ttf */; };
@@ -214,6 +216,7 @@
 		EC7E7A933E08DA51FC8D9A04 /* ClickAPIClientTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 398978787A590D62A0ED1FA6 /* ClickAPIClientTests.swift */; };
 		ECF6EBE7FB0D8235682F8913 /* FeatureFlags.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7E029DA98E0E0F177B884F78 /* FeatureFlags.swift */; };
 		EE2DD300DD8D42003D87096D /* WelcomeView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B7E925958F753D5FBE49A830 /* WelcomeView.swift */; };
+		EEB8065538F287C6A07B911B /* SoundtrackPresence.swift in Sources */ = {isa = PBXBuildFile; fileRef = E6C70DF08C801BD9CACEF605 /* SoundtrackPresence.swift */; };
 		EF0F90DD03A0C46640DB05AF /* Manrope-ExtraLight.ttf in Resources */ = {isa = PBXBuildFile; fileRef = DBCE1A13DF90B8C97241FE7D /* Manrope-ExtraLight.ttf */; };
 		F0C860E28E13BA865F6E2DDF /* ChatGifTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 652D758D646E67BA10F2B890 /* ChatGifTests.swift */; };
 		F52ACBD891E2FDA84ECE47D4 /* MapBeacon.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6E33EE76109A805205DBD78A /* MapBeacon.swift */; };
@@ -408,6 +411,7 @@
 		7D2D91C12835F0AF71AF14F9 /* AppRouter.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppRouter.swift; sourceTree = "<group>"; };
 		7E029DA98E0E0F177B884F78 /* FeatureFlags.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FeatureFlags.swift; sourceTree = "<group>"; };
 		7E8A4D2F06F995D859E1AE5C /* PlanReminders.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PlanReminders.swift; sourceTree = "<group>"; };
+		803C6B9126875C3963F55A69 /* ListeningNowSection.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ListeningNowSection.swift; sourceTree = "<group>"; };
 		8068ACDFD74FF07B357A4039 /* ProfileRepository.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ProfileRepository.swift; sourceTree = "<group>"; };
 		819744403B53A100BF880F1B /* ClickCryptoV2.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ClickCryptoV2.swift; sourceTree = "<group>"; };
 		83C5FC83E94C4D0DD1DBBF1D /* PriorConnectionsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PriorConnectionsView.swift; sourceTree = "<group>"; };
@@ -452,6 +456,7 @@
 		B707F36DD15A7BDA013381B5 /* NotificationService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NotificationService.swift; sourceTree = "<group>"; };
 		B7D3128AB165039747A9ED1C /* AddClickView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AddClickView.swift; sourceTree = "<group>"; };
 		B7E925958F753D5FBE49A830 /* WelcomeView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WelcomeView.swift; sourceTree = "<group>"; };
+		B9707587A0701F1884D349C6 /* ListeningNowTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ListeningNowTests.swift; sourceTree = "<group>"; };
 		BB1A77E8E59821A8087FC2A2 /* OnboardingTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OnboardingTests.swift; sourceTree = "<group>"; };
 		BC148FF19C5BC80D4271B273 /* OnboardingState.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OnboardingState.swift; sourceTree = "<group>"; };
 		BC196177165E6C102B1932B4 /* SessionController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SessionController.swift; sourceTree = "<group>"; };
@@ -494,6 +499,7 @@
 		E48DD112855D186C03848B60 /* ClickDropDevelopTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ClickDropDevelopTests.swift; sourceTree = "<group>"; };
 		E667F8D1F4DAC876F8758433 /* EncounterContextRepository.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = EncounterContextRepository.swift; sourceTree = "<group>"; };
 		E6948B635825154782DB64D8 /* LegacyKMPStateMigrator.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LegacyKMPStateMigrator.swift; sourceTree = "<group>"; };
+		E6C70DF08C801BD9CACEF605 /* SoundtrackPresence.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SoundtrackPresence.swift; sourceTree = "<group>"; };
 		E976EF8A656006D5B73FFD10 /* ClickMapView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ClickMapView.swift; sourceTree = "<group>"; };
 		ED9FF6290770C75EBD921B16 /* ProfileView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ProfileView.swift; sourceTree = "<group>"; };
 		EEFED58F5E81E796610F3FC7 /* SelfDataStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SelfDataStore.swift; sourceTree = "<group>"; };
@@ -819,6 +825,7 @@
 				2CCD86C374B9F8179E86EDE2 /* HubMediaTests.swift */,
 				42726C3E89949B1741E4C897 /* InboxRowLayoutTests.swift */,
 				2D76120005FD30AE72B1126F /* LegacyKMPStateMigratorTests.swift */,
+				B9707587A0701F1884D349C6 /* ListeningNowTests.swift */,
 				66CDD7B3970AD090C2755F16 /* MeSettingsTests.swift */,
 				1F74BDA9B286768CEF719A6F /* MessageOperationsTests.swift */,
 				33388B555994FAC30B7DA7C1 /* NearbyMapTests.swift */,
@@ -1021,6 +1028,7 @@
 				501636A7B4E12830E982F608 /* EventFormatting.swift */,
 				FCB1638F35F178E0F0FE80F1 /* EventReminderScheduler.swift */,
 				6E33EE76109A805205DBD78A /* MapBeacon.swift */,
+				E6C70DF08C801BD9CACEF605 /* SoundtrackPresence.swift */,
 				2CF5C854F68006800D32A653 /* SoundtrackResolver.swift */,
 			);
 			path = Beacons;
@@ -1223,6 +1231,7 @@
 				8449BE5D6B21017344E55E9E /* BeaconDetailView.swift */,
 				5ADA68357CD58D4E2E660244 /* BeaconForm.swift */,
 				05BFAB76DC5E32C164D4C1F8 /* GuestListView.swift */,
+				803C6B9126875C3963F55A69 /* ListeningNowSection.swift */,
 				8A25B36F7B43CDA3235FEFDD /* SavedEventsView.swift */,
 				4F2961167D1BBB04E30C2C4B /* SoundtrackPreviewCard.swift */,
 			);
@@ -1496,6 +1505,7 @@
 				72698DEA93E808276C44668E /* KeychainSessionVault.swift in Sources */,
 				1AF62E9ECAB90265D25938A8 /* KlipyClient.swift in Sources */,
 				FAC64483BE0386233DBB0B4F /* LegacyKMPStateMigrator.swift in Sources */,
+				14437A6CB4D284779CF6E680 /* ListeningNowSection.swift in Sources */,
 				0129B20D6EF5FD53C967A7A4 /* LocalStore.swift in Sources */,
 				761B604CDB4F953AFB0B3E29 /* LocationProvider.swift in Sources */,
 				F52ACBD891E2FDA84ECE47D4 /* MapBeacon.swift in Sources */,
@@ -1548,6 +1558,7 @@
 				E1A32FEA2DD05DDE9CC3991B /* SettingsStore.swift in Sources */,
 				54C1D4956598CBFA3DB13C4A /* SharedContentModel.swift in Sources */,
 				125A0ECF1618D0BEABC3CB90 /* SharedEpochKeyStore.swift in Sources */,
+				EEB8065538F287C6A07B911B /* SoundtrackPresence.swift in Sources */,
 				CE65647A18C74BF4DBE73CB8 /* SoundtrackPreviewCard.swift in Sources */,
 				A7B9E230C5E45C64C14B0132 /* SoundtrackResolver.swift in Sources */,
 				B12D7E2CA0F7D433B947DA57 /* Spacing.swift in Sources */,
@@ -1601,6 +1612,7 @@
 				6116461327D4FF1806AC2945 /* HubMediaTests.swift in Sources */,
 				98F61FE26FFFEEF3406D8342 /* InboxRowLayoutTests.swift in Sources */,
 				F9549923EB17C4F1A31929C3 /* LegacyKMPStateMigratorTests.swift in Sources */,
+				DA3BDB6CF8285305A5A70733 /* ListeningNowTests.swift in Sources */,
 				02B49E1B236CECA73DE9449F /* MeSettingsTests.swift in Sources */,
 				F5CD94E53ACA1B9A2E559942 /* MessageOperationsTests.swift in Sources */,
 				FDFD106CA37C9701D92A9F86 /* MockURLProtocol.swift in Sources */,
