@@ -64,9 +64,6 @@ public struct ClickMapView: View {
             .onChange(of: proxy.safeAreaInsets.bottom, initial: true) { _, inset in
                 if env.router.mapPath.isEmpty { stableBottomInset = inset }
             }
-            .onChange(of: env.router.mapPath.isEmpty) { _, isRoot in
-                if isRoot { stableBottomInset = proxy.safeAreaInsets.bottom }
-            }
         }
         // The Nearby sheet's search keyboard must not count as bottom inset: it would lift the
         // lip and buttons mid-screen behind the sheet.
@@ -143,13 +140,9 @@ public struct ClickMapView: View {
         }
         .sheet(isPresented: $model.isNearbyPresented) {
             // Rows open inside the sheet, over the feed: back returns to the same scroll spot.
-            NavigationStack(path: nearbyPath) {
+            RoutedSheetStack(path: nearbyPath, detent: $model.nearbyDetent) {
                 NearbyListView(model: model, pins: pins, onOpen: open)
-                    .appRouteDestinations()
             }
-            .environment(\.isInSheet, true)
-            .presentationDetents([.medium, .large], selection: $model.nearbyDetent)
-            .presentationDragIndicator(.visible)
             .presentationContentInteraction(.scrolls)
             .presentationBackgroundInteraction(.enabled(upThrough: .medium))
         }
@@ -270,12 +263,10 @@ public struct ClickMapView: View {
         )
     }
 
-    /// Opens a Nearby row inside the sheet (chats and profiles at full height) and brings
-    /// its spot into view on the map behind.
+    /// Opens a Nearby row inside the sheet and brings its spot into view on the map behind.
     private func open(_ item: MapItem) {
         model.focusCamera(on: item.coordinate)
-        if !item.route.presentsAsSheet { model.nearbyDetent = .large }
-        env.router.pushInNearby(item.route)
+        env.router.navigate(to: item.route)
     }
 
     private func openProfile(for item: MapItem) {

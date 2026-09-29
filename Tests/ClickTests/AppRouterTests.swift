@@ -7,22 +7,29 @@ import Foundation
 struct AppRouterTests {
     let router = AppRouter()
 
-    @Test("With Nearby open, details push inside it; leaving for a full screen closes it")
-    func nearbyHostsDetails() {
+    @Test("With a sheet open, everything pushes inside it; outside arrivals close it")
+    func sheetsHostPushes() {
         router.selectedTab = .map
         router.nearbyPath = []
         router.navigate(to: .event(beaconID: "e1"))
-        router.pushInNearby(.userProfile(userID: "u1", connectionID: nil))
-        router.pushInNearby(.userProfile(userID: "u1", connectionID: nil))
-        #expect(router.presentedSheet == nil)
-        #expect(router.nearbyPath == [.event(beaconID: "e1"), .userProfile(userID: "u1", connectionID: nil)])
-
         router.navigate(to: .eventChat(beaconID: "e1"))
-        #expect(router.nearbyPath == nil)
-        #expect(router.mapPath == [.eventChat(beaconID: "e1")])
+        router.navigate(to: .userProfile(userID: "u1", connectionID: nil))
+        router.navigate(to: .eventChat(beaconID: "e1"))
+        #expect(router.presentedSheet == nil)
+        #expect(router.mapPath.isEmpty)
+        // Opening the chat again pops back to it instead of stacking a second copy.
+        #expect(router.nearbyPath == [.event(beaconID: "e1"), .eventChat(beaconID: "e1")])
 
+        router.nearbyPath = nil
         router.navigate(to: .event(beaconID: "e2"))
+        router.navigate(to: .eventPeople(beaconID: "e2"))
         #expect(router.presentedSheet?.route == .event(beaconID: "e2"))
+        #expect(router.sheetPath == [.eventPeople(beaconID: "e2")])
+
+        router.resolveRoute(.conversation(chatID: "c1", messageID: nil))
+        #expect(router.presentedSheet == nil)
+        #expect(router.sheetPath.isEmpty)
+        #expect(router.connectionsPath == [.conversation(chatID: "c1", messageID: nil)])
     }
 
     @Test("Parses click:// custom scheme connection URL with parameters")

@@ -28,7 +28,9 @@ struct AppRouteDestination: View {
                 GroupProfileView(chatID: chatID)
             case .eventChat(let beaconID):
                 EventChatView(beaconID: beaconID)
-            case .event(let beaconID), .beacon(let beaconID):
+            case .event(let beaconID):
+                BeaconDetailView(beaconID: beaconID, isEvent: true, isSheetRoot: isSheetRoot)
+            case .beacon(let beaconID):
                 BeaconDetailView(beaconID: beaconID, isSheetRoot: isSheetRoot)
             case .eventPeople(let beaconID):
                 EventDirectoryView(beaconID: beaconID)
@@ -103,6 +105,33 @@ private struct ConversationByIDView: View {
             return ConversationIdentity(chatID: hub.hubID, peerUserID: "", peerDisplayName: hub.name, kind: .hub(hubID: hub.hubID))
         }
         return nil
+    }
+}
+
+/// A sheet's stack of routes (Nearby, event/beacon detail): its screens leave the tab bar under
+/// the sheet alone, and anything pushed beyond a detail (a chat, a profile, people) opens the
+/// sheet to full height.
+struct RoutedSheetStack<Root: View>: View {
+    @Binding var path: [AppRoute]
+    @Binding var detent: PresentationDetent
+    let root: Root
+
+    init(path: Binding<[AppRoute]>, detent: Binding<PresentationDetent>, @ViewBuilder root: () -> Root) {
+        _path = path
+        _detent = detent
+        self.root = root()
+    }
+
+    var body: some View {
+        NavigationStack(path: $path) {
+            root.appRouteDestinations()
+        }
+        .environment(\.isInSheet, true)
+        .onChange(of: path) { old, new in
+            if new.count > old.count, new.last?.presentsAsSheet == false { detent = .large }
+        }
+        .presentationDetents([.medium, .large], selection: $detent)
+        .presentationDragIndicator(.visible)
     }
 }
 

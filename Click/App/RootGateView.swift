@@ -186,13 +186,7 @@ public struct MainTabShellView: View {
         }
         .tint(ClickColors.accentForeground)
         .sheet(item: $r.presentedSheet) { item in
-            NavigationStack {
-                AppRouteDestination(route: item.route, isSheetRoot: true)
-                    .appRouteDestinations()
-            }
-            .environment(\.isInSheet, true)
-            .presentationDetents([.medium, .large])
-            .presentationDragIndicator(.visible)
+            DetailSheet(route: item.route)
             .environment(meTabAvatar)
             .environment(conversations)
         }
@@ -264,6 +258,20 @@ public struct MainTabShellView: View {
             // A failed fetch intentionally leaves the fallback symbol; the Me root refreshes
             // the profile itself and forwards the avatar when it succeeds.
             meTabAvatar.update(avatarURL: fresh.avatarURL)
+        }
+    }
+}
+
+/// The shell's event/beacon detail sheet; anything opened from it pushes inside it.
+private struct DetailSheet: View {
+    @Environment(AppEnvironment.self) private var env
+    let route: AppRoute
+    @State private var detent: PresentationDetent = .medium
+
+    var body: some View {
+        @Bindable var router = env.router
+        RoutedSheetStack(path: $router.sheetPath, detent: $detent) {
+            AppRouteDestination(route: route, isSheetRoot: true)
         }
     }
 }

@@ -227,11 +227,13 @@ public final class AppRouter {
 
     /// Event and beacon details are sheets (medium/large) over whatever is on screen
     /// (interaction contract 3), owned by the shell — one modal owner.
-    public var presentedSheet: SheetRoute?
+    public var presentedSheet: SheetRoute? {
+        didSet { if presentedSheet?.id != oldValue?.id { sheetPath = [] } }
+    }
+    /// Screens pushed inside the detail sheet (event chat, people, profiles).
+    public var sheetPath: [AppRoute] = []
 
-    /// The Map's Nearby sheet stack; nil while the sheet is closed. While it's open, whatever
-    /// the feed opens (and any event or beacon opened from there) pushes inside the sheet, so
-    /// the feed and its scroll position stay one back-swipe away.
+    /// The Map's Nearby sheet stack; nil while the sheet is closed.
     public var nearbyPath: [AppRoute]?
 
     /// The one global search surface. Every search control (Home, Clicks, Nearby, Map) opens
@@ -241,8 +243,7 @@ public final class AppRouter {
     private var routeAfterSearch: AppRoute?
 
     public func presentSearch(query: String = "") {
-        presentedSheet = nil
-        nearbyPath = nil
+        dismissSheets()
         searchRequest = SearchRequest(query: query)
     }
 
@@ -270,38 +271,42 @@ public final class AppRouter {
 
     /// Switches to the Map root and asks it to focus a beacon, hub, or layer ("View on Map").
     public func showOnMap(_ focus: MapFocus? = nil) {
-        presentedSheet = nil
+        dismissSheets()
         mapFocus = focus
         mapPath.removeAll()
         selectedTab = .map
     }
 
-    /// Navigates to a typed route within the active tab's stack. Every stack registers the
-    /// canonical `AppRouteDestination`, so any route may be pushed onto any tab.
+    /// Navigates to a typed route. Every stack registers the canonical `AppRouteDestination`,
+    /// so any route may be pushed onto any stack:
+    /// - with a sheet open (Nearby, or an event/beacon detail), it pushes inside that sheet, so
+    ///   whatever you came from stays one back-swipe away and nothing jumps behind the sheet;
+    /// - otherwise details open as a sheet and everything else pushes onto the selected tab.
     ///
     /// A screen is never stacked twice: if the destination is already in the stack (chat →
     /// profile → "Message", or a push for the chat that's open), the stack pops back to it.
     public func navigate(to route: AppRoute) {
-        if route.presentsAsSheet {
-            if nearbyPath != nil { pushInNearby(route) } else { presentedSheet = SheetRoute(route: route) }
-            return
-        }
-        // Continuing elsewhere from a detail sheet closes it first.
-        presentedSheet = nil
-        nearbyPath = nil
         queueMessageFocus(for: route)
-        if let index = openIndex(of: route, in: selectedTab) {
-            self[path: selectedTab].removeSubrange((index + 1)...)
+        if nearbyPath != nil {
+            nearbyPath = pushed(route, onto: nearbyPath ?? [])
+        } else if presentedSheet != nil {
+            sheetPath = pushed(route, onto: sheetPath)
+        } else if route.presentsAsSheet {
+            presentedSheet = SheetRoute(route: route)
         } else {
-            self[path: selectedTab].append(route)
+            self[path: selectedTab] = pushed(route, onto: self[path: selectedTab])
         }
     }
 
-    /// Pushes `route` inside the open Nearby sheet (navigates normally when it's closed).
-    public func pushInNearby(_ route: AppRoute) {
-        guard let path = nearbyPath else { return navigate(to: route) }
-        queueMessageFocus(for: route)
-        if path.last != route { nearbyPath = path + [route] }
+    /// Closes any open sheet (for arrivals from outside the app).
+    public func dismissSheets() {
+        presentedSheet = nil
+        nearbyPath = nil
+    }
+
+    private func pushed(_ route: AppRoute, onto path: [AppRoute]) -> [AppRoute] {
+        if let index = openIndex(of: route, in: path) { return Array(path[...index]) }
+        return path + [route]
     }
 
     private func queueMessageFocus(for route: AppRoute) {
@@ -317,10 +322,10 @@ public final class AppRouter {
     /// connection, hub), so routes naming one chat differently still match. Set by the environment.
     @ObservationIgnored var conversationAliases: (String) -> Set<String> = { [$0] }
 
-    /// Where `route`'s screen already sits in `tab`'s stack, if it does.
-    private func openIndex(of route: AppRoute, in tab: MainTab) -> Int? {
+    /// Where `route`'s screen already sits in `path`, if it does.
+    private func openIndex(of route: AppRoute, in path: [AppRoute]) -> Int? {
         let keys = screenKeys(route)
-        return self[path: tab].lastIndex { !screenKeys($0).isDisjoint(with: keys) }
+        return path.lastIndex { !screenKeys($0).isDisjoint(with: keys) }
     }
 
     /// Which screen a route shows. A conversation is named by every ID it's known by (a chat
@@ -501,7 +506,8 @@ public final class AppRouter {
     /// Resolves and executes a queued or active route on its canonical tab, or on the current
     /// tab when that screen is already open there (never a second copy elsewhere).
     public func resolveRoute(_ route: AppRoute) {
-        if openIndex(of: route, in: selectedTab) == nil {
+        dismissSheets()
+        if openIndex(of: route, in: self[path: selectedTab]) == nil {
             selectedTab = route.canonicalTab
         }
         navigate(to: route)

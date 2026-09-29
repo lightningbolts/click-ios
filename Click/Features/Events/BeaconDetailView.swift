@@ -9,6 +9,8 @@ struct BeaconDetailView: View {
     @Environment(\.dismiss) private var dismiss
 
     let beaconID: String
+    /// From the route (`.event` vs `.beacon`), so the bar's buttons exist from the first frame.
+    var isEvent = false
     /// Root of a detail sheet (closes it) rather than pushed onto a stack (goes back).
     var isSheetRoot = false
 
@@ -253,17 +255,21 @@ struct BeaconDetailView: View {
             // No visible title over the hero; the navigation title still names the screen.
             Color.clear.frame(width: 1, height: 1).accessibilityHidden(true)
         }
-        if let beacon = beacon.value {
-            ToolbarItemGroup(placement: .topBarTrailing) {
-                if beacon.isEvent {
-                    let saved = engagement.value?.bookmarked == true
-                    Button { Task { await toggleBookmark(beacon) } } label: {
-                        Label(saved ? "Remove from saved" : "Save event", systemImage: saved ? "bookmark.fill" : "bookmark")
-                    }
-                    .tint(saved ? ClickColors.accentForeground : nil)
-                    .disabled(engagement.value == nil || bookmarkPending)
+        // Present from the first frame (disabled until loaded), so iOS morphs them in with the
+        // push like any other bar buttons instead of popping them in once the beacon arrives.
+        ToolbarItemGroup(placement: .topBarTrailing) {
+            if beacon.value?.isEvent ?? isEvent {
+                let saved = engagement.value?.bookmarked == true
+                Button {
+                    if let beacon = beacon.value { Task { await toggleBookmark(beacon) } }
+                } label: {
+                    Label(saved ? "Remove from saved" : "Save event", systemImage: saved ? "bookmark.fill" : "bookmark")
                 }
-                Menu {
+                .tint(saved ? ClickColors.accentForeground : nil)
+                .disabled(engagement.value == nil || bookmarkPending)
+            }
+            Menu {
+                if let beacon = beacon.value {
                     Button("Copy link", systemImage: "link") {
                         UIPasteboard.general.string = "https://joinclick.co/e/\(beacon.id)"
                         ClickHaptics.success()
@@ -273,10 +279,11 @@ struct BeaconDetailView: View {
                     ShareLink(item: URL(string: "https://joinclick.co/e/\(beacon.id)")!, subject: Text(beacon.title)) {
                         Label("More…", systemImage: "square.and.arrow.up")
                     }
-                } label: {
-                    Label("Share", systemImage: "square.and.arrow.up")
                 }
+            } label: {
+                Label("Share", systemImage: "square.and.arrow.up")
             }
+            .disabled(beacon.value == nil)
         }
         if isSheetRoot {
             ToolbarItem(placement: .topBarTrailing) {
