@@ -9,6 +9,10 @@ struct ClickDropCameraView: View {
     @Environment(\.dismiss) private var dismiss
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     var endsAt: Date?
+    /// Under the title: when this drop develops.
+    var subtitle = "Develops in 24 hours"
+    /// Event drops are shot natural: the recap gives each its own look without touching the original.
+    var showsLooks = true
     let onSend: (MediaDraft) -> Void
 
     @State private var camera = ClickDropCamera()
@@ -63,7 +67,7 @@ struct ClickDropCameraView: View {
                 Spacer()
                 VStack(spacing: 2) {
                     Text("Click Drops").font(ClickTypography.bodyEmphasized)
-                    Text("Develops in 24 hours").font(ClickTypography.caption).opacity(0.75)
+                    Text(subtitle).font(ClickTypography.caption).opacity(0.75)
                 }
                 .foregroundStyle(.white)
                 Spacer()
@@ -81,7 +85,7 @@ struct ClickDropCameraView: View {
             Spacer()
 
             VStack(spacing: 14) {
-                if captured != nil { filterStrip }
+                if captured != nil, showsLooks { filterStrip }
                 Text(statusText)
                     .font(ClickTypography.metadataEmphasized)
                     .foregroundStyle(.white.opacity(0.88))

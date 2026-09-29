@@ -48,6 +48,10 @@ struct AppRouteDestination: View {
                 ConnectionInvocationView(invocation: invocation)
             case .savedEvents:
                 SavedEventsView()
+            case .eventRecap(let beaconID):
+                EventRecapView(beaconID: beaconID)
+            case .eventHistory:
+                EventHistoryView()
             case .settings(let page):
                 SettingsPageView(page: page)
             case .conversation(let chatID, let messageID):

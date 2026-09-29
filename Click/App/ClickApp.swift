@@ -283,6 +283,8 @@ final class ClickNotificationCoordinator {
                          senderName: value(["sender_name", "peer_name", "title"]))
         case "event_reminder", "event_teaser", "shared_upcoming_event":
             return value(["beacon_id", "event_id"]).map { .route(.event(beaconID: $0)) } ?? .none
+        case "event_drop_recap":
+            return value(["beacon_id", "event_id"]).map { .route(.eventRecap(beaconID: $0)) } ?? .none
         case "hub_message":
             return value(["hub_id", "venue_id"]).map { .route(.hub(hubID: $0)) } ?? .none
         case "archive_warning", "reconnect_nudge", "anniversary", "memory_prompt", "hangout_confirm":

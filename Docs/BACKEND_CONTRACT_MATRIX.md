@@ -30,6 +30,13 @@ Authoritative ledger of backend HTTP endpoints, authorization requirements, and 
 | `/api/drops/develop` | POST `{drops: [{kind: chat\|event\|shared, id}]}` (1–50) | Bearer JWT | Click Drops | Per item: `developed {developed_at, url?}` (url = 10-min signed gated original), `pending {reveal_at}`, or `not_found`. Idempotent |
 | `/api/beacons/{id}/confirm` | GET / POST `{status: still_here\|cleared, lat?, lng?}` | Bearer JWT | Alerts (flag `alert_confirmations`) | GET `{state, expires_at, last_still_here_at, my_vote, is_creator, radius_meters}`; POST `{outcome, expires_at}`. 403 out of range, 409 already voted, 410 ended, 400 no location |
 | `/api/beacons/{id}/listening` | GET / POST `{lat, lng}` / DELETE | Bearer JWT | Soundtracks (flag `soundtrack_presence`) | `{count, is_listening, connections[{user_id, name, avatar_url}], heartbeat_seconds}`; POST 403 when outside the pin's area. Names are the viewer's connections only |
+| `/api/beacons/{id}/drops` | GET / POST `{client_drop_id, mime_type, original_b64, preview_b64, width?, height?, show_to_absentees?}` | Bearer JWT | Event drops (flag `event_drops`) | GET `{state: before\|open\|developing\|revealed, opens_at, closes_at, reveal_at, event_title, access, can_post, remaining, show_to_absentees, drops[]}`; POST 403 not checked in / window closed, 409 cap. Same `client_drop_id` = same drop (safe retry) |
+| `/api/beacons/{id}/drops/{dropId}` | DELETE | Bearer JWT | Event drops | Poster only |
+| `/api/beacons/{id}/drops/settings` | PUT `{show_to_absentees}` | Bearer JWT | Event drops | Poster's per-event "What you missed" choice |
+| `/api/drops/report` | POST `{kind, id, reason}` | Bearer JWT | Moderation | Quiet report on any visible drop |
+| `/api/me/event-history` | GET `?filter=all\|went\|rsvpd\|saved\|hosted&cursor` | Bearer JWT | History (flag `event_history`) | `{events[{beacon_id, title, starts_at, ends_at, location_name, image_url, relation, recap}], next_cursor}` |
+| `/api/me/event-history/recap-card` | GET | Bearer JWT | Home | `{card}` for an event you were at in the last ~48 h, else `{card: null}` |
+| `/api/users/{id}/events-together` | GET | Bearer JWT | Profile | Only events both people checked in to |
 | `/api/beacons/{id}/report` | POST `{reason}` | Bearer JWT | Moderation | Quiet report into `beacon_reports`; 201 |
 | `/api/drops/views` | GET `?kind&ids=a,b` (≤100) | Bearer JWT | Click Drops | `{ developed: { [id]: developed_at } }` for this viewer |
 | `/api/me/nudges/{id}/dismiss`, `/acted` | POST | Bearer JWT | Home/Inbox | Resolve a nudge; client prunes its cache on success |

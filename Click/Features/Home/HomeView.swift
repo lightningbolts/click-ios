@@ -50,6 +50,7 @@ public struct HomeView: View {
                         .accessibilityHidden(true)
                 }
                 recentPeopleSection(promoted: opportunity)
+                if env.features.isEnabled(.eventHistory) { HomeEventRecapCard() }
                 recapSection
                 savedSection(promotedID: promotedEventID(opportunity))
                 nearbySection

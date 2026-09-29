@@ -153,6 +153,10 @@ struct BeaconDetailView: View {
                         }
                     }
 
+                    if beacon.isEvent, env.features.isEnabled(.eventDrops) {
+                        EventDropsSection(beacon: beacon)
+                    }
+
                     if beacon.isEvent { peoplePreview }
 
                     if beacon.creatorID == env.session.currentSession?.userId {

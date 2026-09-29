@@ -70,6 +70,9 @@ public struct ProfileView: View {
                         HangoutsSection(plans: model.upcomingPlans) { env.router.navigate(to: $0.route) }
                     }
                 }
+                if !isSelf, env.features.isEnabled(.eventHistory) {
+                    EventsTogetherSection(userID: model.userID)
+                }
                 chatBackdrop
                 // Sticky: once the chips reach the top they're held there, over the content.
                 tabChips

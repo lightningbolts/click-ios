@@ -24,6 +24,13 @@ enum ClickDropFilter: Int, CaseIterable, Identifiable, Sendable {
         }
     }
 
+    /// An event recap's look for one drop: every look but Natural, picked by the drop's server
+    /// seed so it's the same on every device (spec F1). The original is never modified.
+    nonisolated static func recapLook(seed: Int) -> ClickDropFilter {
+        let looks = allCases.filter { $0 != .natural }
+        return looks[((seed % looks.count) + looks.count) % looks.count]
+    }
+
     /// KMP caps live previews at 1280 px; sent photos use the chat image limit.
     nonisolated static let previewMaxDimension: CGFloat = 1280
     nonisolated static let sendMaxDimension: CGFloat = 2048
