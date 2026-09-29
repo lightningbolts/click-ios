@@ -25,8 +25,9 @@ struct AvailabilitySheet: View {
                 Section {
                     TextField("Coffee, study, walk…", text: $tag)
                         .textInputAutocapitalization(.sentences)
-                        .submitLabel(.done)
+                        .submitLabel(.send)
                         .focused($isTagFocused)
+                        .onSubmit { Task { await share() } }
                         .onChange(of: tag) { _, value in
                             if value.count > MeRepository.intentTagMaxLength {
                                 tag = String(value.prefix(MeRepository.intentTagMaxLength))
@@ -43,19 +44,6 @@ struct AvailabilitySheet: View {
                     Text("Your Clicks see this until it expires. Connections with overlapping plans get a match alert.")
                 }
 
-                Section {
-                    Button {
-                        Task { await share() }
-                    } label: {
-                        HStack {
-                            Spacer()
-                            if isSharing { ProgressView() } else { Text("Share availability") }
-                            Spacer()
-                        }
-                    }
-                    .disabled(cleanTag.isEmpty || isSharing)
-                }
-
                 activeSection
 
                 if let errorMessage {
@@ -68,8 +56,18 @@ struct AvailabilitySheet: View {
             .navigationTitle("I'm down for…")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
-                ToolbarItem(placement: .topBarTrailing) {
-                    Button("Done") { dismiss() }
+                // One way to post (Share, prominent) and one way out (Cancel): a "Done" that
+                // closed without sharing read like it saved the draft.
+                ToolbarItem(placement: .cancellationAction) {
+                    Button("Cancel") { dismiss() }
+                }
+                ToolbarItem(placement: .confirmationAction) {
+                    if isSharing {
+                        ProgressView()
+                    } else {
+                        Button("Share") { Task { await share() } }
+                            .disabled(cleanTag.isEmpty)
+                    }
                 }
             }
             .task { await load() }
@@ -126,17 +124,16 @@ struct AvailabilitySheet: View {
     }
 
     private func share() async {
-        guard !cleanTag.isEmpty else { return }
+        guard !cleanTag.isEmpty, !isSharing else { return }
         isSharing = true
         errorMessage = nil
         defer { isSharing = false }
         do {
             _ = try await env.me.createIntent(tag: cleanTag, duration: duration)
             ClickHaptics.success()
-            tag = ""
-            isTagFocused = false
             onChanged()
             await load()
+            dismiss()
         } catch {
             errorMessage = "Couldn't share availability. \(error.userFacingMessage)"
         }

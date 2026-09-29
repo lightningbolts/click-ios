@@ -49,10 +49,14 @@ struct BeaconDetailView: View {
             }
         }
         .onDisappear { SoundtrackPreviewPlayer.shared.stop() }
+        // A transparent system bar over the hero, never a hidden one: every screen in the stack
+        // keeps a bar, so pushing People or a profile never toggles it and shifts the content.
+        // Its buttons are native Liquid Glass, and back comes with it when pushed.
         .navigationTitle(beacon.value?.title ?? "")
-        .toolbar(.hidden, for: .navigationBar)
-        // No bar, so keep the edge swipe back when pushed.
-        .background { if !isSheetRoot { SwipeBackEnabler().frame(width: 0, height: 0) } }
+        .navigationBarTitleDisplayMode(.inline)
+        .toolbarBackground(.hidden, for: .navigationBar)
+        .toolbarColorScheme(.dark, for: .navigationBar)
+        .toolbar { headerButtons }
         .task { if beacon.value == nil { await load() } }
         .task(id: rsvp.value?.request) { await watchPendingRequest() }
         .alert("Event", isPresented: Binding(get: { notice != nil }, set: { if !$0 { notice = nil } })) {
@@ -73,7 +77,6 @@ struct BeaconDetailView: View {
                     .frame(height: 250)
                     .frame(maxWidth: .infinity)
                     .clipped()
-                    .overlay(alignment: .top) { headerButtons(beacon).padding(14) }
 
                 VStack(alignment: .leading, spacing: 18) {
                     pills(beacon)
@@ -143,11 +146,6 @@ struct BeaconDetailView: View {
         }
         .ignoresSafeArea(edges: .top)
         .background(ClickColors.surface)
-        // A value route like every other push: an `isPresented` push here got out of step with
-        // the stack when a person was opened from it, bouncing back and stacking duplicates.
-        .navigationDestination(for: EventPeopleRoute.self) { route in
-            EventDirectoryView(beaconID: route.beaconID, preloaded: people.value)
-        }
         .sheet(isPresented: $sharingToChat) {
             ShareToChatSheet(beacon: beacon)
         }
@@ -247,48 +245,44 @@ struct BeaconDetailView: View {
         .accessibilityHint(isActive ? "Double-tap to cancel" : "")
     }
 
-    /// Back (when pushed) and Save · Share · Close float over the hero (prototype event sheet
-    /// header), in Liquid Glass like the rest of the app's floating controls.
-    private func headerButtons(_ beacon: MapBeacon) -> some View {
-        let saved = engagement.value?.bookmarked == true
-        return HStack(spacing: 10) {
-            if !isSheetRoot {
-                Button { dismiss() } label: {
-                    Image(systemName: "chevron.left").headerCircle(tint: .white)
+    /// Save · Share · Close over the hero (prototype event sheet header). Close only as the
+    /// sheet's root; pushed, the bar's back button returns instead.
+    @ToolbarContentBuilder
+    private var headerButtons: some ToolbarContent {
+        ToolbarItem(placement: .principal) {
+            // No visible title over the hero; the navigation title still names the screen.
+            Color.clear.frame(width: 1, height: 1).accessibilityHidden(true)
+        }
+        if let beacon = beacon.value {
+            ToolbarItemGroup(placement: .topBarTrailing) {
+                if beacon.isEvent {
+                    let saved = engagement.value?.bookmarked == true
+                    Button { Task { await toggleBookmark(beacon) } } label: {
+                        Label(saved ? "Remove from saved" : "Save event", systemImage: saved ? "bookmark.fill" : "bookmark")
+                    }
+                    .tint(saved ? ClickColors.accentForeground : nil)
+                    .disabled(engagement.value == nil || bookmarkPending)
                 }
-                .accessibilityLabel("Back")
-            }
-            Spacer()
-            if beacon.isEvent {
-                Button { Task { await toggleBookmark(beacon) } } label: {
-                    Image(systemName: saved ? "bookmark.fill" : "bookmark")
-                        .headerCircle(tint: saved ? ClickColors.accentForeground : .white)
+                Menu {
+                    Button("Copy link", systemImage: "link") {
+                        UIPasteboard.general.string = "https://joinclick.co/e/\(beacon.id)"
+                        ClickHaptics.success()
+                    }
+                    Button("Share to chat", systemImage: "bubble.left") { sharingToChat = true }
+                    Button("View on Map", systemImage: "map") { env.router.showOnMap(.place(beacon.id)) }
+                    ShareLink(item: URL(string: "https://joinclick.co/e/\(beacon.id)")!, subject: Text(beacon.title)) {
+                        Label("More…", systemImage: "square.and.arrow.up")
+                    }
+                } label: {
+                    Label("Share", systemImage: "square.and.arrow.up")
                 }
-                .disabled(engagement.value == nil || bookmarkPending)
-                .accessibilityLabel(saved ? "Remove from saved" : "Save event")
-            }
-            Menu {
-                Button("Copy link", systemImage: "link") {
-                    UIPasteboard.general.string = "https://joinclick.co/e/\(beacon.id)"
-                    ClickHaptics.success()
-                }
-                Button("Share to chat", systemImage: "bubble.left") { sharingToChat = true }
-                Button("View on Map", systemImage: "map") { env.router.showOnMap(.place(beacon.id)) }
-                ShareLink(item: URL(string: "https://joinclick.co/e/\(beacon.id)")!, subject: Text(beacon.title)) {
-                    Label("More…", systemImage: "square.and.arrow.up")
-                }
-            } label: {
-                Image(systemName: "square.and.arrow.up").headerCircle(tint: .white)
-            }
-            .accessibilityLabel("Share")
-            if isSheetRoot {
-                Button { dismiss() } label: {
-                    Image(systemName: "xmark").headerCircle(tint: .white)
-                }
-                .accessibilityLabel("Close")
             }
         }
-        .buttonStyle(.plain)
+        if isSheetRoot {
+            ToolbarItem(placement: .topBarTrailing) {
+                Button { dismiss() } label: { Label("Close", systemImage: "xmark") }
+            }
+        }
     }
 
     /// Event chat · Check in · Directions — equal-width labelled icon actions.
@@ -358,7 +352,7 @@ struct BeaconDetailView: View {
             .buttonStyle(.plain)
             if beacon.isEvent {
                 Divider().padding(.leading, 56)
-                NavigationLink(value: EventPeopleRoute(beaconID: beacon.id)) {
+                NavigationLink(value: AppRoute.eventPeople(beaconID: beacon.id)) {
                     infoRow(systemImage: "person.2", title: peopleTitle(beacon), subtitle: peopleSubtitle(beacon), chevron: true)
                 }
                 .buttonStyle(.plain)
@@ -449,7 +443,7 @@ struct BeaconDetailView: View {
             let ranked = EventDirectoryView.bestMatch(others)
             let mutuals = others.filter { $0.relationship == .connection || $0.relationship == .mutual }.count
             VStack(alignment: .leading, spacing: 12) {
-                NavigationLink(value: EventPeopleRoute(beaconID: beaconID)) {
+                NavigationLink(value: AppRoute.eventPeople(beaconID: beaconID)) {
                     HStack(alignment: .firstTextBaseline) {
                         VStack(alignment: .leading, spacing: 2) {
                             Text("People here")
@@ -698,36 +692,12 @@ struct BeaconDetailView: View {
     }
 }
 
-private extension Image {
-    /// 44 pt glass circle used for controls floating over the hero image.
-    @MainActor func headerCircle(tint: Color) -> some View {
-        self.font(.system(size: 16, weight: .semibold))
-            .foregroundStyle(tint)
-            .frame(width: 44, height: 44)
-            .glassCircleBackground()
-            .environment(\.colorScheme, .dark)
-    }
-}
-
-/// The event's "People here" directory, pushed from the detail.
-private struct EventPeopleRoute: Hashable {
-    let beaconID: String
-}
-
 /// Event people directory (spec §57). Default order is best match — shared interests plus
 /// mutual connections, high to low — with A–Z, Interests, and Mutuals views. The server
 /// decides which fields a viewer receives.
 struct EventDirectoryView: View {
     @Environment(AppEnvironment.self) private var env
-    @Environment(\.dismiss) private var dismiss
     let beaconID: String
-    var preloaded: EventDirectory?
-
-    init(beaconID: String, preloaded: EventDirectory? = nil) {
-        self.beaconID = beaconID
-        self.preloaded = preloaded
-        _directory = State(initialValue: ModuleState(value: preloaded, phase: preloaded != nil ? .loaded : .idle))
-    }
 
     enum Sort: String, CaseIterable, Identifiable {
         case best = "Best match"
@@ -737,7 +707,7 @@ struct EventDirectoryView: View {
         var id: String { rawValue }
     }
 
-    @State private var directory: ModuleState<EventDirectory>
+    @State private var directory = ModuleState<EventDirectory>()
     @State private var sort: Sort = .best
 
     /// Shared interests + mutual connections (a direct Click counts as a strong mutual).
@@ -785,48 +755,37 @@ struct EventDirectoryView: View {
             .background(ClickColors.surface.ignoresSafeArea())
             .onChange(of: sort) { _, _ in withAnimation { proxy.scrollTo("top", anchor: .top) } }
         }
-        // The event sheet has no navigation bar; this screen doesn't either, so pushing it
-        // never toggles a bar mid-transition (which shifted the list down after it opened).
-        .toolbar(.hidden, for: .navigationBar)
+        // The system bar, like the event before it and the profiles after it: the bar never
+        // toggles mid-stack, so nothing shifts as screens push.
         .safeAreaInset(edge: .top, spacing: 0) { header }
-        .background { SwipeBackEnabler().frame(width: 0, height: 0) }
         .navigationTitle("People here")
-        .task {
-            if let preloaded, directory.value == nil { directory.succeed(preloaded) }
-            await load()
-        }
-    }
-
-    /// Title and sort control, pinned above the list.
-    private var header: some View {
-        VStack(spacing: 10) {
-            HStack(spacing: 12) {
-                Button { dismiss() } label: {
-                    Image(systemName: "chevron.left")
-                        .font(.system(size: 17, weight: .semibold))
-                        .foregroundStyle(ClickColors.textPrimary)
-                        .frame(width: 44, height: 44)
-                        .glassCircleBackground()
-                }
-                .buttonStyle(.plain)
-                .accessibilityLabel("Back")
-                VStack(alignment: .leading, spacing: 0) {
+        .navigationBarTitleDisplayMode(.inline)
+        .toolbar {
+            ToolbarItem(placement: .principal) {
+                VStack(spacing: 0) {
                     Text("People here").font(ClickTypography.bodyEmphasized)
                     Text(directory.value == nil ? " " : "\(everyone.count) going")
                         .font(ClickTypography.caption)
                         .foregroundStyle(ClickColors.textSecondary)
                         .contentTransition(.numericText())
                 }
-                Spacer()
             }
-            Picker("Sort", selection: $sort) {
-                ForEach(Sort.allCases) { Text($0.rawValue).tag($0) }
-            }
-            .pickerStyle(.segmented)
         }
+        .task {
+            // The event detail already cached who's going: paint that, then refresh.
+            if directory.value == nil, let cached = await env.events.cachedDirectory(beaconID: beaconID) { directory.seed(cached) }
+            await load()
+        }
+    }
+
+    /// Sort control, pinned above the list.
+    private var header: some View {
+        Picker("Sort", selection: $sort) {
+            ForEach(Sort.allCases) { Text($0.rawValue).tag($0) }
+        }
+        .pickerStyle(.segmented)
         .padding(.horizontal, 16)
-        .padding(.top, 12)
-        .padding(.bottom, 8)
+        .padding(.vertical, 8)
         .background(ClickColors.surface)
     }
 

@@ -148,6 +148,7 @@ public struct ClickMapView: View {
                     .toolbar(.hidden, for: .navigationBar)
                     .appRouteDestinations()
             }
+            .environment(\.isInSheet, true)
             .presentationDetents([.medium, .large], selection: $model.nearbyDetent)
             .presentationDragIndicator(.visible)
             .presentationContentInteraction(.scrolls)

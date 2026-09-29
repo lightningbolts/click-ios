@@ -8,6 +8,7 @@ import SwiftUI
 /// silent blank screen.
 struct AppRouteDestination: View {
     @Environment(AppEnvironment.self) private var env
+    @Environment(\.isInSheet) private var isInSheet
     let route: AppRoute
     /// Shown as the root of the shell's detail sheet rather than pushed.
     var isSheetRoot = false
@@ -29,6 +30,8 @@ struct AppRouteDestination: View {
                 EventChatView(beaconID: beaconID)
             case .event(let beaconID), .beacon(let beaconID):
                 BeaconDetailView(beaconID: beaconID, isSheetRoot: isSheetRoot)
+            case .eventPeople(let beaconID):
+                EventDirectoryView(beaconID: beaconID)
             case .hub(let hubID):
                 HubChatView(hubID: hubID)
             case .myQR:
@@ -47,8 +50,10 @@ struct AppRouteDestination: View {
                 ConversationByIDView(chatID: chatID, messageID: messageID)
             }
         }
-        .toolbar(.hidden, for: .tabBar)
-        .background { TabBarTransitionFader().frame(width: 0, height: 0).accessibilityHidden(true) }
+        // Pushed on a tab, a screen hides the tab bar. In a sheet it must leave the bar under the
+        // sheet alone: hiding it there dropped the Map's lip while the sheet was swiped away.
+        .toolbar(isInSheet ? .automatic : .hidden, for: .tabBar)
+        .background { if !isInSheet { TabBarTransitionFader().frame(width: 0, height: 0).accessibilityHidden(true) } }
     }
 }
 
@@ -99,6 +104,11 @@ private struct ConversationByIDView: View {
         }
         return nil
     }
+}
+
+extension EnvironmentValues {
+    /// Set on a sheet's navigation stack; its screens leave the tab bar underneath alone.
+    @Entry var isInSheet = false
 }
 
 extension View {

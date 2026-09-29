@@ -99,6 +99,8 @@ public enum AppRoute: Hashable, Sendable {
     case event(beaconID: String)
     /// Event chat, always resolved through the server's event-chat resolver.
     case eventChat(beaconID: String)
+    /// Who's going to an event (the event's people directory).
+    case eventPeople(beaconID: String)
     case beacon(beaconID: String)
     case hub(hubID: String)
     case myQR
@@ -117,7 +119,7 @@ public enum AppRoute: Hashable, Sendable {
         switch self {
         case .chat, .userProfile, .publicProfile, .groupChat, .groupProfile, .conversation:
             .connections
-        case .event, .eventChat, .beacon, .hub:
+        case .event, .eventChat, .eventPeople, .beacon, .hub:
             .map
         case .myQR, .scanQR, .tapConnect, .connectionInvocation:
             .addClick

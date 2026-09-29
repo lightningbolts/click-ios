@@ -190,6 +190,7 @@ public struct MainTabShellView: View {
                 AppRouteDestination(route: item.route, isSheetRoot: true)
                     .appRouteDestinations()
             }
+            .environment(\.isInSheet, true)
             .presentationDetents([.medium, .large])
             .presentationDragIndicator(.visible)
             .environment(meTabAvatar)
