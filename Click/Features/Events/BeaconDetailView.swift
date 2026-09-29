@@ -24,6 +24,8 @@ struct BeaconDetailView: View {
     @State private var savedOverride: Bool?
     /// Loaded once per screen (coming back from People or a profile doesn't reload).
     @State private var hasLoaded = false
+    /// Scrolled past the hero: the bar shows the title (like a profile's compact name).
+    @State private var showsCompactTitle = false
     @State private var checkInPending = false
     @State private var notice: String?
     /// Album art resolved on device for a soundtrack the server couldn't enrich.
@@ -55,13 +57,11 @@ struct BeaconDetailView: View {
             }
         }
         .onDisappear { SoundtrackPreviewPlayer.shared.stop() }
-        // A transparent system bar over the hero, never a hidden one: every screen in the stack
-        // keeps a bar, so pushing People or a profile never toggles it and shifts the content.
-        // Its buttons are native Liquid Glass, and back comes with it when pushed.
+        // The system bar, never a hidden one: every screen in the stack keeps a bar, so pushing
+        // People or a profile never toggles it and shifts the content. It's clear over the hero;
+        // once content scrolls under it, the system scroll-edge effect keeps it legible.
         .navigationTitle(beacon.value?.title ?? "")
         .navigationBarTitleDisplayMode(.inline)
-        .toolbarBackground(.hidden, for: .navigationBar)
-        .toolbarColorScheme(.dark, for: .navigationBar)
         .toolbar { headerButtons }
         // What this session already knows paints before the first frame; the network refreshes it.
         .onAppear(perform: seedFromCache)
@@ -137,18 +137,22 @@ struct BeaconDetailView: View {
                     if beacon.isEvent { peoplePreview }
 
                     if beacon.creatorID == env.session.currentSession?.userId {
-                        if beacon.isEvent {
-                            NavigationLink {
-                                GuestListView(beaconID: beacon.id)
-                            } label: {
-                                Label("Guest list", systemImage: "list.bullet.rectangle")
+                        GroupedSection("Hosting") {
+                            if beacon.isEvent {
+                                NavigationLink(value: AppRoute.guestList(beaconID: beacon.id)) {
+                                    HStack {
+                                        Label("Guest list", systemImage: "list.bullet.rectangle")
+                                        Spacer()
+                                        Image(systemName: "chevron.right")
+                                            .font(.footnote.weight(.semibold))
+                                            .foregroundStyle(ClickColors.textTertiary)
+                                    }
+                                }
                             }
+                            Button(beacon.isEvent ? "Edit event" : "Edit beacon", systemImage: "pencil") { editingBeacon = true }
+                            Button(beacon.isEvent ? "Delete event" : "Delete beacon", systemImage: "trash", role: .destructive) { confirmDelete = true }
                         }
-                        HStack(spacing: 20) {
-                            Button("Edit", systemImage: "pencil") { editingBeacon = true }
-                            Button("Delete", systemImage: "trash", role: .destructive) { confirmDelete = true }
-                        }
-                        .padding(.top, 4)
+                        .padding(.top, 6)
                     }
                 }
                 .padding(.horizontal, 20)
@@ -157,6 +161,11 @@ struct BeaconDetailView: View {
             }
         }
         .ignoresSafeArea(edges: .top)
+        .onScrollGeometryChange(for: Bool.self) { geometry in
+            geometry.contentOffset.y + geometry.contentInsets.top > 210
+        } action: { _, pastHero in
+            withAnimation(ClickMotion.subtleFade) { showsCompactTitle = pastHero }
+        }
         .background(ClickColors.surface)
         .sheet(isPresented: $sharingToChat) {
             ShareToChatSheet(beacon: beacon)
@@ -262,8 +271,11 @@ struct BeaconDetailView: View {
     @ToolbarContentBuilder
     private var headerButtons: some ToolbarContent {
         ToolbarItem(placement: .principal) {
-            // No visible title over the hero; the navigation title still names the screen.
-            Color.clear.frame(width: 1, height: 1).accessibilityHidden(true)
+            // Hidden over the hero (the page shows it large); fades in once scrolled past.
+            Text(beacon.value?.title ?? "")
+                .font(.headline)
+                .lineLimit(1)
+                .opacity(showsCompactTitle ? 1 : 0)
         }
         // Present from the first frame (disabled until loaded), so iOS morphs them in with the
         // push like any other bar buttons instead of popping them in once the beacon arrives.

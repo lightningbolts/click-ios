@@ -15,6 +15,10 @@ struct ClickApp: App {
         // Root large titles use Click's Manrope display voice; inline titles stay system 17pt.
         // Only the font is customized so the platform keeps owning bar layout and material.
         UINavigationBar.appearance().largeTitleTextAttributes = [.font: ClickTypography.largeTitleUIFont()]
+        // An alert's highlighted default fills with the alert tint under an accent label. The
+        // selection tint gives that label strong contrast in both modes (the default blue fill
+        // left purple text on blue).
+        UIView.appearance(whenContainedInInstancesOf: [UIAlertController.self]).tintColor = UIColor(ClickColors.selectionTint)
         ClickNotificationCoordinator.shared.attach(environment: environment)
         EmojiKeyboardPicker.warmUp()
     }

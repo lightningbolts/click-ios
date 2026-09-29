@@ -34,6 +34,8 @@ struct AppRouteDestination: View {
                 BeaconDetailView(beaconID: beaconID, isSheetRoot: isSheetRoot)
             case .eventPeople(let beaconID):
                 EventDirectoryView(beaconID: beaconID)
+            case .guestList(let beaconID):
+                GuestListView(beaconID: beaconID)
             case .hub(let hubID):
                 HubChatView(hubID: hubID)
             case .myQR:

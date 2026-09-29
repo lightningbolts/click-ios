@@ -6,6 +6,8 @@ public struct SoundtrackMatch: Equatable, Sendable {
     public let artistName: String?
     public let previewURL: String?
     public let artworkURL: String?
+    /// The song's Apple Music link (search results), posted as the beacon's `music_url`.
+    public var link: String? = nil
 }
 
 /// Resolves a soundtrack link on the device, mirroring click-web `beaconSoundtrackEnrichment`
@@ -18,6 +20,17 @@ enum SoundtrackResolver {
         config.timeoutIntervalForRequest = 8
         return URLSession(configuration: config)
     }()
+
+    /// Songs matching `term` from the iTunes Search API. It's free and keyless, and each device
+    /// calls it directly (its rate limit is per client), so it costs nothing and scales with
+    /// users. Only results with a link are returned, since the link is what gets posted.
+    static func search(_ term: String, limit: Int = 12) async -> [SoundtrackMatch] {
+        let region = Locale.current.region?.identifier ?? ""
+        let country = region.count == 2 && region.allSatisfy(\.isLetter) ? region : "US"
+        guard let result = await json("https://itunes.apple.com/search?term=\(encoded(term))&entity=song&limit=\(limit)&country=\(country)"),
+              let rows = result["results"] as? [[String: Any]] else { return [] }
+        return rows.compactMap(match).filter { $0.link != nil }
+    }
 
     static func resolve(_ link: String) async -> SoundtrackMatch? {
         let trimmed = link.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -109,8 +122,16 @@ enum SoundtrackResolver {
             trackName: name,
             artistName: row["artistName"] as? String,
             previewURL: isTrustedPreview(preview) ? preview : nil,
-            artworkURL: artwork(row["artworkUrl100"] as? String)
+            artworkURL: artwork(row["artworkUrl100"] as? String),
+            link: appleMusicLink(row["trackViewUrl"] as? String)
         )
+    }
+
+    /// The track's `music.apple.com` link without iTunes' affiliate tracking parameter.
+    private static func appleMusicLink(_ raw: String?) -> String? {
+        guard let raw, var components = URLComponents(string: raw), components.scheme == "https" else { return nil }
+        components.queryItems = components.queryItems?.filter { $0.name != "uo" }
+        return components.url?.absoluteString
     }
 
     private static func json(_ string: String) async -> [String: Any]? {

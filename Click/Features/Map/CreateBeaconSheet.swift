@@ -69,6 +69,11 @@ struct CreateBeaconSheet: View {
     /// card flickers to "Finding the song…" and shifts.
     @State private var resolvedMusicURL: String?
     @State private var isResolvingSong = false
+    /// Finding a song by name (the default) instead of pasting a link.
+    @State private var songQuery = ""
+    @State private var songResults: [SoundtrackMatch] = []
+    @State private var isSearchingSongs = false
+    @State private var pastesLink = false
     /// The title was filled from the song (so a new link may replace it; a typed one stays).
     @State private var titleIsFromSong = false
     @State private var hours = 4.0
@@ -238,47 +243,143 @@ struct CreateBeaconSheet: View {
 
     // MARK: - Sections
 
+    /// Find a song by name in Click (the iTunes catalog); pasting a link is the fallback.
     private var soundtrackSection: some View {
         Section {
-            HStack {
-                TextField("Song link (Spotify, Apple Music, YouTube)", text: $musicURL)
-                    .keyboardType(.URL)
-                    .textInputAutocapitalization(.never)
-                    .autocorrectionDisabled()
-                if musicURL.isEmpty {
-                    Button {
-                        if let pasted = UIPasteboard.general.string { musicURL = pasted.trimmingCharacters(in: .whitespacesAndNewlines) }
-                    } label: {
-                        Label("Paste", systemImage: "doc.on.clipboard")
-                    }
-                    .buttonStyle(.borderless)
-                }
-            }
-            if isResolvingSong {
-                HStack(spacing: 10) {
-                    ProgressView()
-                    Text("Finding the song…").foregroundStyle(ClickColors.textSecondary)
-                }
-                .font(ClickTypography.supporting)
-            } else if let song {
+            if let song {
                 SoundtrackPreviewCard(trackName: song.trackName, artistName: song.artistName,
                                       artworkURL: song.artworkURL, previewURL: song.previewURL, seed: musicURL)
                     .listRowInsets(EdgeInsets(top: 8, leading: 8, bottom: 8, trailing: 8))
+                Button("Choose a different song", systemImage: "arrow.triangle.2.circlepath", action: clearSong)
+            } else if pastesLink {
+                HStack {
+                    TextField("Song link (Spotify, Apple Music, YouTube)", text: $musicURL)
+                        .keyboardType(.URL)
+                        .textInputAutocapitalization(.never)
+                        .autocorrectionDisabled()
+                    if musicURL.isEmpty {
+                        Button {
+                            if let pasted = UIPasteboard.general.string { musicURL = pasted.trimmingCharacters(in: .whitespacesAndNewlines) }
+                        } label: {
+                            Label("Paste", systemImage: "doc.on.clipboard")
+                        }
+                        .buttonStyle(.borderless)
+                    }
+                }
+                if isResolvingSong { progressRow("Finding the song…") }
+            } else {
+                HStack(spacing: 8) {
+                    Image(systemName: "magnifyingglass").foregroundStyle(ClickColors.textTertiary)
+                    TextField("Search songs or artists", text: $songQuery)
+                        .submitLabel(.search)
+                        .autocorrectionDisabled()
+                }
+                if isSearchingSongs && songResults.isEmpty { progressRow("Searching…") }
+                ForEach(songResults, id: \.link) { match in
+                    Button { choose(match) } label: { songRow(match) }
+                        .buttonStyle(.plain)
+                }
             }
         } header: {
             Text("Song")
         } footer: {
-            if !musicURL.isEmpty, !BeaconFormRules.isMusicLink(musicURL) {
-                Text("Use an https link from Spotify, Apple Music or YouTube (Music).")
-                    .foregroundStyle(ClickColors.destructive)
-            } else if !musicURL.isEmpty, !isResolvingSong, song == nil {
-                Text("Couldn't identify the song. You can still post it; add a title so people know what it is.")
+            if song == nil {
+                VStack(alignment: .leading, spacing: 6) {
+                    if pastesLink, !musicURL.isEmpty, !BeaconFormRules.isMusicLink(musicURL) {
+                        Text("Use an https link from Spotify, Apple Music or YouTube (Music).")
+                            .foregroundStyle(ClickColors.destructive)
+                    } else if pastesLink, !musicURL.isEmpty, !isResolvingSong {
+                        Text("Couldn't identify the song. You can still post it; add a title so people know what it is.")
+                    } else if !pastesLink, songQuery.count >= 2, !isSearchingSongs, songResults.isEmpty {
+                        Text("No songs found. Try another spelling, or paste a link.")
+                    }
+                    Button(pastesLink ? "Search for a song instead" : "Have a link? Paste it instead") {
+                        pastesLink.toggle()
+                        musicURL = ""
+                    }
+                    .font(ClickTypography.supportingEmphasized)
+                }
             }
         }
         .task(id: musicURL) { await resolveSong() }
+        .task(id: songQuery) { await searchSongs() }
     }
 
-    /// Debounced lookup; autofills the title unless the user typed their own.
+    private func progressRow(_ text: String) -> some View {
+        HStack(spacing: 10) {
+            ProgressView()
+            Text(text).foregroundStyle(ClickColors.textSecondary)
+        }
+        .font(ClickTypography.supporting)
+    }
+
+    private func songRow(_ match: SoundtrackMatch) -> some View {
+        HStack(spacing: 12) {
+            EventVisual(seed: match.link ?? match.trackName, imageURL: match.artworkURL, symbol: "music.note", cornerRadius: 8)
+                .frame(width: 44, height: 44)
+            VStack(alignment: .leading, spacing: 2) {
+                Text(match.trackName)
+                    .font(ClickTypography.body)
+                    .foregroundStyle(ClickColors.textPrimary)
+                if let artist = match.artistName {
+                    Text(artist)
+                        .font(ClickTypography.supporting)
+                        .foregroundStyle(ClickColors.textSecondary)
+                }
+            }
+            .lineLimit(1)
+            Spacer(minLength: 0)
+        }
+        .contentShape(Rectangle())
+    }
+
+    /// Debounced catalog search as you type.
+    private func searchSongs() async {
+        let term = songQuery.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard term.count >= 2 else {
+            songResults = []
+            isSearchingSongs = false
+            return
+        }
+        try? await Task.sleep(for: .milliseconds(300))
+        guard !Task.isCancelled else { return }
+        isSearchingSongs = true
+        let results = await SoundtrackResolver.search(term)
+        guard !Task.isCancelled else { return }
+        isSearchingSongs = false
+        withAnimation(ClickMotion.content) { songResults = results }
+    }
+
+    private func choose(_ match: SoundtrackMatch) {
+        ClickHaptics.selection()
+        musicURL = match.link ?? ""
+        resolvedMusicURL = musicURL   // already identified: no lookup
+        songQuery = ""
+        songResults = []
+        adopt(match)
+    }
+
+    private func clearSong() {
+        SoundtrackPreviewPlayer.shared.stop()
+        song = nil
+        musicURL = ""
+        resolvedMusicURL = nil
+        if titleIsFromSong {
+            title = ""
+            titleIsFromSong = false
+        }
+    }
+
+    /// Shows the song and names the soundtrack after it, unless the user typed their own title.
+    private func adopt(_ match: SoundtrackMatch?) {
+        song = match
+        if let match, title.nonEmptyTrimmed == nil || titleIsFromSong {
+            title = match.trackName
+            titleIsFromSong = true
+        }
+    }
+
+    /// Debounced lookup of a pasted link; autofills the title unless the user typed their own.
     private func resolveSong() async {
         guard musicURL != resolvedMusicURL else { return }
         guard BeaconFormRules.isMusicLink(musicURL) else {
@@ -293,12 +394,8 @@ struct CreateBeaconSheet: View {
         let match = await SoundtrackResolver.resolve(musicURL)
         guard !Task.isCancelled else { return }
         isResolvingSong = false
-        song = match
         resolvedMusicURL = musicURL
-        if let match, title.nonEmptyTrimmed == nil || titleIsFromSong {
-            title = match.trackName
-            titleIsFromSong = true
-        }
+        adopt(match)
     }
 
     private var kindPicker: some View {
@@ -440,6 +537,8 @@ struct CreateBeaconSheet: View {
                 title = track
                 titleIsFromSong = true
             }
+            // A saved link the catalog never identified stays editable as a link.
+            pastesLink = song == nil && !musicURL.isEmpty
         }
     }
 
