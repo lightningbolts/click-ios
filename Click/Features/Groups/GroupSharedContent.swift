@@ -268,6 +268,8 @@ struct GroupJournalSection: View {
     let chatID: String
 
     @State private var editor: JournalEditorTarget?
+    @State private var deleting: JournalEntry?
+    @State private var deleteError: String?
     private var model: GroupSpaceModel { GroupSpaceModel.shared(chatID: chatID) }
     private var entries: ModuleState<[JournalEntry]> { model.journal }
 
@@ -289,15 +291,32 @@ struct GroupJournalSection: View {
                     .contextMenu {
                         if entry.authorID == env.session.currentSession?.userId {
                             Button("Edit", systemImage: "pencil") { editor = JournalEditorTarget(entry: entry) }
-                            Button("Delete", systemImage: "trash", role: .destructive) {
-                                Task { try? await env.profiles.deleteJournal(id: entry.id); await load() }
-                            }
+                            Button("Delete", systemImage: "trash", role: .destructive) { deleting = entry }
                         }
                     }
                 }
             } else if entries.errorMessage != nil {
                 Button("Couldn't load notes. Retry") { Task { await load() } }
             }
+        }
+        .confirmation("Delete this note?", isPresented: Binding(get: { deleting != nil }, set: { if !$0 { deleting = nil } }),
+                      keep: "Keep Note", message: "It's removed for everyone in the group.") {
+            Button("Delete", role: .destructive) {
+                guard let entry = deleting else { return }
+                Task {
+                    do {
+                        try await env.profiles.deleteJournal(id: entry.id)
+                        await load()
+                    } catch {
+                        deleteError = "Couldn't delete the note. \(error.userFacingMessage)"
+                    }
+                }
+            }
+        }
+        .alert("That didn't go through", isPresented: Binding(get: { deleteError != nil }, set: { if !$0 { deleteError = nil } })) {
+            Button("OK", role: .cancel) {}
+        } message: {
+            Text(deleteError ?? "")
         }
         .sheet(item: $editor) { target in
             JournalEditor(target: target) { body, visibility in

@@ -17,6 +17,10 @@ public struct ProfileView: View {
     @State private var reportReason = ""
     @State private var isWorking = false
     @State private var notice: String?
+    /// A journal note waiting for the delete confirmation.
+    @State private var deletingJournal: JournalEntry?
+    /// The tab strip is stuck under the bar.
+    @State private var stripPinned = false
     @State private var showsCompactTitle = false
     @State private var viewerURL: ProfileViewerURL?
     @State private var takingDrop = false
@@ -72,6 +76,9 @@ public struct ProfileView: View {
                     .visualEffect { content, proxy in
                         content.offset(y: max(0, -proxy.frame(in: .scrollView(axis: .vertical)).minY))
                     }
+                    .onGeometryChange(for: Bool.self) { proxy in
+                        proxy.frame(in: .scrollView(axis: .vertical)).minY < 0
+                    } action: { stripPinned = $0 }
                     .zIndex(1)
                 tabContent
             }
@@ -80,8 +87,20 @@ public struct ProfileView: View {
             // Sections that arrive later fade and slide into place instead of popping.
             .animation(ClickMotion.content, value: loadSignature)
         }
+        // Pinned, the strip is the bar's background (see `tabChips`), so the bar's own
+        // scroll-edge line would draw a seam between them.
+        .scrollEdgeEffectHiddenIfAvailable(stripPinned, for: .top)
         .background(ClickColors.background.ignoresSafeArea())
         .clickToast($model.relationshipNotice)
+        .confirmation("Delete this note?", isPresented: Binding(get: { deletingJournal != nil }, set: { if !$0 { deletingJournal = nil } }),
+                      keep: "Keep Note", message: "It's removed for everyone who can see it.") {
+            Button("Delete", role: .destructive) {
+                guard let entry = deletingJournal else { return }
+                Task {
+                    do { try await model.deleteJournal(entry) } catch { model.relationshipNotice = "Couldn't delete the note. \(error.userFacingMessage)" }
+                }
+            }
+        }
         .sheet(isPresented: $isLoggingHangout) {
             LogHangoutSheet(peerName: peerFirstName) { date, coordinate, place in
                 await model.logHangout(at: date, coordinate: coordinate, placeName: place)
@@ -343,7 +362,26 @@ public struct ProfileView: View {
             .padding(.vertical, 8)
         }
         .scrollIndicators(.hidden)
-        .background(ClickColors.background)
+        // Full-bleed: chips scroll to the screen edge instead of being cut at the page margin,
+        // and the band spans the page (in a sheet too).
+        .contentMargins(.horizontal, ClickSpacing.screenGutter, for: .scrollContent)
+        .padding(.horizontal, -ClickSpacing.screenGutter)
+        .background {
+            // Pinned, content slides under it; its lower edge fades like the bar's scroll edge
+            // rather than ending on a hard line.
+            // Solid behind the chips, then a fixed-height fade (a fraction of the band would
+            // move into the chips when the band stretches up behind the bar).
+            VStack(spacing: 0) {
+                ClickColors.background
+                LinearGradient(colors: [ClickColors.background, ClickColors.background.opacity(0)],
+                               startPoint: .top, endPoint: .bottom)
+                    .frame(height: 14)
+            }
+                .padding(.bottom, -14)
+                // Pinned, it reaches up behind the bar: bar and strip read as one surface.
+                .padding(.top, stripPinned ? -120 : 0)
+                .allowsHitTesting(false)
+        }
     }
 
     @ViewBuilder
@@ -461,7 +499,7 @@ public struct ProfileView: View {
                 TimelineRow(item: item, isOwn: isOwn(item)) { entry in
                     journalEditor = JournalEditorTarget(entry: entry)
                 } onDelete: { entry in
-                    Task { try? await model.deleteJournal(entry) }
+                    deletingJournal = entry
                 } onOpenEvent: { beaconID in
                     env.router.navigate(to: .event(beaconID: beaconID))
                 } onEditTags: { encounter in
@@ -801,7 +839,7 @@ private struct TimelineRow: View {
             if let place = EncounterLabels.placeLine(locationName: encounter.locationName ?? encounter.venue,
                                                      displayLocation: encounter.displayLocation,
                                                      neighbourhood: encounter.neighbourhood),
-               place != currentTitle {
+               !currentTitle.localizedCaseInsensitiveContains(place) {
                 Text(place)
                     .font(ClickTypography.supporting)
                     .foregroundStyle(ClickColors.textSecondary)

@@ -31,12 +31,13 @@ struct FriendshipSection: View {
                 let person = GroupMember(userID: seed, name: peerName, avatarURL: avatarURL)
                 EncounterMapPreview(encounters: encounters, stats: stats) { _ in [person] }
             }
-            HStack(spacing: 8) {
-                pill("Log hangout", systemImage: "plus.circle", action: onLog)
-                pill("Plan", systemImage: "calendar.badge.plus", action: onPlan)
-                if stats.hangouts >= 2 {
-                    pill("Your story", systemImage: "sparkles.rectangle.stack", action: onStory)
-                }
+            // One even row whatever the width, and no label is ever cut short ("Log h…"):
+            // pills when they fit, icon-over-label buttons when they don't, wrapping only as a
+            // last resort (large text).
+            ViewThatFits(in: .horizontal) {
+                HStack(spacing: 8) { actionPills(.pill, stats: stats) }
+                HStack(spacing: 8) { actionPills(.stacked, stats: stats) }
+                FlowLayout(spacing: 8) { actionPills(.wrapping, stats: stats) }
             }
         }
         .padding(18)
@@ -99,15 +100,40 @@ struct FriendshipSection: View {
         .accessibilityElement(children: .combine)
     }
 
-    private func pill(_ title: String, systemImage: String, action: @escaping () -> Void) -> some View {
+    private enum PillStyle { case pill, stacked, wrapping }
+
+    @ViewBuilder
+    private func actionPills(_ style: PillStyle, stats: FriendshipStats) -> some View {
+        pill("Log hangout", systemImage: "plus.circle", style: style, action: onLog)
+        pill("Plan", systemImage: "calendar.badge.plus", style: style, action: onPlan)
+        if stats.hangouts >= 2 {
+            pill("Your story", systemImage: "sparkles.rectangle.stack", style: style, action: onStory)
+        }
+    }
+
+    private func pill(_ title: String, systemImage: String, style: PillStyle, action: @escaping () -> Void) -> some View {
         Button(action: action) {
-            Label(title, systemImage: systemImage)
-                .font(ClickTypography.supportingEmphasized)
-                .foregroundStyle(ClickColors.accentForeground)
-                .lineLimit(1)
-                .padding(.horizontal, 12)
-                .frame(maxWidth: .infinity, minHeight: 36)
-                .background(ClickColors.selectionTint, in: Capsule())
+            Group {
+                if style == .stacked {
+                    VStack(spacing: 4) {
+                        Image(systemName: systemImage).font(.system(size: 18)).frame(height: 22)
+                        Text(title).fixedSize()
+                    }
+                    .padding(.horizontal, 8)
+                    .padding(.vertical, 10)
+                    .frame(maxWidth: .infinity)
+                    .background(ClickColors.selectionTint, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
+                } else {
+                    Label(title, systemImage: systemImage)
+                        .fixedSize()
+                        .padding(.horizontal, 12)
+                        .frame(maxWidth: style == .pill ? .infinity : nil, minHeight: 36)
+                        .background(ClickColors.selectionTint, in: Capsule())
+                }
+            }
+            .font(ClickTypography.supportingEmphasized)
+            .foregroundStyle(ClickColors.accentForeground)
+            .lineLimit(1)
         }
         .buttonStyle(.plain)
     }

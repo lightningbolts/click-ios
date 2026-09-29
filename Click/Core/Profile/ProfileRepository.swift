@@ -529,7 +529,10 @@ enum EncounterLabels {
         }
         let name = clean(locationName)
         let display = clean(displayLocation)
-        let area = clean(neighbourhood)
+        // "Red Square, Central Campus" already names its area; don't repeat it.
+        let area = clean(neighbourhood).flatMap { area in
+            name?.localizedCaseInsensitiveContains(area) == true ? nil : area
+        }
         switch (name, area, display) {
         case let (name?, area?, display?): return "\(name) • \(area), \(display)"
         case let (name?, area?, nil): return "\(name) • \(area)"

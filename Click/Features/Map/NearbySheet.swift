@@ -97,6 +97,8 @@ struct NearbyListView: View {
                 .padding(.vertical, 10)
             }
             .scrollIndicators(.hidden)
+            // The chips sit under the bar but never scroll under it: no scroll-edge hairline.
+            .scrollEdgeEffectHiddenIfAvailable(for: .top)
 
             list
         }

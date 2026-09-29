@@ -58,8 +58,8 @@ struct BeaconDetailView: View {
         }
         .onDisappear { SoundtrackPreviewPlayer.shared.stop() }
         // The system bar, never a hidden one: every screen in the stack keeps a bar, so pushing
-        // People or a profile never toggles it and shifts the content. It's clear over the hero;
-        // once content scrolls under it, the system scroll-edge effect keeps it legible.
+        // People or a profile never toggles it and shifts the content. It's clear over the hero
+        // and takes the system background once the page scrolls past it (`heroBar`).
         .navigationTitle(beacon.value?.title ?? "")
         .navigationBarTitleDisplayMode(.inline)
         .toolbar { headerButtons }
@@ -122,37 +122,44 @@ struct BeaconDetailView: View {
                     infoCard(beacon)
 
                     if let description = beacon.description, !description.isEmpty {
-                        VStack(alignment: .leading, spacing: 8) {
-                            Text("About")
-                                .font(ClickTypography.sectionTitle)
-                                .foregroundStyle(ClickColors.textPrimary)
+                        VStack(alignment: .leading, spacing: 10) {
+                            sectionHeader("About")
                             Text(Self.markdown(description))
                                 .font(ClickTypography.body)
                                 .foregroundStyle(ClickColors.textSecondary)
                                 .tint(ClickColors.accentForeground)
                                 .textSelection(.enabled)
+                                .frame(maxWidth: .infinity, alignment: .leading)
+                                .padding(.horizontal, 16)
+                                .padding(.vertical, 14)
+                                .detailCard()
                         }
                     }
 
                     if beacon.isEvent { peoplePreview }
 
                     if beacon.creatorID == env.session.currentSession?.userId {
-                        GroupedSection("Hosting") {
-                            if beacon.isEvent {
-                                NavigationLink(value: AppRoute.guestList(beaconID: beacon.id)) {
-                                    HStack {
-                                        Label("Guest list", systemImage: "list.bullet.rectangle")
-                                        Spacer()
-                                        Image(systemName: "chevron.right")
-                                            .font(.footnote.weight(.semibold))
-                                            .foregroundStyle(ClickColors.textTertiary)
+                        VStack(alignment: .leading, spacing: 10) {
+                            sectionHeader("Hosting")
+                            VStack(spacing: 0) {
+                                if beacon.isEvent {
+                                    NavigationLink(value: AppRoute.guestList(beaconID: beacon.id)) {
+                                        infoRow(systemImage: "list.bullet.rectangle", title: "Guest list", subtitle: nil, chevron: true)
                                     }
+                                    Divider().padding(.leading, 56)
+                                }
+                                Button { editingBeacon = true } label: {
+                                    infoRow(systemImage: "pencil", title: beacon.isEvent ? "Edit event" : "Edit beacon", subtitle: nil)
+                                }
+                                Divider().padding(.leading, 56)
+                                Button { confirmDelete = true } label: {
+                                    infoRow(systemImage: "trash", title: beacon.isEvent ? "Delete event" : "Delete beacon",
+                                            subtitle: nil, tint: ClickColors.destructive)
                                 }
                             }
-                            Button(beacon.isEvent ? "Edit event" : "Edit beacon", systemImage: "pencil") { editingBeacon = true }
-                            Button(beacon.isEvent ? "Delete event" : "Delete beacon", systemImage: "trash", role: .destructive) { confirmDelete = true }
+                            .buttonStyle(.plain)
+                            .detailCard()
                         }
-                        .padding(.top, 6)
                     }
                 }
                 .padding(.horizontal, 20)
@@ -161,6 +168,7 @@ struct BeaconDetailView: View {
             }
         }
         .ignoresSafeArea(edges: .top)
+        .heroBar(clear: !showsCompactTitle)
         .onScrollGeometryChange(for: Bool.self) { geometry in
             geometry.contentOffset.y + geometry.contentInsets.top > 210
         } action: { _, pastHero in
@@ -266,8 +274,7 @@ struct BeaconDetailView: View {
         .accessibilityHint(isActive ? "Double-tap to cancel" : "")
     }
 
-    /// Save · Share · Close over the hero (prototype event sheet header). Close only as the
-    /// sheet's root; pushed, the bar's back button returns instead.
+    /// Close (or Back, when pushed) · Save · Share over the hero (prototype event sheet header).
     @ToolbarContentBuilder
     private var headerButtons: some ToolbarContent {
         ToolbarItem(placement: .principal) {
@@ -308,8 +315,10 @@ struct BeaconDetailView: View {
                 Label("Share", systemImage: "square.and.arrow.up")
             }
         }
+        // Close sits where Back does when pushed, so the bar has the same shape either way and
+        // the title stays centered.
         if isSheetRoot {
-            ToolbarItem(placement: .topBarTrailing) {
+            ToolbarItem(placement: .topBarLeading) {
                 Button { dismiss() } label: { Label("Close", systemImage: "xmark") }
             }
         }
@@ -388,19 +397,34 @@ struct BeaconDetailView: View {
                 .buttonStyle(.plain)
             }
         }
-        .background(ClickColors.fillSubtle, in: RoundedRectangle(cornerRadius: ClickRadius.surface, style: .continuous))
+        .detailCard()
     }
 
-    private func infoRow(systemImage: String, title: String, subtitle: String?, chevron: Bool = false) -> some View {
+    /// Every section on the page titles the same way (About, People here, Hosting).
+    private func sectionHeader(_ title: String, subtitle: String? = nil) -> some View {
+        VStack(alignment: .leading, spacing: 2) {
+            Text(title)
+                .font(ClickTypography.sectionTitle)
+                .foregroundStyle(ClickColors.textPrimary)
+            if let subtitle {
+                Text(subtitle)
+                    .font(ClickTypography.supporting)
+                    .foregroundStyle(ClickColors.textSecondary)
+            }
+        }
+    }
+
+    private func infoRow(systemImage: String, title: String, subtitle: String?, chevron: Bool = false,
+                         tint: Color = ClickColors.textPrimary) -> some View {
         HStack(spacing: 16) {
             Image(systemName: systemImage)
                 .font(.system(size: 20))
-                .foregroundStyle(ClickColors.textPrimary)
+                .foregroundStyle(tint)
                 .frame(width: 24)
             VStack(alignment: .leading, spacing: 2) {
                 Text(title)
                     .font(ClickTypography.body)
-                    .foregroundStyle(ClickColors.textPrimary)
+                    .foregroundStyle(tint)
                     .multilineTextAlignment(.leading)
                 if let subtitle {
                     Text(subtitle)
@@ -452,12 +476,9 @@ struct BeaconDetailView: View {
         if others.isEmpty, people.value == nil, (rsvp.value?.count ?? 1) > 0 {
             // Holds the section's space while people load, so the rest of the page never
             // jumps down when they arrive.
-            VStack(alignment: .leading, spacing: 12) {
-                Text("People here")
-                    .font(ClickTypography.sectionTitle)
-                    .foregroundStyle(ClickColors.textPrimary)
-                Text("Loading who's going").font(ClickTypography.supporting)
-                HStack(spacing: 16) {
+            VStack(alignment: .leading, spacing: 10) {
+                sectionHeader("People here", subtitle: "Loading who's going")
+                peopleCard {
                     ForEach(0..<4, id: \.self) { _ in
                         VStack(spacing: 6) {
                             Circle().fill(ClickColors.fillSubtle).frame(width: 60, height: 60)
@@ -472,18 +493,12 @@ struct BeaconDetailView: View {
         } else if !others.isEmpty {
             let ranked = EventDirectoryView.bestMatch(others)
             let mutuals = others.filter { $0.relationship == .connection || $0.relationship == .mutual }.count
-            VStack(alignment: .leading, spacing: 12) {
+            VStack(alignment: .leading, spacing: 10) {
                 NavigationLink(value: AppRoute.eventPeople(beaconID: beaconID)) {
                     HStack(alignment: .firstTextBaseline) {
-                        VStack(alignment: .leading, spacing: 2) {
-                            Text("People here")
-                                .font(ClickTypography.sectionTitle)
-                                .foregroundStyle(ClickColors.textPrimary)
-                            Text([mutuals > 0 ? "\(mutuals) mutual\(mutuals == 1 ? "" : "s")" : nil, "\(rsvp.value?.count ?? others.count) going"]
-                                .compactMap { $0 }.joined(separator: " · "))
-                                .font(ClickTypography.supporting)
-                                .foregroundStyle(ClickColors.textSecondary)
-                        }
+                        sectionHeader("People here", subtitle: [mutuals > 0 ? "\(mutuals) mutual\(mutuals == 1 ? "" : "s")" : nil,
+                                                                "\(rsvp.value?.count ?? others.count) going"]
+                            .compactMap { $0 }.joined(separator: " · "))
                         Spacer()
                         Text("See all")
                             .font(ClickTypography.supporting)
@@ -494,30 +509,38 @@ struct BeaconDetailView: View {
                     }
                 }
                 .buttonStyle(.plain)
-                ScrollView(.horizontal, showsIndicators: false) {
-                    HStack(spacing: 16) {
-                        ForEach(ranked.prefix(10)) { person in
-                            NavigationLink(value: person.relationship == .connection
-                ? AppRoute.userProfile(userID: person.userID, connectionID: nil)
-                : AppRoute.publicProfile(userID: person.userID)) {
-                                VStack(spacing: 6) {
-                                    AvatarView(imageURL: person.avatarURL, seed: person.userID, initials: person.initials, size: 60)
-                                    Text(person.name.split(separator: " ").first.map(String.init) ?? person.name)
-                                        .font(ClickTypography.supporting)
-                                        .foregroundStyle(ClickColors.textPrimary)
-                                        .lineLimit(1)
-                                }
-                                .frame(width: 66)
+                peopleCard {
+                    ForEach(ranked.prefix(10)) { person in
+                        NavigationLink(value: person.relationship == .connection
+                            ? AppRoute.userProfile(userID: person.userID, connectionID: nil)
+                            : AppRoute.publicProfile(userID: person.userID)) {
+                            VStack(spacing: 6) {
+                                AvatarView(imageURL: person.avatarURL, seed: person.userID, initials: person.initials, size: 60)
+                                Text(person.name.split(separator: " ").first.map(String.init) ?? person.name)
+                                    .font(ClickTypography.supporting)
+                                    .foregroundStyle(ClickColors.textPrimary)
+                                    .lineLimit(1)
                             }
-                            .buttonStyle(.plain)
-                            .onAppear {
-                                env.profiles.primePublicProfile(userID: person.userID, name: person.name, avatarURL: person.avatarURL)
-                            }
+                            .frame(width: 66)
+                        }
+                        .buttonStyle(.plain)
+                        .onAppear {
+                            env.profiles.primePublicProfile(userID: person.userID, name: person.name, avatarURL: person.avatarURL)
                         }
                     }
                 }
             }
         }
+    }
+
+    /// A card of faces that scrolls sideways, inset like the info card's rows.
+    private func peopleCard<Content: View>(@ViewBuilder _ faces: () -> Content) -> some View {
+        ScrollView(.horizontal, showsIndicators: false) {
+            HStack(spacing: 16) { faces() }
+                .padding(.horizontal, 16)
+                .padding(.vertical, 14)
+        }
+        .detailCard()
     }
 
     // MARK: - Other beacon actions
@@ -743,6 +766,21 @@ struct BeaconDetailView: View {
     nonisolated static func markdown(_ text: String) -> AttributedString {
         (try? AttributedString(markdown: text, options: .init(interpretedSyntax: .inlineOnlyPreservingWhitespace)))
             ?? AttributedString(text)
+    }
+}
+
+private extension View {
+    /// The page starts under the bar (full-bleed hero), so the system would shade the bar over
+    /// the photo. Clear keeps the photo crisp there; past the hero the bar gets its background.
+    func heroBar(clear: Bool) -> some View {
+        toolbarBackground(clear ? .hidden : .automatic, for: .navigationBar)
+            .scrollEdgeEffectHiddenIfAvailable(clear, for: .top)
+    }
+
+    /// The page's one card style (info, people, hosting).
+    func detailCard() -> some View {
+        background(ClickColors.fillSubtle, in: RoundedRectangle(cornerRadius: ClickRadius.surface, style: .continuous))
+            .clipShape(RoundedRectangle(cornerRadius: ClickRadius.surface, style: .continuous))
     }
 }
 

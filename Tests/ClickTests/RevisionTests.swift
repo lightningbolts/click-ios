@@ -34,6 +34,8 @@ struct EncounterLabelTests {
         #expect(EncounterLabels.whenLine(date, timeZone: utc) == "Tue, Sep 22, 2026 · 7:04 PM")
         #expect(EncounterLabels.placeLine(locationName: "Gas Works Park", displayLocation: "Seattle", neighbourhood: "Wallingford") == "Gas Works Park • Wallingford, Seattle")
         #expect(EncounterLabels.placeLine(locationName: "Cafe", displayLocation: "Seattle", neighbourhood: nil) == "Cafe · Seattle")
+        #expect(EncounterLabels.placeLine(locationName: "Red Square, Central Campus", displayLocation: "Seattle, Washington",
+                                          neighbourhood: "Central Campus") == "Red Square, Central Campus · Seattle, Washington")
     }
 
     @Test("An encounter with 6 metrics produces 6 pills in table order with exact texts")

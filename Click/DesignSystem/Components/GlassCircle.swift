@@ -35,6 +35,21 @@ extension View {
         #endif
     }
 
+    /// Hides a scroll view's iOS 26 scroll-edge effect (the bar's blur and hairline) at `edges`;
+    /// no effect below iOS 26, which has none.
+    @ViewBuilder
+    public func scrollEdgeEffectHiddenIfAvailable(_ hidden: Bool = true, for edges: Edge.Set) -> some View {
+        #if compiler(>=6.2)
+        if #available(iOS 26.0, *) {
+            self.scrollEdgeEffectHidden(hidden, for: edges)
+        } else {
+            self
+        }
+        #else
+        self
+        #endif
+    }
+
     @ViewBuilder
     private func materialCapsule(tint: Color?) -> some View {
         if let tint {
