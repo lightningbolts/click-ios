@@ -26,6 +26,23 @@ Authoritative ledger of backend HTTP endpoints, authorization requirements, and 
 | `/api/me/event-bookmarks` | GET `?limit` | Bearer JWT | Events | Saved events, denormalized (`{ bookmarks, next_cursor }`); deleted beacons return `title: "Unavailable event"` and `created_at: null` |
 | `/api/me/recap` | GET `?window=day\|week` | Bearer JWT | Home | `{ recap: {...counts} }`; client treats missing `recap` or any error as failure (never zeros) |
 | `/api/me/nudges` | GET | Bearer JWT | Home/Inbox | Undismissed nudges (`reconnect_lull`, `shared_upcoming_event`) with server copy |
+| `/api/me/features` | GET | Bearer JWT | Flags | `{ features: { [key]: { enabled, config } } }`; unknown or failed flags are off (`FeatureFlags`) |
+| `/api/drops/develop` | POST `{drops: [{kind: chat\|event\|shared, id}]}` (1–50) | Bearer JWT | Click Drops | Per item: `developed {developed_at, url?}` (url = 10-min signed gated original), `pending {reveal_at}`, or `not_found`. Idempotent |
+| `/api/beacons/{id}/confirm` | GET / POST `{status: still_here\|cleared, lat?, lng?}` | Bearer JWT | Alerts (flag `alert_confirmations`) | GET `{state, expires_at, last_still_here_at, my_vote, is_creator, radius_meters}`; POST `{outcome, expires_at}`. 403 out of range, 409 already voted, 410 ended, 400 no location |
+| `/api/beacons/{id}/listening` | GET / POST `{lat, lng}` / DELETE | Bearer JWT | Soundtracks (flag `soundtrack_presence`) | `{count, is_listening, connections[{user_id, name, avatar_url}], heartbeat_seconds}`; POST 403 when outside the pin's area. Names are the viewer's connections only |
+| `/api/beacons/{id}/drops` | GET / POST `{client_drop_id, mime_type, original_b64, preview_b64, width?, height?, show_to_absentees?}` | Bearer JWT | Event drops (flag `event_drops`) | GET `{state: before\|open\|developing\|revealed, opens_at, closes_at, reveal_at, event_title, access, can_post, remaining, show_to_absentees, drops[]}`; POST 403 not checked in / window closed, 409 cap. Same `client_drop_id` = same drop (safe retry) |
+| `/api/beacons/{id}/drops/{dropId}` | DELETE | Bearer JWT | Event drops | Poster only |
+| `/api/beacons/{id}/drops/settings` | PUT `{show_to_absentees}` | Bearer JWT | Event drops | Poster's per-event "What you missed" choice |
+| `/api/drops/report` | POST `{kind, id, reason}` | Bearer JWT | Moderation | Quiet report on any visible drop |
+| `/api/me/shared-drops` | GET / POST `{client_drop_id, audience: all\|core, mime_type, original_b64, preview_b64, width?, height?}` | Bearer JWT | Shared drops (flag `shared_drops`) | GET `{teaser, drops[{id, user, is_mine, audience?, connection_id, created_at, reveal_at, developed_at, preview_url}]}` (bounded strip); POST 409 daily cap; same `client_drop_id` = same drop |
+| `/api/me/shared-drops/{id}` | DELETE | Bearer JWT | Shared drops | Poster only |
+| `/api/nudges/reconnect` | GET `?lat&lng` (rounded to 3 decimals on the phone) | Bearer JWT | Reconnect (flag `reconnect_nearby`) | `{nudge: {id, connection_id, user, met_at, place_name, title, body} \| null}`; at most one a day |
+| `/api/nudges/reconnect/{id}` | POST `{action: acted\|dismissed, mute?: person\|place}` | Bearer JWT | Reconnect | Resolve the card, optionally muting |
+| `/api/me/event-history` | GET `?filter=all\|went\|rsvpd\|saved\|hosted&cursor` | Bearer JWT | History (flag `event_history`) | `{events[{beacon_id, title, starts_at, ends_at, location_name, image_url, relation, recap}], next_cursor}` |
+| `/api/me/event-history/recap-card` | GET | Bearer JWT | Home | `{card}` for an event you were at in the last ~48 h, else `{card: null}` |
+| `/api/users/{id}/events-together` | GET | Bearer JWT | Profile | Only events both people checked in to |
+| `/api/beacons/{id}/report` | POST `{reason}` | Bearer JWT | Moderation | Quiet report into `beacon_reports`; 201 |
+| `/api/drops/views` | GET `?kind&ids=a,b` (≤100) | Bearer JWT | Click Drops | `{ developed: { [id]: developed_at } }` for this viewer |
 | `/api/me/nudges/{id}/dismiss`, `/acted` | POST | Bearer JWT | Home/Inbox | Resolve a nudge; client prunes its cache on success |
 | `/api/user/availability-intents` | GET / POST `{intent_tag≤25, durationMs, timeframe}` / DELETE `?id` | Bearer JWT | Availability | Active intents; server owns expiry |
 | `/api/users/{id}/profile` | PATCH `{first_name,last_name,tags,personality_tags}` | Bearer JWT | Profile | Self-only; `tags` upserts `user_interests` |
@@ -52,6 +69,7 @@ Authoritative ledger of backend HTTP endpoints, authorization requirements, and 
 | `/api/beacons/{id}/event-chat` | GET | Bearer JWT | Event chat | 200 `{event_id, hub_id, title, creator_id}` · 403 RSVP required · 404 unavailable · 409 not ready · 410 ended |
 | `rpc/create_verified_clique` | POST `{target_user_ids, encrypted_keys, initial_group_name}` | Bearer JWT + apikey | Groups | Returns group UUID; each key row sealed with the member↔wrap-peer pairwise v1 key |
 | `/api/chat/media` | POST `{chat_id, mime_type, file_b64, e2ee_v2_envelope?, media_ciphertext_sha256?, epoch?, sender_device_id?, client_message_id?}` | Bearer JWT | Chat media | 201 `{url, path, ttl_seconds}`; ≤25 MiB; image/audio MIME allow-list; v2 authorization required once the chat is upgraded |
+| `/api/chat/media` + `drop_original: true` | POST (same fields; flag `drops_develop`) | Bearer JWT | Click Drops | Gated original to private storage: 201 `{url: null, path}`. The message then sends `metadata.drop_original_path` (server moves it out, stores `drop_gated: true`) and `metadata.drop_original {epoch, sender_device_id, client_message_id: "<cmid>.original", media_ciphertext_sha256}`; the message media itself is the pixelated preview |
 | `/api/chat/attachments` | POST `{chat_id, mime_type, file_name, file_b64, e2ee_v2_*?}` | Bearer JWT | Chat files | 201 `{path, url}`; ≤2 MiB plaintext; file MIME allow-list |
 | `/api/chat/attachments/sign` | POST `{path}` | Bearer JWT | Chat media | `{url, ttl_seconds}` (10 min) for `chatId/userId/...` paths |
 | `/api/beacons/{id}/rsvp` | GET · POST `{source, platform}` · DELETE | Bearer JWT | Events | `{current_user_signed_up, request_status, rsvp_count}`; POST → going or `{request_status: pending|waitlisted}`; 403 invite-only/closed, 409 full |

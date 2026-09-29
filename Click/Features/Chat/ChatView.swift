@@ -199,6 +199,8 @@ public struct ChatView: View {
                 guard let next = model.nextClickDropReveal else { return }
                 try? await Task.sleep(for: .seconds(max(0, next.date.timeIntervalSinceNow) + 0.5))
                 guard !Task.isCancelled else { return }
+                // Watching at zero develops it here (with its animation); legacy drops just say so.
+                if await model.developDropsRevealedWhileVisible() { return }
                 await showToast(next.isOutgoing ? "Your Click Drop developed" : "A Click Drop developed")
             }
     }
@@ -446,6 +448,28 @@ public struct ChatView: View {
             }
             return true
         }
+        .overlay(alignment: .bottomLeading) {
+            // One quiet action when several Click Drops are waiting (spec §2), never a badge.
+            let ready = model.readyDrops
+            if ready.count > 1 {
+                Button {
+                    Task { await model.develop(ready) }
+                } label: {
+                    Label("Develop all (\(ready.count))", systemImage: "sparkles")
+                        .font(ClickTypography.supportingEmphasized)
+                        .foregroundStyle(ClickColors.textPrimary)
+                        .padding(.horizontal, 14)
+                        .padding(.vertical, 9)
+                        .glassCircleBackground()
+                }
+                .buttonStyle(.plain)
+                .disabled(!model.developingDropIDs.isDisjoint(with: ready.map(\.id)))
+                .padding(.leading, 16)
+                .padding(.bottom, 12)
+                .transition(.scale(scale: 0.8).combined(with: .opacity))
+                .accessibilityHint("Develops every Click Drop that's ready in this chat.")
+            }
+        }
         .overlay(alignment: .bottomTrailing) {
             if !timeline.isNearBottom || model.isDetachedFromLatest, !model.items.isEmpty {
                 jumpToLatestButton
@@ -493,6 +517,7 @@ public struct ChatView: View {
             showsSenderAvatar: !model.identity.isDirect && Self.endsSenderRun(at: index, in: items),
             showsReceipts: model.identity.supportsReceipts,
             mediaLoader: { message in try await model.mediaURL(for: message) },   // never nil
+            clickDrop: clickDropControls(for: item),
             onOpenMedia: { url, kind in
                 if kind == .image { viewerURL = ViewerURL(url: url) } else { quickLookURL = url }
             },
@@ -520,6 +545,19 @@ public struct ChatView: View {
         }
     }
 
+    /// Develop controls for a Click Drop bubble; state is read inside the bubble so it re-renders.
+    private func clickDropControls(for item: ChatMessageItem) -> ClickDropControls? {
+        guard model.dropState(for: item) != nil else { return nil }
+        return ClickDropControls(
+            state: { model.dropState(for: item) ?? .developed },
+            isDeveloping: { model.developingDropIDs.contains(item.id) },
+            isFreshlyDeveloped: { model.freshlyDevelopedDropIDs.contains(item.id) },
+            develop: { await model.develop([item]) },
+            didShowDevelop: { model.didShowDevelop(item.id) },
+            loadDeveloped: { try await model.developedDropURL(for: item) }
+        )
+    }
+
     private func react(to item: ChatMessageItem, with emoji: String) {
         Task { await model.toggleReaction(item: item, reactionType: emoji) }
     }
@@ -534,6 +572,7 @@ public struct ChatView: View {
                     showsSenderName: false,
                     showsReceipts: model.identity.supportsReceipts,
                     mediaLoader: { msg in try await model.mediaURL(for: msg) },
+                    clickDrop: clickDropControls(for: target.message),
                     replyTarget: target.message.replyToID.flatMap { replyID in
                         model.items.first { $0.id == replyID }
                     },
@@ -592,8 +631,9 @@ public struct ChatView: View {
             })
         }
 
-        // Save to Photos / Share…: if media and not locked
-        if let media = item.media, !media.isLocked() {
+        // Save to Photos / Share…: if media and not locked (a Click Drop once this viewer developed it)
+        let dropState = model.dropState(for: item)
+        if let media = item.media, !media.isLocked(), dropState == nil || dropState == .developed {
             let title = media.kind == .image ? "Save to Photos" : "Share…"
             let icon = media.kind == .image ? "square.and.arrow.down" : "square.and.arrow.up"
             actions.append(MessageAction(id: "save-share", title: title, systemImage: icon) {
@@ -677,6 +717,7 @@ public struct ChatView: View {
                 if draft.isClickDrop {
                     var drop = draft
                     drop.encounterID = env.clickDropSession?.encounterID(for: model.identity.connectionID)
+                    drop.gatesOriginal = env.features.isEnabled(.dropsDevelop)
                     Task { await model.sendMedia(drop) }
                 } else {
                     model.stage(draft)
@@ -849,7 +890,9 @@ public struct ChatView: View {
     /// Images go to Photos; files and voice notes open the share sheet.
     private func saveOrShare(_ item: ChatMessageItem) async {
         do {
-            let url = try await model.mediaURL(for: item)
+            let url = model.dropState(for: item) == .developed
+                ? try await model.developedDropURL(for: item)
+                : try await model.mediaURL(for: item)
             if item.media?.kind == .image {
                 try await PhotoLibrarySaver.saveImage(at: url)
                 ClickHaptics.success()

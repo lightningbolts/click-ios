@@ -49,7 +49,10 @@ public struct HomeView: View {
                         .frame(height: HomeFeedModel.opportunityPlaceholderHeight)
                         .accessibilityHidden(true)
                 }
+                if env.features.isEnabled(.reconnectNearby) { ReconnectNearbyCard() }
                 recentPeopleSection(promoted: opportunity)
+                if env.features.isEnabled(.sharedDrops) { SharedDropsStrip() }
+                if env.features.isEnabled(.eventHistory) { HomeEventRecapCard() }
                 recapSection
                 savedSection(promotedID: promotedEventID(opportunity))
                 nearbySection

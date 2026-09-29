@@ -1,0 +1,373 @@
+import SwiftUI
+
+/// Shared Click Drops on Home (spec F3): one bounded strip — your recent drops and the ones your
+/// connections shared with you — never a feed. No likes, views or counts; replying opens the chat.
+struct SharedDropsStrip: View {
+    @Environment(AppEnvironment.self) private var env
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+
+    @State private var drops = ModuleState<[SharedDrop]>()
+    /// Developed originals, by drop ID (loaded through develop-issued signed URLs).
+    @State private var originals: [String: UIImage] = [:]
+    @State private var developing: Set<String> = []
+    @State private var showingCamera = false
+    @State private var captured: CapturedPhoto?
+    @State private var uploads: [PendingShare] = []
+    @State private var viewing: SharedDrop?
+    @State private var message: String?
+
+    struct CapturedPhoto: Identifiable {
+        let id = UUID()
+        let jpeg: Data
+    }
+
+    struct PendingShare: Identifiable, Equatable {
+        let id = UUID()
+        let jpeg: Data
+        let audience: SharedDrop.Audience
+        var failed = false
+    }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            HomeSectionTitle("Click Drops").padding(.horizontal, 4)
+            ScrollView(.horizontal, showsIndicators: false) {
+                HStack(spacing: 10) {
+                    shareTile
+                    ForEach(uploads) { uploadTile($0) }
+                    ForEach(drops.value ?? []) { tile($0) }
+                }
+                .padding(.horizontal, 4)
+            }
+            if let message {
+                Text(message).font(ClickTypography.supporting).foregroundStyle(ClickColors.textSecondary).padding(.horizontal, 4)
+            }
+        }
+        .task { await load() }
+        // Live develop: a drop that reaches zero while the strip is on screen develops by itself.
+        .task(id: nextReveal) {
+            guard let next = nextReveal else { return }
+            try? await Task.sleep(for: .seconds(max(0, next.timeIntervalSinceNow) + 0.5))
+            guard !Task.isCancelled else { return }
+            let justReady = (drops.value ?? []).filter { $0.state() == .ready && ($0.revealAt.map { Date().timeIntervalSince($0) < 5 } ?? false) }
+            await develop(justReady)
+        }
+        .fullScreenCover(isPresented: $showingCamera) {
+            ClickDropCameraView { draft in captured = CapturedPhoto(jpeg: draft.data) }
+        }
+        .sheet(item: $captured) { photo in
+            SharedDropAudienceSheet { audience in
+                let upload = PendingShare(jpeg: photo.jpeg, audience: audience)
+                uploads.append(upload)
+                Task { await share(upload) }
+            }
+            .presentationDetents([.medium])
+        }
+        .sheet(item: $viewing) { drop in
+            SharedDropViewer(drop: drop, image: originals[drop.id], onDeleted: {
+                drops.succeed((drops.value ?? []).filter { $0.id != drop.id })
+            })
+        }
+    }
+
+    private var nextReveal: Date? {
+        (drops.value ?? []).compactMap { drop in drop.state().isPending ? drop.revealAt : nil }.min()
+    }
+
+    // MARK: - Tiles
+
+    private var shareTile: some View {
+        Button {
+            showingCamera = true
+        } label: {
+            VStack(spacing: 6) {
+                Image(systemName: "camera").font(.system(size: 22))
+                Text("Share a drop").font(ClickTypography.caption)
+            }
+            .foregroundStyle(ClickColors.textPrimary)
+            .frame(width: 96, height: 128)
+            .overlay {
+                RoundedRectangle(cornerRadius: 14, style: .continuous)
+                    .strokeBorder(ClickColors.separator, style: StrokeStyle(lineWidth: 1.5, dash: [5, 4]))
+            }
+            .contentShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
+        }
+        .buttonStyle(.plain)
+        .accessibilityHint("Takes a photo that develops for your connections in 24 hours.")
+    }
+
+    private func tile(_ drop: SharedDrop) -> some View {
+        let state = drop.state()
+        return Button {
+            switch state {
+            case .ready: Task { await develop([drop]) }
+            case .developed: viewing = drop
+            case .pending: break
+            }
+        } label: {
+            ZStack(alignment: .bottomLeading) {
+                if state == .developed, let image = originals[drop.id] {
+                    Image(uiImage: image).resizable().scaledToFill()
+                } else {
+                    PixelatedPreview(url: drop.previewURL)
+                }
+                VStack(alignment: .leading, spacing: 2) {
+                    label(for: drop, state: state)
+                    Text(drop.isMine ? "You" : drop.userName)
+                        .font(ClickTypography.metadataEmphasized)
+                        .lineLimit(1)
+                }
+                .foregroundStyle(.white)
+                .padding(.horizontal, 8)
+                .padding(.vertical, 5)
+                .background(.black.opacity(0.45), in: RoundedRectangle(cornerRadius: 8, style: .continuous))
+                .padding(6)
+            }
+            .frame(width: 96, height: 128)
+            .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
+        }
+        .buttonStyle(.plain)
+        .disabled(state.isPending || developing.contains(drop.id))
+        .accessibilityLabel(accessibility(drop, state: state))
+    }
+
+    @ViewBuilder
+    private func label(for drop: SharedDrop, state: ClickDropDevelopState) -> some View {
+        switch state {
+        case .pending(let reveal):
+            Label(reveal.formatted(.relative(presentation: .named)), systemImage: "hourglass")
+                .font(ClickTypography.caption).labelStyle(.titleAndIcon)
+        case .ready:
+            if developing.contains(drop.id) {
+                ProgressView().tint(.white).controlSize(.small)
+            } else {
+                Label("Tap to develop", systemImage: "sparkles").font(ClickTypography.caption)
+            }
+        case .developed:
+            EmptyView()
+        }
+    }
+
+    private func accessibility(_ drop: SharedDrop, state: ClickDropDevelopState) -> String {
+        let who = drop.isMine ? "Your drop" : "Drop from \(drop.userName)"
+        switch state {
+        case .pending(let reveal): return "\(who), develops \(reveal.formatted(.relative(presentation: .named)))"
+        case .ready: return "\(who), ready to develop"
+        case .developed: return "\(who). Opens the photo."
+        }
+    }
+
+    private func uploadTile(_ upload: PendingShare) -> some View {
+        ZStack {
+            ClickColors.fillSubtle
+            if upload.failed {
+                Button {
+                    Task { await retry(upload) }
+                } label: {
+                    VStack(spacing: 4) {
+                        Image(systemName: "arrow.clockwise")
+                        Text("Retry").font(ClickTypography.caption)
+                    }
+                    .foregroundStyle(ClickColors.textSecondary)
+                }
+                .buttonStyle(.plain)
+                .accessibilityLabel("Sharing failed. Retry.")
+            } else {
+                ProgressView()
+            }
+        }
+        .frame(width: 96, height: 128)
+        .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
+    }
+
+    // MARK: - Loading & writes
+
+    private func load() async {
+        drops.begin()
+        do {
+            let loaded = try await env.drops.sharedDrops()
+            drops.succeed(loaded)
+            await loadOriginals(loaded.filter { $0.state() == .developed && originals[$0.id] == nil })
+        } catch {
+            if !error.isCancellation { drops.fail(error.userFacingMessage) }
+        }
+    }
+
+    /// Developed drops need a fresh signed URL each visit; developing again is idempotent.
+    private func loadOriginals(_ targets: [SharedDrop]) async {
+        guard !targets.isEmpty, let results = try? await env.drops.develop(targets.map { ClickDropRef(kind: .shared, id: $0.id) })
+        else { return }
+        for result in results {
+            guard let url = result.originalURL, let image = try? await ClickDropService.loadOriginal(url, maxPixels: 720) else { continue }
+            originals[result.ref.id] = image
+        }
+    }
+
+    private func develop(_ targets: [SharedDrop]) async {
+        let ready = targets.filter { $0.state() == .ready && !developing.contains($0.id) }
+        guard !ready.isEmpty else { return }
+        developing.formUnion(ready.map(\.id))
+        defer { developing.subtract(ready.map(\.id)) }
+        do {
+            let results = try await env.drops.develop(ready.map { ClickDropRef(kind: .shared, id: $0.id) })
+            var updated = drops.value ?? []
+            for result in results where result.status == .developed {
+                if let url = result.originalURL, let image = try? await ClickDropService.loadOriginal(url, maxPixels: 720) {
+                    if !reduceMotion { ClickHaptics.impact(.light) }
+                    withAnimation(reduceMotion ? .easeInOut(duration: 0.2) : ClickMotion.reveal) { originals[result.ref.id] = image }
+                }
+                if let index = updated.firstIndex(where: { $0.id == result.ref.id }) {
+                    updated[index].developedAt = result.developedAt ?? .now
+                }
+            }
+            withAnimation(ClickMotion.subtleFade) { drops.succeed(updated) }
+        } catch {
+            if !error.isCancellation { message = "Couldn't develop right now. Try again in a moment." }
+        }
+    }
+
+    private func share(_ upload: PendingShare) async {
+        do {
+            let drop = try await env.drops.shareDrop(upload.jpeg, audience: upload.audience, clientDropID: upload.id)
+            uploads.removeAll { $0.id == upload.id }
+            drops.succeed([drop] + (drops.value ?? []).filter { $0.id != drop.id })
+            message = nil
+            ClickHaptics.success()
+        } catch let refusal as SharedDropPostError {
+            uploads.removeAll { $0.id == upload.id }
+            message = refusal.errorDescription
+        } catch {
+            guard !error.isCancellation else { return }
+            if let index = uploads.firstIndex(where: { $0.id == upload.id }) { uploads[index].failed = true }
+            message = "Couldn't share your drop. Tap Retry — it won't be shared twice."
+        }
+    }
+
+    private func retry(_ upload: PendingShare) async {
+        guard let index = uploads.firstIndex(where: { $0.id == upload.id }) else { return }
+        uploads[index].failed = false
+        await share(uploads[index])
+    }
+}
+
+/// Who a shared drop goes to, with the privacy difference from chat drops said plainly.
+struct SharedDropAudienceSheet: View {
+    @Environment(\.dismiss) private var dismiss
+    let onShare: (SharedDrop.Audience) -> Void
+    @State private var audience: SharedDrop.Audience = .all
+
+    var body: some View {
+        NavigationStack {
+            Form {
+                Picker("Share with", selection: $audience) {
+                    Text("All connections").tag(SharedDrop.Audience.all)
+                    Text("Core connections").tag(SharedDrop.Audience.core)
+                }
+                .pickerStyle(.inline)
+                Section {
+                    Text("It develops for them in 24 hours. Shared drops aren't end-to-end encrypted like chats: only the people you pick can see them, and you can delete it anytime.")
+                        .font(ClickTypography.supporting)
+                        .foregroundStyle(ClickColors.textSecondary)
+                }
+            }
+            .navigationTitle("Share drop")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) { Button("Cancel") { dismiss() } }
+                ToolbarItem(placement: .confirmationAction) {
+                    Button("Share") {
+                        onShare(audience)
+                        dismiss()
+                    }
+                }
+            }
+        }
+    }
+}
+
+/// A developed shared drop: the photo, who shared it, and a reply that opens your chat with them.
+struct SharedDropViewer: View {
+    @Environment(AppEnvironment.self) private var env
+    @Environment(\.dismiss) private var dismiss
+    let drop: SharedDrop
+    let image: UIImage?
+    let onDeleted: () -> Void
+    @State private var confirmDelete = false
+    @State private var reporting = false
+    @State private var notice: String?
+
+    var body: some View {
+        NavigationStack {
+            VStack(spacing: 16) {
+                if let image {
+                    Image(uiImage: image).resizable().scaledToFit()
+                        .clipShape(RoundedRectangle(cornerRadius: ClickRadius.surface, style: .continuous))
+                        .accessibilityLabel(drop.isMine ? "Your drop" : "Drop from \(drop.userName)")
+                } else {
+                    ProgressView().frame(maxHeight: .infinity)
+                }
+                if !drop.isMine, let connectionID = drop.connectionID {
+                    Button {
+                        dismiss()
+                        env.router.navigate(to: .chat(DirectChatRoute(connectionID: connectionID, peerUserID: drop.userID,
+                                                                     peerDisplayName: drop.userName, peerAvatarURL: drop.avatarURL)))
+                    } label: {
+                        Label("Reply to \(drop.userName)", systemImage: "bubble.left")
+                            .font(ClickTypography.button)
+                            .frame(maxWidth: .infinity, minHeight: 50)
+                    }
+                    .buttonStyle(.borderedProminent)
+                    .tint(ClickColors.primaryActionFill)
+                }
+                if let notice { Text(notice).font(ClickTypography.supporting).foregroundStyle(ClickColors.textSecondary) }
+            }
+            .padding(16)
+            .navigationTitle(drop.isMine ? "Your drop" : drop.userName)
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) { Button("Done") { dismiss() } }
+                ToolbarItem(placement: .topBarTrailing) {
+                    Menu {
+                        if drop.isMine {
+                            Button("Delete", systemImage: "trash", role: .destructive) { confirmDelete = true }
+                        } else {
+                            Button("Report", systemImage: "flag") { reporting = true }
+                        }
+                    } label: {
+                        Label("More", systemImage: "ellipsis")
+                    }
+                }
+            }
+            .confirmation("Delete this drop?", isPresented: $confirmDelete, keep: "Keep It",
+                          message: "It's removed for everyone it was shared with.") {
+                Button("Delete", role: .destructive) { Task { await delete() } }
+            }
+            .confirmationDialog("Report this photo?", isPresented: $reporting, titleVisibility: .visible) {
+                ForEach(["Inappropriate", "Harassment", "Spam"], id: \.self) { reason in
+                    Button(reason) { Task { await report(reason) } }
+                }
+            } message: {
+                Text("Reports go quietly to the Click team. Nobody else sees them.")
+            }
+        }
+    }
+
+    private func delete() async {
+        do {
+            try await env.drops.deleteSharedDrop(id: drop.id)
+            onDeleted()
+            dismiss()
+        } catch {
+            if !error.isCancellation { notice = "Couldn't delete it. \(error.userFacingMessage)" }
+        }
+    }
+
+    private func report(_ reason: String) async {
+        do {
+            try await env.beacons.reportDrop(ClickDropRef(kind: .shared, id: drop.id), reason: reason)
+            notice = "Thanks. The Click team will take a look."
+        } catch {
+            if !error.isCancellation { notice = "Couldn't send the report. \(error.userFacingMessage)" }
+        }
+    }
+}

@@ -37,6 +37,7 @@ struct BeaconDetailView: View {
     @State private var editingBeacon = false
     /// Readable place for legacy beacons saved with the label "Current location".
     @State private var resolvedPlace: (name: String?, address: String?)?
+    @State private var reporting = false
 
     var body: some View {
         Group {
@@ -71,6 +72,13 @@ struct BeaconDetailView: View {
             await load()
         }
         .task(id: rsvp.value?.request) { await watchPendingRequest() }
+        .confirmationDialog("Report this?", isPresented: $reporting, titleVisibility: .visible) {
+            ForEach(["Not accurate anymore", "Inappropriate", "Spam"], id: \.self) { reason in
+                Button(reason) { Task { await report(reason) } }
+            }
+        } message: {
+            Text("Reports go quietly to the Click team. Nobody else sees them.")
+        }
         .alert("Event", isPresented: Binding(get: { notice != nil }, set: { if !$0 { notice = nil } })) {
             Button("OK", role: .cancel) {}
         } message: {
@@ -113,9 +121,18 @@ struct BeaconDetailView: View {
                         beaconActions(beacon)
                     }
 
+                    if beacon.kind == .hazard, !isExpired, env.features.isEnabled(.alertConfirmations) {
+                        AlertConfirmationSection(beacon: beacon) {
+                            withAnimation(ClickMotion.content) { isExpired = true }
+                        }
+                    }
+
                     if beacon.kind == .soundtrack {
                         SoundtrackBeaconSection(beacon: beacon) { art in
                             withAnimation(ClickMotion.subtleFade) { resolvedArtwork = art }
+                        }
+                        if !isExpired, env.features.isEnabled(.soundtrackPresence) {
+                            ListeningNowSection(beacon: beacon)
                         }
                     }
 
@@ -134,6 +151,10 @@ struct BeaconDetailView: View {
                                 .padding(.vertical, 14)
                                 .detailCard()
                         }
+                    }
+
+                    if beacon.isEvent, env.features.isEnabled(.eventDrops) {
+                        EventDropsSection(beacon: beacon)
                     }
 
                     if beacon.isEvent { peoplePreview }
@@ -310,6 +331,10 @@ struct BeaconDetailView: View {
                 Button("View on Map", systemImage: "map") { env.router.showOnMap(.place(beaconID)) }
                 ShareLink(item: shareURL, subject: Text(beacon.value?.title ?? "Click")) {
                     Label("More…", systemImage: "square.and.arrow.up")
+                }
+                if env.features.isEnabled(.alertConfirmations), let beacon = beacon.value,
+                   beacon.creatorID != env.session.currentSession?.userId {
+                    Button("Report", systemImage: "flag") { reporting = true }
                 }
             } label: {
                 Label("Share", systemImage: "square.and.arrow.up")
@@ -553,6 +578,16 @@ struct BeaconDetailView: View {
             }
             iconAction("Directions", systemImage: "location.north.line") { openDirections(beacon) }
             iconAction("Map", systemImage: "map") { env.router.showOnMap(.place(beacon.id)) }
+        }
+    }
+
+    private func report(_ reason: String) async {
+        do {
+            try await env.beacons.report(beaconID: beaconID, reason: reason)
+            ClickHaptics.success()
+            notice = "Thanks. The Click team will take a look."
+        } catch {
+            if !error.isCancellation { notice = "Couldn't send the report. \(error.userFacingMessage)" }
         }
     }
 

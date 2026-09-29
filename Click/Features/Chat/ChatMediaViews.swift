@@ -7,9 +7,6 @@ import SwiftUI
 /// Core Image contexts are documented for reuse across render operations. Older SDK overlays
 /// do not mark `CIContext` as `Sendable`, while newer ones do, so keep the shared instance in
 /// an explicitly sendable immutable holder instead of relying on SDK-specific annotations.
-private final class SharedCIContext: @unchecked Sendable {
-    let value = CIContext()
-}
 import UniformTypeIdentifiers
 
 // MARK: - Audio playback (one shared player, spec §37.6)
@@ -280,11 +277,18 @@ struct MessageMediaContent: View {
     let message: ChatMessageItem
     let media: MessageMedia
     let load: () async throws -> URL
+    /// Set for Click Drop photos in the develop flow (spec §2).
+    var clickDrop: ClickDropControls?
     let onOpen: (URL) -> Void
 
     var body: some View {
         switch media.kind {
-        case .image: ChatImageView(message: message, load: load, onOpen: onOpen)
+        case .image:
+            if let clickDrop {
+                ClickDropImageView(message: message, loadPreview: load, controls: clickDrop, onOpen: onOpen)
+            } else {
+                ChatImageView(message: message, load: load, onOpen: onOpen)
+            }
         case .audio: ChatAudioView(message: message, media: media, load: load)
         case .file: ChatFileView(message: message, media: media, load: load, onOpen: onOpen)
         }
@@ -322,18 +326,6 @@ private struct ChatImageView: View {
         return media.revealAt ?? .distantFuture
     }
 
-    /// One Core Image context for every Drop (creating one per call is expensive).
-    private nonisolated static let ciContext = SharedCIContext()
-
-    nonisolated static func pixelated(_ image: UIImage) -> UIImage? {
-        guard let input = CIImage(image: image) else { return nil }
-        let filter = CIFilter(name: "CIPixellate")
-        filter?.setValue(input, forKey: kCIInputImageKey)
-        filter?.setValue(max(image.size.width, image.size.height) / 12, forKey: kCIInputScaleKey)
-        guard let output = filter?.outputImage?.cropped(to: input.extent),
-              let cg = ciContext.value.createCGImage(output, from: input.extent) else { return nil }
-        return UIImage(cgImage: cg)
-    }
 
     /// Reserved box until the image decodes, so the timeline doesn't jump (spec §37.4).
     /// The box the photo will occupy: its remembered aspect ratio, else a neutral 6:5.
@@ -414,7 +406,7 @@ private struct ChatImageView: View {
                 guard let image = UIImage(contentsOfFile: fileURL.path) else { return nil }
                 let scale = min(1, 720 / max(image.size.width, image.size.height))
                 let thumbnail = image.preparingThumbnail(of: CGSize(width: image.size.width * scale, height: image.size.height * scale)) ?? image
-                return (thumbnail, isLocked ? Self.pixelated(thumbnail) : nil)
+                return (thumbnail, isLocked ? ClickDropPixelation.pixelated(thumbnail) : nil)
             }.value
             guard let decoded else { throw ChatRepositoryError.mediaUnavailable }
             MediaAspectCache.remember(decoded.0.size, for: message)

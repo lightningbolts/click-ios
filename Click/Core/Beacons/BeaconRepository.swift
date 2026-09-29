@@ -24,7 +24,7 @@ public struct NearbyDiscovery: Codable, Equatable, Sendable {
 
 /// Server-authoritative beacon, event, and hub reads (spec §52–§63).
 public actor BeaconRepository {
-    private let api: ClickAPIClient
+    let api: ClickAPIClient
     private let cache: CacheStore
     /// Recently seen beacons (discovery, detail, chat-card prefetch) so detail opens instantly
     /// and refreshes in the background (`CachePolicy.beaconDetail`). Session memory only.

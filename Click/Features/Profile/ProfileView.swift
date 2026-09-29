@@ -70,6 +70,9 @@ public struct ProfileView: View {
                         HangoutsSection(plans: model.upcomingPlans) { env.router.navigate(to: $0.route) }
                     }
                 }
+                if !isSelf, env.features.isEnabled(.eventHistory) {
+                    EventsTogetherSection(userID: model.userID)
+                }
                 chatBackdrop
                 // Sticky: once the chips reach the top they're held there, over the content.
                 tabChips
@@ -294,6 +297,7 @@ public struct ProfileView: View {
         guard let conversation = directConversation, let userID = env.session.currentSession?.userId,
               let data = image.jpegData(compressionQuality: 0.9), var draft = await MediaDraftBuilder.image(from: data) else { return }
         draft.isClickDrop = true
+        draft.gatesOriginal = env.features.isEnabled(.dropsDevelop)
         do {
             _ = try await env.chat.sendMedia(conversation: conversation, currentUserID: userID, currentUserName: "You",
                                              draft: draft, replyToID: nil, clientMessageID: UUID().uuidString.lowercased())

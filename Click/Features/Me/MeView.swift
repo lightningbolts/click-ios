@@ -244,6 +244,12 @@ public struct MeView: View {
                 }
             }
 
+            if env.features.isEnabled(.eventHistory) {
+                NavigationLink(value: AppRoute.eventHistory) {
+                    SettingsRowLabel(title: "Past events", systemImage: "clock.arrow.circlepath") { EmptyView() }
+                }
+            }
+
             NavigationLink(value: AppRoute.settings(.calendar)) {
                 SettingsRowLabel(title: "Calendar", systemImage: "calendar") { EmptyView() }
             }
