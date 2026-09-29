@@ -211,6 +211,7 @@ public struct MainTabShellView: View {
                 }
                 env.resumeLiveConversations()
                 env.reportPresenceIfEnabled()
+                env.syncDeviceHistory()
                 env.flushTelemetry()
             case .background:
                 conversations.stopRealtime()
