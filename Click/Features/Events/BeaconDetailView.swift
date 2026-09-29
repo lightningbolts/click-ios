@@ -20,6 +20,8 @@ struct BeaconDetailView: View {
     @State private var engagement = ModuleState<EventEngagement>()
     @State private var rsvpPending = false
     @State private var bookmarkPending = false
+    /// The latest local answer (optimistic toggle, then the server's confirmation).
+    @State private var savedOverride: Bool?
     @State private var checkInPending = false
     @State private var notice: String?
     /// Album art resolved on device for a soundtrack the server couldn't enrich.
@@ -258,32 +260,33 @@ struct BeaconDetailView: View {
         // Present from the first frame (disabled until loaded), so iOS morphs them in with the
         // push like any other bar buttons instead of popping them in once the beacon arrives.
         ToolbarItemGroup(placement: .topBarTrailing) {
+            // Never disabled while loading (a dimmed icon brightening is its own pop-in): Save
+            // starts from your saved events and Share only needs the link.
             if beacon.value?.isEvent ?? isEvent {
-                let saved = engagement.value?.bookmarked == true
+                let saved = isSaved
                 Button {
                     if let beacon = beacon.value { Task { await toggleBookmark(beacon) } }
                 } label: {
                     Label(saved ? "Remove from saved" : "Save event", systemImage: saved ? "bookmark.fill" : "bookmark")
+                        .contentTransition(.symbolEffect(.replace))
                 }
                 .tint(saved ? ClickColors.accentForeground : nil)
-                .disabled(engagement.value == nil || bookmarkPending)
             }
             Menu {
-                if let beacon = beacon.value {
-                    Button("Copy link", systemImage: "link") {
-                        UIPasteboard.general.string = "https://joinclick.co/e/\(beacon.id)"
-                        ClickHaptics.success()
-                    }
+                Button("Copy link", systemImage: "link") {
+                    UIPasteboard.general.string = shareURL.absoluteString
+                    ClickHaptics.success()
+                }
+                if beacon.value != nil {
                     Button("Share to chat", systemImage: "bubble.left") { sharingToChat = true }
-                    Button("View on Map", systemImage: "map") { env.router.showOnMap(.place(beacon.id)) }
-                    ShareLink(item: URL(string: "https://joinclick.co/e/\(beacon.id)")!, subject: Text(beacon.title)) {
-                        Label("More…", systemImage: "square.and.arrow.up")
-                    }
+                }
+                Button("View on Map", systemImage: "map") { env.router.showOnMap(.place(beaconID)) }
+                ShareLink(item: shareURL, subject: Text(beacon.value?.title ?? "Click")) {
+                    Label("More…", systemImage: "square.and.arrow.up")
                 }
             } label: {
                 Label("Share", systemImage: "square.and.arrow.up")
             }
-            .disabled(beacon.value == nil)
         }
         if isSheetRoot {
             ToolbarItem(placement: .topBarTrailing) {
@@ -553,6 +556,10 @@ struct BeaconDetailView: View {
         do { rsvp.succeed(try await rsvpTask) } catch { rsvp.fail(error) }
         do { engagement.succeed(try await engagementTask) } catch { engagement.fail(error) }
         do { people.succeed(try await peopleTask) } catch { people.fail(error) }
+        // Ready the event chat for those who can open it, so it pushes straight in.
+        if rsvp.value?.isGoing == true || beacon.value?.creatorID == env.session.currentSession?.userId {
+            await EventChatView.prefetch(beaconID: beaconID, env: env)
+        }
     }
 
     private func setRSVP(_ beacon: MapBeacon) async {
@@ -584,29 +591,36 @@ struct BeaconDetailView: View {
         }
     }
 
+    private var shareURL: URL { URL(string: "https://joinclick.co/e/\(beaconID)")! }
+
+    /// Saved state for the bar: your latest toggle, else the server's answer, else your saved
+    /// events (already in memory), so a saved event shows saved from the first frame.
+    private var isSaved: Bool {
+        savedOverride ?? engagement.value?.bookmarked
+            ?? env.selfData.savedEvents.value?.contains { $0.beaconID == beaconID } ?? false
+    }
+
     /// Optimistic with rollback (spec §56.3).
     private func toggleBookmark(_ beacon: MapBeacon) async {
-        guard var current = engagement.value else { return }
-        let target = !current.bookmarked
+        guard !bookmarkPending else { return }
+        let target = !isSaved
         bookmarkPending = true
-        current.bookmarked = target
-        engagement.succeed(current)
+        savedOverride = target
         defer { bookmarkPending = false }
         do {
-            current.bookmarked = try await env.events.setBookmark(beaconID: beacon.id, bookmarked: target)
-            engagement.succeed(current)
+            savedOverride = try await env.events.setBookmark(beaconID: beacon.id, bookmarked: target)
             ClickHaptics.selection()
             await syncReminders(beacon)
+            await env.selfData.loadSavedEvents(force: true)
         } catch {
-            current.bookmarked = !target
-            engagement.succeed(current)
+            savedOverride = !target
             notice = "Couldn't update your saved events. \(error.userFacingMessage)"
         }
     }
 
     /// Reminders exist while the user is going or has saved the event (spec §59).
     private func syncReminders(_ beacon: MapBeacon) async {
-        let interested = rsvp.value?.isGoing == true || engagement.value?.bookmarked == true
+        let interested = rsvp.value?.isGoing == true || isSaved
         guard interested, let schedule = beacon.schedule else {
             await EventReminderScheduler.cancel(beaconID: beacon.id)
             return

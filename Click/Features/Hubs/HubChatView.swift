@@ -70,6 +70,8 @@ struct HubChatView: View {
         } message: {
             Text(notice ?? "")
         }
+        // Known hubs paint on the first frame (before the push animates), not after a spinner.
+        .onAppear { showKnownHub() }
         .task { await load() }
     }
 
@@ -93,6 +95,29 @@ struct HubChatView: View {
 
     private static var hubCache: [String: HubInfo] = [:]
 
+    /// Remembers a hub in memory and on disk, so its chat opens without a spinner.
+    private static func remember(_ hub: HubInfo, env: AppEnvironment) {
+        hubCache[hub.id] = hub
+        if let userID = env.session.currentSession?.userId {
+            LocalStore.shared.save(hub, key: "hub.info.\(hub.id)", userID: userID)
+        }
+    }
+
+    /// Fetches a hub ahead of opening it (the event page does this for its chat).
+    static func prefetch(hubID: String, env: AppEnvironment) async {
+        guard hubCache[hubID] == nil, let hub = try? await env.hubs.hub(id: hubID) else { return }
+        remember(hub, env: env)
+    }
+
+    private func conversationModel(for hub: HubInfo) -> ConversationModel {
+        env.conversationModel(for: ConversationIdentity(chatID: hub.id, peerUserID: "", peerDisplayName: hub.name, kind: .hub(hubID: hub.id)))
+    }
+
+    private func showKnownHub() {
+        guard case .loading = phase, let known = knownHub() else { return }
+        phase = .ready(known, conversationModel(for: known))
+    }
+
     private func reload() async {
         Self.hubCache.removeValue(forKey: hubID)
         phase = .loading
@@ -110,36 +135,14 @@ struct HubChatView: View {
     }
 
     private func load() async {
-        if let cached = knownHub() {
-            let identity = ConversationIdentity(
-                chatID: cached.id,
-                peerUserID: "",
-                peerDisplayName: cached.name,
-                kind: .hub(hubID: cached.id)
-            )
-            phase = .ready(cached, env.conversationModel(for: identity))
-        } else if case .ready = phase {
-            // Already ready
-        } else {
-            phase = .loading
-        }
+        showKnownHub()
         do {
             let hub = try await resolveHub()
-            Self.hubCache[hubID] = hub
-            if let userID = env.session.currentSession?.userId {
-                LocalStore.shared.save(hub, key: "hub.info.\(hubID)", userID: userID)
-            }
-            let identity = ConversationIdentity(
-                chatID: hub.id,
-                peerUserID: "",
-                peerDisplayName: hub.name,
-                kind: .hub(hubID: hub.id)
-            )
-            let model = env.conversationModel(for: identity)
+            Self.remember(hub, env: env)
             if case .ready(let currentHub, _) = phase, currentHub == hub {
                 // Already displaying this hub info
             } else {
-                phase = .ready(hub, model)
+                withAnimation(ClickMotion.content) { phase = .ready(hub, conversationModel(for: hub)) }
             }
             await conversations.rememberHub(JoinedHub(
                 hubID: hub.id, name: hub.name, category: hub.category, eventBeaconID: hub.eventBeaconID, joinedAt: .now,
@@ -227,6 +230,25 @@ struct EventChatView: View {
 
     @State private var resolution: EventChatResolution?
 
+    /// Resolutions this session (the server re-checks on every open), so the chat paints at once.
+    private static var resolved: [String: EventChatResolution] = [:]
+
+    /// Resolves the event's chat (and fetches its hub) while the event page is open, so opening
+    /// the chat pushes straight into it.
+    static func prefetch(beaconID: String, env: AppEnvironment) async {
+        let result = await env.hubs.resolveEventChat(beaconID: beaconID)
+        guard case .ready(let hubID, _, _) = result else { return }
+        resolved[beaconID] = result
+        await HubChatView.prefetch(hubID: hubID, env: env)
+    }
+
+    private func resolve() async {
+        let fresh = await env.hubs.resolveEventChat(beaconID: beaconID)
+        if case .ready = fresh { Self.resolved[beaconID] = fresh } else { Self.resolved[beaconID] = nil }
+        guard fresh != resolution else { return }
+        withAnimation(ClickMotion.content) { resolution = fresh }
+    }
+
     var body: some View {
         Group {
             switch resolution {
@@ -248,9 +270,8 @@ struct EventChatView: View {
         }
         .navigationTitle("Event chat")
         .navigationBarTitleDisplayMode(.inline)
-        .task {
-            if resolution == nil { resolution = await env.hubs.resolveEventChat(beaconID: beaconID) }
-        }
+        .onAppear { if resolution == nil { resolution = Self.resolved[beaconID] } }
+        .task { await resolve() }
     }
 
     private func unavailable(_ title: String, _ message: String, retry: Bool) -> some View {
@@ -262,7 +283,7 @@ struct EventChatView: View {
             if retry {
                 Button("Try Again") {
                     resolution = nil
-                    Task { resolution = await env.hubs.resolveEventChat(beaconID: beaconID) }
+                    Task { await resolve() }
                 }
                 .buttonStyle(.borderedProminent)
                 .tint(ClickColors.primaryActionFill)
