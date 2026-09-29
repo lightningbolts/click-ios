@@ -205,7 +205,10 @@ public struct MainTabShellView: View {
             switch phase {
             case .active:
                 Task { await conversations.resumeFromBackground() }
-                Task { await env.features.refresh() }
+                Task {
+                    await env.features.refresh()
+                    await env.productTelemetry.appOpened()
+                }
                 env.resumeLiveConversations()
                 env.reportPresenceIfEnabled()
                 env.flushTelemetry()
@@ -220,6 +223,8 @@ public struct MainTabShellView: View {
             // Flags are per user: never carry one account's cohort into another.
             env.features.reset()
             await env.features.refresh()
+            await env.productTelemetry.installedIfNeeded()
+            await env.productTelemetry.appOpened()
         }
         .task(id: env.session.currentSession?.userId) {
             // Ghost Mode was removed from the app. Clear the server bit an older client may

@@ -21,6 +21,7 @@ struct EventRecapView: View {
     @State private var confirmDelete: EventDrop?
     @State private var reporting: EventDrop?
     @State private var notice: String?
+    @State private var reportedOpen = false
 
     struct RecapPhoto: Equatable {
         let natural: UIImage
@@ -226,7 +227,13 @@ struct EventRecapView: View {
             let loaded = try await env.beacons.eventDrops(beaconID: beaconID)
             state.succeed(loaded)
             index = min(index, max(0, loaded.drops.count - 1))
-            if loaded.phase == .revealed { await developAll() }
+            if loaded.phase == .revealed {
+                if !loaded.drops.isEmpty, !reportedOpen {
+                    reportedOpen = true
+                    await env.productTelemetry.track(.recapOpened)
+                }
+                await developAll()
+            }
         } catch {
             if !error.isCancellation { state.fail(error.userFacingMessage) }
         }

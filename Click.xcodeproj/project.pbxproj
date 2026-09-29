@@ -90,6 +90,7 @@
 		5644CD79052856D5EBB5002A /* ClickCryptoV1.swift in Sources */ = {isa = PBXBuildFile; fileRef = DF1EEA7316772A0B9800A223 /* ClickCryptoV1.swift */; };
 		589076A2B6B4BD6C55F5EF65 /* ConnectionFlowTelemetry.swift in Sources */ = {isa = PBXBuildFile; fileRef = FD5B79848C6B2337EA8CD816 /* ConnectionFlowTelemetry.swift */; };
 		589EAB6A4BADAE6F53FA105B /* JournalEditor.swift in Sources */ = {isa = PBXBuildFile; fileRef = 17FB03068E701F0CD7FE556B /* JournalEditor.swift */; };
+		58E600C718F5334A7DEC9CC3 /* ProductTelemetry.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3C1C0DB6933C4CA15D9EF7D1 /* ProductTelemetry.swift */; };
 		5A024A97C03FD52D04F5BD7A /* TouchRipple.swift in Sources */ = {isa = PBXBuildFile; fileRef = 054022733B04F229E07BA230 /* TouchRipple.swift */; };
 		5B7B2613D4B9042F81200881 /* MeTabAvatarModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9E1DF371E97CE2C8CBF99560 /* MeTabAvatarModel.swift */; };
 		5C1D1F2D08A908C936D43701 /* ConversationListModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = B2CF3C0CEF71E64672F79F3E /* ConversationListModel.swift */; };
@@ -119,6 +120,7 @@
 		724C7C8B838896AB2B8A7CE2 /* MeView.swift in Sources */ = {isa = PBXBuildFile; fileRef = DA3D55FF1B1AAE1917872DBA /* MeView.swift */; };
 		72698DEA93E808276C44668E /* KeychainSessionVault.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9F622E14222722E2ACC13BEF /* KeychainSessionVault.swift */; };
 		7319146D0442CF1A2485A040 /* EventDropsTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6EBF08A3A2ED30B6A3712FFD /* EventDropsTests.swift */; };
+		738C6D466FF75ACD1B630F64 /* ProductTelemetryTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 64D57A357CB1E1867A6ACB9C /* ProductTelemetryTests.swift */; };
 		753E31D0F4B10ABEB242AEC8 /* AuthValidationTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = E2EC3690E271F4DA7D73D18B /* AuthValidationTests.swift */; };
 		761B604CDB4F953AFB0B3E29 /* LocationProvider.swift in Sources */ = {isa = PBXBuildFile; fileRef = A8EE27D772DD98E886CD7F0C /* LocationProvider.swift */; };
 		772DB2063A845310BCE94CBA /* ClickCryptoV2.swift in Sources */ = {isa = PBXBuildFile; fileRef = 819744403B53A100BF880F1B /* ClickCryptoV2.swift */; };
@@ -365,6 +367,7 @@
 		398978787A590D62A0ED1FA6 /* ClickAPIClientTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ClickAPIClientTests.swift; sourceTree = "<group>"; };
 		3A9C809281EFE78177559CBF /* FrictionTelemetry.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FrictionTelemetry.swift; sourceTree = "<group>"; };
 		3B65CD015FB82F9253DC8EC9 /* KlipyClient.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = KlipyClient.swift; sourceTree = "<group>"; };
+		3C1C0DB6933C4CA15D9EF7D1 /* ProductTelemetry.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ProductTelemetry.swift; sourceTree = "<group>"; };
 		3C7452B96DAD3F83C3B030DB /* ActivityShareSheet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ActivityShareSheet.swift; sourceTree = "<group>"; };
 		3CCC3D3C78411FA8933E0013 /* LocalStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LocalStore.swift; sourceTree = "<group>"; };
 		3D2EBB1A2205878F093380E1 /* HubRepository.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HubRepository.swift; sourceTree = "<group>"; };
@@ -398,6 +401,7 @@
 		5FFF30E5C1CD35BF6388FFDA /* InterestsPickerView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = InterestsPickerView.swift; sourceTree = "<group>"; };
 		625A527B98598B022044B468 /* HubChatView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HubChatView.swift; sourceTree = "<group>"; };
 		62B7E583D5D077E8643F61A6 /* AnimatedImage.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AnimatedImage.swift; sourceTree = "<group>"; };
+		64D57A357CB1E1867A6ACB9C /* ProductTelemetryTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ProductTelemetryTests.swift; sourceTree = "<group>"; };
 		652D758D646E67BA10F2B890 /* ChatGifTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ChatGifTests.swift; sourceTree = "<group>"; };
 		65E7D2050E854DAEDA0621FB /* NetworkMonitor.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NetworkMonitor.swift; sourceTree = "<group>"; };
 		6604381235A310A8AAA5F38D /* EventRecapView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = EventRecapView.swift; sourceTree = "<group>"; };
@@ -599,6 +603,7 @@
 				F63751F6535F913F9900FA93 /* ClickLog.swift */,
 				FD5B79848C6B2337EA8CD816 /* ConnectionFlowTelemetry.swift */,
 				3A9C809281EFE78177559CBF /* FrictionTelemetry.swift */,
+				3C1C0DB6933C4CA15D9EF7D1 /* ProductTelemetry.swift */,
 				A90BEC0659B6560183DE5269 /* TelemetryQueue.swift */,
 			);
 			path = Telemetry;
@@ -857,6 +862,7 @@
 				8B1EC4A055326A9384062E22 /* NetworkingTests.swift */,
 				BB1A77E8E59821A8087FC2A2 /* OnboardingTests.swift */,
 				01DF541D37D451BAB9008186 /* Phase3FeedTests.swift */,
+				64D57A357CB1E1867A6ACB9C /* ProductTelemetryTests.swift */,
 				7CB3BD1B60178FAB0356E7F1 /* ProximityCodecTests.swift */,
 				249A21200E0C4184F6CE567E /* ReconnectNearbyTests.swift */,
 				30DD4C9A7E9B5D5321C8F98A /* RevisionTests.swift */,
@@ -1582,6 +1588,7 @@
 				3D35C997C9F9179F1C956EEB /* PostConnectModel.swift in Sources */,
 				8620D4210F7FE5EDE5A99A95 /* PostConnectView.swift in Sources */,
 				A938B09C80F37F6A460D5BB6 /* PriorConnectionsView.swift in Sources */,
+				58E600C718F5334A7DEC9CC3 /* ProductTelemetry.swift in Sources */,
 				960AE12D4E878C46BF271473 /* ProfileBasicsGateView.swift in Sources */,
 				AA9C50C670473C88ABF9872D /* ProfileRepository.swift in Sources */,
 				71FD881181695CDCB10FB84C /* ProfileView.swift in Sources */,
@@ -1666,6 +1673,7 @@
 				92E8BB4744E0DC418DC3813B /* NetworkingTests.swift in Sources */,
 				4162BB108AA253929551DACC /* OnboardingTests.swift in Sources */,
 				15E1002EACD031C0520ECBB1 /* Phase3FeedTests.swift in Sources */,
+				738C6D466FF75ACD1B630F64 /* ProductTelemetryTests.swift in Sources */,
 				03B037B570CBC883E6BEB1A7 /* ProximityCodecTests.swift in Sources */,
 				08C081B65D049D493CB2C9AD /* ReconnectNearbyTests.swift in Sources */,
 				C7E3044705CB8DDF9A10AF7D /* RevisionTests.swift in Sources */,

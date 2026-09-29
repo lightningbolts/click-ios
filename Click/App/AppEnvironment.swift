@@ -31,6 +31,8 @@ public final class AppEnvironment {
     public let telemetryQueue = TelemetryQueue()
     public let connectionTelemetry: ConnectionFlowTelemetry
     public let friction: FrictionTelemetry
+    /// Pilot product events only a client can see (install, daily open, recap opened).
+    public let productTelemetry: ProductTelemetry
     public let joinedHubs = JoinedHubStore()
     public let timelineCache = ConversationTimelineCache()
     /// The user's own profile, plans and saved events, shared by every screen that shows them.
@@ -200,6 +202,7 @@ public final class AppEnvironment {
         self.relationships = RelationshipRepository(api: resolvedAPI)
         self.connectionTelemetry = ConnectionFlowTelemetry(queue: telemetryQueue)
         self.friction = FrictionTelemetry(queue: telemetryQueue)
+        self.productTelemetry = ProductTelemetry(queue: telemetryQueue)
         self.profiles = ProfileRepository(api: resolvedAPI)
         self.groups = GroupRepository(
             api: resolvedAPI,

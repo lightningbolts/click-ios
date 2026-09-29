@@ -42,3 +42,15 @@ Payload: `{event: "map_friction_anomaly", duration_sec, pan_count, action_taken:
 
 ## Not implemented
 - `/api/insights/widget-vibe`: no iOS widget ships.
+
+## Pilot product events — `POST /api/telemetry/events`
+
+Source: `ProductTelemetry` (spec §11). Payload: `{event, platform: "ios", occurred_at, app_version}` — no properties, IDs, content or coordinates. The server drops events for users outside the `pilot_analytics` cohort and always answers 202.
+
+| Event | Sent | iOS emitter |
+|---|---|---|
+| `install` | once per install | signed-in shell appears (queued until it can send) |
+| `app_open` | once per local day | signed-in shell appears / app becomes active |
+| `recap_opened` | once per visit | `EventRecapView` loads a revealed recap with drops |
+
+Recorded by the server where they happen (not sent by iOS): `day2_return`, `day7_return`, `beacon_created`, `beacon_joined`, `drop_posted`, `drop_ready_opened`, `nudge_shown`, `nudge_acted`. Handshake completion with group size is `proximity_handshake_matched` above (10% sampled on the client; count connections server-side for exact numbers).
