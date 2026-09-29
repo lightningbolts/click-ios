@@ -236,17 +236,18 @@ public struct MeView: View {
             }
             .buttonStyle(.plain)
 
-            NavigationLink(value: AppRoute.savedEvents) {
-                SettingsRowLabel(title: "Saved events", systemImage: "bookmark") {
-                    if let count = savedEvents.value?.filter({ $0.isUpcomingOrLive() }).count {
-                        Text(count, format: .number).foregroundStyle(ClickColors.textTertiary)
-                    }
-                }
-            }
-
+            // History replaces Saved events (saved events are its "Saved" tab).
             if env.features.isEnabled(.eventHistory) {
-                NavigationLink(value: AppRoute.eventHistory) {
-                    SettingsRowLabel(title: "Past events", systemImage: "clock.arrow.circlepath") { EmptyView() }
+                NavigationLink(value: AppRoute.history) {
+                    SettingsRowLabel(title: "History", systemImage: "clock.arrow.circlepath") { EmptyView() }
+                }
+            } else {
+                NavigationLink(value: AppRoute.savedEvents) {
+                    SettingsRowLabel(title: "Saved events", systemImage: "bookmark") {
+                        if let count = savedEvents.value?.filter({ $0.isUpcomingOrLive() }).count {
+                            Text(count, format: .number).foregroundStyle(ClickColors.textTertiary)
+                        }
+                    }
                 }
             }
 

@@ -1,8 +1,7 @@
-import CoreLocation
 import Foundation
 
 /// "Listening now" on a soundtrack beacon (spec F5, flag `soundtrack_presence`): a count of people
-/// listening near the pin, with names only for your own connections. No likes, no rankings.
+/// listening (from anywhere), with names only for your own connections. No likes, no rankings.
 public struct ListeningNow: Sendable, Equatable {
     public struct Person: Sendable, Equatable, Identifiable {
         public let id: String
@@ -45,29 +44,17 @@ public struct ListeningNow: Sendable, Equatable {
     }
 }
 
-/// The server said the listener isn't near the pin.
-public struct ListeningOutOfRange: Error, LocalizedError {
-    public var errorDescription: String? { "Get closer to this soundtrack to listen here." }
-}
-
 extension BeaconRepository {
     public func listening(beaconID: String) async throws -> ListeningNow {
         let (data, _) = try await api.executeRaw(APIRequest(path: "/api/beacons/\(beaconID)/listening"))
         return ListeningNow.parse(try JSONFields.object(data))
     }
 
-    /// One heartbeat from near the pin; repeat every `heartbeatSeconds` while the listener stays.
-    public func heartbeat(beaconID: String, at coordinate: CLLocationCoordinate2D) async throws -> ListeningNow {
-        do {
-            let (data, _) = try await api.executeRaw(APIRequest(
-                path: "/api/beacons/\(beaconID)/listening",
-                method: .post,
-                body: try JSONSerialization.data(withJSONObject: ["lat": coordinate.latitude, "lng": coordinate.longitude])
-            ))
-            return ListeningNow.parse(try JSONFields.object(data))
-        } catch APIError.forbidden {
-            throw ListeningOutOfRange()
-        }
+    /// One heartbeat; repeat every `heartbeatSeconds` while listening. Works from anywhere:
+    /// people listen on the map, not only at the pin.
+    public func heartbeat(beaconID: String) async throws -> ListeningNow {
+        let (data, _) = try await api.executeRaw(APIRequest(path: "/api/beacons/\(beaconID)/listening", method: .post))
+        return ListeningNow.parse(try JSONFields.object(data))
     }
 
     public func stopListening(beaconID: String) async throws -> ListeningNow {

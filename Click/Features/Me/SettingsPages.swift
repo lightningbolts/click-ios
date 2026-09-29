@@ -135,6 +135,7 @@ struct PrivacySettingsView: View {
     @State private var locationHint: String?
     @State private var microphoneDenied = false
     @State private var locationDeniedForHangouts = false
+    @State private var reconnectAlertsBlocked = false
 
     var body: some View {
         @Bindable var settings = env.settings
@@ -209,6 +210,27 @@ struct PrivacySettingsView: View {
                 }
             }
 
+            if env.features.isEnabled(.reconnectNearby) {
+                Section {
+                    Toggle(isOn: Binding(
+                        get: { env.settings.reconnectAlertsOptIn },
+                        set: { value in Task { await setReconnectAlerts(value) } }
+                    )) {
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text("Past meeting spots")
+                            Text("Get at most one reminder a day when you're back where you met a Click. iOS tells Click when you arrive somewhere, even with the app closed; Click only uses it to find that past meeting and never stores where you are.")
+                                .font(ClickTypography.metadata)
+                                .foregroundStyle(ClickColors.textTertiary)
+                        }
+                    }
+                } footer: {
+                    if reconnectAlertsBlocked {
+                        Button("Allow “Always” location and notifications in Settings") { env.permissions.openSystemSettings() }
+                            .font(ClickTypography.metadata)
+                    }
+                }
+            }
+
             Section {
                 NavigationLink(value: AppRoute.settings(.permissions)) {
                     Text("Permissions")
@@ -245,6 +267,21 @@ struct PrivacySettingsView: View {
             }
         }
         .disabled(isSaving)
+    }
+
+    private func setReconnectAlerts(_ enabled: Bool) async {
+        reconnectAlertsBlocked = false
+        guard enabled else {
+            env.settings.reconnectAlertsOptIn = false
+            env.visits.stop()
+            return
+        }
+        let notifications = await env.permissions.requestPermission(for: .notifications)
+        guard notifications == .authorized, await env.visits.requestAlwaysAndStart() else {
+            reconnectAlertsBlocked = true
+            return
+        }
+        env.settings.reconnectAlertsOptIn = true
     }
 
     private func setHangoutDetection(_ enabled: Bool) async {

@@ -5,6 +5,8 @@ import SwiftUI
 struct SavedEventsView: View {
     @Environment(AppEnvironment.self) private var env
     private var events: ModuleState<[SavedEvent]> { env.selfData.savedEvents }
+    /// Shown as History's "Saved" tab (the screen keeps History's title).
+    var inHistory = false
 
     var body: some View {
         List {
@@ -55,7 +57,7 @@ struct SavedEventsView: View {
                 }
             }
         }
-        .navigationTitle("Saved events")
+        .navigationTitle(inHistory ? "History" : "Saved events")
         .navigationBarTitleDisplayMode(.inline)
         .task {
             await env.selfData.seedIfNeeded()

@@ -11,6 +11,8 @@ struct ClickApp: App {
     init() {
         let environment = AppEnvironment()
         _environment = State(initialValue: environment)
+        // A visit can relaunch Click in the background: resume monitoring before it's delivered.
+        environment.startReconnectAlertsIfEnabled()
         ClickFonts.registerFonts()
         // Root large titles use Click's Manrope display voice; inline titles stay system 17pt.
         // Only the font is customized so the platform keeps owning bar layout and material.
@@ -291,6 +293,9 @@ final class ClickNotificationCoordinator {
             // The profile carries the moment: friendship, story, and a hangout to confirm.
             guard let userID = value(["peer_user_id", "user_id", "sender_user_id"]) else { return .connections }
             return .route(.userProfile(userID: userID, connectionID: value(["connection_id", "connectionId"])))
+        case "reconnect_nearby":
+            return .chat(chatID: nil, connectionID: value(["connection_id", "connectionId"]),
+                         senderUserID: value(["peer_user_id"]), senderName: value(["sender_name"]))
         case "wave":
             return .chat(chatID: nil, connectionID: value(["connection_id", "connectionId"]),
                          senderUserID: value(["peer_user_id", "sender_user_id"]), senderName: nil)

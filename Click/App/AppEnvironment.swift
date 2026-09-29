@@ -1,4 +1,6 @@
+import CoreLocation
 import Foundation
+import UserNotifications
 import Observation
 
 /// The application's top-level dependency container.
@@ -359,6 +361,32 @@ public final class AppEnvironment {
     var pendingPlanChatKey: String?
 
     @ObservationIgnored private var lastPresencePing: Date?
+    /// Visit monitoring for the opt-in reconnection reminders (spec F6 §8b).
+    @ObservationIgnored let visits = VisitMonitor()
+    private static let lastReconnectAlertKey = "reconnect.alert.last-id"
+
+    /// Arrivals (even with the app closed) ask the server for a past-meeting nudge at this spot and
+    /// show it as a local notification. The server allows one a day; the same card never alerts twice.
+    func startReconnectAlertsIfEnabled() {
+        visits.onArrival = { [weak self] coordinate in Task { await self?.alertReconnectNearby(at: coordinate) } }
+        if settings.reconnectAlertsOptIn { visits.startIfAuthorized() }
+    }
+
+    private func alertReconnectNearby(at coordinate: CLLocationCoordinate2D) async {
+        guard settings.reconnectAlertsOptIn, session.currentSession != nil else { return }
+        if !features.isEnabled(.reconnectNearby) { await features.refresh() }
+        guard features.isEnabled(.reconnectNearby),
+              let nudge = try? await relationships.reconnectNearby(at: coordinate),
+              UserDefaults.standard.string(forKey: Self.lastReconnectAlertKey) != nudge.id else { return }
+        UserDefaults.standard.set(nudge.id, forKey: Self.lastReconnectAlertKey)
+        let content = UNMutableNotificationContent()
+        content.title = nudge.title
+        content.body = nudge.body
+        content.sound = .default
+        content.userInfo = ["type": "reconnect_nearby", "connection_id": nudge.connectionID,
+                            "peer_user_id": nudge.userID, "sender_name": nudge.name]
+        try? await UNUserNotificationCenter.current().add(UNNotificationRequest(identifier: "reconnect-\(nudge.id)", content: content, trigger: nil))
+    }
 
     /// Hangout detection (opt-in): on returning to the app, share a fresh position so Clicks
     /// who are with you right now (and opted in) both get "Hanging out?". At most every 10

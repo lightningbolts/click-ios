@@ -306,6 +306,7 @@ struct SharedDropViewer: View {
                 } else {
                     ProgressView().frame(maxHeight: .infinity)
                 }
+                if image != nil { ReactionBar(target: .sharedDrop, id: drop.id) }
                 if !drop.isMine, let connectionID = drop.connectionID {
                     Button {
                         dismiss()

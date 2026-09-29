@@ -1,7 +1,7 @@
 import SwiftUI
 
-/// Who's listening to a soundtrack here right now (spec F5): a count, your connections by name,
-/// and a toggle to add yourself while you're near the pin. It lapses on its own when you leave.
+/// Who's listening to a soundtrack right now (spec F5): a count, your connections by name, a
+/// toggle to add yourself (from anywhere), and reactions. Listening lapses on its own.
 struct ListeningNowSection: View {
     @Environment(AppEnvironment.self) private var env
     @Environment(\.scenePhase) private var scenePhase
@@ -25,7 +25,7 @@ struct ListeningNowSection: View {
                     }
                     .accessibilityHidden(true)
                 }
-                Text(state.value?.summary ?? "Nobody's listening here right now")
+                Text(state.value?.summary ?? "Nobody's listening right now")
                     .font(ClickTypography.supporting)
                     .foregroundStyle(ClickColors.textSecondary)
                     .contentTransition(.opacity)
@@ -39,7 +39,7 @@ struct ListeningNowSection: View {
                     if toggling { ProgressView().controlSize(.small) } else {
                         Image(systemName: state.value?.isListening == true ? "headphones.circle.fill" : "headphones")
                     }
-                    Text(state.value?.isListening == true ? "Listening here" : "I'm listening here")
+                    Text(state.value?.isListening == true ? "Listening" : "I'm listening")
                         .font(ClickTypography.supportingEmphasized)
                 }
                 .foregroundStyle(state.value?.isListening == true ? ClickColors.accentForeground : ClickColors.textPrimary)
@@ -53,7 +53,9 @@ struct ListeningNowSection: View {
             }
             .buttonStyle(.plain)
             .disabled(toggling || state.value == nil)
-            .accessibilityHint("Adds you to the count while you're near this pin.")
+            .accessibilityHint("Adds you to the count while you listen.")
+
+            ReactionBar(target: .soundtrack, id: beacon.id)
 
             if let message {
                 Text(message).font(ClickTypography.supporting).foregroundStyle(ClickColors.textSecondary)
@@ -101,19 +103,11 @@ struct ListeningNowSection: View {
     }
 
     private func beat() async {
-        guard env.location.isAuthorized,
-              let fix = await env.location.currentLocation(maximumAge: 120, acceptableAccuracy: 100, timeout: .seconds(6)) else {
-            message = "Your location is needed to listen here."
-            return
-        }
         do {
-            state.succeed(try await env.beacons.heartbeat(beaconID: beacon.id, at: fix.coordinate))
+            state.succeed(try await env.beacons.heartbeat(beaconID: beacon.id))
             message = nil
         } catch {
-            if !error.isCancellation {
-                message = (error as? ListeningOutOfRange)?.errorDescription ?? error.userFacingMessage
-                // Out of range while listening: the server keeps the old heartbeat until it lapses.
-            }
+            if !error.isCancellation { message = error.userFacingMessage }
         }
     }
 }

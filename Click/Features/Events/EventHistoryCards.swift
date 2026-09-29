@@ -73,3 +73,47 @@ struct EventsTogetherSection: View {
         .task(id: userID) { events = (try? await env.beacons.eventsTogether(userID: userID)) ?? [] }
     }
 }
+
+/// One past event: when, where, how you took part, and its recap when there is one.
+struct PastEventRow: View {
+    @Environment(AppEnvironment.self) private var env
+    let event: PastEvent
+
+    var body: some View {
+        Button {
+            env.router.navigate(to: .event(beaconID: event.beaconID))
+        } label: {
+            HStack(spacing: 12) {
+                EventVisual(seed: event.beaconID, imageURL: event.imageURL, symbol: "calendar", cornerRadius: 12)
+                    .frame(width: 52, height: 52)
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(event.title).font(ClickTypography.bodyEmphasized).foregroundStyle(ClickColors.textPrimary).lineLimit(1)
+                    Text(subtitle).font(ClickTypography.supporting).foregroundStyle(ClickColors.textSecondary).lineLimit(1)
+                }
+                Spacer(minLength: 0)
+                if let recap = event.recap {
+                    Button {
+                        env.router.navigate(to: .eventRecap(beaconID: event.beaconID))
+                    } label: {
+                        Label(recap == .ready ? "Recap" : "Developing", systemImage: recap == .ready ? "sparkles" : "hourglass")
+                            .font(ClickTypography.metadataEmphasized)
+                    }
+                    .buttonStyle(.bordered)
+                    .tint(ClickColors.accentForeground)
+                }
+            }
+        }
+        .buttonStyle(.plain)
+    }
+
+    private var subtitle: String {
+        var parts: [String] = []
+        if let ends = event.endsAt { parts.append(ends.formatted(date: .abbreviated, time: .omitted)) }
+        if let relation = event.relation {
+            if relation.hosted { parts.append("Hosted") } else if relation.went { parts.append("Went") }
+            else if relation.rsvpd { parts.append("RSVP'd") } else if relation.saved { parts.append("Saved") }
+        }
+        if let place = event.locationName { parts.append(place) }
+        return parts.joined(separator: " · ")
+    }
+}
