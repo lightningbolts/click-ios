@@ -153,6 +153,7 @@
 		9AE812C6606649A248A7CB4C /* ClickLoadingView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 07A5B48994F42AD467616F25 /* ClickLoadingView.swift */; };
 		9B5130FF9140BEAE3CCDE585 /* SavedEventsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8A25B36F7B43CDA3235FEFDD /* SavedEventsView.swift */; };
 		9BCC7EC969F64D6BDC9AB051 /* EventReminderScheduler.swift in Sources */ = {isa = PBXBuildFile; fileRef = FCB1638F35F178E0F0FE80F1 /* EventReminderScheduler.swift */; };
+		9E2076DD9D531A1C096BC3C9 /* AlertConfirmationTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 01E41A22521ABAE888EEBCDF /* AlertConfirmationTests.swift */; };
 		9FFE49B750AFD7B106E7F990 /* CreateBeaconSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1704BBFEC1035AD1234E1B8D /* CreateBeaconSheet.swift */; };
 		A30461AB84F2BAE2A8A57572 /* EventEngagementRepository.swift in Sources */ = {isa = PBXBuildFile; fileRef = AC24CFA0E6E02114CAA8699B /* EventEngagementRepository.swift */; };
 		A6368ED8BCD618DA44245AF9 /* BeaconDetailView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8449BE5D6B21017344E55E9E /* BeaconDetailView.swift */; };
@@ -225,9 +226,11 @@
 		FAC64483BE0386233DBB0B4F /* LegacyKMPStateMigrator.swift in Sources */ = {isa = PBXBuildFile; fileRef = E6948B635825154782DB64D8 /* LegacyKMPStateMigrator.swift */; };
 		FB674CD4A8616D2FA30C7344 /* OnboardingRepository.swift in Sources */ = {isa = PBXBuildFile; fileRef = B016BAE6D25749FE30CC6AEB /* OnboardingRepository.swift */; };
 		FC356859F3A30B0B78840011 /* ModuleState.swift in Sources */ = {isa = PBXBuildFile; fileRef = 25BDF9FB87DD4FEC1F9E4C99 /* ModuleState.swift */; };
+		FD2C2DC918A1797530114113 /* AlertConfirmationSection.swift in Sources */ = {isa = PBXBuildFile; fileRef = F1896AEE62C80D4462493FAC /* AlertConfirmationSection.swift */; };
 		FDFD106CA37C9701D92A9F86 /* MockURLProtocol.swift in Sources */ = {isa = PBXBuildFile; fileRef = 35FA42EC82D7BD78B3083FDE /* MockURLProtocol.swift */; };
 		FE588087F4F5CDACF3F8288C /* JoinedHubStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = 43B915D15511AD49D780AE8B /* JoinedHubStore.swift */; };
 		FE73E5CDA34C6AAF260E376A /* ProximityCodec.swift in Sources */ = {isa = PBXBuildFile; fileRef = CEFB1BA8BE902D3D92C87CCD /* ProximityCodec.swift */; };
+		FE7F721EAB9B5837E82B2E80 /* AlertConfirmations.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2F4F22044C2816AF8734BE2B /* AlertConfirmations.swift */; };
 		FEEF3EB93549BC0E8570F080 /* ClicksSnapshot.swift in Sources */ = {isa = PBXBuildFile; fileRef = C4BA259925DD4913607E5A68 /* ClicksSnapshot.swift */; };
 		FEF90A5A9FF3E2503A3054DE /* GroupsHubsSettingsTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 08AA20450324A4CA55FE6A68 /* GroupsHubsSettingsTests.swift */; };
 /* End PBXBuildFile section */
@@ -285,6 +288,7 @@
 		003194C59DD7C08710C713C1 /* CacheStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CacheStore.swift; sourceTree = "<group>"; };
 		005D701DA8A071928D68AB22 /* HomeView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HomeView.swift; sourceTree = "<group>"; };
 		01DF541D37D451BAB9008186 /* Phase3FeedTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Phase3FeedTests.swift; sourceTree = "<group>"; };
+		01E41A22521ABAE888EEBCDF /* AlertConfirmationTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AlertConfirmationTests.swift; sourceTree = "<group>"; };
 		04976593E2AA9C9465B4BBB8 /* TabBarTransitionFader.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TabBarTransitionFader.swift; sourceTree = "<group>"; };
 		054022733B04F229E07BA230 /* TouchRipple.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TouchRipple.swift; sourceTree = "<group>"; };
 		059E174F6A0ABD87301344BE /* MessageBubbleView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MessageBubbleView.swift; sourceTree = "<group>"; };
@@ -327,6 +331,7 @@
 		2CF5C854F68006800D32A653 /* SoundtrackResolver.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SoundtrackResolver.swift; sourceTree = "<group>"; };
 		2D76120005FD30AE72B1126F /* LegacyKMPStateMigratorTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LegacyKMPStateMigratorTests.swift; sourceTree = "<group>"; };
 		2D86CA8A6FA2B7E8EBFE6A97 /* FriendshipStats.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FriendshipStats.swift; sourceTree = "<group>"; };
+		2F4F22044C2816AF8734BE2B /* AlertConfirmations.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AlertConfirmations.swift; sourceTree = "<group>"; };
 		2F6FDA1F3405FC4A76528E82 /* NearbySheet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NearbySheet.swift; sourceTree = "<group>"; };
 		30988D99C421B40B486F5134 /* OfflineNotice.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OfflineNotice.swift; sourceTree = "<group>"; };
 		30DD4C9A7E9B5D5321C8F98A /* RevisionTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RevisionTests.swift; sourceTree = "<group>"; };
@@ -493,6 +498,7 @@
 		ED9FF6290770C75EBD921B16 /* ProfileView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ProfileView.swift; sourceTree = "<group>"; };
 		EEFED58F5E81E796610F3FC7 /* SelfDataStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SelfDataStore.swift; sourceTree = "<group>"; };
 		F0F6A8ABE38606F8786A7AE9 /* NewGroupSheet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NewGroupSheet.swift; sourceTree = "<group>"; };
+		F1896AEE62C80D4462493FAC /* AlertConfirmationSection.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AlertConfirmationSection.swift; sourceTree = "<group>"; };
 		F23B8F9BB56FEA60442B3E78 /* PeerProfileModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PeerProfileModel.swift; sourceTree = "<group>"; };
 		F4A7259C78F05583D7D2BF35 /* ImagePipeline.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ImagePipeline.swift; sourceTree = "<group>"; };
 		F63751F6535F913F9900FA93 /* ClickLog.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ClickLog.swift; sourceTree = "<group>"; };
@@ -792,6 +798,7 @@
 		7C1D5AE71566772AFF0EC6E6 /* ClickTests */ = {
 			isa = PBXGroup;
 			children = (
+				01E41A22521ABAE888EEBCDF /* AlertConfirmationTests.swift */,
 				51101C30845F8D2118C1B819 /* AppRouterTests.swift */,
 				E2EC3690E271F4DA7D73D18B /* AuthValidationTests.swift */,
 				06A226829E2A5C6E96399ECB /* ChatConversationTests.swift */,
@@ -1008,6 +1015,7 @@
 		D181A08C7B1C5DE8265F8498 /* Beacons */ = {
 			isa = PBXGroup;
 			children = (
+				2F4F22044C2816AF8734BE2B /* AlertConfirmations.swift */,
 				F96CCA59CCC5C8B399A2E1C6 /* BeaconRepository.swift */,
 				AC24CFA0E6E02114CAA8699B /* EventEngagementRepository.swift */,
 				501636A7B4E12830E982F608 /* EventFormatting.swift */,
@@ -1211,6 +1219,7 @@
 		FEDD2DB120CF12F01B3BAD6E /* Events */ = {
 			isa = PBXGroup;
 			children = (
+				F1896AEE62C80D4462493FAC /* AlertConfirmationSection.swift */,
 				8449BE5D6B21017344E55E9E /* BeaconDetailView.swift */,
 				5ADA68357CD58D4E2E660244 /* BeaconForm.swift */,
 				05BFAB76DC5E32C164D4C1F8 /* GuestListView.swift */,
@@ -1383,6 +1392,8 @@
 				0807AC2E7C11A5B869C9A575 /* APIRequest.swift in Sources */,
 				4A68B024FDEF49BCAA019EDD /* ActivityShareSheet.swift in Sources */,
 				00FA66D87FBBA8D335FDAD20 /* AddClickView.swift in Sources */,
+				FD2C2DC918A1797530114113 /* AlertConfirmationSection.swift in Sources */,
+				FE7F721EAB9B5837E82B2E80 /* AlertConfirmations.swift in Sources */,
 				442412F4C84C8CA9E577190F /* AnimatedImage.swift in Sources */,
 				82E25FFC46E25CC6F76C943F /* AppConfig.swift in Sources */,
 				09303B5DAA631E6B94E780FD /* AppEnvironment.swift in Sources */,
@@ -1569,6 +1580,7 @@
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				9E2076DD9D531A1C096BC3C9 /* AlertConfirmationTests.swift in Sources */,
 				D5294C030B43DFEE5786F7A0 /* AppRouterTests.swift in Sources */,
 				753E31D0F4B10ABEB242AEC8 /* AuthValidationTests.swift in Sources */,
 				C13ECD3297594A3A79DED444 /* ChatConversationTests.swift in Sources */,

@@ -209,6 +209,12 @@ struct CreateBeaconSheet: View {
             // The preview keeps playing while the form scrolls; it stops when the form closes.
             .onDisappear { SoundtrackPreviewPlayer.shared.stop() }
             .onAppear(perform: prefill)
+            .onChange(of: kind) { _, new in
+                // Alerts stay short by default (spec F4); people nearby extend them if it's still there.
+                guard !isEditing, new == .hazard, env.features.isEnabled(.alertConfirmations), hours == 4 else { return }
+                hours = 2
+                baseline?.hours = 2
+            }
             .onChange(of: photoItem) { _, item in
                 guard let item else { return }
                 photoItem = nil

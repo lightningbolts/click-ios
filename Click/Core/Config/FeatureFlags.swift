@@ -8,6 +8,7 @@ import Observation
 public final class FeatureFlags {
     public enum Key: String, CaseIterable, Sendable {
         case dropsDevelop = "drops_develop"
+        case alertConfirmations = "alert_confirmations"
     }
 
     private struct Resolved: Decodable {
