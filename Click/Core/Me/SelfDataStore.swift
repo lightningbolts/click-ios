@@ -14,6 +14,13 @@ final class SelfDataStore {
     private(set) var savedEvents = ModuleState<[SavedEvent]>()
     private(set) var notificationPreferences = ModuleState<NotificationPreferences>()
     private(set) var locationPrivacy = ModuleState<LocationPrivacy>()
+    /// History pages per filter, kept for the session so reopening History shows it at once.
+    private(set) var history: [HistoryFilter: ModuleState<HistoryPage>] = [:]
+
+    struct HistoryPage: Equatable {
+        var items: [HistoryItem]
+        var nextCursor: String?
+    }
 
     private weak var environment: AppEnvironment?
     private var seededUserID: String?
@@ -38,6 +45,7 @@ final class SelfDataStore {
         savedEvents = ModuleState()
         notificationPreferences = ModuleState()
         locationPrivacy = ModuleState()
+        history = [:]
         fetchedAt = [:]
         profile.seed(await environment.me.cachedSelfProfile(userID: userID))
         intents.seed(await environment.me.cachedIntents(userID: userID))
@@ -52,7 +60,32 @@ final class SelfDataStore {
         async let c: Void = loadSavedEvents(force: force)
         async let d: Void = loadNotificationPreferences(force: force)
         async let e: Void = loadLocationPrivacy(force: force)
-        _ = await (a, b, c, d, e)
+        async let f: Void = environment?.features.isEnabled(.eventHistory) == true ? loadHistory(.all, force: force) : ()
+        _ = await (a, b, c, d, e, f)
+    }
+
+    /// The first page of one History filter (stale-while-revalidate: cached rows stay on screen).
+    func loadHistory(_ filter: HistoryFilter, force: Bool = false) async {
+        await run("history.\(filter.rawValue)", force: force) { environment, _ in
+            self.history[filter, default: ModuleState()].begin()
+            do {
+                let page = try await environment.beacons.history(filter, cursor: nil)
+                self.history[filter]?.succeed(HistoryPage(items: page.items, nextCursor: page.nextCursor))
+            } catch {
+                self.history[filter]?.fail(error)
+                throw error
+            }
+        }
+    }
+
+    /// Appends the next page of one History filter, if there is one.
+    func loadMoreHistory(_ filter: HistoryFilter) async {
+        guard let current = history[filter]?.value, let cursor = current.nextCursor else { return }
+        await run("history.more.\(filter.rawValue)", force: true) { environment, _ in
+            let page = try await environment.beacons.history(filter, cursor: cursor)
+            let fresh = page.items.filter { new in !current.items.contains { $0.id == new.id } }
+            self.history[filter]?.succeed(HistoryPage(items: current.items + fresh, nextCursor: page.nextCursor))
+        }
     }
 
     func loadNotificationPreferences(force: Bool = false) async {

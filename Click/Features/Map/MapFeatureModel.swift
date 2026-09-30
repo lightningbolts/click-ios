@@ -436,6 +436,8 @@ final class MapFeatureModel {
     func select(_ selection: MapSelection, at coordinate: CLLocationCoordinate2D) {
         self.selection = selection
         isNearbyPresented = false
+        // Warm the beacon's page (listening, reactions, alert status, drops) before it opens.
+        if let environment, let beacon = beacon(for: selection) { environment.beaconExtras.prefetch(beacon, env: environment) }
         focusCamera(on: coordinate)
     }
 

@@ -6,48 +6,49 @@ struct HistoryView: View {
     @Environment(AppEnvironment.self) private var env
 
     @State private var filter: HistoryFilter = .all
-    @State private var items = ModuleState<[HistoryItem]>()
-    @State private var nextCursor: String?
-    @State private var isLoadingMore = false
+
+    /// Cached for the session: reopening History shows the last rows at once, then refreshes.
+    private var items: ModuleState<SelfDataStore.HistoryPage> { env.selfData.history[filter] ?? ModuleState() }
 
     var body: some View {
-        Group {
-            if filter == .saved {
-                SavedEventsView(inHistory: true)
-            } else {
-                list
-            }
-        }
-        .safeAreaInset(edge: .top, spacing: 0) {
+        VStack(spacing: 0) {
             Picker("Show", selection: $filter) {
                 ForEach(HistoryFilter.allCases) { Text($0.label).tag($0) }
             }
             .pickerStyle(.segmented)
             .padding(.horizontal, ClickSpacing.screenGutter)
             .padding(.vertical, 8)
-            .background(ClickColors.background)
+            Group {
+                if filter == .saved {
+                    SavedEventsView(inHistory: true)
+                } else {
+                    list
+                }
+            }
+            .edgeFadeTop()
         }
+        .background(ClickColors.background)
         .navigationTitle("History")
         .navigationBarTitleDisplayMode(.inline)
     }
 
     private var list: some View {
         List {
-            if let rows = items.value {
+            if let rows = items.value?.items {
                 ForEach(sections(rows), id: \.title) { section in
                     Section(section.title) {
                         ForEach(section.items) { item in
                             HistoryRow(item: item)
-                                .onAppear { if item.id == rows.last?.id { Task { await loadMore() } } }
+                                .onAppear { if item.id == rows.last?.id { Task { await env.selfData.loadMoreHistory(filter) } } }
                         }
                     }
                 }
-                if isLoadingMore { ProgressView().frame(maxWidth: .infinity).listRowBackground(Color.clear) }
+                if items.value?.nextCursor != nil { ProgressView().frame(maxWidth: .infinity).listRowBackground(Color.clear) }
             }
         }
         .listStyle(.insetGrouped)
         .overlay {
-            if let rows = items.value, rows.isEmpty {
+            if let rows = items.value?.items, rows.isEmpty {
                 ContentUnavailableView("Nothing here yet", systemImage: "clock",
                                        description: Text(emptyText))
             } else if items.value == nil {
@@ -57,15 +58,15 @@ struct HistoryView: View {
                     } description: {
                         Text(message)
                     } actions: {
-                        Button("Try Again") { Task { await load() } }
+                        Button("Try Again") { Task { await env.selfData.loadHistory(filter, force: true) } }
                     }
                 } else {
                     ClickLoadingView()
                 }
             }
         }
-        .task(id: filter) { await load() }
-        .refreshable { await load() }
+        .task(id: filter) { await env.selfData.loadHistory(filter) }
+        .refreshable { await env.selfData.loadHistory(filter, force: true) }
     }
 
     private var emptyText: String {
@@ -85,26 +86,6 @@ struct HistoryView: View {
             if out.last?.title == title { out[out.count - 1].items.append(item) } else { out.append((title, [item])) }
         }
         return out
-    }
-
-    private func load() async {
-        items.begin()
-        do {
-            let page = try await env.beacons.history(filter, cursor: nil)
-            items.succeed(page.items)
-            nextCursor = page.nextCursor
-        } catch {
-            if !error.isCancellation { items.fail(error.userFacingMessage) }
-        }
-    }
-
-    private func loadMore() async {
-        guard let cursor = nextCursor, !isLoadingMore, let current = items.value else { return }
-        isLoadingMore = true
-        defer { isLoadingMore = false }
-        guard let page = try? await env.beacons.history(filter, cursor: cursor) else { return }
-        items.succeed(current + page.items.filter { new in !current.contains { $0.id == new.id } })
-        nextCursor = page.nextCursor
     }
 }
 

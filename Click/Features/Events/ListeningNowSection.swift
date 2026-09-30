@@ -50,12 +50,13 @@ struct ListeningNowSection: View {
                 .accessibilityHint("Adds you to the count while you listen.")
             }
 
-            ReactionBar(target: .soundtrack, id: beacon.id)
+            ReactionBar(target: .soundtrack, id: beacon.id, isOwner: beacon.creatorID == env.session.currentSession?.userId)
 
             if let message {
                 Text(message).font(ClickTypography.supporting).foregroundStyle(ClickColors.textSecondary)
             }
         }
+        .onAppear { state.seed(env.beaconExtras.cached(cacheKey)) }
         .task(id: beacon.id) { await load() }
         // While listening, re-confirm on the server's cadence (only while this screen is open and active).
         .task(id: heartbeatKey) {
@@ -68,6 +69,13 @@ struct ListeningNowSection: View {
         }
     }
 
+    private var cacheKey: String { BeaconExtrasCache.listening(beacon.id) }
+
+    private func apply(_ value: ListeningNow) {
+        state.succeed(value)
+        env.beaconExtras.store(value, for: cacheKey)
+    }
+
     private var heartbeatKey: String {
         "\(state.value?.isListening == true)-\(scenePhase == .active)"
     }
@@ -75,7 +83,7 @@ struct ListeningNowSection: View {
     private func load() async {
         state.begin()
         do {
-            state.succeed(try await env.beacons.listening(beaconID: beacon.id))
+            state.succeed(try await env.beaconExtras.load(cacheKey) { try await env.beacons.listening(beaconID: beacon.id) })
         } catch {
             if !error.isCancellation { state.fail(error.userFacingMessage) }
         }
@@ -86,7 +94,7 @@ struct ListeningNowSection: View {
         defer { toggling = false }
         if state.value?.isListening == true {
             do {
-                state.succeed(try await env.beacons.stopListening(beaconID: beacon.id))
+                apply(try await env.beacons.stopListening(beaconID: beacon.id))
                 message = nil
             } catch {
                 if !error.isCancellation { message = error.userFacingMessage }
@@ -99,7 +107,7 @@ struct ListeningNowSection: View {
 
     private func beat() async {
         do {
-            state.succeed(try await env.beacons.heartbeat(beaconID: beacon.id))
+            apply(try await env.beacons.heartbeat(beaconID: beacon.id))
             message = nil
         } catch {
             if !error.isCancellation { message = error.userFacingMessage }

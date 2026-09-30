@@ -70,6 +70,9 @@ struct ClickDropCameraView: View {
                     Text(subtitle).font(ClickTypography.caption).opacity(0.75)
                 }
                 .foregroundStyle(.white)
+                .padding(.horizontal, 16)
+                .padding(.vertical, 6)
+                .glassCircleBackground()
                 Spacer()
                 if captured == nil {
                     roundButton(flashOn ? "bolt.fill" : "bolt.slash", label: flashOn ? "Flash on" : "Flash off") { flashOn.toggle() }
@@ -79,8 +82,6 @@ struct ClickDropCameraView: View {
             }
             .padding(.horizontal, 16)
             .padding(.top, 8)
-            .padding(.bottom, 12)
-            .background(.black.opacity(0.65))
 
             Spacer()
 
@@ -91,16 +92,15 @@ struct ClickDropCameraView: View {
                     .foregroundStyle(.white.opacity(0.88))
                     .padding(.horizontal, 14)
                     .padding(.vertical, 7)
-                    .background(.black, in: Capsule())
-                    .overlay(Capsule().stroke(.white.opacity(0.16)))
+                    .glassCircleBackground()
                     .accessibilityAddTraits(.updatesFrequently)
                 controls
             }
-            .padding(.top, 16)
             .padding(.bottom, 24)
             .frame(maxWidth: .infinity)
-            .background(.black.opacity(0.72))
         }
+        // Liquid Glass over the viewfinder (everything but the shutter), dark so white reads on it.
+        .environment(\.colorScheme, .dark)
     }
 
     private var statusText: String {
@@ -143,8 +143,8 @@ struct ClickDropCameraView: View {
                         .font(ClickTypography.bodyEmphasized)
                         .padding(.horizontal, 26)
                         .frame(height: 56)
-                        .background(ClickColors.primaryActionFill, in: Capsule())
                         .foregroundStyle(.white)
+                        .glassCircleBackground(tint: ClickColors.primaryActionFill)
                 }
                 .buttonStyle(.plain)
                 .disabled(isSending)
@@ -175,7 +175,7 @@ struct ClickDropCameraView: View {
                                 .padding(.horizontal, 12)
                                 .padding(.vertical, 7)
                                 .foregroundStyle(look == filter ? .black : .white)
-                                .background(look == filter ? Color.white : Color.white.opacity(0.14), in: Capsule())
+                                .glassCircleBackground(tint: look == filter ? .white : nil)
                         }
                         .buttonStyle(.plain)
                         .accessibilityAddTraits(look == filter ? .isSelected : [])
@@ -192,7 +192,7 @@ struct ClickDropCameraView: View {
                 .font(.system(size: 17, weight: .semibold))
                 .foregroundStyle(.white)
                 .frame(width: 44, height: 44)
-                .background(.white.opacity(0.16), in: Circle())
+                .glassCircleBackground()
         }
         .buttonStyle(.plain)
         .accessibilityLabel(label)

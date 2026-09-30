@@ -43,6 +43,7 @@ struct AlertConfirmationSection: View {
                     .transition(.opacity)
             }
         }
+        .onAppear { state.seed(env.beaconExtras.cached(BeaconExtrasCache.alert(beacon.id))) }
         .task(id: beacon.id) { await load() }
     }
 
@@ -89,7 +90,7 @@ struct AlertConfirmationSection: View {
     private func load() async {
         state.begin()
         do {
-            let loaded = try await env.beacons.alertState(beaconID: beacon.id)
+            let loaded = try await env.beaconExtras.load(BeaconExtrasCache.alert(beacon.id)) { try await env.beacons.alertState(beaconID: beacon.id) }
             state.succeed(loaded)
             if loaded.phase != .active { onEnded() }
         } catch {

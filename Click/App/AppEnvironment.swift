@@ -37,6 +37,7 @@ public final class AppEnvironment {
     public let productTelemetry: ProductTelemetry
     public let joinedHubs = JoinedHubStore()
     public let timelineCache = ConversationTimelineCache()
+    let beaconExtras = BeaconExtrasCache()
     /// The user's own profile, plans and saved events, shared by every screen that shows them.
     let selfData = SelfDataStore()
     public let network: NetworkMonitor
@@ -243,6 +244,7 @@ public final class AppEnvironment {
     public func clearSessionCaches() async {
         await identities.removeAll()
         timelineCache.clear()
+        beaconExtras.removeAll()
         pendingSends.removeAll()
         await beacons.clearCache()
         await telemetryQueue.removeAll()
