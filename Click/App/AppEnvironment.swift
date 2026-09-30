@@ -38,6 +38,7 @@ public final class AppEnvironment {
     public let joinedHubs = JoinedHubStore()
     public let timelineCache = ConversationTimelineCache()
     let beaconExtras = BeaconExtrasCache()
+    private(set) var sharedDropsStore = SharedDropsStore()
     /// The user's own profile, plans and saved events, shared by every screen that shows them.
     let selfData = SelfDataStore()
     public let network: NetworkMonitor
@@ -245,6 +246,7 @@ public final class AppEnvironment {
         await identities.removeAll()
         timelineCache.clear()
         beaconExtras.removeAll()
+        sharedDropsStore = SharedDropsStore()
         pendingSends.removeAll()
         await beacons.clearCache()
         await telemetryQueue.removeAll()

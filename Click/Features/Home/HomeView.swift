@@ -261,18 +261,22 @@ public struct HomeView: View {
         }
 
         if !recent.isEmpty || conversations.snapshot == nil {
-            VStack(alignment: .leading, spacing: 12) {
+            VStack(alignment: .leading, spacing: 10) {
+            Button { env.router.selectTab(.connections) } label: {
                 HStack(alignment: .firstTextBaseline) {
-                    Text("Recent connections")
-                        .font(ClickTypography.sectionTitle)
-                        .foregroundStyle(ClickColors.textPrimary)
+                    HomeSectionTitle("Recent connections")
                     Spacer()
-                    Button("See all") { env.router.selectTab(.connections) }
-                        .font(ClickTypography.body)
+                    Text("See all")
+                        .font(ClickTypography.supporting)
+                        .foregroundStyle(ClickColors.textSecondary)
+                    Image(systemName: "chevron.right")
+                        .font(.footnote.weight(.semibold))
                         .foregroundStyle(ClickColors.textTertiary)
                 }
-                .padding(.horizontal, 18)
-
+                .padding(.horizontal, 4)
+            }
+            .buttonStyle(.plain)
+            VStack(alignment: .leading, spacing: 12) {
                 if recent.isEmpty {
                     HStack(spacing: 14) {
                         ForEach(0..<4, id: \.self) { _ in
@@ -343,6 +347,7 @@ public struct HomeView: View {
             }
             .padding(.vertical, 18)
             .groupedSurface()
+            }
         }
     }
 

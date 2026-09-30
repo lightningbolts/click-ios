@@ -6,15 +6,12 @@ struct SharedDropsStrip: View {
     @Environment(AppEnvironment.self) private var env
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
-    @State private var drops = ModuleState<[SharedDrop]>()
-    /// Developed originals, by drop ID (loaded through develop-issued signed URLs).
-    @State private var originals: [String: UIImage] = [:]
-    @State private var developing: Set<String> = []
     @State private var showingCamera = false
     @State private var captured: CapturedPhoto?
-    @State private var uploads: [PendingShare] = []
     @State private var viewing: SharedDrop?
-    @State private var message: String?
+    /// Lives on the environment: Home is lazy, so this view is rebuilt whenever it scrolls back
+    /// into view, and the strip must come back exactly as it was (no blank, no reload).
+    private var store: SharedDropsStore { env.sharedDropsStore }
 
     struct CapturedPhoto: Identifiable {
         let id = UUID()
@@ -35,20 +32,20 @@ struct SharedDropsStrip: View {
             ScrollView(.horizontal, showsIndicators: false) {
                 HStack(spacing: 10) {
                     shareTile
-                    ForEach(uploads) { uploadTile($0) }
-                    ForEach(drops.value ?? []) { tile($0) }
+                    ForEach(store.uploads) { uploadTile($0) }
+                    ForEach(store.drops.value ?? []) { tile($0) }
                 }
-                .animation(ClickMotion.subtleFade, value: drops.value?.map(\.id))
+                .animation(ClickMotion.subtleFade, value: store.drops.value?.map(\.id))
                 .padding(.horizontal, ClickSpacing.screenGutter)
             }
             .padding(.horizontal, -ClickSpacing.screenGutter)
-            if let message {
+            if let message = store.message {
                 Text(message).font(ClickTypography.supporting).foregroundStyle(ClickColors.textSecondary).padding(.horizontal, 4)
             }
         }
         .task { await load() }
         // Every change to the strip is the next launch's first paint.
-        .onChange(of: drops.value) { _, list in
+        .onChange(of: store.drops.value) { _, list in
             guard let list, let userID else { return }
             Task { await CacheStore.shared.save(list, key: Self.cacheKey, userID: userID) }
         }
@@ -57,7 +54,7 @@ struct SharedDropsStrip: View {
             guard let next = nextReveal else { return }
             try? await Task.sleep(for: .seconds(max(0, next.timeIntervalSinceNow) + 0.5))
             guard !Task.isCancelled else { return }
-            let justReady = (drops.value ?? []).filter { $0.state() == .ready && ($0.revealAt.map { Date().timeIntervalSince($0) < 5 } ?? false) }
+            let justReady = (store.drops.value ?? []).filter { $0.state() == .ready && ($0.revealAt.map { Date().timeIntervalSince($0) < 5 } ?? false) }
             await develop(justReady)
         }
         .fullScreenCover(isPresented: $showingCamera) {
@@ -66,20 +63,20 @@ struct SharedDropsStrip: View {
         .sheet(item: $captured) { photo in
             SharedDropAudienceSheet(jpeg: photo.jpeg) { audience, caption in
                 let upload = PendingShare(jpeg: photo.jpeg, audience: audience, caption: caption)
-                uploads.append(upload)
+                store.uploads.append(upload)
                 Task { await share(upload) }
             }
             .presentationDetents([.large])
         }
         .sheet(item: $viewing) { drop in
-            SharedDropViewer(drop: drop, image: originals[drop.id], onDeleted: {
-                drops.succeed((drops.value ?? []).filter { $0.id != drop.id })
+            SharedDropViewer(drop: drop, image: store.originals[drop.id], onDeleted: {
+                store.drops.succeed((store.drops.value ?? []).filter { $0.id != drop.id })
             })
         }
     }
 
     private var nextReveal: Date? {
-        (drops.value ?? []).compactMap { drop in drop.state().isPending ? drop.revealAt : nil }.min()
+        (store.drops.value ?? []).compactMap { drop in drop.state().isPending ? drop.revealAt : nil }.min()
     }
 
     // MARK: - Tiles
@@ -88,16 +85,17 @@ struct SharedDropsStrip: View {
         Button {
             showingCamera = true
         } label: {
-            VStack(spacing: 6) {
-                Image(systemName: "camera").font(.system(size: 22))
-                Text("Share a drop").font(ClickTypography.caption)
+            VStack(spacing: 8) {
+                Image(systemName: "camera.fill")
+                    .font(.system(size: 18, weight: .semibold))
+                    .foregroundStyle(ClickColors.primaryActionForeground)
+                    .frame(width: 40, height: 40)
+                    .glassCircleBackground(tint: ClickColors.primaryActionFill)
+                Text("Share a drop").font(ClickTypography.supportingEmphasized)
             }
             .foregroundStyle(ClickColors.textPrimary)
             .frame(width: Self.tileSize.width, height: Self.tileSize.height)
-            .overlay {
-                RoundedRectangle(cornerRadius: 16, style: .continuous)
-                    .strokeBorder(ClickColors.separator, style: StrokeStyle(lineWidth: 1.5, dash: [5, 4]))
-            }
+            .glassPanelBackground(cornerRadius: 16)
             .contentShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
         }
         .buttonStyle(.plain)
@@ -117,7 +115,7 @@ struct SharedDropsStrip: View {
         } label: {
             // A fixed frame with overlays: a filling photo never pushes the labels out of the tile.
             Group {
-                if state == .developed, let image = originals[drop.id] {
+                if state == .developed, let image = store.originals[drop.id] {
                     Color.clear.overlay { Image(uiImage: image).resizable().scaledToFill() }
                 } else {
                     PixelatedPreview(url: drop.previewURL)
@@ -136,7 +134,7 @@ struct SharedDropsStrip: View {
                 .padding(.leading, 3)
                 .padding(.trailing, 8)
                 .padding(.vertical, 3)
-                .background(.black.opacity(0.45), in: Capsule())
+                .glassCircleBackground()
                 .padding(6)
             }
             .overlay {
@@ -145,9 +143,11 @@ struct SharedDropsStrip: View {
                 }
             }
             .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
+            // Glass over a photo reads as dark glass, so the white labels always hold.
+            .environment(\.colorScheme, .dark)
         }
         .buttonStyle(.plain)
-        .disabled(state.isPending || developing.contains(drop.id))
+        .disabled(state.isPending || store.developing.contains(drop.id))
         .accessibilityLabel(accessibility(drop, state: state))
     }
 
@@ -161,7 +161,7 @@ struct SharedDropsStrip: View {
         }
         if let content {
             HStack(spacing: 3) {
-                if developing.contains(drop.id) {
+                if store.developing.contains(drop.id) {
                     ProgressView().controlSize(.mini).tint(.white)
                 } else {
                     Image(systemName: content.1)
@@ -172,7 +172,7 @@ struct SharedDropsStrip: View {
             .foregroundStyle(.white)
             .padding(.horizontal, 7)
             .padding(.vertical, 4)
-            .background(state == .ready ? ClickColors.primaryActionFill : .black.opacity(0.45), in: Capsule())
+            .glassCircleBackground(tint: state == .ready ? ClickColors.primaryActionFill : nil)
         }
     }
 
@@ -222,20 +222,23 @@ struct SharedDropsStrip: View {
 
     /// Paints the last strip (and its developed photos) from disk at once, then refreshes.
     private func load() async {
-        if drops.value == nil, let userID, let cached = await CacheStore.shared.load([SharedDrop].self, key: Self.cacheKey, userID: userID) {
-            drops.seed(cached)
-            for drop in cached where drop.state() == .developed && originals[drop.id] == nil {
-                originals[drop.id] = SharedDropPhotoCache.load(drop.id, userID: userID)
+        if store.drops.value == nil, let userID, let cached = await CacheStore.shared.load([SharedDrop].self, key: Self.cacheKey, userID: userID) {
+            store.drops.seed(cached)
+            for drop in cached where drop.state() == .developed && store.originals[drop.id] == nil {
+                store.originals[drop.id] = SharedDropPhotoCache.load(drop.id, userID: userID)
             }
         }
-        drops.begin()
+        // Scrolling back into view reuses what's shown; only a stale strip refetches.
+        if let fetched = store.fetchedAt, Date().timeIntervalSince(fetched) < SelfDataStore.freshFor { return }
+        store.drops.begin()
         do {
             let loaded = try await env.drops.sharedDrops()
-            drops.succeed(loaded)
+            store.drops.succeed(loaded)
+            store.fetchedAt = .now
             if let userID { SharedDropPhotoCache.prune(keeping: Set(loaded.map(\.id)), userID: userID) }
-            await loadOriginals(loaded.filter { $0.state() == .developed && originals[$0.id] == nil })
+            await loadOriginals(loaded.filter { $0.state() == .developed && store.originals[$0.id] == nil })
         } catch {
-            if !error.isCancellation { drops.fail(error.userFacingMessage) }
+            if !error.isCancellation { store.drops.fail(error.userFacingMessage) }
         }
     }
 
@@ -250,18 +253,18 @@ struct SharedDropsStrip: View {
     }
 
     private func keepOriginal(_ image: UIImage, for dropID: String) {
-        originals[dropID] = image
+        store.originals[dropID] = image
         if let userID { SharedDropPhotoCache.save(image, dropID: dropID, userID: userID) }
     }
 
     private func develop(_ targets: [SharedDrop]) async {
-        let ready = targets.filter { $0.state() == .ready && !developing.contains($0.id) }
+        let ready = targets.filter { $0.state() == .ready && !store.developing.contains($0.id) }
         guard !ready.isEmpty else { return }
-        developing.formUnion(ready.map(\.id))
-        defer { developing.subtract(ready.map(\.id)) }
+        store.developing.formUnion(ready.map(\.id))
+        defer { store.developing.subtract(ready.map(\.id)) }
         do {
             let results = try await env.drops.develop(ready.map { ClickDropRef(kind: .shared, id: $0.id) })
-            var updated = drops.value ?? []
+            var updated = store.drops.value ?? []
             for result in results where result.status == .developed {
                 if let url = result.originalURL, let image = try? await ClickDropService.loadOriginal(url, maxPixels: 720) {
                     if !reduceMotion { ClickHaptics.impact(.light) }
@@ -271,34 +274,47 @@ struct SharedDropsStrip: View {
                     updated[index].developedAt = result.developedAt ?? .now
                 }
             }
-            withAnimation(ClickMotion.subtleFade) { drops.succeed(updated) }
+            withAnimation(ClickMotion.subtleFade) { store.drops.succeed(updated) }
         } catch {
-            if !error.isCancellation { message = "Couldn't develop right now. Try again in a moment." }
+            if !error.isCancellation { store.message = "Couldn't develop right now. Try again in a moment." }
         }
     }
 
     private func share(_ upload: PendingShare) async {
         do {
             let drop = try await env.drops.shareDrop(upload.jpeg, audience: upload.audience, caption: upload.caption, clientDropID: upload.id)
-            uploads.removeAll { $0.id == upload.id }
-            drops.succeed([drop] + (drops.value ?? []).filter { $0.id != drop.id })
-            message = nil
+            store.uploads.removeAll { $0.id == upload.id }
+            store.drops.succeed([drop] + (store.drops.value ?? []).filter { $0.id != drop.id })
+            store.message = nil
             ClickHaptics.success()
         } catch let refusal as SharedDropPostError {
-            uploads.removeAll { $0.id == upload.id }
-            message = refusal.errorDescription
+            store.uploads.removeAll { $0.id == upload.id }
+            store.message = refusal.errorDescription
         } catch {
             guard !error.isCancellation else { return }
-            if let index = uploads.firstIndex(where: { $0.id == upload.id }) { uploads[index].failed = true }
-            message = "Couldn't share your drop. Tap Retry — it won't be shared twice."
+            if let index = store.uploads.firstIndex(where: { $0.id == upload.id }) { store.uploads[index].failed = true }
+            store.message = "Couldn't share your drop. Tap Retry — it won't be shared twice."
         }
     }
 
     private func retry(_ upload: PendingShare) async {
-        guard let index = uploads.firstIndex(where: { $0.id == upload.id }) else { return }
-        uploads[index].failed = false
-        await share(uploads[index])
+        guard let index = store.uploads.firstIndex(where: { $0.id == upload.id }) else { return }
+        store.uploads[index].failed = false
+        await share(store.uploads[index])
     }
+}
+
+/// The Home strip's state, kept for the session (see `SharedDropsStrip.store`).
+@Observable
+@MainActor
+final class SharedDropsStore {
+    var drops = ModuleState<[SharedDrop]>()
+    /// Developed originals, by drop ID (loaded through develop-issued signed URLs).
+    var originals: [String: UIImage] = [:]
+    var developing: Set<String> = []
+    var uploads: [SharedDropsStrip.PendingShare] = []
+    var message: String?
+    var fetchedAt: Date?
 }
 
 /// A caption over a drop's photo, Locket-style: a glass pill at the bottom of the frame.
