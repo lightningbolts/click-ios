@@ -2,7 +2,7 @@ import SwiftUI
 
 /// Home: a linear social feed (spec §20.2, prototype hierarchy).
 ///
-/// 1. greeting + search · 2. "I'm down for…" · 3. one social opportunity · 4. recent people ·
+/// 1. greeting + search · 2. "I'm down for…" · 3. one social opportunity · Click Drops · 4. recent people ·
 /// 5. recap · 6. saved & upcoming · 7. nearby discovery · 8. insights.
 ///
 /// The scaffold never waits on a request: each module renders its own cached / loading /
@@ -52,8 +52,8 @@ public struct HomeView: View {
                         .accessibilityHidden(true)
                 }
                 if let nudge = reconnectNudge { ReconnectNearbyCard(nudge: nudge) { reconnectNudge = nil } }
-                recentPeopleSection(promoted: opportunity)
                 if env.features.isEnabled(.sharedDrops) { SharedDropsStrip() }
+                recentPeopleSection(promoted: opportunity)
                 if let recapCard { HomeEventRecapCard(card: recapCard) }
                 recapSection
                 savedSection(promotedID: promotedEventID(opportunity))

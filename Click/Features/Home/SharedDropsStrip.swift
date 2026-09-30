@@ -46,6 +46,11 @@ struct SharedDropsStrip: View {
             }
         }
         .task { await load() }
+        // Every change to the strip is the next launch's first paint.
+        .onChange(of: drops.value) { _, list in
+            guard let list, let userID else { return }
+            Task { await CacheStore.shared.save(list, key: Self.cacheKey, userID: userID) }
+        }
         // Live develop: a drop that reaches zero while the strip is on screen develops by itself.
         .task(id: nextReveal) {
             guard let next = nextReveal else { return }
@@ -211,11 +216,22 @@ struct SharedDropsStrip: View {
 
     // MARK: - Loading & writes
 
+    private static let cacheKey = "shared-drops"
+    private var userID: String? { env.session.currentSession?.userId }
+
+    /// Paints the last strip (and its developed photos) from disk at once, then refreshes.
     private func load() async {
+        if drops.value == nil, let userID, let cached = await CacheStore.shared.load([SharedDrop].self, key: Self.cacheKey, userID: userID) {
+            drops.seed(cached)
+            for drop in cached where drop.state() == .developed && originals[drop.id] == nil {
+                originals[drop.id] = SharedDropPhotoCache.load(drop.id, userID: userID)
+            }
+        }
         drops.begin()
         do {
             let loaded = try await env.drops.sharedDrops()
             drops.succeed(loaded)
+            if let userID { SharedDropPhotoCache.prune(keeping: Set(loaded.map(\.id)), userID: userID) }
             await loadOriginals(loaded.filter { $0.state() == .developed && originals[$0.id] == nil })
         } catch {
             if !error.isCancellation { drops.fail(error.userFacingMessage) }
@@ -228,8 +244,13 @@ struct SharedDropsStrip: View {
         else { return }
         for result in results {
             guard let url = result.originalURL, let image = try? await ClickDropService.loadOriginal(url, maxPixels: 720) else { continue }
-            originals[result.ref.id] = image
+            keepOriginal(image, for: result.ref.id)
         }
+    }
+
+    private func keepOriginal(_ image: UIImage, for dropID: String) {
+        originals[dropID] = image
+        if let userID { SharedDropPhotoCache.save(image, dropID: dropID, userID: userID) }
     }
 
     private func develop(_ targets: [SharedDrop]) async {
@@ -243,7 +264,7 @@ struct SharedDropsStrip: View {
             for result in results where result.status == .developed {
                 if let url = result.originalURL, let image = try? await ClickDropService.loadOriginal(url, maxPixels: 720) {
                     if !reduceMotion { ClickHaptics.impact(.light) }
-                    withAnimation(reduceMotion ? .easeInOut(duration: 0.2) : ClickMotion.reveal) { originals[result.ref.id] = image }
+                    withAnimation(reduceMotion ? .easeInOut(duration: 0.2) : ClickMotion.reveal) { keepOriginal(image, for: result.ref.id) }
                 }
                 if let index = updated.firstIndex(where: { $0.id == result.ref.id }) {
                     updated[index].developedAt = result.developedAt ?? .now
