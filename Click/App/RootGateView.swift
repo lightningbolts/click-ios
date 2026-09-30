@@ -222,7 +222,7 @@ public struct MainTabShellView: View {
         }
         .task(id: env.session.currentSession?.userId) {
             // Flags are per user: never carry one account's cohort into another.
-            env.features.reset()
+            env.features.restore(userID: env.session.currentSession?.userId)
             await env.features.refresh()
             await env.productTelemetry.installedIfNeeded()
             await env.productTelemetry.appOpened()

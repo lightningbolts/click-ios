@@ -38,6 +38,7 @@ struct SharedDropsStrip: View {
                     ForEach(uploads) { uploadTile($0) }
                     ForEach(drops.value ?? []) { tile($0) }
                 }
+                .animation(ClickMotion.subtleFade, value: drops.value?.map(\.id))
                 .padding(.horizontal, ClickSpacing.screenGutter)
             }
             .padding(.horizontal, -ClickSpacing.screenGutter)
