@@ -397,7 +397,7 @@ struct PlanCardView: View {
         .accessibilityAddTraits(selected ? .isSelected : [])
     }
 
-    static func whenText(_ date: Date, until end: Date? = nil, now: Date = .now, calendar: Calendar = .current) -> String {
+    nonisolated static func whenText(_ date: Date, until end: Date? = nil, now: Date = .now, calendar: Calendar = .current) -> String {
         var time = date.formatted(date: .omitted, time: .shortened)
         if let end {
             time += "–" + (calendar.isDate(end, inSameDayAs: date)
