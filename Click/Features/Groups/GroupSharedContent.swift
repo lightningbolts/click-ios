@@ -255,6 +255,18 @@ enum UpcomingPlans {
         upcoming(await LocalStore.shared.planMessages(userID: userID), now: now)
     }
 
+    /// Plans that have ended, as History rows, newest first (this device's chats only).
+    static func past(userID: String, now: Date = .now) async -> [HistoryItem] {
+        await LocalStore.shared.planMessages(userID: userID)
+            .compactMap { message -> HistoryItem? in
+                guard !message.isDeleted, let plan = message.plan, plan.endsOrAssumedEnd <= now else { return nil }
+                return HistoryItem(kind: .hangout, id: "plan:\(message.id)", title: plan.title, detail: "Plan", at: plan.startsAt,
+                                   place: plan.placeName, imageURL: nil, beaconID: nil, beaconType: nil, connectionID: nil,
+                                   peerID: nil, peerName: nil, peerAvatarURL: nil, recap: nil, chatID: message.chatID, messageID: message.id)
+            }
+            .sorted { ($0.at ?? .distantPast) > ($1.at ?? .distantPast) }
+    }
+
     private static func upcoming(_ messages: [ChatMessageItem], now: Date) -> [ChatMessageItem] {
         messages
             .filter { !$0.isDeleted && ($0.plan?.endsOrAssumedEnd ?? .distantPast) > now }

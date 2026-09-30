@@ -6,6 +6,8 @@ struct HistoryView: View {
     @Environment(AppEnvironment.self) private var env
 
     @State private var filter: HistoryFilter = .all
+    /// Past plans from this device's chats (the server can't see them: they're end-to-end encrypted).
+    @State private var pastPlans: [HistoryItem] = []
 
     /// Cached for the session: reopening History shows the last rows at once, then refreshes.
     private var items: ModuleState<SelfDataStore.HistoryPage> { env.selfData.history[filter] ?? ModuleState() }
@@ -34,7 +36,7 @@ struct HistoryView: View {
 
     private var list: some View {
         List {
-            if let rows = items.value?.items {
+            if let rows = merged {
                 ForEach(sections(rows), id: \.title) { section in
                     Section(section.title) {
                         ForEach(section.items) { item in
@@ -43,12 +45,23 @@ struct HistoryView: View {
                         }
                     }
                 }
-                if items.value?.nextCursor != nil { ProgressView().frame(maxWidth: .infinity).listRowBackground(Color.clear) }
+                if let page = items.value, page.nextCursor != nil {
+                    Group {
+                        if page.moreFailed {
+                            Button("Couldn't load more. Retry") { Task { await env.selfData.loadMoreHistory(filter) } }
+                                .font(ClickTypography.supporting)
+                        } else {
+                            ProgressView()
+                        }
+                    }
+                    .frame(maxWidth: .infinity)
+                    .listRowBackground(Color.clear)
+                }
             }
         }
         .listStyle(.insetGrouped)
         .overlay {
-            if let rows = items.value?.items, rows.isEmpty {
+            if let rows = merged, rows.isEmpty {
                 ContentUnavailableView("Nothing here yet", systemImage: "clock",
                                        description: Text(emptyText))
             } else if items.value == nil {
@@ -66,7 +79,21 @@ struct HistoryView: View {
             }
         }
         .task(id: filter) { await env.selfData.loadHistory(filter) }
+        .task {
+            guard let userID = env.session.currentSession?.userId else { return }
+            pastPlans = await UpcomingPlans.past(userID: userID)
+        }
         .refreshable { await env.selfData.loadHistory(filter, force: true) }
+    }
+
+    /// Server rows plus past plans, newest first. While more pages remain, only plans newer than
+    /// the last loaded row are mixed in, so paging never reorders what's already shown.
+    private var merged: [HistoryItem]? {
+        guard let page = items.value else { return nil }
+        guard filter == .all || filter == .hangouts else { return page.items }
+        let floor = page.nextCursor == nil ? Date.distantPast : (page.items.last?.at ?? .distantPast)
+        return (page.items + pastPlans.filter { ($0.at ?? .distantPast) >= floor })
+            .sorted { ($0.at ?? .distantPast) > ($1.at ?? .distantPast) }
     }
 
     private var emptyText: String {
@@ -124,6 +151,8 @@ private struct HistoryRow: View {
     @ViewBuilder
     private var leading: some View {
         switch item.kind {
+        case .hangout where item.messageID != nil:
+            EventVisual(seed: item.id, imageURL: nil, symbol: "calendar.badge.clock", cornerRadius: 12)
         case .hangout:
             AvatarView(imageURL: item.peerAvatarURL, seed: item.peerID ?? item.id,
                        initials: Phase3Repository.initials(from: item.peerName ?? "?"), size: 44)
@@ -143,7 +172,9 @@ private struct HistoryRow: View {
         case .event: env.router.navigate(to: .event(beaconID: item.id))
         case .beacon: env.router.navigate(to: .beacon(beaconID: item.id))
         case .hangout:
-            if let peer = item.peerID { env.router.navigate(to: .userProfile(userID: peer, connectionID: item.connectionID)) }
+            if let chatID = item.chatID, let messageID = item.messageID {
+                env.router.navigate(to: .conversation(chatID: chatID, messageID: messageID))
+            } else if let peer = item.peerID { env.router.navigate(to: .userProfile(userID: peer, connectionID: item.connectionID)) }
         }
     }
 }

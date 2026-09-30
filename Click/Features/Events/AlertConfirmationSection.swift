@@ -118,6 +118,7 @@ struct AlertConfirmationSection: View {
             if let expiresAt, expiresAt <= .now {
                 onEnded()
             }
+            env.beaconExtras.invalidate(BeaconExtrasCache.alert(beacon.id))
             await load()
         } catch let rejection as AlertVoteRejection {
             withAnimation(ClickMotion.subtleFade) { message = rejection.errorDescription }

@@ -316,14 +316,13 @@ struct SharedDropAudienceSheet: View {
                         .clipShape(RoundedRectangle(cornerRadius: ClickRadius.surface, style: .continuous))
                         .overlay(alignment: .bottom) {
                             DropCaptionPill {
-                                TextField("Add a caption", text: $caption, axis: .vertical)
+                                // One line (Return ends editing), capped at the limit, cleaned once as it's set.
+                                TextField("Add a caption", text: Binding(
+                                    get: { caption },
+                                    set: { caption = String($0.replacingOccurrences(of: "\n", with: "").prefix(SharedDrop.captionLimit)) }
+                                ), axis: .vertical)
                                     .lineLimit(1...3)
                                     .submitLabel(.done)
-                                    .onChange(of: caption) { _, new in
-                                        // Return ends editing; a caption is one line of text.
-                                        if new.contains("\n") { caption = new.replacingOccurrences(of: "\n", with: "") }
-                                        if caption.count > SharedDrop.captionLimit { caption = String(caption.prefix(SharedDrop.captionLimit)) }
-                                    }
                             }
                         }
                         .overlay(alignment: .topTrailing) {

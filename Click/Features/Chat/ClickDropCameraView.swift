@@ -163,6 +163,9 @@ struct ClickDropCameraView: View {
                 .font(ClickTypography.metadataEmphasized)
                 .foregroundStyle(.white)
                 .monospacedDigit()
+                .padding(.horizontal, 12)
+                .padding(.vertical, 5)
+                .glassCircleBackground()
             ScrollView(.horizontal, showsIndicators: false) {
                 HStack(spacing: 8) {
                     ForEach(ClickDropFilter.allCases) { look in

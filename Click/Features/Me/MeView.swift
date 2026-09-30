@@ -36,7 +36,7 @@ public struct MeView: View {
             }
             socialSection
             if !hangouts.isEmpty {
-                Section("Hangouts") {
+                Section("Upcoming hangouts") {
                     UpcomingPlansList(plans: hangouts) { env.router.navigate(to: $0.route) }
                 }
             }

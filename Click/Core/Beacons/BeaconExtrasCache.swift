@@ -3,11 +3,16 @@ import Foundation
 /// A beacon's live extras (listening now, reactions, alert status, event drops), kept for the
 /// session so a beacon opens filled: its sections paint the last value at once and refresh behind
 /// it. `prefetch` warms them as soon as a beacon is selected, before its page opens. Concurrent
-/// loads of one key share a single request.
+/// loads of one key share a single request; a write (or `invalidate`) makes any read that started
+/// before it stale, so an old response never lands over newer state.
 @MainActor
 final class BeaconExtrasCache {
     private var values: [String: any Sendable] = [:]
-    private var inFlight: [String: Task<any Sendable, any Error>] = [:]
+    private var inFlight: [String: (version: Int, task: Task<any Sendable, any Error>)] = [:]
+    /// Bumped by every write to a key; a load only publishes if its key wasn't written meanwhile.
+    private var versions: [String: Int] = [:]
+    /// Bumped on sign-out; loads from an earlier session never publish.
+    private var generation = 0
 
     static func listening(_ beaconID: String) -> String { "listening:\(beaconID)" }
     static func reactions(_ target: ReactionTarget, _ id: String) -> String { "reactions:\(target.rawValue):\(id)" }
@@ -17,15 +22,33 @@ final class BeaconExtrasCache {
     func cached<T>(_ key: String) -> T? { values[key] as? T }
 
     /// Records a value a screen got from a write (a vote, a reaction), so the next open shows it.
-    func store(_ value: any Sendable, for key: String) { values[key] = value }
-
-    func load<T: Sendable>(_ key: String, _ fetch: @escaping @MainActor () async throws -> T) async throws -> T {
-        let task = inFlight[key] ?? Task { @MainActor in try await fetch() as any Sendable }
-        inFlight[key] = task
-        defer { inFlight[key] = nil }
-        let value = try await task.value
+    func store(_ value: any Sendable, for key: String) {
+        invalidate(key)
         values[key] = value
-        guard let typed = value as? T else { throw CancellationError() }
+    }
+
+    /// After a write whose result isn't a full value: the next load starts a fresh request.
+    func invalidate(_ key: String) {
+        versions[key, default: 0] += 1
+        inFlight[key] = nil
+    }
+
+    /// Stale results (the key was written, or the session ended, while loading) throw
+    /// `CancellationError`, which screens already ignore.
+    func load<T: Sendable>(_ key: String, _ fetch: @escaping @MainActor () async throws -> T) async throws -> T {
+        let version = versions[key, default: 0]
+        let session = generation
+        let task: Task<any Sendable, any Error>
+        if let running = inFlight[key], running.version == version {
+            task = running.task
+        } else {
+            task = Task { @MainActor in try await fetch() as any Sendable }
+            inFlight[key] = (version, task)
+        }
+        let value = try await task.value
+        if inFlight[key]?.task == task { inFlight[key] = nil }
+        guard session == generation, versions[key, default: 0] == version, let typed = value as? T else { throw CancellationError() }
+        values[key] = value
         return typed
     }
 
@@ -49,7 +72,10 @@ final class BeaconExtrasCache {
     }
 
     func removeAll() {
-        values.removeAll()
+        generation += 1
+        inFlight.values.forEach { $0.task.cancel() }
         inFlight.removeAll()
+        values.removeAll()
+        versions.removeAll()
     }
 }

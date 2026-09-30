@@ -20,7 +20,11 @@ final class SelfDataStore {
     struct HistoryPage: Equatable {
         var items: [HistoryItem]
         var nextCursor: String?
+        /// The last "load more" failed: show Retry instead of a spinner.
+        var moreFailed = false
     }
+    /// Bumped whenever a filter's first page reloads; an older "load more" never lands on it.
+    private var historyPageGeneration: [HistoryFilter: Int] = [:]
 
     private weak var environment: AppEnvironment?
     private var seededUserID: String?
@@ -46,6 +50,7 @@ final class SelfDataStore {
         notificationPreferences = ModuleState()
         locationPrivacy = ModuleState()
         history = [:]
+        historyPageGeneration = [:]
         fetchedAt = [:]
         profile.seed(await environment.me.cachedSelfProfile(userID: userID))
         intents.seed(await environment.me.cachedIntents(userID: userID))
@@ -67,6 +72,7 @@ final class SelfDataStore {
     /// The first page of one History filter (stale-while-revalidate: cached rows stay on screen).
     func loadHistory(_ filter: HistoryFilter, force: Bool = false) async {
         await run("history.\(filter.rawValue)", force: force) { environment, _ in
+            self.historyPageGeneration[filter, default: 0] += 1
             self.history[filter, default: ModuleState()].begin()
             do {
                 let page = try await environment.beacons.history(filter, cursor: nil)
@@ -78,13 +84,24 @@ final class SelfDataStore {
         }
     }
 
-    /// Appends the next page of one History filter, if there is one.
+    /// Appends the next page of one History filter, if there is one. A failure keeps the rows
+    /// and marks `moreFailed` (the list offers Retry); a first-page reload meanwhile wins.
     func loadMoreHistory(_ filter: HistoryFilter) async {
-        guard let current = history[filter]?.value, let cursor = current.nextCursor else { return }
+        guard let cursor = history[filter]?.value?.nextCursor else { return }
+        let generation = historyPageGeneration[filter, default: 0]
         await run("history.more.\(filter.rawValue)", force: true) { environment, _ in
-            let page = try await environment.beacons.history(filter, cursor: cursor)
-            let fresh = page.items.filter { new in !current.items.contains { $0.id == new.id } }
-            self.history[filter]?.succeed(HistoryPage(items: current.items + fresh, nextCursor: page.nextCursor))
+            do {
+                let page = try await environment.beacons.history(filter, cursor: cursor)
+                guard self.historyPageGeneration[filter, default: 0] == generation, let current = self.history[filter]?.value else { return }
+                let fresh = page.items.filter { new in !current.items.contains { $0.id == new.id } }
+                self.history[filter]?.succeed(HistoryPage(items: current.items + fresh, nextCursor: page.nextCursor))
+            } catch {
+                guard !error.isCancellation, self.historyPageGeneration[filter, default: 0] == generation,
+                      var current = self.history[filter]?.value else { throw error }
+                current.moreFailed = true
+                self.history[filter]?.succeed(current)
+                throw error
+            }
         }
     }
 
