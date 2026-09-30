@@ -207,6 +207,9 @@ public struct HistoryItem: Identifiable, Sendable, Equatable {
     public let peerName: String?
     public let peerAvatarURL: String?
     public let recap: PastEvent.Recap?
+    /// A plan made in chat (on-device only; plans are end-to-end encrypted): opens that message.
+    public var chatID: String? = nil
+    public var messageID: String? = nil
 
     static func parse(_ row: [String: Any]) -> HistoryItem? {
         guard let kind = JSONFields.string(row["kind"]).flatMap(Kind.init(rawValue:)), let id = JSONFields.string(row["id"]) else { return nil }

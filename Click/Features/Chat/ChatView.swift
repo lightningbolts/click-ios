@@ -272,12 +272,17 @@ public struct ChatView: View {
             // Leading, right after the back button: laid out left to right at a fixed spacing.
             // (As the centered title the bar re-nudged it clear of the back button after a
             // cancelled back swipe, shifting the avatar.) No glass capsule around it.
+            // (CI builds with the iOS 18 SDK, so the iOS 26 API is compiled only when available.)
+            #if compiler(>=6.2)
             if #available(iOS 26.0, *) {
                 ToolbarItem(placement: .topBarLeading) { sizedTitle }
                     .sharedBackgroundVisibility(.hidden)
             } else {
                 ToolbarItem(placement: .topBarLeading) { sizedTitle }
             }
+            #else
+            ToolbarItem(placement: .topBarLeading) { sizedTitle }
+            #endif
             ToolbarItem(placement: .topBarTrailing) {
                 conversationMenu
             }

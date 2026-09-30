@@ -25,6 +25,7 @@ struct SharedDropsStrip: View {
         let id = UUID()
         let jpeg: Data
         let audience: SharedDrop.Audience
+        let caption: String?
         var failed = false
     }
 
@@ -57,12 +58,12 @@ struct SharedDropsStrip: View {
             ClickDropCameraView { draft in captured = CapturedPhoto(jpeg: draft.data) }
         }
         .sheet(item: $captured) { photo in
-            SharedDropAudienceSheet { audience in
-                let upload = PendingShare(jpeg: photo.jpeg, audience: audience)
+            SharedDropAudienceSheet(jpeg: photo.jpeg) { audience, caption in
+                let upload = PendingShare(jpeg: photo.jpeg, audience: audience, caption: caption)
                 uploads.append(upload)
                 Task { await share(upload) }
             }
-            .presentationDetents([.medium])
+            .presentationDetents([.large])
         }
         .sheet(item: $viewing) { drop in
             SharedDropViewer(drop: drop, image: originals[drop.id], onDeleted: {
@@ -256,7 +257,7 @@ struct SharedDropsStrip: View {
 
     private func share(_ upload: PendingShare) async {
         do {
-            let drop = try await env.drops.shareDrop(upload.jpeg, audience: upload.audience, clientDropID: upload.id)
+            let drop = try await env.drops.shareDrop(upload.jpeg, audience: upload.audience, caption: upload.caption, clientDropID: upload.id)
             uploads.removeAll { $0.id == upload.id }
             drops.succeed([drop] + (drops.value ?? []).filter { $0.id != drop.id })
             message = nil
@@ -278,15 +279,64 @@ struct SharedDropsStrip: View {
     }
 }
 
-/// Who a shared drop goes to, with the privacy difference from chat drops said plainly.
+/// A caption over a drop's photo, Locket-style: a glass pill at the bottom of the frame.
+private struct DropCaptionPill<Content: View>: View {
+    @ViewBuilder let content: Content
+
+    var body: some View {
+        content
+            .font(ClickTypography.supportingEmphasized)
+            .foregroundStyle(.white)
+            .multilineTextAlignment(.center)
+            .padding(.horizontal, 14)
+            .padding(.vertical, 8)
+            .glassCircleBackground()
+            .environment(\.colorScheme, .dark)
+            .padding(12)
+    }
+}
+
+/// Who a shared drop goes to (with the privacy difference from chat drops said plainly), and an
+/// optional caption typed right on the photo.
 struct SharedDropAudienceSheet: View {
     @Environment(\.dismiss) private var dismiss
-    let onShare: (SharedDrop.Audience) -> Void
+    let jpeg: Data
+    let onShare: (SharedDrop.Audience, String?) -> Void
     @State private var audience: SharedDrop.Audience = .all
+    @State private var caption = ""
+    @State private var photo: UIImage?
 
     var body: some View {
         NavigationStack {
             Form {
+                Section {
+                    Color.clear
+                        .aspectRatio(3 / 4, contentMode: .fit)
+                        .overlay { if let photo { Image(uiImage: photo).resizable().scaledToFill() } }
+                        .clipShape(RoundedRectangle(cornerRadius: ClickRadius.surface, style: .continuous))
+                        .overlay(alignment: .bottom) {
+                            DropCaptionPill {
+                                // One line (Return ends editing), capped at the limit, cleaned once as it's set.
+                                TextField("Add a caption", text: Binding(
+                                    get: { caption },
+                                    set: { caption = String($0.replacingOccurrences(of: "\n", with: "").prefix(SharedDrop.captionLimit)) }
+                                ), axis: .vertical)
+                                    .lineLimit(1...3)
+                                    .submitLabel(.done)
+                            }
+                        }
+                        .overlay(alignment: .topTrailing) {
+                            if caption.count > SharedDrop.captionLimit - 20 {
+                                Text("\(SharedDrop.captionLimit - caption.count)")
+                                    .font(ClickTypography.caption.monospacedDigit())
+                                    .foregroundStyle(.white)
+                                    .padding(10)
+                                    .accessibilityLabel("\(SharedDrop.captionLimit - caption.count) characters left")
+                            }
+                        }
+                        .listRowInsets(EdgeInsets())
+                        .listRowBackground(Color.clear)
+                }
                 Picker("Share with", selection: $audience) {
                     Text("All connections").tag(SharedDrop.Audience.all)
                     Text("Core connections").tag(SharedDrop.Audience.core)
@@ -300,11 +350,13 @@ struct SharedDropAudienceSheet: View {
             }
             .navigationTitle("Share drop")
             .navigationBarTitleDisplayMode(.inline)
+            .task { photo = ClickDropService.thumbnail(jpeg, maxPixels: 1200) }
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) { Button("Cancel") { dismiss() } }
                 ToolbarItem(placement: .confirmationAction) {
                     Button("Share") {
-                        onShare(audience)
+                        let trimmed = caption.trimmingCharacters(in: .whitespacesAndNewlines)
+                        onShare(audience, trimmed.isEmpty ? nil : trimmed)
                         dismiss()
                     }
                 }
@@ -338,6 +390,9 @@ struct SharedDropViewer: View {
                     Image(uiImage: image).resizable().scaledToFit()
                         .clipShape(RoundedRectangle(cornerRadius: ClickRadius.surface, style: .continuous))
                         .accessibilityLabel(drop.isMine ? "Your drop" : "Drop from \(drop.userName)")
+                        .overlay(alignment: .bottom) {
+                            if let caption = drop.caption { DropCaptionPill { Text(caption) } }
+                        }
                 } else {
                     ProgressView().frame(maxWidth: .infinity, minHeight: 240)
                 }
@@ -347,7 +402,7 @@ struct SharedDropViewer: View {
                         .foregroundStyle(ClickColors.textSecondary)
                         .frame(maxWidth: .infinity, alignment: .leading)
                 }
-                if image != nil { ReactionBar(target: .sharedDrop, id: drop.id) }
+                if image != nil { ReactionBar(target: .sharedDrop, id: drop.id, isOwner: drop.isMine) }
                 if !drop.isMine, let connectionID = drop.connectionID {
                     Button {
                         dismiss()

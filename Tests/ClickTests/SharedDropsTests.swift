@@ -65,18 +65,19 @@ struct SharedDropsTests {
     func capReached() async {
         SharedDropsMockURLProtocol.handler = { _ in (409, #"{"code":"cap_reached"}"#) }
         await #expect(throws: SharedDropPostError.capReached) {
-            try await service().shareDrop(photo, audience: .all, clientDropID: UUID())
+            try await service().shareDrop(photo, audience: .all, caption: nil, clientDropID: UUID())
         }
     }
 
-    @Test("Sharing sends the audience and returns the new drop")
+    @Test("Sharing sends the audience and caption and returns the new drop")
     func shares() async throws {
         SharedDropsMockURLProtocol.handler = { request in
             #expect(request.url?.path == "/api/me/shared-drops")
-            return (201, #"{"drop":{"id":"n","user":{"id":"me","name":"Me"},"is_mine":true,"audience":"all","reveal_at":"2999-01-01T00:00:00Z"}}"#)
+            return (201, #"{"drop":{"id":"n","user":{"id":"me","name":"Me"},"is_mine":true,"audience":"all","reveal_at":"2999-01-01T00:00:00Z","caption":"sunset"}}"#)
         }
-        let drop = try await service().shareDrop(photo, audience: .all, clientDropID: UUID())
+        let drop = try await service().shareDrop(photo, audience: .all, caption: "sunset", clientDropID: UUID())
         #expect(drop.isMine)
+        #expect(drop.caption == "sunset")
         #expect(drop.state().isPending)
     }
 }

@@ -276,8 +276,15 @@ final class PlaceSearch: NSObject, MKLocalSearchCompleterDelegate {
     /// The place (name + coordinate) for a suggestion; falls back to its title alone.
     func resolve(_ result: Result) async -> PlanPlace {
         guard completions.indices.contains(result.id) else { return PlanPlace(name: result.title, coordinate: nil) }
-        let item = try? await MKLocalSearch(request: MKLocalSearch.Request(completion: completions[result.id])).start().mapItems.first
-        return PlanPlace(name: item?.name ?? result.title, coordinate: item?.placemark.coordinate)
+        // Only Sendable values leave the callback (MKLocalSearch.Response isn't Sendable on every SDK).
+        let search = MKLocalSearch(request: MKLocalSearch.Request(completion: completions[result.id]))
+        let found: (name: String?, coordinate: CLLocationCoordinate2D?) = await withCheckedContinuation { continuation in
+            search.start { response, _ in
+                let item = response?.mapItems.first
+                continuation.resume(returning: (item?.name, item?.placemark.coordinate))
+            }
+        }
+        return PlanPlace(name: found.name ?? result.title, coordinate: found.coordinate)
     }
 }
 
@@ -390,7 +397,7 @@ struct PlanCardView: View {
         .accessibilityAddTraits(selected ? .isSelected : [])
     }
 
-    static func whenText(_ date: Date, until end: Date? = nil, now: Date = .now, calendar: Calendar = .current) -> String {
+    nonisolated static func whenText(_ date: Date, until end: Date? = nil, now: Date = .now, calendar: Calendar = .current) -> String {
         var time = date.formatted(date: .omitted, time: .shortened)
         if let end {
             time += "–" + (calendar.isDate(end, inSameDayAs: date)

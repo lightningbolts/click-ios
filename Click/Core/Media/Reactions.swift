@@ -22,6 +22,9 @@ public struct ReactionsState: Sendable, Equatable {
     public let reactions: [Reaction]
     public let isOwner: Bool
 
+    /// Nothing reacted yet, as a non-owner sees it (the palette shown while reactions load).
+    static let empty = ReactionsState(mine: nil, reactions: [], isOwner: false)
+
     static func parse(_ root: [String: Any]) -> ReactionsState {
         ReactionsState(
             mine: JSONFields.string(root["mine"]),

@@ -8,12 +8,17 @@ struct ReactionBar: View {
 
     let target: ReactionTarget
     let id: String
+    /// What the caller already knows, so the palette is in place before reactions load (no pop-in).
+    let isOwner: Bool
 
     @State private var state: ReactionsState?
     @State private var popped: String?
 
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
+            if state == nil, !isOwner {
+                palette(ReactionsState.empty).disabled(true)
+            }
             if let state {
                 if !state.isOwner { palette(state) }
                 if !state.reactions.isEmpty { reactors(state.reactions) }
@@ -22,7 +27,17 @@ struct ReactionBar: View {
                 }
             }
         }
-        .task(id: id) { state = try? await env.drops.reactions(target, id: id) }
+        .onAppear { if state == nil { state = env.beaconExtras.cached(cacheKey) } }
+        .task(id: id) {
+            if let fresh = try? await env.beaconExtras.load(cacheKey, { try await env.drops.reactions(target, id: id) }) { state = fresh }
+        }
+    }
+
+    private var cacheKey: String { BeaconExtrasCache.reactions(target, id) }
+
+    private func apply(_ value: ReactionsState?) {
+        state = value
+        if let value { env.beaconExtras.store(value, for: cacheKey) }
     }
 
     private func palette(_ state: ReactionsState) -> some View {
@@ -78,7 +93,7 @@ struct ReactionBar: View {
             withAnimation(ClickMotion.press) { popped = nil }
         }
         do {
-            state = try await env.drops.react(target, id: id, emoji: emoji)
+            apply(try await env.drops.react(target, id: id, emoji: emoji))
         } catch {
             if !error.isCancellation { state = previous }
         }

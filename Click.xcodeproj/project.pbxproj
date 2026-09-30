@@ -117,6 +117,7 @@
 		6D1F1CD0F63586EEFAD234B6 /* NetworkMonitor.swift in Sources */ = {isa = PBXBuildFile; fileRef = 65E7D2050E854DAEDA0621FB /* NetworkMonitor.swift */; };
 		6E4E8018A4389288277B86CA /* PlanViews.swift in Sources */ = {isa = PBXBuildFile; fileRef = C08BEC2498706BAFA7106F16 /* PlanViews.swift */; };
 		6E5402BDE25E7CB5DAA5025E /* ClickCryptoV1.swift in Sources */ = {isa = PBXBuildFile; fileRef = DF1EEA7316772A0B9800A223 /* ClickCryptoV1.swift */; };
+		6F388D4B92EF8F8F6BAA4FA3 /* DeviceHistoryShareTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A32481D120014D8AA082AB67 /* DeviceHistoryShareTests.swift */; };
 		70CC21D749BB5C6216BD983F /* PublicProfileView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 70C155CC9544DAF18ECE1D1F /* PublicProfileView.swift */; };
 		71FD881181695CDCB10FB84C /* ProfileView.swift in Sources */ = {isa = PBXBuildFile; fileRef = ED9FF6290770C75EBD921B16 /* ProfileView.swift */; };
 		724C7C8B838896AB2B8A7CE2 /* MeView.swift in Sources */ = {isa = PBXBuildFile; fileRef = DA3D55FF1B1AAE1917872DBA /* MeView.swift */; };
@@ -138,10 +139,12 @@
 		80E0FD617F57A87BEB475744 /* Manrope-Medium.ttf in Resources */ = {isa = PBXBuildFile; fileRef = 2AEC3B2ABCA6FD192389609D /* Manrope-Medium.ttf */; };
 		81D284E168DA086F93011B91 /* SessionController.swift in Sources */ = {isa = PBXBuildFile; fileRef = BC196177165E6C102B1932B4 /* SessionController.swift */; };
 		82E25FFC46E25CC6F76C943F /* AppConfig.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2AD5FF3EB16F83E96A974A83 /* AppConfig.swift */; };
+		82FD933DA8ABA69BA1BFED64 /* EdgeFade.swift in Sources */ = {isa = PBXBuildFile; fileRef = 10E9A0CD071D57AC06E1754F /* EdgeFade.swift */; };
 		8620D4210F7FE5EDE5A99A95 /* PostConnectView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0F37F164483F60E35B52EF4F /* PostConnectView.swift */; };
 		8A07FC1B9619FAE67BD81910 /* ClickDropFilter.swift in Sources */ = {isa = PBXBuildFile; fileRef = E242ED11CC7420590A7C5777 /* ClickDropFilter.swift */; };
 		8A9F4D30BB33AF8EA16ADF1B /* ConversationTimelineCache.swift in Sources */ = {isa = PBXBuildFile; fileRef = C359DA574B092111354A9753 /* ConversationTimelineCache.swift */; };
 		8C166A1ABF13BFA568BBA824 /* ReconnectNearby.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1D7B1781FA659F420B17320E /* ReconnectNearby.swift */; };
+		8D1F7C297963B96517765F85 /* BeaconExtrasCache.swift in Sources */ = {isa = PBXBuildFile; fileRef = C0B2DF5BC55B15BB7E899DFF /* BeaconExtrasCache.swift */; };
 		8D429531C644A536648D8BC5 /* StatusPill.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2229C327502C1A82ABD17D9B /* StatusPill.swift */; };
 		8D75F15C30FE0E789CC024BD /* GroupedSurface.swift in Sources */ = {isa = PBXBuildFile; fileRef = CEEFE47A4CBAB925D04FB0E9 /* GroupedSurface.swift */; };
 		8DD8D0AEB2396A470B9CBC66 /* HomeView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 005D701DA8A071928D68AB22 /* HomeView.swift */; };
@@ -323,6 +326,7 @@
 		0CB53FCD182FE4C3E78DE171 /* HistoryView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HistoryView.swift; sourceTree = "<group>"; };
 		0E4638F7F8E159D459EAAE28 /* EventDropsSection.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = EventDropsSection.swift; sourceTree = "<group>"; };
 		0F37F164483F60E35B52EF4F /* PostConnectView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PostConnectView.swift; sourceTree = "<group>"; };
+		10E9A0CD071D57AC06E1754F /* EdgeFade.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = EdgeFade.swift; sourceTree = "<group>"; };
 		1129F5B0BDFF83F9CE1A6759 /* EventDetailTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = EventDetailTests.swift; sourceTree = "<group>"; };
 		115558E16D558D82B19CEDFD /* Typography.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Typography.swift; sourceTree = "<group>"; };
 		14D92B168AB77244D3727B0F /* HubSheets.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HubSheets.swift; sourceTree = "<group>"; };
@@ -464,6 +468,7 @@
 		A03E2C3998EE2E05F0385B8E /* OnboardingCoordinator.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OnboardingCoordinator.swift; sourceTree = "<group>"; };
 		A0D33AB3B5AE90EA7388EA96 /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist; path = Info.plist; sourceTree = "<group>"; };
 		A1E86F5EC0AC5CAC94C17F8F /* HomeComponents.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HomeComponents.swift; sourceTree = "<group>"; };
+		A32481D120014D8AA082AB67 /* DeviceHistoryShareTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DeviceHistoryShareTests.swift; sourceTree = "<group>"; };
 		A370FAA8EB600405590D0486 /* Reactions.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Reactions.swift; sourceTree = "<group>"; };
 		A8EE27D772DD98E886CD7F0C /* LocationProvider.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LocationProvider.swift; sourceTree = "<group>"; };
 		A90BEC0659B6560183DE5269 /* TelemetryQueue.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TelemetryQueue.swift; sourceTree = "<group>"; };
@@ -494,6 +499,7 @@
 		BEC22CD1ECDF9E342ACCC942 /* ChatMessage.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ChatMessage.swift; sourceTree = "<group>"; };
 		C04BB0EDB80B1C58203CF1B1 /* UserProfileSnapshot.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = UserProfileSnapshot.swift; sourceTree = "<group>"; };
 		C08BEC2498706BAFA7106F16 /* PlanViews.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PlanViews.swift; sourceTree = "<group>"; };
+		C0B2DF5BC55B15BB7E899DFF /* BeaconExtrasCache.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BeaconExtrasCache.swift; sourceTree = "<group>"; };
 		C0EEFAB074A9D2D9EB6AA5B9 /* GlassCircle.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GlassCircle.swift; sourceTree = "<group>"; };
 		C299FC0C972D362E0E78AF60 /* ClickToast.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ClickToast.swift; sourceTree = "<group>"; };
 		C2D7B43054D3829FDF8F8F3F /* ChatSendPipelineTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ChatSendPipelineTests.swift; sourceTree = "<group>"; };
@@ -577,6 +583,7 @@
 				1AFAFEA28942252B4C8C3065 /* ClickLogo.swift */,
 				C299FC0C972D362E0E78AF60 /* ClickToast.swift */,
 				4FBC742E5CDBDEF6AE270CE2 /* Confirmation.swift */,
+				10E9A0CD071D57AC06E1754F /* EdgeFade.swift */,
 				7706CFCC8974CFECA09912F7 /* EventVisual.swift */,
 				C8EA116736D43E0C9432BBF5 /* FlowLayout.swift */,
 				C0EEFAB074A9D2D9EB6AA5B9 /* GlassCircle.swift */,
@@ -853,6 +860,7 @@
 				E48DD112855D186C03848B60 /* ClickDropDevelopTests.swift */,
 				C617AC86021B01BE0BE320EA /* ClickDropTests.swift */,
 				74BFF7B0D6FD295C17BDCAFD /* ClicksInboxTests.swift */,
+				A32481D120014D8AA082AB67 /* DeviceHistoryShareTests.swift */,
 				3FBD98425A5A6DCFF4A41259 /* EncounterMergeTests.swift */,
 				1129F5B0BDFF83F9CE1A6759 /* EventDetailTests.swift */,
 				6EBF08A3A2ED30B6A3712FFD /* EventDropsTests.swift */,
@@ -1069,6 +1077,7 @@
 			isa = PBXGroup;
 			children = (
 				2F4F22044C2816AF8734BE2B /* AlertConfirmations.swift */,
+				C0B2DF5BC55B15BB7E899DFF /* BeaconExtrasCache.swift */,
 				F96CCA59CCC5C8B399A2E1C6 /* BeaconRepository.swift */,
 				9600BEABF482DD97F07D508B /* EventDrops.swift */,
 				AC24CFA0E6E02114CAA8699B /* EventEngagementRepository.swift */,
@@ -1467,6 +1476,7 @@
 				6AAD9EE2C023A5FE7D36D5DA /* AvatarView.swift in Sources */,
 				AD564C7175B656013446DF7B /* BLEProximityService.swift in Sources */,
 				A6368ED8BCD618DA44245AF9 /* BeaconDetailView.swift in Sources */,
+				8D1F7C297963B96517765F85 /* BeaconExtrasCache.swift in Sources */,
 				67871D20191C2CA0E9166391 /* BeaconForm.swift in Sources */,
 				C35D4CA69701CF662C7B7BA6 /* BeaconRepository.swift in Sources */,
 				7C2D27682F203AA8E50135DD /* ButtonStyles.swift in Sources */,
@@ -1513,6 +1523,7 @@
 				9FFE49B750AFD7B106E7F990 /* CreateBeaconSheet.swift in Sources */,
 				E8C81D7F00C0A4745CB45C91 /* DebugLaunch.swift in Sources */,
 				D3646E36CA545C20E2D35A93 /* DeviceIdentityVault.swift in Sources */,
+				82FD933DA8ABA69BA1BFED64 /* EdgeFade.swift in Sources */,
 				9AC749853721AF6DE61C1348 /* EmojiKeyboardPicker.swift in Sources */,
 				B73D41F788E49DA35A63D6F4 /* EncounterContextRepository.swift in Sources */,
 				4083D10D51C7254F40D5AB0E /* EncounterSensorSampler.swift in Sources */,
@@ -1668,6 +1679,7 @@
 				5F70E6463EE4E9BCE71E8A72 /* ClickDropDevelopTests.swift in Sources */,
 				9860E542B517457217E2C247 /* ClickDropTests.swift in Sources */,
 				78E23D9CF63E068FA3ADFF76 /* ClicksInboxTests.swift in Sources */,
+				6F388D4B92EF8F8F6BAA4FA3 /* DeviceHistoryShareTests.swift in Sources */,
 				E010C0DE392C7E161105210F /* EncounterMergeTests.swift in Sources */,
 				E13CF95370E4E460DCD559FD /* EventDetailTests.swift in Sources */,
 				7319146D0442CF1A2485A040 /* EventDropsTests.swift in Sources */,

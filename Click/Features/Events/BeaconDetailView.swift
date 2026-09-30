@@ -606,6 +606,7 @@ struct BeaconDetailView: View {
         guard beacon.value == nil, let cached = env.beacons.cachedBeacon(id: beaconID) else { return }
         beacon.seed(cached.beacon)
         isExpired = cached.isExpired
+        env.beaconExtras.prefetch(cached.beacon, env: env)
         if cached.beacon.isEvent { seedEngagement() }
     }
 
@@ -629,6 +630,7 @@ struct BeaconDetailView: View {
                 let result = try await env.beacons.beacon(id: beaconID)
                 isExpired = result.isExpired
                 beacon.succeed(result.beacon)
+                env.beaconExtras.prefetch(result.beacon, env: env)
             } catch {
                 beacon.fail(error)
             }

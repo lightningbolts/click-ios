@@ -20,6 +20,11 @@ public struct SharedDrop: Identifiable, Sendable, Equatable {
     public let revealAt: Date?
     public var developedAt: Date?
     public let previewURL: URL?
+    /// Locket-style caption; the server sends it to others only once the drop develops.
+    public var caption: String? = nil
+
+    /// Captions are capped at this many characters (as people count them).
+    public static let captionLimit = 100
 
     public func state(now: Date = .now) -> ClickDropDevelopState {
         .resolve(revealAt: revealAt, developedAt: developedAt, now: now)
@@ -39,7 +44,8 @@ public struct SharedDrop: Identifiable, Sendable, Equatable {
             createdAt: JSONFields.date(row["created_at"]),
             revealAt: JSONFields.date(row["reveal_at"]),
             developedAt: JSONFields.date(row["developed_at"]),
-            previewURL: JSONFields.string(row["preview_url"]).flatMap(URL.init(string:))
+            previewURL: JSONFields.string(row["preview_url"]).flatMap(URL.init(string:)),
+            caption: JSONFields.string(row["caption"]).flatMap { $0.isEmpty ? nil : $0 }
         )
     }
 }
@@ -63,11 +69,11 @@ extension ClickDropService {
     }
 
     /// Shares one drop; retrying with the same `clientDropID` returns the drop already made.
-    public func shareDrop(_ jpeg: Data, audience: SharedDrop.Audience, clientDropID: UUID) async throws -> SharedDrop {
+    public func shareDrop(_ jpeg: Data, audience: SharedDrop.Audience, caption: String?, clientDropID: UUID) async throws -> SharedDrop {
         guard let preview = ClickDropPixelation.previewJPEG(from: jpeg), let image = UIImage(data: jpeg) else {
             throw SharedDropPostError.invalidPhoto
         }
-        let body: [String: Any] = [
+        var body: [String: Any] = [
             "client_drop_id": clientDropID.uuidString.lowercased(),
             "audience": audience.rawValue,
             "mime_type": "image/jpeg",
@@ -76,6 +82,7 @@ extension ClickDropService {
             "width": Int(image.size.width * image.scale),
             "height": Int(image.size.height * image.scale)
         ]
+        if let caption, !caption.isEmpty { body["caption"] = caption }
         do {
             let (data, _) = try await api.executeRaw(APIRequest(
                 path: "/api/me/shared-drops",

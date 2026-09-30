@@ -28,6 +28,7 @@ struct EventDropsSection: View {
                 content(current)
             }
         }
+        .onAppear { state.seed(env.beaconExtras.cached(BeaconExtrasCache.eventDrops(beacon.id))) }
         .task(id: beacon.id) { await load() }
         .fullScreenCover(isPresented: $showingCamera) {
             ClickDropCameraView(
@@ -177,10 +178,16 @@ struct EventDropsSection: View {
 
     // MARK: - Loading & writes
 
+    /// After a write: the reload must not reuse a read that started before it.
+    private func reload() async {
+        env.beaconExtras.invalidate(BeaconExtrasCache.eventDrops(beacon.id))
+        await load()
+    }
+
     private func load() async {
         state.begin()
         do {
-            state.succeed(try await env.beacons.eventDrops(beaconID: beacon.id))
+            state.succeed(try await env.beaconExtras.load(BeaconExtrasCache.eventDrops(beacon.id)) { try await env.beacons.eventDrops(beaconID: beacon.id) })
         } catch {
             if !error.isCancellation { state.fail(error.userFacingMessage) }
         }
@@ -193,11 +200,11 @@ struct EventDropsSection: View {
             uploads.removeAll { $0.id == upload.id }
             message = nil
             ClickHaptics.success()
-            await load()
+            await reload()
         } catch let refusal as EventDropPostError {
             uploads.removeAll { $0.id == upload.id }
             message = refusal.errorDescription
-            await load()
+            await reload()
         } catch {
             guard !error.isCancellation else { return }
             if let index = uploads.firstIndex(where: { $0.id == upload.id }) { uploads[index].failed = true }
@@ -214,7 +221,7 @@ struct EventDropsSection: View {
     private func delete(_ drop: EventDrop) async {
         do {
             try await env.beacons.deleteEventDrop(beaconID: beacon.id, dropID: drop.id)
-            await load()
+            await reload()
         } catch {
             if !error.isCancellation { message = "Couldn't delete the drop. \(error.userFacingMessage)" }
         }
@@ -223,7 +230,7 @@ struct EventDropsSection: View {
     private func setShownToAbsentees(_ shown: Bool) async {
         do {
             try await env.beacons.setEventDropsShownToAbsentees(beaconID: beacon.id, shown)
-            await load()
+            await reload()
         } catch {
             if !error.isCancellation { message = error.userFacingMessage }
         }
