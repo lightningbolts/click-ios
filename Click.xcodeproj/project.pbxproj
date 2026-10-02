@@ -256,6 +256,20 @@
 		FE7F721EAB9B5837E82B2E80 /* AlertConfirmations.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2F4F22044C2816AF8734BE2B /* AlertConfirmations.swift */; };
 		FEEF3EB93549BC0E8570F080 /* ClicksSnapshot.swift in Sources */ = {isa = PBXBuildFile; fileRef = C4BA259925DD4913607E5A68 /* ClicksSnapshot.swift */; };
 		FEF90A5A9FF3E2503A3054DE /* GroupsHubsSettingsTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 08AA20450324A4CA55FE6A68 /* GroupsHubsSettingsTests.swift */; };
+		B10000000000000000000001 /* Place.swift in Sources */ = {isa = PBXBuildFile; fileRef = A10000000000000000000001 /* Place.swift */; };
+		B10000000000000000000002 /* PlaceRepository.swift in Sources */ = {isa = PBXBuildFile; fileRef = A10000000000000000000002 /* PlaceRepository.swift */; };
+		B10000000000000000000003 /* PlaceCopy.swift in Sources */ = {isa = PBXBuildFile; fileRef = A10000000000000000000003 /* PlaceCopy.swift */; };
+		B10000000000000000000004 /* PlaceDetailModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = A10000000000000000000004 /* PlaceDetailModel.swift */; };
+		B10000000000000000000005 /* PlaceDetailView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A10000000000000000000005 /* PlaceDetailView.swift */; };
+		B10000000000000000000006 /* PlaceFilterViews.swift in Sources */ = {isa = PBXBuildFile; fileRef = A10000000000000000000006 /* PlaceFilterViews.swift */; };
+		B10000000000000000000007 /* PlaceFilters.swift in Sources */ = {isa = PBXBuildFile; fileRef = A10000000000000000000007 /* PlaceFilters.swift */; };
+		B10000000000000000000008 /* PlacePinView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A10000000000000000000008 /* PlacePinView.swift */; };
+		B10000000000000000000009 /* MyPlacesView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A10000000000000000000009 /* MyPlacesView.swift */; };
+		B1000000000000000000000A /* PlacesModelTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1000000000000000000000A /* PlacesModelTests.swift */; };
+		B1000000000000000000000B /* PlaceFilterTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1000000000000000000000B /* PlaceFilterTests.swift */; };
+		B1000000000000000000000C /* PlaceDetailModelTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1000000000000000000000C /* PlaceDetailModelTests.swift */; };
+		B1000000000000000000000D /* PlacesSurfacesTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1000000000000000000000D /* PlacesSurfacesTests.swift */; };
+		B1000000000000000000000E /* place_filters.json in Resources */ = {isa = PBXBuildFile; fileRef = A1000000000000000000000E /* place_filters.json */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -561,6 +575,20 @@
 		FD5B79848C6B2337EA8CD816 /* ConnectionFlowTelemetry.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ConnectionFlowTelemetry.swift; sourceTree = "<group>"; };
 		FF26912F27B4E25BACF33C07 /* AppRouteDestination.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppRouteDestination.swift; sourceTree = "<group>"; };
 		FFFD67D7FE88321EBB61258B /* ReconnectNearbyCard.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ReconnectNearbyCard.swift; sourceTree = "<group>"; };
+		A10000000000000000000001 /* Place.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Place.swift; sourceTree = "<group>"; };
+		A10000000000000000000002 /* PlaceRepository.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PlaceRepository.swift; sourceTree = "<group>"; };
+		A10000000000000000000003 /* PlaceCopy.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PlaceCopy.swift; sourceTree = "<group>"; };
+		A10000000000000000000004 /* PlaceDetailModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PlaceDetailModel.swift; sourceTree = "<group>"; };
+		A10000000000000000000005 /* PlaceDetailView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PlaceDetailView.swift; sourceTree = "<group>"; };
+		A10000000000000000000006 /* PlaceFilterViews.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PlaceFilterViews.swift; sourceTree = "<group>"; };
+		A10000000000000000000007 /* PlaceFilters.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PlaceFilters.swift; sourceTree = "<group>"; };
+		A10000000000000000000008 /* PlacePinView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PlacePinView.swift; sourceTree = "<group>"; };
+		A10000000000000000000009 /* MyPlacesView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MyPlacesView.swift; sourceTree = "<group>"; };
+		A1000000000000000000000A /* PlacesModelTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PlacesModelTests.swift; sourceTree = "<group>"; };
+		A1000000000000000000000B /* PlaceFilterTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PlaceFilterTests.swift; sourceTree = "<group>"; };
+		A1000000000000000000000C /* PlaceDetailModelTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PlaceDetailModelTests.swift; sourceTree = "<group>"; };
+		A1000000000000000000000D /* PlacesSurfacesTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PlacesSurfacesTests.swift; sourceTree = "<group>"; };
+		A1000000000000000000000E /* place_filters.json */ = {isa = PBXFileReference; lastKnownFileType = text.json; path = place_filters.json; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXGroup section */
@@ -847,6 +875,11 @@
 		7C1D5AE71566772AFF0EC6E6 /* ClickTests */ = {
 			isa = PBXGroup;
 			children = (
+				C10000000000000000000003 /* Fixtures */,
+				A1000000000000000000000C /* PlaceDetailModelTests.swift */,
+				A1000000000000000000000B /* PlaceFilterTests.swift */,
+				A1000000000000000000000A /* PlacesModelTests.swift */,
+				A1000000000000000000000D /* PlacesSurfacesTests.swift */,
 				01E41A22521ABAE888EEBCDF /* AlertConfirmationTests.swift */,
 				51101C30845F8D2118C1B819 /* AppRouterTests.swift */,
 				E2EC3690E271F4DA7D73D18B /* AuthValidationTests.swift */,
@@ -1149,6 +1182,7 @@
 		E5F7B24B484573BD6B08D4EF /* Features */ = {
 			isa = PBXGroup;
 			children = (
+				C10000000000000000000002 /* Places */,
 				4287C0F895CEBA0F3EC808DF /* AddClick */,
 				8FA85ACAEA5871BE3BB4C203 /* Auth */,
 				50DB590C4507EF56BD158EF8 /* Availability */,
@@ -1254,6 +1288,7 @@
 		FDAC9137FA28BA7987722C2E /* Core */ = {
 			isa = PBXGroup;
 			children = (
+				C10000000000000000000001 /* Places */,
 				4161F9BFCAC59905857001C4 /* API */,
 				F64F09F5FC4B40C90C936EF0 /* Auth */,
 				D181A08C7B1C5DE8265F8498 /* Beacons */,
@@ -1296,6 +1331,37 @@
 				4F2961167D1BBB04E30C2C4B /* SoundtrackPreviewCard.swift */,
 			);
 			path = Events;
+			sourceTree = "<group>";
+		};
+		C10000000000000000000001 /* Places */ = {
+			isa = PBXGroup;
+			children = (
+				A10000000000000000000001 /* Place.swift */,
+				A10000000000000000000002 /* PlaceRepository.swift */,
+			);
+			path = Places;
+			sourceTree = "<group>";
+		};
+		C10000000000000000000002 /* Places */ = {
+			isa = PBXGroup;
+			children = (
+				A10000000000000000000003 /* PlaceCopy.swift */,
+				A10000000000000000000004 /* PlaceDetailModel.swift */,
+				A10000000000000000000005 /* PlaceDetailView.swift */,
+				A10000000000000000000006 /* PlaceFilterViews.swift */,
+				A10000000000000000000007 /* PlaceFilters.swift */,
+				A10000000000000000000008 /* PlacePinView.swift */,
+				A10000000000000000000009 /* MyPlacesView.swift */,
+			);
+			path = Places;
+			sourceTree = "<group>";
+		};
+		C10000000000000000000003 /* Fixtures */ = {
+			isa = PBXGroup;
+			children = (
+				A1000000000000000000000E /* place_filters.json */,
+			);
+			path = Fixtures;
 			sourceTree = "<group>";
 		};
 /* End PBXGroup section */
@@ -1341,6 +1407,7 @@
 			buildConfigurationList = 9265D52F2F10027093C3499C /* Build configuration list for PBXNativeTarget "ClickTests" */;
 			buildPhases = (
 				B26B176302B6099B3EAD910B /* Sources */,
+				D10000000000000000000001 /* Resources */,
 			);
 			buildRules = (
 			);
@@ -1450,6 +1517,14 @@
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
+		D10000000000000000000001 /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				B1000000000000000000000E /* place_filters.json in Resources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
 /* End PBXResourcesBuildPhase section */
 
 /* Begin PBXSourcesBuildPhase section */
@@ -1457,6 +1532,15 @@
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				B10000000000000000000001 /* Place.swift in Sources */,
+				B10000000000000000000002 /* PlaceRepository.swift in Sources */,
+				B10000000000000000000003 /* PlaceCopy.swift in Sources */,
+				B10000000000000000000004 /* PlaceDetailModel.swift in Sources */,
+				B10000000000000000000005 /* PlaceDetailView.swift in Sources */,
+				B10000000000000000000006 /* PlaceFilterViews.swift in Sources */,
+				B10000000000000000000007 /* PlaceFilters.swift in Sources */,
+				B10000000000000000000008 /* PlacePinView.swift in Sources */,
+				B10000000000000000000009 /* MyPlacesView.swift in Sources */,
 				101AE31A39E97F7A4C83F339 /* APIError.swift in Sources */,
 				0807AC2E7C11A5B869C9A575 /* APIRequest.swift in Sources */,
 				4A68B024FDEF49BCAA019EDD /* ActivityShareSheet.swift in Sources */,
@@ -1666,6 +1750,10 @@
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				B1000000000000000000000C /* PlaceDetailModelTests.swift in Sources */,
+				B1000000000000000000000B /* PlaceFilterTests.swift in Sources */,
+				B1000000000000000000000A /* PlacesModelTests.swift in Sources */,
+				B1000000000000000000000D /* PlacesSurfacesTests.swift in Sources */,
 				9E2076DD9D531A1C096BC3C9 /* AlertConfirmationTests.swift in Sources */,
 				D5294C030B43DFEE5786F7A0 /* AppRouterTests.swift in Sources */,
 				753E31D0F4B10ABEB242AEC8 /* AuthValidationTests.swift in Sources */,
