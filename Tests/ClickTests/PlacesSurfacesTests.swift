@@ -51,6 +51,7 @@ struct PlacesSurfacesTests {
     }
 
     @Test("My Places rows read \"4 visits · Last …\"")
+    @MainActor
     func myPlacesLine() throws {
         let visit = MyPlaceVisit(place: PlacesMapTests.place("p1"), checkInCount: 4, lastCheckInAt: nil, encounterCount: 2)
         #expect(MyPlacesView.visitsLine(visit) == "4 visits")
