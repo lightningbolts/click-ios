@@ -69,7 +69,10 @@ struct EncounterSensorTests {
     func handshakeBody() {
         var evidence = ProximityEvidence(myToken: "t", heardTokens: [], detectedDevices: [], latitude: nil, longitude: nil, simulatorMock: false)
         #expect(evidence.body["exact_barometric_elevation_m"] == nil)
-        evidence.sensor = EncounterSensorContext(noiseLevel: "QUIET", noiseDecibels: 40, barometricElevationMeters: 12.5)
+        evidence.sensor = EncounterSensorContext(noiseLevel: "QUIET", noiseDecibels: 40, barometer: AltitudeObservation(
+            absoluteAltitudeMeters: 12.5, accuracyMeters: nil, precisionMeters: nil,
+            relativeAltitudeMeters: nil, pressureKPa: nil, observedAt: .now
+        ))
         #expect(evidence.body["exact_barometric_elevation_m"] as? Double == 12.5)
         #expect(evidence.body["noise_level"] as? String == "QUIET")
         #expect(evidence.body["exact_noise_level_db"] as? Double == 40)

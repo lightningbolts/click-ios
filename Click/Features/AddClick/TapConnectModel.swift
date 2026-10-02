@@ -1,4 +1,3 @@
-import CoreLocation
 import Foundation
 import Observation
 
@@ -45,6 +44,9 @@ final class TapConnectModel {
 
     private let ble = BLEProximityService()
     private let ultrasonic = UltrasonicService()
+    /// This phone's location/altimeter capture, warmed while the flow is visible.
+    private let capture = ConnectionCaptureSession(method: "tap")
+    private var warmTask: Task<Void, Never>?
     private var environment: AppEnvironment?
     private var runTask: Task<Void, Never>?
     private var pendingID: String?
@@ -61,6 +63,22 @@ final class TapConnectModel {
 
     func attach(_ environment: AppEnvironment) {
         self.environment = environment
+    }
+
+    /// Starts location/altimeter acquisition as soon as the flow is on screen, so the tap itself
+    /// is never slower. Never prompts: location only when Location snap is on and permission
+    /// was already granted (otherwise `run()` asks and starts it).
+    func warmUp() {
+        guard let environment, let userID = environment.session.currentSession?.userId,
+              !capture.isRunning, warmTask == nil else { return }
+        warmTask = Task {
+            defer { warmTask = nil }
+            let wantsLocation = environment.location.isAuthorized
+                ? await environment.shouldCaptureConnectionLocation(userID: userID)
+                : false
+            guard !Task.isCancelled else { return }
+            capture.start(location: wantsLocation, altitude: environment.settings.barometricContextOptIn)
+        }
     }
 
     var isBusy: Bool {
@@ -87,6 +105,7 @@ final class TapConnectModel {
         runTask?.cancel()
         runTask = nil
         stopSensors()
+        stopCapture()
         pendingID = nil
         phase = .idle
         resetFactors()
@@ -95,6 +114,7 @@ final class TapConnectModel {
     /// Radios and microphone never outlive the visible flow. A stored pending tap is kept and
     /// re-polled when the app returns.
     func enterBackground() {
+        stopCapture()
         guard isBusy || phase == .waitingForPeer(exhausted: false) else { return }
         runTask?.cancel()
         runTask = nil
@@ -168,23 +188,25 @@ final class TapConnectModel {
         sound = .active
         location = captureLocation ? .active : .skipped("Off")
 
-        async let fix: CLLocation? = captureLocation
-            ? environment.location.preciseLocation(targetAccuracy: 20, timeout: .milliseconds(6500))
-            : nil
-        // Barometer and the hardware snapshot only: the microphone is busy with the ultrasonic exchange.
+        // Already warm when the screen had permission; otherwise starts now, beside BLE/audio.
+        capture.start(location: captureLocation, altitude: environment.settings.barometricContextOptIn)
+        // Hardware snapshot only: the microphone is busy with the ultrasonic exchange.
         async let sensor = EncounterSensorSampler.sample(settings: environment.settings, includeNoise: false, includeHardware: true)
 
         var evidence: ProximityEvidence
+        var observed = ConnectionCaptureSession.Snapshot()
         if simulator {
             try? await Task.sleep(for: .seconds(2))
-            let located = await fix
+            observed = await capture.snapshot(at: .now, wait: .inFlow)
+            let located = captureLocation ? observed.location : nil
             evidence = ProximityEvidence(
                 myToken: ProximityCodec.simulatorMyToken,
                 heardTokens: ProximityCodec.simulatorHeardTokens,
                 detectedDevices: [],
-                latitude: located?.coordinate.latitude,
-                longitude: located?.coordinate.longitude,
-                simulatorMock: true
+                latitude: located?.latitude,
+                longitude: located?.longitude,
+                simulatorMock: true,
+                location: located
             )
         } else {
             let token = ProximityCodec.randomToken()
@@ -202,19 +224,25 @@ final class TapConnectModel {
             let heardTokens = await heard
             let detectedTokens = await detected
             ultrasonic.stop()
-            let located = await fix
+            // The connection moment: this phone's BLE/ultrasonic evidence exchange just ended.
+            // Its own best fix around now, waiting at most a short grace for a mediocre one.
+            observed = await capture.snapshot(at: .now, wait: .inFlow)
+            let located = captureLocation ? observed.location : nil
             sound = heardTokens.isEmpty ? .none : .found
             bluetooth = detectedTokens.isEmpty ? .none : .found
             evidence = ProximityEvidence(
                 myToken: token,
                 heardTokens: heardTokens,
                 detectedDevices: detectedTokens.sorted(),
-                latitude: located?.coordinate.latitude,
-                longitude: located?.coordinate.longitude,
-                simulatorMock: false
+                latitude: located?.latitude,
+                longitude: located?.longitude,
+                simulatorMock: false,
+                location: located
             )
         }
+        stopCapture()
         evidence.sensor = await sensor
+        evidence.sensor.barometer = observed.altitude
         if captureLocation {
             location = evidence.latitude == nil ? .none : .found
         }
@@ -375,6 +403,13 @@ final class TapConnectModel {
     private func stopSensors() {
         ble.stop()
         ultrasonic.stop()
+    }
+
+    /// High-accuracy location and the altimeter never outlive the capture they serve.
+    private func stopCapture() {
+        warmTask?.cancel()
+        warmTask = nil
+        capture.stop()
     }
 
     private func resetFactors() {
