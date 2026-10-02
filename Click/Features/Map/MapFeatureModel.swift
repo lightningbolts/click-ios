@@ -9,6 +9,7 @@ enum MapSelection: Hashable {
     case hub(String)
     case person(String)
     case hangout(String)
+    case place(String)
 }
 
 /// A plan made in a chat with a place set: on the map and in Nearby until it ends.
@@ -35,6 +36,7 @@ struct MapItem: Identifiable, Equatable {
         case hub(NearbyHub)
         case person(ConnectionPin)
         case hangout(PlannedHangout)
+        case place(PlaceSummary)
     }
 
     let kind: Kind
@@ -45,6 +47,7 @@ struct MapItem: Identifiable, Equatable {
         case .hub(let hub): .hub(hub.id)
         case .person(let pin): .person(pin.userID)
         case .hangout(let hangout): .hangout(hangout.message.id)
+        case .place(let place): .place(place.id)
         }
     }
 
@@ -54,6 +57,7 @@ struct MapItem: Identifiable, Equatable {
         case .hub(let hub): hub.coordinate
         case .person(let pin): CLLocationCoordinate2D(latitude: pin.latitude, longitude: pin.longitude)
         case .hangout(let hangout): CLLocationCoordinate2D(latitude: hangout.latitude, longitude: hangout.longitude)
+        case .place(let place): place.coordinate
         }
     }
 
@@ -63,6 +67,7 @@ struct MapItem: Identifiable, Equatable {
         case .hub: .hubs
         case .person: .people
         case .hangout: .hangouts
+        case .place: .places
         }
     }
 
@@ -72,6 +77,7 @@ struct MapItem: Identifiable, Equatable {
         case .hub(let hub): hub.name
         case .person(let pin): pin.displayName
         case .hangout(let hangout): hangout.plan.title
+        case .place(let place): place.name
         }
     }
 
@@ -82,6 +88,7 @@ struct MapItem: Identifiable, Equatable {
         case .hub(let hub): .hub(hubID: hub.id)
         case .person(let pin): .userProfile(userID: pin.userID, connectionID: pin.connectionID)
         case .hangout(let hangout): hangout.message.route
+        case .place(let place): .place(idOrSlug: place.id, anchorToken: nil)
         }
     }
 
@@ -100,6 +107,8 @@ struct MapItem: Identifiable, Equatable {
         case .hangout(let hangout):
             return ([PlanCardView.whenText(hangout.plan.startsAt, until: hangout.plan.endsAt)] + [hangout.plan.placeName].compactMap { $0 })
                 .joined(separator: " · ")
+        case .place(let place):
+            return PlaceCopy.mapSubtitle(place)
         }
     }
 }
@@ -134,6 +143,12 @@ final class MapFeatureModel {
     private(set) var hangouts: [PlannedHangout] = []
 
     var layers: Set<MapLayer> = Set(MapLayer.allCases)
+    /// Nearby Place filters (§6.6), persisted per device.
+    var placeFilters: PlaceFilters = PlaceFilters.load() {
+        didSet { placeFilters.save() }
+    }
+    /// Whether the Click Places flag is on for this user.
+    var placesEnabled: Bool { environment?.features.isEnabled(.clickPlaces) == true }
     /// Single-layer filter chosen from Nearby chips; applies to the map too.
     var filter: MapLayer?
     var selection: MapSelection?
@@ -161,18 +176,50 @@ final class MapFeatureModel {
     // MARK: - Derived data (map and list read the same items)
 
     func items(pins: [ConnectionPin], applyingFilter: Bool = true, now: Date = .now) -> [MapItem] {
-        let deleted = environment?.router.deletedBeaconIDs ?? []
-        var beacons = (discovery.value?.beacons ?? []).filter { $0.isActive(at: now) && !deleted.contains($0.id) }
+        Self.items(
+            discovery: discovery.value,
+            focusedBeacons: focusedBeacons,
+            deleted: environment?.router.deletedBeaconIDs ?? [],
+            pins: pins,
+            hangouts: hangouts,
+            placesEnabled: placesEnabled,
+            placeFilters: placeFilters,
+            layers: layers,
+            filter: applyingFilter ? filter : nil,
+            now: now
+        )
+    }
+
+    /// Pure item assembly (testable without an environment). With Places on, a Place's official
+    /// events render inside its pin: those beacons are dropped from the list (§6.5 event merge).
+    nonisolated static func items(
+        discovery: NearbyDiscovery?,
+        focusedBeacons: [MapBeacon] = [],
+        deleted: Set<String> = [],
+        pins: [ConnectionPin] = [],
+        hangouts: [PlannedHangout] = [],
+        placesEnabled: Bool,
+        placeFilters: PlaceFilters = .none,
+        layers: Set<MapLayer> = Set(MapLayer.allCases),
+        filter: MapLayer? = nil,
+        now: Date = .now
+    ) -> [MapItem] {
+        var beacons = (discovery?.beacons ?? []).filter { $0.isActive(at: now) && !deleted.contains($0.id) }
         for focused in focusedBeacons where !beacons.contains(where: { $0.id == focused.id }) {
             beacons.append(focused)
         }
+        let places = placesEnabled ? placeFilters.apply(discovery?.places ?? []) : []
+        if placesEnabled {
+            let placeIDs = Set((discovery?.places ?? []).map(\.id))
+            beacons.removeAll { beacon in beacon.venueID.map(placeIDs.contains) ?? false }
+        }
         let all = beacons.map { MapItem(kind: .beacon($0)) }
-            + (discovery.value?.hubs ?? []).map { MapItem(kind: .hub($0)) }
+            + places.map { MapItem(kind: .place($0)) }
+            + (discovery?.hubs ?? []).map { MapItem(kind: .hub($0)) }
             + pins.map { MapItem(kind: .person($0)) }
             + hangouts.filter { $0.plan.endsOrAssumedEnd > now }.map { MapItem(kind: .hangout($0)) }
         return all.filter { item in
-            layers.contains(item.layer)
-                && (!applyingFilter || filter == nil || filter == item.layer)
+            layers.contains(item.layer) && (filter == nil || filter == item.layer)
         }
     }
 
@@ -187,11 +234,17 @@ final class MapFeatureModel {
         let upcoming = beaconItems { $0.isEvent && $0.schedule?.isLive(at: now) != true }
             .sorted { lhs, rhs in startDate(lhs) < startDate(rhs) }
         let hubs = visible.filter { if case .hub = $0.kind { return true }; return false }
+        let placeSummaries = visible.compactMap { item -> PlaceSummary? in
+            if case .place(let place) = item.kind { return place }
+            return nil
+        }
+        let places = PlaceOrdering.sorted(placeSummaries).map { MapItem(kind: .place($0)) }
         let hangouts = visible.filter { if case .hangout = $0.kind { return true }; return false }
         var sections = [
             NearbySection(id: "live", title: "Happening now", items: live),
             NearbySection(id: "hangouts", title: MapLayer.hangouts.label, items: hangouts),
             NearbySection(id: "events", title: "Events", items: upcoming),
+            NearbySection(id: "places", title: MapLayer.places.label, items: places),
             NearbySection(id: "hubs", title: "Hubs", items: hubs)
         ]
         for layer in [MapLayer.social, .soundtracks, .alerts, .other] {
