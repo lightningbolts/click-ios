@@ -52,6 +52,17 @@ enum ConnectionLocationQuality {
         static let cold = Wait(settleAccuracy: goodAccuracy, grace: coldCaptureDuration)
     }
 
+    /// Coarse accuracy band for diagnostics and aggregate telemetry.
+    static func tier(_ accuracy: CLLocationAccuracy) -> String {
+        switch accuracy {
+        case ...excellentAccuracy: "excellent"
+        case ...goodAccuracy: "good"
+        case ...usableAccuracy: "usable"
+        case ...maximumUsefulAccuracy: "coarse"
+        default: "unusable"
+        }
+    }
+
     static func isUseful(_ fix: LocationObservation) -> Bool {
         fix.horizontalAccuracyMeters <= maximumUsefulAccuracy
     }

@@ -27,7 +27,7 @@ enum EncounterSensorSampler {
         return EncounterSensorContext(
             noiseLevel: noise.map(noiseLevel(decibels:)),
             noiseDecibels: noise.map { ($0 * 10).rounded() / 10 },
-            luxLevel: vibe.luxLevel,
+            screenBrightnessProxy: vibe.screenBrightnessProxy,
             motionVariance: vibe.motionVariance,
             compassAzimuth: vibe.compassAzimuth,
             batteryLevel: vibe.batteryLevel
@@ -81,12 +81,13 @@ enum EncounterSensorSampler {
 
 /// Connect-time hardware snapshot (KMP `HardwareVibeMonitor.ios`): ~0.5 s of accelerometer
 /// variance and compass heading, plus battery and a light proxy. iOS exposes no ambient-light
-/// sensor, so `luxLevel` is screen brightness × 1000 exactly as KMP wrote it. No permission
+/// sensor, so `screenBrightnessProxy` is screen brightness × 1000 exactly as KMP wrote it (sent as
+/// the legacy `lux_level`; never treat it as ambient illumination). No permission
 /// prompts; unavailable readings stay nil.
 @MainActor
 enum HardwareVibeSampler {
     struct Snapshot: Equatable, Sendable {
-        var luxLevel: Double?
+        var screenBrightnessProxy: Double?
         var motionVariance: Double?
         var compassAzimuth: Double?
         var batteryLevel: Int?
@@ -96,7 +97,7 @@ enum HardwareVibeSampler {
     private nonisolated static let gravity = 9.80665
 
     static func snapshot() async -> Snapshot {
-        var result = Snapshot(luxLevel: luxProxy(), batteryLevel: batteryPercent())
+        var result = Snapshot(screenBrightnessProxy: brightnessProxy(), batteryLevel: batteryPercent())
         let motion = CMMotionManager()
         let readings = Readings()
         if motion.isAccelerometerAvailable {
@@ -143,7 +144,7 @@ enum HardwareVibeSampler {
         return value.isFinite ? value : nil
     }
 
-    private static func luxProxy() -> Double? {
+    private static func brightnessProxy() -> Double? {
         let screen = UIApplication.shared.connectedScenes
             .compactMap { $0 as? UIWindowScene }
             .first { $0.activationState == .foregroundActive }?.screen
