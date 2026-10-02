@@ -3,8 +3,7 @@ import Foundation
 /// Connection-flow funnel (spec §71.2, `POST /api/telemetry/connection-flow`), with the same
 /// event names and sampling as KMP `ConnectionFlowTelemetry`: failures and drop-offs are always
 /// sent; successes are sampled at 10%. Payloads carry counts and flags only — no user IDs,
-/// tokens or coordinates. `capture_quality` adds allowlisted sensor-quality aggregates
-/// (accuracy, latencies, SNR) built by `ConnectionSensorObservation.captureQuality`.
+/// tokens or coordinates.
 public struct ConnectionFlowTelemetry: Sendable {
     public enum Event: String, CaseIterable, Sendable {
         // Always sent.
@@ -57,8 +56,7 @@ public struct ConnectionFlowTelemetry: Sendable {
         isReconnect: Bool? = nil,
         selectedCount: Int? = nil,
         candidateCount: Int? = nil,
-        reason: String? = nil,
-        captureQuality: [String: TelemetryValue]? = nil
+        reason: String? = nil
     ) -> [String: TelemetryValue]? {
         guard event.isAlwaysSent || sample() < Self.successSampleRate else { return nil }
         var body: [String: TelemetryValue] = ["event": .string(event.rawValue)]
@@ -68,7 +66,6 @@ public struct ConnectionFlowTelemetry: Sendable {
         if let selectedCount { body["selected_count"] = .int(max(0, selectedCount)) }
         if let candidateCount { body["candidate_count"] = .int(max(0, candidateCount)) }
         if let reason, !reason.isEmpty { body["reason"] = .string(Self.sanitizedReason(reason)) }
-        if let captureQuality, !captureQuality.isEmpty { body["capture_quality"] = .object(captureQuality) }
         return body
     }
 
@@ -79,12 +76,10 @@ public struct ConnectionFlowTelemetry: Sendable {
         isReconnect: Bool? = nil,
         selectedCount: Int? = nil,
         candidateCount: Int? = nil,
-        reason: String? = nil,
-        captureQuality: [String: TelemetryValue]? = nil
+        reason: String? = nil
     ) async {
         guard let body = payload(event, peerCount: peerCount, isGroup: isGroup, isReconnect: isReconnect,
-                                 selectedCount: selectedCount, candidateCount: candidateCount, reason: reason,
-                                 captureQuality: captureQuality) else { return }
+                                 selectedCount: selectedCount, candidateCount: candidateCount, reason: reason) else { return }
         await queue.enqueue(TelemetryEnvelope(path: Self.path, payload: body, createdAt: .now))
     }
 

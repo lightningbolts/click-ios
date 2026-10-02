@@ -81,7 +81,7 @@ struct EncounterSensorTests {
     @Test("Handshake body carries the connect-time hardware snapshot with encounter column keys")
     func handshakeHardwareBody() {
         var evidence = ProximityEvidence(myToken: "t", heardTokens: [], detectedDevices: [], latitude: nil, longitude: nil, simulatorMock: false)
-        evidence.sensor = EncounterSensorContext(screenBrightnessProxy: 600, motionVariance: 0.04, compassAzimuth: 114.9, batteryLevel: 56)
+        evidence.sensor = EncounterSensorContext(luxLevel: 600, motionVariance: 0.04, compassAzimuth: 114.9, batteryLevel: 56)
         #expect(evidence.body["lux_level"] as? Double == 600)
         #expect(evidence.body["motion_variance"] as? Double == 0.04)
         #expect(evidence.body["compass_azimuth"] as? Double == 114.9)

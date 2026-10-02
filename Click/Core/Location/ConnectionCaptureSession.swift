@@ -2,33 +2,19 @@ import CoreLocation
 import CoreMotion
 import Foundation
 
-/// Ephemeral, foreground capture for one connection flow (Tap to Connect or a QR scan). While
-/// the flow is visible it warms Core Location at the highest accuracy (plus heading), the
-/// altimeter and a 25 Hz device-motion stream, keeps small in-memory buffers of this phone's
-/// own readings, and at the connection moment hands back everything around that instant.
-/// Nothing outlives the flow: `stop()` (and the idle cap) end every sensor and drop the buffers.
+/// Ephemeral, foreground capture for one connection flow (Tap to Connect or a QR scan). It
+/// warms Core Location at the highest accuracy and the altimeter while the flow is visible,
+/// keeps a small in-memory buffer of this phone's own readings, and at the connection moment
+/// hands back the best observation around that instant. Nothing outlives the flow: `stop()`
+/// (and the idle cap) end high-accuracy location and the altimeter and drop the buffers.
 ///
 /// Never prompts. Callers start location only after Location snap and When-In-Use permission
-/// were resolved, and the altimeter only when barometric context is opted in. Device motion
-/// needs no permission (it already fed the connect-time hardware snapshot).
+/// were resolved, and the altimeter only when barometric context is opted in.
 @MainActor
 final class ConnectionCaptureSession: NSObject, CLLocationManagerDelegate {
-    /// This phone's readings around one connection moment.
     struct Snapshot: Equatable, Sendable {
-        var moment = Date.now
-        /// `moment` on the monotonic sensor clock.
-        var momentUptime = SensorClock.uptime
-        var startedAt: Date?
-        var finishedAt = Date.now
         var location: LocationObservation?
-        var locationUpdates = 0
         var altitude: AltitudeObservation?
-        var absoluteAltitudeSamples: [AbsoluteAltitudeSample] = []
-        var relativeAltitudeSamples: [RelativeAltitudeSample] = []
-        var motionSamples: [MotionSample] = []
-        var heading: HeadingSample?
-        var activity: ConnectionSensorObservation.Activity?
-        var pedometer: ConnectionSensorObservation.Pedometer?
     }
 
     private typealias Quality = ConnectionLocationQuality
@@ -42,20 +28,12 @@ final class ConnectionCaptureSession: NSObject, CLLocationManagerDelegate {
     private var fixes: [LocationObservation] = []
     private var updatesSeen = 0
     private var bestProgression: [Double] = []
-    private var latestHeading: HeadingSample?
 
     private var altimeter: CMAltimeter?
     private var altitudeStartedAt: Date?
     private var absoluteSamples: [AbsoluteAltitudeSample] = []
     private var relativeSamples: [RelativeAltitudeSample] = []
 
-    private var motionManager: CMMotionManager?
-    private var motionSamples: [MotionSample] = []
-    /// Device-motion history kept while warm: enough for the window around the moment.
-    private static let motionHistory: TimeInterval = 10
-    private static let motionCapacity = 300
-
-    private var startedAt: Date?
     private var idleStop: Task<Void, Never>?
 
     init(method: String, provider: LocationProvider = .shared) {
@@ -63,15 +41,13 @@ final class ConnectionCaptureSession: NSObject, CLLocationManagerDelegate {
         self.provider = provider
     }
 
-    var isRunning: Bool { manager != nil || altimeter != nil || motionManager != nil }
+    var isRunning: Bool { manager != nil || altimeter != nil }
 
     /// Starts whichever parts are not running yet and (re)arms the idle cap.
-    func start(location: Bool, altitude: Bool, motion: Bool = true) {
+    func start(location: Bool, altitude: Bool) {
         if location, manager == nil, provider.isAuthorized { startLocation() }
         if altitude, altimeter == nil { startAltimeter() }
-        if motion, motionManager == nil { startMotion() }
         guard isRunning else { return }
-        if startedAt == nil { startedAt = .now }
         idleStop?.cancel()
         idleStop = Task { [weak self] in
             try? await Task.sleep(for: .seconds(Quality.maximumWarmDuration))
@@ -83,34 +59,25 @@ final class ConnectionCaptureSession: NSObject, CLLocationManagerDelegate {
     func stop() {
         idleStop?.cancel()
         idleStop = nil
-        startedAt = nil
         manager?.stopUpdatingLocation()
-        manager?.stopUpdatingHeading()
         manager?.delegate = nil
         manager = nil
         locationStartedAt = nil
         fixes = []
         updatesSeen = 0
         bestProgression = []
-        latestHeading = nil
         altimeter?.stopAbsoluteAltitudeUpdates()
         altimeter?.stopRelativeAltitudeUpdates()
         altimeter = nil
         altitudeStartedAt = nil
         absoluteSamples = []
         relativeSamples = []
-        motionManager?.stopDeviceMotionUpdates()
-        motionManager = nil
-        motionSamples = []
     }
 
-    /// Everything this phone measured around `moment`. Waits only while a wait could help:
+    /// The best observation of this phone around `moment`. Waits only while a wait could help:
     /// until the fix is settled (`wait.settleAccuracy` after the minimum window) or the
-    /// policy's deadline, and for the altimeter at most its short sampling window. Motion is
-    /// never waited for: the window holds what arrived before submission.
+    /// policy's deadline, and for the altimeter at most its short sampling window.
     func snapshot(at moment: Date = .now, wait: ConnectionLocationQuality.Wait) async -> Snapshot {
-        async let activity = MotionContextSampler.activity(at: moment)
-        async let pedometer = MotionContextSampler.pedometer(at: moment)
         let altitudeDeadline = altitudeStartedAt.map { $0.addingTimeInterval(AltitudeStabilizer.sampleWindow) }
         while !Task.isCancelled {
             let now = Date.now
@@ -125,27 +92,14 @@ final class ConnectionCaptureSession: NSObject, CLLocationManagerDelegate {
             try? await Task.sleep(for: .milliseconds(100))
         }
         let end = Date.now
-        let earliest = moment.addingTimeInterval(-Quality.selectionLookback)
-        let fix = Quality.best(fixes, around: moment, until: end)
         let snapshot = Snapshot(
-            moment: moment,
-            momentUptime: SensorClock.stamp(for: moment, now: end),
-            startedAt: startedAt,
-            finishedAt: end,
-            location: fix,
-            locationUpdates: updatesSeen,
+            location: Quality.best(fixes, around: moment, until: end),
             altitude: AltitudeStabilizer.stabilized(
                 absolute: absoluteSamples, relative: relativeSamples, around: moment, until: end
-            ),
-            absoluteAltitudeSamples: absoluteSamples.filter { $0.observedAt >= earliest && $0.observedAt <= end },
-            relativeAltitudeSamples: relativeSamples.filter { $0.observedAt >= earliest && $0.observedAt <= end },
-            motionSamples: motionSamples,
-            heading: latestHeading.flatMap { $0.observedAt >= earliest ? $0 : nil },
-            activity: await activity,
-            pedometer: await pedometer
+            )
         )
-        logDiagnostics(snapshot)
-        if let fix { provider.record(fix.asLocation) }
+        logDiagnostics(snapshot, moment: moment, end: end)
+        if let fix = snapshot.location { provider.record(fix.asLocation) }
         return snapshot
     }
 
@@ -169,10 +123,6 @@ final class ConnectionCaptureSession: NSObject, CLLocationManagerDelegate {
             }
         }
         manager.startUpdatingLocation()
-        if CLLocationManager.headingAvailable() {
-            manager.headingFilter = kCLHeadingFilterNone
-            manager.startUpdatingHeading()
-        }
     }
 
     nonisolated func locationManager(_ manager: CLLocationManager, didUpdateLocations locations: [CLLocation]) {
@@ -186,18 +136,6 @@ final class ConnectionCaptureSession: NSObject, CLLocationManagerDelegate {
             for fix in observations { self.ingest(fix) }
         }
     }
-
-    nonisolated func locationManager(_ manager: CLLocationManager, didUpdateHeading newHeading: CLHeading) {
-        let sample = HeadingSample(newHeading)
-        let source = ObjectIdentifier(manager)
-        Task { @MainActor in
-            guard let current = self.manager, ObjectIdentifier(current) == source else { return }
-            self.latestHeading = sample
-        }
-    }
-
-    /// Never interrupts a connection with the system's compass-calibration screen.
-    nonisolated func locationManagerShouldDisplayHeadingCalibration(_ manager: CLLocationManager) -> Bool { false }
 
     nonisolated func locationManager(_ manager: CLLocationManager, didFailWithError error: Error) {}
 
@@ -228,7 +166,7 @@ final class ConnectionCaptureSession: NSObject, CLLocationManagerDelegate {
                     altitudeMeters: data.altitude,
                     accuracyMeters: data.accuracy,
                     precisionMeters: data.precision,
-                    observedAt: SensorClock.date(atUptime: data.timestamp)
+                    observedAt: Self.date(sinceBoot: data.timestamp)
                 )
                 MainActor.assumeIsolated { self?.append(sample) }
             }
@@ -239,7 +177,7 @@ final class ConnectionCaptureSession: NSObject, CLLocationManagerDelegate {
                 let sample = RelativeAltitudeSample(
                     relativeAltitudeMeters: data.relativeAltitude.doubleValue,
                     pressureKPa: data.pressure.doubleValue,
-                    observedAt: SensorClock.date(atUptime: data.timestamp)
+                    observedAt: Self.date(sinceBoot: data.timestamp)
                 )
                 MainActor.assumeIsolated { self?.append(sample) }
             }
@@ -256,52 +194,28 @@ final class ConnectionCaptureSession: NSObject, CLLocationManagerDelegate {
         if relativeSamples.count > Quality.bufferCapacity { relativeSamples.removeFirst() }
     }
 
-    // MARK: - Device motion
-
-    private func startMotion() {
-        let motion = CMMotionManager()
-        guard motion.isDeviceMotionAvailable else { return }
-        motion.deviceMotionUpdateInterval = 1 / Double(MotionObservation.sampleRateHz)
-        // A magnetometer-referenced frame also yields the calibrated magnetic field.
-        let frames = CMMotionManager.availableAttitudeReferenceFrames()
-        let frame: CMAttitudeReferenceFrame = frames.contains(.xMagneticNorthZVertical)
-            ? .xMagneticNorthZVertical
-            : (frames.contains(.xArbitraryCorrectedZVertical) ? .xArbitraryCorrectedZVertical : .xArbitraryZVertical)
-        motion.startDeviceMotionUpdates(using: frame, to: .main) { [weak self] data, _ in
-            guard let data else { return }
-            let sample = MotionSample(data)
-            MainActor.assumeIsolated { self?.append(sample) }
-        }
-        motionManager = motion
-    }
-
-    private func append(_ sample: MotionSample) {
-        motionSamples.append(sample)
-        let horizon = sample.uptime - Self.motionHistory
-        if let stale = motionSamples.firstIndex(where: { $0.uptime >= horizon }), stale > 0 {
-            motionSamples.removeFirst(stale)
-        }
-        if motionSamples.count > Self.motionCapacity { motionSamples.removeFirst(motionSamples.count - Self.motionCapacity) }
+    /// `CMLogItem.timestamp` counts seconds since boot.
+    private nonisolated static func date(sinceBoot timestamp: TimeInterval) -> Date {
+        Date(timeIntervalSinceNow: timestamp - ProcessInfo.processInfo.systemUptime)
     }
 
     // MARK: - Diagnostics (DEBUG, `-connection-log`; never coordinates, never telemetry)
 
-    private func logDiagnostics(_ snapshot: Snapshot) {
+    private func logDiagnostics(_ snapshot: Snapshot, moment: Date, end: Date) {
         #if DEBUG
         guard DebugLaunch.has("-connection-log") else { return }
         let ms = { (interval: TimeInterval) in String(Int((interval * 1000).rounded())) }
         let meters = { (value: Double?) in value.map { String(format: "%.1f", $0) } ?? "–" }
         var lines = ["method=\(method)"]
         if let locationStartedAt {
-            lines.append("capture_duration_ms=\(ms(snapshot.finishedAt.timeIntervalSince(locationStartedAt)))")
+            lines.append("capture_duration_ms=\(ms(end.timeIntervalSince(locationStartedAt)))")
             lines.append("updates_seen=\(updatesSeen)")
             if let fix = snapshot.location {
                 lines.append("selected:")
-                lines.append("  horizontal_accuracy_m=\(meters(fix.horizontalAccuracyMeters)) tier=\(Quality.tier(fix.horizontalAccuracyMeters))")
+                lines.append("  horizontal_accuracy_m=\(meters(fix.horizontalAccuracyMeters)) tier=\(Self.tier(fix.horizontalAccuracyMeters))")
                 lines.append("  vertical_accuracy_m=\(meters(fix.verticalAccuracyMeters))")
-                lines.append("  age_at_connection_ms=\(ms(snapshot.moment.timeIntervalSince(fix.observedAt)))")
+                lines.append("  age_at_connection_ms=\(ms(moment.timeIntervalSince(fix.observedAt)))")
                 lines.append("  floor=\(fix.floorLevel.map(String.init) ?? "–")")
-                lines.append("  speed_mps=\(meters(fix.speedMetersPerSecond))")
                 lines.append("  full_accuracy=\(fix.isFullAccuracy)")
                 if fix.isSimulatedBySoftware == true { lines.append("  simulated=true") }
             } else {
@@ -312,7 +226,7 @@ final class ConnectionCaptureSession: NSObject, CLLocationManagerDelegate {
         }
         if altitudeStartedAt != nil {
             lines.append("[altimeter]")
-            lines.append("samples=\(snapshot.absoluteAltitudeSamples.count)")
+            lines.append("samples=\(absoluteSamples.count)")
             lines.append("altitude_m=\(meters(snapshot.altitude?.absoluteAltitudeMeters))")
             lines.append("accuracy_m=\(meters(snapshot.altitude?.accuracyMeters))")
             lines.append("precision_m=\(meters(snapshot.altitude?.precisionMeters))")
@@ -321,20 +235,15 @@ final class ConnectionCaptureSession: NSObject, CLLocationManagerDelegate {
         ConnectionDebugLog.shared.note("[location] \(method)", lines.joined(separator: "\n"))
         #endif
     }
-}
 
-extension HeadingSample {
-    /// Negative heading values mean "invalid" in Core Location; they become nil.
-    init(_ heading: CLHeading) {
-        let valid = { (value: Double) -> Double? in value.isFinite && value >= 0 ? value : nil }
-        let field = [heading.x, heading.y, heading.z]
-        self.init(
-            magneticHeading: valid(heading.magneticHeading),
-            trueHeading: valid(heading.trueHeading),
-            headingAccuracy: valid(heading.headingAccuracy),
-            field: field.allSatisfy(\.isFinite) ? field : nil,
-            observedAt: heading.timestamp
-        )
+    static func tier(_ accuracy: CLLocationAccuracy) -> String {
+        switch accuracy {
+        case ...Quality.excellentAccuracy: "excellent"
+        case ...Quality.goodAccuracy: "good"
+        case ...Quality.usableAccuracy: "usable"
+        case ...Quality.maximumUsefulAccuracy: "coarse"
+        default: "unusable"
+        }
     }
 }
 

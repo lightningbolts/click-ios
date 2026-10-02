@@ -9,8 +9,7 @@ public struct EncounterSensorContext: Codable, Equatable, Sendable {
     public var noiseDecibels: Double?
     public var elevationCategory: String?
     public var barometer: AltitudeObservation?
-    /// Screen brightness × 1000 — not ambient light. Sent as the legacy `lux_level` key.
-    public var screenBrightnessProxy: Double?
+    public var luxLevel: Double?
     public var motionVariance: Double?
     public var compassAzimuth: Double?
     public var batteryLevel: Int?
@@ -20,7 +19,7 @@ public struct EncounterSensorContext: Codable, Equatable, Sendable {
         noiseDecibels: Double? = nil,
         elevationCategory: String? = nil,
         barometer: AltitudeObservation? = nil,
-        screenBrightnessProxy: Double? = nil,
+        luxLevel: Double? = nil,
         motionVariance: Double? = nil,
         compassAzimuth: Double? = nil,
         batteryLevel: Int? = nil
@@ -29,7 +28,7 @@ public struct EncounterSensorContext: Codable, Equatable, Sendable {
         self.noiseDecibels = noiseDecibels
         self.elevationCategory = elevationCategory
         self.barometer = barometer
-        self.screenBrightnessProxy = screenBrightnessProxy
+        self.luxLevel = luxLevel
         self.motionVariance = motionVariance
         self.compassAzimuth = compassAzimuth
         self.batteryLevel = batteryLevel
@@ -44,7 +43,7 @@ public struct EncounterSensorContext: Codable, Equatable, Sendable {
         if let noiseDecibels { out["exact_noise_level_db"] = noiseDecibels }
         if let elevationCategory { out["elevation_category"] = elevationCategory }
         if let barometer { out.merge(barometer.columns) { current, _ in current } }
-        if let screenBrightnessProxy { out["lux_level"] = screenBrightnessProxy }
+        if let luxLevel { out["lux_level"] = luxLevel }
         if let motionVariance { out["motion_variance"] = motionVariance }
         if let compassAzimuth { out["compass_azimuth"] = compassAzimuth }
         if let batteryLevel { out["battery_level"] = batteryLevel }

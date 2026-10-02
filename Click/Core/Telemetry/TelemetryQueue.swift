@@ -13,18 +13,13 @@ public enum TelemetryValue: Codable, Equatable, Sendable {
     case int(Int)
     case bool(Bool)
     case null
-    case double(Double)
-    /// Nested allowlisted aggregates (e.g. `capture_quality`); never identifiers.
-    case object([String: TelemetryValue])
 
     public init(from decoder: Decoder) throws {
         let container = try decoder.singleValueContainer()
         if container.decodeNil() { self = .null }
         else if let value = try? container.decode(Bool.self) { self = .bool(value) }
         else if let value = try? container.decode(Int.self) { self = .int(value) }
-        else if let value = try? container.decode(Double.self) { self = .double(value) }
-        else if let value = try? container.decode(String.self) { self = .string(value) }
-        else { self = .object(try container.decode([String: TelemetryValue].self)) }
+        else { self = .string(try container.decode(String.self)) }
     }
 
     public func encode(to encoder: Encoder) throws {
@@ -34,8 +29,6 @@ public enum TelemetryValue: Codable, Equatable, Sendable {
         case .int(let value): try container.encode(value)
         case .bool(let value): try container.encode(value)
         case .null: try container.encodeNil()
-        case .double(let value): try container.encode(value)
-        case .object(let value): try container.encode(value)
         }
     }
 
@@ -45,8 +38,6 @@ public enum TelemetryValue: Codable, Equatable, Sendable {
         case .int(let value): value
         case .bool(let value): value
         case .null: NSNull()
-        case .double(let value): value
-        case .object(let value): value.mapValues(\.jsonObject)
         }
     }
 }

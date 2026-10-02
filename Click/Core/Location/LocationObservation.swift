@@ -23,15 +23,9 @@ public struct LocationObservation: Codable, Equatable, Sendable {
     /// false when the user granted only approximate location.
     let isFullAccuracy: Bool
 
-    /// Source provenance (`CLLocationSourceInformation`).
+    /// Diagnostics only; not sent to the server.
     let isSimulatedBySoftware: Bool?
     let isProducedByAccessory: Bool?
-
-    /// Velocity; nil when Core Location reported it invalid (negative). Never substituted.
-    var speedMetersPerSecond: Double? = nil
-    var speedAccuracyMetersPerSecond: Double? = nil
-    var courseDegrees: Double? = nil
-    var courseAccuracyDegrees: Double? = nil
 
     var hasValidVertical: Bool { verticalAccuracyMeters != nil }
 }
@@ -53,8 +47,6 @@ extension LocationObservation {
         guard age <= maximumAge, age >= -Self.futureSkewTolerance else { return nil }
 
         let verticalValid = location.verticalAccuracy.isFinite && location.verticalAccuracy > 0
-        let speedValid = location.speed.isFinite && location.speed >= 0
-        let courseValid = location.course.isFinite && location.course >= 0
         self.init(
             latitude: coordinate.latitude,
             longitude: coordinate.longitude,
@@ -66,17 +58,8 @@ extension LocationObservation {
             floorLevel: location.floor?.level,
             isFullAccuracy: isFullAccuracy,
             isSimulatedBySoftware: location.sourceInformation?.isSimulatedBySoftware,
-            isProducedByAccessory: location.sourceInformation?.isProducedByAccessory,
-            speedMetersPerSecond: speedValid ? location.speed : nil,
-            speedAccuracyMetersPerSecond: speedValid ? Self.nonNegative(location.speedAccuracy) : nil,
-            courseDegrees: courseValid ? location.course : nil,
-            courseAccuracyDegrees: courseValid ? Self.nonNegative(location.courseAccuracy) : nil
+            isProducedByAccessory: location.sourceInformation?.isProducedByAccessory
         )
-    }
-
-    /// Core Location marks invalid accuracies with negative values.
-    private static func nonNegative(_ value: Double) -> Double? {
-        value.isFinite && value >= 0 ? value : nil
     }
 
     /// Request-body keys (= `connection_encounters` column names) for this observation's
@@ -93,16 +76,6 @@ extension LocationObservation {
             if let ellipsoidalAltitudeMeters { out["gps_ellipsoidal_altitude_m"] = Self.rounded(ellipsoidalAltitudeMeters, places: 2) }
         }
         if let floorLevel { out["gps_floor"] = floorLevel }
-        if let speedMetersPerSecond {
-            out["gps_speed_mps"] = Self.rounded(speedMetersPerSecond, places: 2)
-            if let speedAccuracyMetersPerSecond { out["gps_speed_accuracy_mps"] = Self.rounded(speedAccuracyMetersPerSecond, places: 2) }
-        }
-        if let courseDegrees {
-            out["gps_course_deg"] = Self.rounded(courseDegrees, places: 1)
-            if let courseAccuracyDegrees { out["gps_course_accuracy_deg"] = Self.rounded(courseAccuracyDegrees, places: 1) }
-        }
-        if let isSimulatedBySoftware { out["gps_simulated"] = isSimulatedBySoftware }
-        if let isProducedByAccessory { out["gps_external_accessory"] = isProducedByAccessory }
         return out
     }
 

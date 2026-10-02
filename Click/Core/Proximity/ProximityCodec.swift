@@ -111,77 +111,36 @@ enum ProximityCodec {
 
     /// Every distinct 4-digit token in a capture (several peers may chirp in one window).
     static func decodeAllTokens(_ samples: [Int16]) -> [String] {
-        decodeWithMetrics(samples).tokens
-    }
-
-    /// The tokens plus the signal and decoder statistics the decoder already computes (no
-    /// audio): chirp power and dominance, the weakest digit margin, a noise floor from
-    /// chirp-free frames, and how many chirp-length runs were tried or failed.
-    static func decodeWithMetrics(_ samples: [Int16]) -> UltrasonicDecode {
-        let captureRMS = rms(samples)
-        guard samples.count >= sampleRate / 4 else {
-            return UltrasonicDecode(detections: [], samplesAnalyzed: samples.count, captureRMS: captureRMS,
-                                    noiseFloorPower: nil, attempts: 0, failedAttempts: 0)
-        }
+        guard samples.count >= sampleRate / 4 else { return [] }
         let hop = sampleRate / 100 // 10 ms analysis frames
-        var frames: [CarrierFrame] = []
+        var carrierFrames: [Bool] = []
         var frameStart = 0
         while frameStart + hop <= samples.count {
-            frames.append(carrierFrame(samples, offset: frameStart, length: hop))
+            carrierFrames.append(isCarrierDominant(samples, offset: frameStart, length: hop))
             frameStart += hop
         }
-        let quiet = frames.filter { !$0.isDominant }.map(\.power).sorted()
-        let noiseFloor = quiet.isEmpty ? nil : quiet[quiet.count / 2]
 
-        var detections: [UltrasonicDetection] = []
-        var attempts = 0
-        var failed = 0
+        var tokens = Set<String>()
         var index = 0
-        while index < frames.count {
-            guard frames[index].isDominant else { index += 1; continue }
+        while index < carrierFrames.count {
+            guard carrierFrames[index] else { index += 1; continue }
             var end = index
-            while end < frames.count, frames[end].isDominant { end += 1 }
+            while end < carrierFrames.count, carrierFrames[end] { end += 1 }
             // A digit-0 tone is 55 ms; only the 140 ms chirp produces a run this long.
             if end - index >= 11 {
-                attempts += 1
                 // The first carrier frame may be partial; the run end is the chirp's sharp edge.
                 let chirpEnd = end * hop
                 let chirpStart = max(0, chirpEnd - sampleCount(ms: chirpMs))
-                if let digits = readDigits(samples, chirpStart: chirpStart) {
-                    if let seen = detections.firstIndex(where: { $0.token == digits.token }) {
-                        detections[seen].detections += 1
-                    } else {
-                        let run = frames[index..<end]
-                        detections.append(UltrasonicDetection(
-                            token: digits.token,
-                            chirpStartSample: chirpStart,
-                            chirpFrames: end - index,
-                            carrierPower: run.map(\.power).reduce(0, +) / Double(run.count),
-                            carrierDominance: run.map(\.dominance).reduce(0, +) / Double(run.count),
-                            signalRMS: rms(Array(samples[chirpStart..<min(chirpEnd, samples.count)])),
-                            peakToSecondPeakRatio: digits.weakestMargin,
-                            digitPower: digits.meanPower,
-                            detections: 1
-                        ))
-                    }
-                } else {
-                    failed += 1
+                if let token = readDigits(samples, chirpStart: chirpStart) {
+                    tokens.insert(token)
                 }
             }
             index = end
         }
-        return UltrasonicDecode(detections: detections, samplesAnalyzed: samples.count, captureRMS: captureRMS,
-                                noiseFloorPower: noiseFloor, attempts: attempts, failedAttempts: failed)
+        return tokens.sorted()
     }
 
-    private struct CarrierFrame {
-        let power: Double
-        /// Carrier ÷ strongest off-carrier probe (capped when the probes are silent).
-        let dominance: Double
-        let isDominant: Bool
-    }
-
-    private static func readDigits(_ samples: [Int16], chirpStart: Int) -> (token: String, weakestMargin: Double, meanPower: Double)? {
+    private static func readDigits(_ samples: [Int16], chirpStart: Int) -> String? {
         let slot = sampleCount(ms: toneMs + gapMs)
         let firstDigit = chirpStart + sampleCount(ms: chirpMs + gapMs)
         // Chirp-edge timing is known to within one 10 ms frame; a 30 ms window starting 12 ms
@@ -189,8 +148,6 @@ enum ProximityCodec {
         let margin = sampleCount(ms: 12)
         let window = sampleCount(ms: 30)
         var digits = ""
-        var weakest = Double.greatestFiniteMagnitude
-        var totalPower = 0.0
         for position in 0..<4 {
             let start = firstDigit + position * slot + margin
             guard start + window <= samples.count else { return nil }
@@ -198,27 +155,18 @@ enum ProximityCodec {
             let ranked = powers.enumerated().sorted { $0.element > $1.element }
             guard ranked[0].element > minimumPower, ranked[0].element > ranked[1].element * 4 else { return nil }
             digits += String(ranked[0].offset)
-            weakest = min(weakest, ranked[1].element > 0 ? ranked[0].element / ranked[1].element : maximumRatio)
-            totalPower += ranked[0].element
         }
-        return (digits, min(weakest, maximumRatio), totalPower / 4)
+        return digits
     }
 
     /// The carrier dominates its neighbourhood (so broadband noise or speech does not count).
-    private static func carrierFrame(_ samples: [Int16], offset: Int, length: Int) -> CarrierFrame {
+    private static func isCarrierDominant(_ samples: [Int16], offset: Int, length: Int) -> Bool {
         let carrier = goertzel(samples, offset: offset, length: length, frequency: carrierHz)
-        let neighbour = [carrierHz - 400, carrierHz + digitStepHz * 2, carrierHz + digitStepHz * 5, 12_000]
+        guard carrier > minimumPower else { return false }
+        let neighbours = [carrierHz - 400, carrierHz + digitStepHz * 2, carrierHz + digitStepHz * 5, 12_000]
             .map { goertzel(samples, offset: offset, length: length, frequency: $0) }
-            .max() ?? 0
-        return CarrierFrame(
-            power: carrier,
-            dominance: neighbour > 0 ? min(carrier / neighbour, maximumRatio) : (carrier > 0 ? maximumRatio : 0),
-            isDominant: carrier > minimumPower && carrier > neighbour * 6
-        )
+        return carrier > (neighbours.max() ?? 0) * 6
     }
-
-    /// Ratios over a silent bin are capped rather than reported as infinite.
-    private static let maximumRatio = 1e6
 
     /// Normalized power floor (≈ amplitude 0.0006): quiet enough for a phone a few centimetres
     /// away; spectral dominance checks, not loudness, reject noise.
