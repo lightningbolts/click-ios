@@ -24,6 +24,7 @@ public final class AppEnvironment {
     public let profiles: ProfileRepository
     public let groups: GroupRepository
     public let hubs: HubRepository
+    public let places: PlaceRepository
     public let encounterContext: EncounterContextRepository
     public let relationships: RelationshipRepository
     /// Server-driven feature flags (`/api/me/features`); everything new ships dark behind one.
@@ -222,6 +223,7 @@ public final class AppEnvironment {
             supabaseAnonKey: AppConfig.shared.supabaseAnonKey,
             identities: identities
         )
+        self.places = PlaceRepository(api: resolvedAPI)
         self.me = MeRepository(
             api: resolvedAPI,
             supabaseURL: AppConfig.shared.supabaseURL,

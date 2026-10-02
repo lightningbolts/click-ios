@@ -533,6 +533,17 @@ struct ScanClickCodeView: View {
 
     @MainActor
     private func handleScan(_ raw: String) async {
+        // A Click Place check-in poster (`…/p/{slug}?t=…`): open the Place, which asks before
+        // checking in. With Places off this falls through to "That isn't a Click connection code."
+        if env.features.isEnabled(.clickPlaces),
+           let url = URL(string: raw.trimmingCharacters(in: .whitespacesAndNewlines)),
+           let route = env.router.parseIncomingURL(url), case .place = route {
+            scannedValue = nil
+            isProcessing = false
+            env.router.addClickPath.removeAll()
+            env.router.resolveRoute(route)
+            return
+        }
         guard let invocation = parseInvocation(raw) else {
             statusText = "That isn't a Click connection code."
             scannedValue = nil
