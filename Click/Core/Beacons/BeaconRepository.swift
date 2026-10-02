@@ -11,12 +11,6 @@ public struct NearbyDiscovery: Codable, Equatable, Sendable {
     public let fetchedAt: Date
     /// Cursor for the next page of beacons (`/api/beacons` is paginated); nil once all are loaded.
     public var nextCursor: String? = nil
-    /// Listed Click Places around the center (empty when Places are off or the fetch failed).
-    public var places: [PlaceSummary] = []
-
-    enum CodingKeys: String, CodingKey {
-        case beacons, hubs, latitude, longitude, fetchedAt, nextCursor, places
-    }
 
     /// Real counts per beacon kind, in canonical kind order, omitting empty kinds.
     public func kindCounts(at now: Date = .now) -> [(kind: BeaconKind, count: Int)] {
@@ -25,20 +19,6 @@ public struct NearbyDiscovery: Codable, Equatable, Sendable {
             let count = active.filter { $0.kind == kind }.count
             return count > 0 ? (kind, count) : nil
         }
-    }
-}
-
-extension NearbyDiscovery {
-    /// Cached discoveries from builds before Click Places have no `places`; they still load.
-    public init(from decoder: Decoder) throws {
-        let container = try decoder.container(keyedBy: CodingKeys.self)
-        beacons = try container.decode([MapBeacon].self, forKey: .beacons)
-        hubs = try container.decode([NearbyHub].self, forKey: .hubs)
-        latitude = try container.decode(Double.self, forKey: .latitude)
-        longitude = try container.decode(Double.self, forKey: .longitude)
-        fetchedAt = try container.decode(Date.self, forKey: .fetchedAt)
-        nextCursor = try container.decodeIfPresent(String.self, forKey: .nextCursor)
-        places = try container.decodeIfPresent([PlaceSummary].self, forKey: .places) ?? []
     }
 }
 
@@ -83,13 +63,10 @@ public actor BeaconRepository {
     public func discovery(
         around coordinate: CLLocationCoordinate2D,
         radiusMeters: Int = BeaconRepository.discoveryRadiusMeters,
-        userID: String,
-        places: (any PlaceRepositoryProtocol)? = nil
+        userID: String
     ) async throws -> NearbyDiscovery {
         async let beaconsTask = nearbyBeacons(around: coordinate, radiusMeters: radiusMeters, cursor: nil)
         async let hubsTask = nearbyHubs(around: coordinate, radiusMeters: radiusMeters)
-        // Places are an enrichment: a failure leaves them empty and never fails discovery.
-        async let placesTask: [PlaceSummary] = Self.nearbyPlaces(places, around: coordinate)
         let page = try await beaconsTask
         let hubs = (try? await hubsTask) ?? []
         let result = NearbyDiscovery(
@@ -98,8 +75,7 @@ public actor BeaconRepository {
             latitude: coordinate.latitude,
             longitude: coordinate.longitude,
             fetchedAt: .now,
-            nextCursor: page.nextCursor,
-            places: await placesTask
+            nextCursor: page.nextCursor
         )
         await cache.save(result, key: "nearby", userID: userID)
         remember(page.beacons)
@@ -122,20 +98,11 @@ public actor BeaconRepository {
             latitude: discovery.latitude,
             longitude: discovery.longitude,
             fetchedAt: discovery.fetchedAt,
-            nextCursor: page.nextCursor,
-            places: discovery.places
+            nextCursor: page.nextCursor
         )
         await cache.save(result, key: "nearby", userID: userID)
         remember(page.beacons)
         return result
-    }
-
-    /// Click Places radius for the map (the server clamps it; 5 km matches its default).
-    public static let placesRadiusMeters = 5_000
-
-    private static func nearbyPlaces(_ places: (any PlaceRepositoryProtocol)?, around coordinate: CLLocationCoordinate2D) async -> [PlaceSummary] {
-        guard let places else { return [] }
-        return (try? await places.nearby(around: coordinate, radiusMeters: placesRadiusMeters)) ?? []
     }
 
     /// One page of beacons, newest first; `nextCursor` is nil on the last page.

@@ -132,10 +132,6 @@ public struct MapBeacon: Codable, Identifiable, Hashable, Sendable {
     public var previewURL: String? = nil
     public var trackName: String? = nil
     public var albumArtURL: String? = nil
-    /// The Place hosting an official event (`venue_id` always means `places.id`).
-    public var venueID: String? = nil
-    /// Set only when that Place is listed (click-web §5.11); older servers omit it.
-    public var place: MapBeaconPlace? = nil
 
     public var coordinate: CLLocationCoordinate2D {
         CLLocationCoordinate2D(latitude: latitude, longitude: longitude)
@@ -205,9 +201,7 @@ public struct MapBeacon: Codable, Identifiable, Hashable, Sendable {
             visibility: JSONFields.string(row["event_visibility"]) ?? JSONFields.string(meta, "event_visibility", "eventVisibility"),
             previewURL: JSONFields.string(meta, "preview_url", "previewUrl").flatMap { SoundtrackResolver.isTrustedPreview($0) ? $0 : nil },
             trackName: JSONFields.string(meta, "track_name", "track_title"),
-            albumArtURL: SoundtrackResolver.artwork(JSONFields.string(meta, "album_art_url", "artworkUrl100", "artwork_url")),
-            venueID: JSONFields.string(row["venue_id"]),
-            place: MapBeaconPlace.decode(JSONFields.dictionary(row["place"]))
+            albumArtURL: SoundtrackResolver.artwork(JSONFields.string(meta, "album_art_url", "artworkUrl100", "artwork_url"))
         )
     }
 
@@ -337,7 +331,6 @@ public struct NearbyHub: Codable, Identifiable, Hashable, Sendable {
 public enum MapLayer: String, Codable, CaseIterable, Hashable, Sendable {
     case people
     case events
-    case places
     case hangouts
     case social
     case soundtracks
@@ -359,7 +352,6 @@ public enum MapLayer: String, Codable, CaseIterable, Hashable, Sendable {
         switch self {
         case .people: "My network"
         case .events: "Events"
-        case .places: "Places"
         case .hangouts: "Hangouts"
         case .social: "Social"
         case .soundtracks: "Soundtracks"
@@ -373,7 +365,6 @@ public enum MapLayer: String, Codable, CaseIterable, Hashable, Sendable {
         switch self {
         case .people: "person.2.fill"
         case .events: "calendar"
-        case .places: "building.2.fill"
         case .hangouts: "figure.2"
         case .social: "sparkles"
         case .soundtracks: "music.note"
@@ -381,17 +372,5 @@ public enum MapLayer: String, Codable, CaseIterable, Hashable, Sendable {
         case .hubs: "building.2.fill"
         case .other: "mappin"
         }
-    }
-}
-
-/// The listed Click Place an official event belongs to (`place` on event payloads).
-public struct MapBeaconPlace: Codable, Hashable, Sendable {
-    public let id: String
-    public let slug: String
-    public let name: String
-
-    static func decode(_ row: [String: Any]?) -> MapBeaconPlace? {
-        guard let row, let id = JSONFields.string(row["id"]) else { return nil }
-        return MapBeaconPlace(id: id, slug: JSONFields.string(row["slug"]) ?? id, name: JSONFields.string(row["name"]) ?? "Place")
     }
 }

@@ -16,16 +16,6 @@ struct ReconnectNearbyCard: View {
                         VStack(alignment: .leading, spacing: 2) {
                             Text(nudge.title).font(ClickTypography.bodyEmphasized).foregroundStyle(ClickColors.textPrimary)
                             Text(nudge.body).font(ClickTypography.supporting).foregroundStyle(ClickColors.textSecondary)
-                            if env.features.isEnabled(.clickPlaces), let placeID = nudge.placeID, let placeName = nudge.placeName {
-                                Button {
-                                    env.router.navigate(to: .place(idOrSlug: placeID, anchorToken: nil))
-                                } label: {
-                                    Label(placeName, systemImage: "building.2")
-                                        .font(ClickTypography.supportingEmphasized)
-                                }
-                                .buttonStyle(.plain)
-                                .foregroundStyle(ClickColors.accentForeground)
-                            }
                         }
                         Spacer(minLength: 0)
                         Menu {

@@ -100,10 +100,6 @@ struct NearbyListView: View {
             // The chips sit under the bar but never scroll under it: no scroll-edge hairline.
             .scrollEdgeEffectHiddenIfAvailable(for: .top)
 
-            if model.placesEnabled && model.filter == .places {
-                PlaceFilterChips(model: model)
-            }
-
             list
         }
         // Search and refresh live in a real (transparent) navigation bar rather than a hidden
@@ -165,8 +161,6 @@ struct NearbyListView: View {
             fields += [pin.locationName].compactMap { $0 }
         case .hangout(let hangout):
             fields += [MapLayer.hangouts.label, hangout.plan.placeName].compactMap { $0 }
-        case .place(let place):
-            fields += [place.category.label, place.addressLine, place.city, place.nextEvent?.title].compactMap { $0 }
         }
         return fields.contains { $0.localizedStandardContains(query) }
     }
@@ -334,9 +328,6 @@ struct MapItemThumbnail: View {
                 .frame(width: size, height: size)
         case .hangout(let hangout):
             EventVisual(seed: hangout.message.id, symbol: MapLayer.hangouts.systemImage, cornerRadius: cornerRadius)
-                .frame(width: size, height: size)
-        case .place(let place):
-            EventVisual(seed: place.id, imageURL: place.photoURL?.absoluteString, symbol: place.category.symbol, cornerRadius: cornerRadius)
                 .frame(width: size, height: size)
         }
     }

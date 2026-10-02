@@ -7,6 +7,10 @@ import Foundation
 /// GATT characteristic; scans for the same service, connects, and reads peers' tokens. Wire
 /// identifiers match KMP `ProximityBleCodec`. All radio work is bounded and stops on `stop()`.
 /// Callbacks arrive on the main queue (`queue: nil`), so state is main-actor isolated.
+///
+/// During the exchange it also records RSSI, advertised TX power and connection/GATT timing for
+/// Click peripherals only (the scan is filtered to the Click service). Peripheral identifiers
+/// never leave this object; a trace is reported only once it is tied to a served token.
 @MainActor
 final class BLEProximityService: NSObject {
     enum Availability: Equatable, Sendable {
@@ -30,6 +34,14 @@ final class BLEProximityService: NSObject {
     private var attempted: Set<UUID> = []
     private(set) var detectedTokens: Set<String> = []
     private var stateWaiters: [CheckedContinuation<Void, Never>] = []
+    private var scanStarted: TimeInterval?
+    private var traces: [UUID: BluetoothPeerTrace] = [:]
+    /// RSSI/timing of the latest exchange, for peers that served a token.
+    private(set) var trace = BluetoothTrace()
+
+    /// Duplicate advertisements give a short RSSI series instead of one value. Only enabled
+    /// for the bounded Tap window; validate radio load on physical devices before widening it.
+    static let collectsRSSISeries = true
 
     /// Creates the central manager (which shows the system Bluetooth prompt the first time) and
     /// waits until CoreBluetooth resolves its state. Called only after explicit user intent.
@@ -57,6 +69,9 @@ final class BLEProximityService: NSObject {
         tokenPayload = ProximityCodec.gattPayload(token)
         detectedTokens = []
         attempted = []
+        traces = [:]
+        scanStarted = nil
+        trace = BluetoothTrace()
         wantsAdvertising = true
         wantsScanning = true
         if peripheralManager == nil {
@@ -74,6 +89,9 @@ final class BLEProximityService: NSObject {
             try? await Task.sleep(for: .milliseconds(100))
         }
         stop()
+        trace = BluetoothTrace(scanStarted: scanStarted, peers: traces.values
+            .filter { $0.token != nil }
+            .sorted { $0.firstSeen < $1.firstSeen })
         return detectedTokens
     }
 
@@ -102,9 +120,10 @@ final class BLEProximityService: NSObject {
 
     private func startScanIfReady() {
         guard wantsScanning, let central, central.state == .poweredOn, !central.isScanning else { return }
+        if scanStarted == nil { scanStarted = SensorClock.uptime }
         central.scanForPeripherals(
             withServices: [serviceUUID],
-            options: [CBCentralManagerScanOptionAllowDuplicatesKey: false]
+            options: [CBCentralManagerScanOptionAllowDuplicatesKey: Self.collectsRSSISeries]
         )
     }
 
@@ -129,6 +148,12 @@ final class BLEProximityService: NSObject {
         waiters.forEach { $0.resume() }
     }
 
+    private func mark(_ peripheral: CBPeripheral, _ update: (inout BluetoothPeerTrace, TimeInterval) -> Void) {
+        guard var peer = traces[peripheral.identifier] else { return }
+        update(&peer, SensorClock.uptime)
+        traces[peripheral.identifier] = peer
+    }
+
     private func finishRead(_ peripheral: CBPeripheral) {
         connecting[peripheral.identifier] = nil
         central?.cancelPeripheralConnection(peripheral)
@@ -147,14 +172,23 @@ extension BLEProximityService: @preconcurrency CBCentralManagerDelegate {
         advertisementData: [String: Any],
         rssi RSSI: NSNumber
     ) {
-        guard wantsScanning, !attempted.contains(peripheral.identifier) else { return }
+        guard wantsScanning else { return }
+        var peer = traces[peripheral.identifier] ?? BluetoothPeerTrace(firstSeen: SensorClock.uptime)
+        peer.record(rssi: RSSI.intValue)
+        if let txPower = advertisementData[CBAdvertisementDataTxPowerLevelKey] as? NSNumber { peer.txPower = txPower.intValue }
+        if let connectable = advertisementData[CBAdvertisementDataIsConnectable] as? NSNumber { peer.connectable = connectable.boolValue }
+        traces[peripheral.identifier] = peer
+        guard !attempted.contains(peripheral.identifier) else { return }
         attempted.insert(peripheral.identifier)
         connecting[peripheral.identifier] = peripheral
+        mark(peripheral) { peer, now in peer.connectStarted = now }
         central.connect(peripheral)
     }
 
     func centralManager(_ central: CBCentralManager, didConnect peripheral: CBPeripheral) {
+        mark(peripheral) { peer, now in peer.connected = now }
         peripheral.delegate = self
+        peripheral.readRSSI()
         peripheral.discoverServices([serviceUUID])
     }
 
@@ -168,7 +202,13 @@ extension BLEProximityService: @preconcurrency CBCentralManagerDelegate {
 }
 
 extension BLEProximityService: @preconcurrency CBPeripheralDelegate {
+    func peripheral(_ peripheral: CBPeripheral, didReadRSSI RSSI: NSNumber, error: Error?) {
+        guard error == nil else { return }
+        mark(peripheral) { peer, _ in peer.record(rssi: RSSI.intValue) }
+    }
+
     func peripheral(_ peripheral: CBPeripheral, didDiscoverServices error: Error?) {
+        mark(peripheral) { peer, now in peer.servicesDiscovered = now }
         guard error == nil, let service = peripheral.services?.first(where: { $0.uuid == serviceUUID }) else {
             finishRead(peripheral)
             return
@@ -177,6 +217,7 @@ extension BLEProximityService: @preconcurrency CBPeripheralDelegate {
     }
 
     func peripheral(_ peripheral: CBPeripheral, didDiscoverCharacteristicsFor service: CBService, error: Error?) {
+        mark(peripheral) { peer, now in peer.characteristicDiscovered = now }
         guard error == nil, let characteristic = service.characteristics?.first(where: { $0.uuid == characteristicUUID }) else {
             finishRead(peripheral)
             return
@@ -187,6 +228,10 @@ extension BLEProximityService: @preconcurrency CBPeripheralDelegate {
     func peripheral(_ peripheral: CBPeripheral, didUpdateValueFor characteristic: CBCharacteristic, error: Error?) {
         if error == nil, let token = ProximityCodec.parseGattPayload(characteristic.value), token != ownToken {
             detectedTokens.insert(token)
+            mark(peripheral) { peer, now in
+                peer.tokenRead = now
+                peer.token = token
+            }
         }
         finishRead(peripheral)
     }

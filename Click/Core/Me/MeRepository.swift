@@ -352,11 +352,11 @@ public actor MeRepository {
     // MARK: - Location privacy
 
     /// Reads the three location-privacy columns on `users` under RLS (KMP contract).
-    public func locationPrivacy(userID: String, includePlaceVisits: Bool = false) async throws -> LocationPrivacy {
+    public func locationPrivacy(userID: String) async throws -> LocationPrivacy {
         let rows = try await restRows(
             table: "users",
             query: [
-                URLQueryItem(name: "select", value: LocationPrivacy.keys(includingPlaceVisits: includePlaceVisits).map(\.rawValue).joined(separator: ",")),
+                URLQueryItem(name: "select", value: LocationPrivacy.Key.allCases.map(\.rawValue).joined(separator: ",")),
                 URLQueryItem(name: "id", value: "eq.\(userID)")
             ]
         )
@@ -366,9 +366,9 @@ public actor MeRepository {
 
     /// Writes the location-privacy columns on the caller's own `users` row (KMP contract) and
     /// returns what the database now holds. Zero affected rows is a failure, never success.
-    public func setLocationPrivacy(_ privacy: LocationPrivacy, userID: String, includePlaceVisits: Bool = false) async throws -> LocationPrivacy {
+    public func setLocationPrivacy(_ privacy: LocationPrivacy, userID: String) async throws -> LocationPrivacy {
         guard let supabaseURL, !supabaseAnonKey.isEmpty else { throw APIError.invalidURL }
-        let body = try JSONSerialization.data(withJSONObject: privacy.writeRow(includingPlaceVisits: includePlaceVisits))
+        let body = try JSONSerialization.data(withJSONObject: privacy.row)
         let request = APIRequest(
             baseURL: supabaseURL,
             path: "/rest/v1/users",
@@ -503,20 +503,16 @@ public struct LocationPrivacy: Codable, Equatable, Sendable {
         case connectionSnap = "location_connection_snap_enabled"
         case memoryMap = "location_show_on_map_enabled"
         case businessInsights = "location_include_in_insights_enabled"
-        /// Click Places: connections see you under "Clicks who've been here" (never when).
-        case placeVisitsVisible = "place_visits_visible_to_connections"
     }
 
     public var connectionSnap: Bool
     public var memoryMap: Bool
     public var businessInsights: Bool
-    public var placeVisitsVisible: Bool = false
 
-    public init(connectionSnap: Bool, memoryMap: Bool, businessInsights: Bool, placeVisitsVisible: Bool = false) {
+    public init(connectionSnap: Bool, memoryMap: Bool, businessInsights: Bool) {
         self.connectionSnap = connectionSnap
         self.memoryMap = memoryMap
         self.businessInsights = businessInsights
-        self.placeVisitsVisible = placeVisitsVisible
     }
 
     /// Absent columns are off, matching the KMP model defaults (no accidental opt-in).
@@ -524,40 +520,13 @@ public struct LocationPrivacy: Codable, Equatable, Sendable {
         connectionSnap = JSONFields.bool(row[Key.connectionSnap.rawValue]) ?? false
         memoryMap = JSONFields.bool(row[Key.memoryMap.rawValue]) ?? false
         businessInsights = JSONFields.bool(row[Key.businessInsights.rawValue]) ?? false
-        placeVisitsVisible = JSONFields.bool(row[Key.placeVisitsVisible.rawValue]) ?? false
     }
 
     var row: [String: Bool] {
         [
             Key.connectionSnap.rawValue: connectionSnap,
             Key.memoryMap.rawValue: memoryMap,
-            Key.businessInsights.rawValue: businessInsights,
-            Key.placeVisitsVisible.rawValue: placeVisitsVisible
+            Key.businessInsights.rawValue: businessInsights
         ]
-    }
-
-    /// Columns read and written. The Places column is only touched with Places on, so the
-    /// settings screen keeps working against a database without it.
-    static func keys(includingPlaceVisits: Bool) -> [Key] {
-        Key.allCases.filter { includingPlaceVisits || $0 != .placeVisitsVisible }
-    }
-
-    func writeRow(includingPlaceVisits: Bool) -> [String: Bool] {
-        row.filter { includingPlaceVisits || $0.key != Key.placeVisitsVisible.rawValue }
-    }
-
-    enum CodingKeys: String, CodingKey {
-        case connectionSnap, memoryMap, businessInsights, placeVisitsVisible
-    }
-}
-
-extension LocationPrivacy {
-    /// Values saved before Click Places have no `placeVisitsVisible`; they still load (off).
-    public init(from decoder: Decoder) throws {
-        let container = try decoder.container(keyedBy: CodingKeys.self)
-        connectionSnap = try container.decode(Bool.self, forKey: .connectionSnap)
-        memoryMap = try container.decode(Bool.self, forKey: .memoryMap)
-        businessInsights = try container.decode(Bool.self, forKey: .businessInsights)
-        placeVisitsVisible = try container.decodeIfPresent(Bool.self, forKey: .placeVisitsVisible) ?? false
     }
 }

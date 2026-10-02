@@ -334,7 +334,7 @@ public struct ClickMapView: View {
             // First tap on a person shows the callout ("Priya Raman · first met here"); tapping
             // it opens the profile.
             break
-        case .beacon, .hub, .hangout, .place:
+        case .beacon, .hub, .hangout:
             guard let item = model.items(pins: pins, applyingFilter: false).first(where: { $0.id == selection }) else { return }
             // Detail sheets keep the pin selected until they close; pushed screens don't.
             if !item.route.presentsAsSheet { model.selection = nil }
@@ -400,8 +400,6 @@ private struct MapPinView: View {
             case .hangout:
                 MapItemThumbnail(item: item, size: 40)
                     .overlay(RoundedRectangle(cornerRadius: 12, style: .continuous).stroke(.white, lineWidth: 3))
-            case .place(let place):
-                PlacePinView(place: place)
             }
         }
         .shadow(color: .black.opacity(0.25), radius: 4, y: 2)

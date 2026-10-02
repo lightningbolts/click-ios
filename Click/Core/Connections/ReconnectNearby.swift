@@ -14,9 +14,6 @@ public struct ReconnectNearbyNudge: Identifiable, Sendable, Equatable {
     public let placeName: String?
     public let title: String
     public let body: String
-    /// Set when the meeting was at a listed Click Place (click-web spec 5.11).
-    public var placeID: String? = nil
-    public var placeSlug: String? = nil
 
     public var firstName: String { name.split(separator: " ").first.map(String.init) ?? name }
 
@@ -33,9 +30,7 @@ public struct ReconnectNearbyNudge: Identifiable, Sendable, Equatable {
             metAt: JSONFields.date(row["met_at"]),
             placeName: JSONFields.string(row["place_name"]),
             title: JSONFields.string(row["title"]) ?? "",
-            body: JSONFields.string(row["body"]) ?? "",
-            placeID: JSONFields.string(row["place_id"]),
-            placeSlug: JSONFields.string(row["place_slug"])
+            body: JSONFields.string(row["body"]) ?? ""
         )
     }
 
