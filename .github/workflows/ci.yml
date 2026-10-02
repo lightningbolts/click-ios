@@ -44,6 +44,12 @@ jobs:
       - name: Generate Xcode Project
         run: xcodegen generate
 
+      - name: Upload generated Xcode project
+        uses: actions/upload-artifact@v4
+        with:
+          name: generated-xcode-project
+          path: Click.xcodeproj/project.pbxproj
+
       - name: Build Main App and Extensions
         run: |
           xcodebuild build \
