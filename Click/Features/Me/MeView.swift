@@ -251,6 +251,12 @@ public struct MeView: View {
                 }
             }
 
+            if env.features.isEnabled(.clickPlaces) {
+                NavigationLink(value: AppRoute.myPlaces) {
+                    SettingsRowLabel(title: "Places", systemImage: "building.2") { EmptyView() }
+                }
+            }
+
             NavigationLink(value: AppRoute.settings(.calendar)) {
                 SettingsRowLabel(title: "Calendar", systemImage: "calendar") { EmptyView() }
             }

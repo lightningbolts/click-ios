@@ -38,6 +38,10 @@ struct AppRouteDestination: View {
                 GuestListView(beaconID: beaconID)
             case .hub(let hubID):
                 HubChatView(hubID: hubID)
+            case .place(let idOrSlug, let anchorToken):
+                PlaceDetailView(idOrSlug: idOrSlug, anchorToken: anchorToken)
+            case .myPlaces:
+                MyPlacesView()
             case .myQR:
                 MyClickCodeView()
             case .scanQR:

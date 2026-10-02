@@ -105,6 +105,11 @@ public enum AppRoute: Hashable, Sendable {
     case guestList(beaconID: String)
     case beacon(beaconID: String)
     case hub(hubID: String)
+    /// A Click Place page (`click://p/{slug}`). `anchorToken` comes from a check-in QR code and
+    /// only ever prompts "Check in at …?"; it is never put in share links.
+    case place(idOrSlug: String, anchorToken: String?)
+    /// Me: the Places you've checked in at or met people at.
+    case myPlaces
     case myQR
     case scanQR
     case tapConnect
@@ -125,11 +130,11 @@ public enum AppRoute: Hashable, Sendable {
         switch self {
         case .chat, .userProfile, .publicProfile, .groupChat, .groupProfile, .conversation:
             .connections
-        case .event, .eventChat, .eventPeople, .guestList, .beacon, .hub, .eventRecap:
+        case .event, .eventChat, .eventPeople, .guestList, .beacon, .hub, .eventRecap, .place:
             .map
         case .myQR, .scanQR, .tapConnect, .connectionInvocation:
             .addClick
-        case .savedEvents, .settings, .history:
+        case .savedEvents, .settings, .history, .myPlaces:
             .settings
         }
     }
@@ -414,6 +419,10 @@ public final class AppRouter {
             if host == "hub", let hubId = pathComponents.first {
                 return .hub(hubID: hubId)
             }
+            // click://p/{slug}?t={anchorToken}
+            if host == "p", let slug = pathComponents.first {
+                return .place(idOrSlug: slug, anchorToken: placeAnchorToken(components))
+            }
             // click://chat/{chatId}?m={messageId}
             if host == "chat", let chatID = pathComponents.first {
                 let messageID = components?.queryItems?.first { $0.name == "m" || $0.name == "message" }?.value
@@ -447,9 +456,17 @@ public final class AppRouter {
             if first == "hub", pathComponents.count > 1 {
                 return .hub(hubID: pathComponents[1])
             }
+            // /p/{slug}?t={anchorToken}
+            if first == "p", pathComponents.count > 1 {
+                return .place(idOrSlug: pathComponents[1], anchorToken: placeAnchorToken(components))
+            }
         }
 
         return nil
+    }
+
+    private func placeAnchorToken(_ components: URLComponents?) -> String? {
+        components?.queryItems?.first { $0.name == "t" }?.value.flatMap { $0.isEmpty ? nil : $0 }
     }
 
     private func parseConnectionInvocation(userID: String, components: URLComponents?) -> ConnectionInvocation {

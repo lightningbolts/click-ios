@@ -414,6 +414,13 @@ struct BeaconDetailView: View {
                 }
             }
             .buttonStyle(.plain)
+            if let place = Self.placeLink(for: beacon, placesEnabled: env.features.isEnabled(.clickPlaces)) {
+                Divider().padding(.leading, 56)
+                NavigationLink(value: AppRoute.place(idOrSlug: place.id, anchorToken: nil)) {
+                    infoRow(systemImage: "building.2", title: "At \(place.name)", subtitle: nil, chevron: true)
+                }
+                .buttonStyle(.plain)
+            }
             if beacon.isEvent {
                 Divider().padding(.leading, 56)
                 NavigationLink(value: AppRoute.eventPeople(beaconID: beacon.id)) {
@@ -783,6 +790,11 @@ struct BeaconDetailView: View {
         } catch {
             notice = "Couldn't delete. \(error.userFacingMessage)"
         }
+    }
+
+    /// The listed Click Place hosting this event, shown as "At {place}" only with Places on (spec 6.9).
+    nonisolated static func placeLink(for beacon: MapBeacon, placesEnabled: Bool) -> MapBeaconPlace? {
+        placesEnabled ? beacon.place : nil
     }
 
     /// Legacy KMP beacons stored the literal label "Current location"; show a real place.
