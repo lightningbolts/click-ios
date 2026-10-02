@@ -144,7 +144,17 @@ struct PrivacySettingsView: View {
                 if let value = privacy.value {
                     toggle("Location snap", "Save where you are when you Click with someone.", \.connectionSnap, value)
                     toggle("Memory Map", "Use your Click locations for your personal map and Remember Me.", \.memoryMap, value)
-                    toggle("Business insights", "Include anonymized, aggregated visits in venue insights. Never identifies you.", \.businessInsights, value)
+                    toggle(
+                        "Business insights",
+                        env.features.isEnabled(.clickPlaces)
+                            ? "Lets Places you visit count your check-ins and Pulses in their anonymous stats."
+                            : "Include anonymized, aggregated visits in venue insights. Never identifies you.",
+                        \.businessInsights,
+                        value
+                    )
+                    if env.features.isEnabled(.clickPlaces) {
+                        toggle("Show my Place visits to my Clicks", "Your Clicks see that you've been to a Place, never when.", \.placeVisitsVisible, value)
+                    }
                 } else if privacy.isPending {
                     ClickLoadingView(size: 26, fillsSpace: false)
                 } else {
@@ -329,7 +339,11 @@ struct PrivacySettingsView: View {
         locationHint = nil
         defer { isSaving = false }
         do {
-            env.selfData.apply(locationPrivacy: try await env.me.setLocationPrivacy(next, userID: userID))
+            env.selfData.apply(locationPrivacy: try await env.me.setLocationPrivacy(
+                next,
+                userID: userID,
+                includePlaceVisits: env.features.isEnabled(.clickPlaces)
+            ))
         } catch {
             errorMessage = "Your location setting wasn't changed. \(error.userFacingMessage)"
             return
