@@ -1993,6 +1993,7 @@
 				INFOPLIST_KEY_NSLocationAlwaysAndWhenInUseUsageDescription = "If you turn on Past meeting spots, Click is told when you arrive somewhere so it can remind you of a Click you met there. Your location is never stored or shown to anyone.";
 				INFOPLIST_KEY_NSLocationWhenInUseUsageDescription = "Click uses your location for tether pings, maps, and nearby connection features.";
 				INFOPLIST_KEY_NSMicrophoneUsageDescription = "Click uses your microphone for Tap to Connect ultrasonic sensing and voice notes.";
+				INFOPLIST_KEY_NSNearbyInteractionUsageDescription = "Click uses Nearby Interaction during Tap to Connect to measure proximity between nearby iPhones and help confirm you are connecting with the person physically next to you.";
 				INFOPLIST_KEY_NSMotionUsageDescription = "Click uses motion context to capture encounter vibe.";
 				INFOPLIST_KEY_NSPhotoLibraryAddUsageDescription = "Click saves photos to your photo library.";
 				INFOPLIST_KEY_NSPhotoLibraryUsageDescription = "Click accesses your photo library to select photos for profile and chat.";
@@ -2178,6 +2179,7 @@
 				INFOPLIST_KEY_NSLocationAlwaysAndWhenInUseUsageDescription = "If you turn on Past meeting spots, Click is told when you arrive somewhere so it can remind you of a Click you met there. Your location is never stored or shown to anyone.";
 				INFOPLIST_KEY_NSLocationWhenInUseUsageDescription = "Click uses your location for tether pings, maps, and nearby connection features.";
 				INFOPLIST_KEY_NSMicrophoneUsageDescription = "Click uses your microphone for Tap to Connect ultrasonic sensing and voice notes.";
+				INFOPLIST_KEY_NSNearbyInteractionUsageDescription = "Click uses Nearby Interaction during Tap to Connect to measure proximity between nearby iPhones and help confirm you are connecting with the person physically next to you.";
 				INFOPLIST_KEY_NSMotionUsageDescription = "Click uses motion context to capture encounter vibe.";
 				INFOPLIST_KEY_NSPhotoLibraryAddUsageDescription = "Click saves photos to your photo library.";
 				INFOPLIST_KEY_NSPhotoLibraryUsageDescription = "Click accesses your photo library to select photos for profile and chat.";
