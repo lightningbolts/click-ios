@@ -1,4 +1,3 @@
-import CoreLocation
 import SwiftUI
 import CoreImage
 import CoreImage.CIFilterBuiltins
@@ -410,6 +409,9 @@ struct ScanClickCodeView: View {
     @State private var scannedValue: String?
     @State private var isProcessing = false
     @State private var statusText: String?
+    /// Warms this phone's location/altimeter while the scanner is visible (spec: location
+    /// accuracy §18); stopped when the scanner goes away or the scan has been submitted.
+    @State private var capture = ConnectionCaptureSession(method: "qr")
 
     var body: some View {
         ZStack {
@@ -419,9 +421,11 @@ struct ScanClickCodeView: View {
                 if DataScannerViewController.isSupported && DataScannerViewController.isAvailable {
                     ClickDataScannerView { value in
                         guard scannedValue == nil, !isProcessing else { return }
+                        // The connection moment is when the code was recognized.
+                        let recognizedAt = Date.now
                         scannedValue = value
                         isProcessing = true
-                        Task { await handleScan(value) }
+                        Task { await handleScan(value, at: recognizedAt) }
                     }
                     .ignoresSafeArea()
                 } else {
@@ -492,7 +496,20 @@ struct ScanClickCodeView: View {
             permission = current == .notDetermined
                 ? await env.permissions.requestPermission(for: .camera)
                 : current
+            await warmCapture()
         }
+        .onDisappear { capture.stop() }
+    }
+
+    /// Never prompts: location warms only when Location snap is on and permission was already
+    /// granted (otherwise the scan asks, as before, and captures from then on).
+    private func warmCapture() async {
+        guard permission == .authorized, let userID = env.session.currentSession?.userId else { return }
+        let wantsLocation = env.location.isAuthorized
+            ? await env.shouldCaptureConnectionLocation(userID: userID)
+            : false
+        guard !Task.isCancelled else { return }
+        capture.start(location: wantsLocation, altitude: env.settings.barometricContextOptIn)
     }
 
     private struct RevealItem: Identifiable {
@@ -532,7 +549,7 @@ struct ScanClickCodeView: View {
     }
 
     @MainActor
-    private func handleScan(_ raw: String) async {
+    private func handleScan(_ raw: String, at recognizedAt: Date) async {
         guard let invocation = parseInvocation(raw) else {
             statusText = "That isn't a Click connection code."
             scannedValue = nil
@@ -541,7 +558,10 @@ struct ScanClickCodeView: View {
         }
 
         do {
-            let result = try await ClickConnectionRedeemer.redeem(invocation, environment: env)
+            let result = try await ClickConnectionRedeemer.redeem(
+                invocation, environment: env, capture: capture, connectionMoment: recognizedAt
+            )
+            capture.stop()
             ClickHaptics.impact(.heavy)
             ClickHaptics.notification(.success)
             // Same reveal and tagging as Tap to Connect (spec §22, §26–§28).
@@ -637,38 +657,52 @@ private enum ClickConnectionRedeemer {
         var collaborationEndsAt: Date?
     }
 
-    /// A scanner fix coarser than this is left out: `redeem_qr_token` rejects scans more than
-    /// 100 m from the code's owner, and a poor fix must never block a real in-person scan.
-    static let maxScannerAccuracyMeters: CLLocationAccuracy = 50
-
-    /// Encounter context captured at scan time, as the body keys `/api/qr` and
-    /// `/api/connections` read (GPS, opted-in barometer, hardware snapshot, timezone).
-    /// Noise is sampled after the reveal (`PostConnectModel.recordSensorContext`).
+    /// Encounter context captured at the connection moment, as the body keys `/api/qr` and
+    /// `/api/connections` read: this phone's own fix and its quality, the opted-in barometer
+    /// with its uncertainty, the hardware snapshot and timezone. Fixes coarser than
+    /// `ConnectionLocationQuality.maximumUsefulAccuracy` are left out so a poor fix never
+    /// fails `redeem_qr_token`'s 100 m check. Noise is sampled after the reveal
+    /// (`PostConnectModel.recordSensorContext`).
     @MainActor
-    static func context(_ env: AppEnvironment, userID: String) async -> (fields: [String: Any], fix: CLLocation?) {
+    static func context(
+        _ env: AppEnvironment,
+        userID: String,
+        capture: ConnectionCaptureSession,
+        connectionMoment: Date,
+        wait: ConnectionLocationQuality.Wait
+    ) async -> (fields: [String: Any], fix: LocationObservation?) {
         async let allowed = env.shouldCaptureConnectionLocation(userID: userID)
         async let sensor = EncounterSensorSampler.sample(settings: env.settings, includeNoise: false, includeHardware: true)
-        let fix: CLLocation? = await allowed
-            ? await env.location.currentLocation(maximumAge: 60, acceptableAccuracy: 30, timeout: .seconds(3))
-            : nil
-        var fields = await sensor.columns
+        let captureLocation = await allowed
+        capture.start(location: captureLocation, altitude: env.settings.barometricContextOptIn)
+        let observed = await capture.snapshot(at: connectionMoment, wait: wait)
+        var context = await sensor
+        context.barometer = observed.altitude
+        var fields = context.columns
         fields["timezone_offset_minutes"] = TimeZone.current.secondsFromGMT() / 60
-        guard let fix, fix.horizontalAccuracy >= 0, fix.horizontalAccuracy <= maxScannerAccuracyMeters else {
-            return (fields, nil)
-        }
+        guard captureLocation, let fix = observed.location else { return (fields, nil) }
+        fields.merge(fix.qualityColumns) { current, _ in current }
         return (fields, fix)
     }
 
+    /// - Parameter capture: the scanner's warm session; nil (a Click link) captures cold here.
     @MainActor
     static func redeem(
         _ invocation: ConnectionInvocation,
-        environment env: AppEnvironment
+        environment env: AppEnvironment,
+        capture: ConnectionCaptureSession? = nil,
+        connectionMoment: Date = .now
     ) async throws -> Result {
         guard let currentUserID = env.session.currentSession?.userId else {
             throw APIError.unauthorized
         }
 
-        let captured = await Self.context(env, userID: currentUserID)
+        let session = capture ?? ConnectionCaptureSession(method: "link")
+        let captured = await Self.context(
+            env, userID: currentUserID, capture: session, connectionMoment: connectionMoment,
+            wait: capture == nil ? .cold : .inFlow
+        )
+        if capture == nil { session.stop() }
         var redeemBody = captured.fields
         if let token = invocation.token, !token.isEmpty {
             redeemBody["token"] = token
@@ -676,7 +710,7 @@ private enum ClickConnectionRedeemer {
             redeemBody["targetUserId"] = invocation.userID
         }
         if let fix = captured.fix {
-            let lat = fix.coordinate.latitude, lon = fix.coordinate.longitude
+            let lat = fix.latitude, lon = fix.longitude
             redeemBody["gps_lat"] = lat
             redeemBody["gps_lon"] = lon
             redeemBody["scannerLocation"] = ["lat": lat, "lon": lon]
@@ -706,7 +740,7 @@ private enum ClickConnectionRedeemer {
                 createBody["tokenAgeMs"] = tokenAgeMs.doubleValue
             }
             if let fix = captured.fix {
-                createBody["location1"] = ["lat": fix.coordinate.latitude, "lon": fix.coordinate.longitude]
+                createBody["location1"] = ["lat": fix.latitude, "lon": fix.longitude]
             }
 
             let body = try JSONSerialization.data(withJSONObject: createBody)

@@ -11,6 +11,9 @@ public struct ProximityEvidence: Codable, Equatable, Sendable {
     /// Opt-in encounter context sent with the handshake (KMP body keys); the server stores it
     /// on the encounter it creates.
     public var sensor = EncounterSensorContext()
+    /// This phone's own fix behind `latitude`/`longitude`, sent as quality metadata (accuracy,
+    /// altitude, floor, time). Optional so taps queued by older builds still decode.
+    public var location: LocationObservation? = nil
 
     var peerTokens: [String] { Array(Set(heardTokens + detectedDevices)).sorted() }
 
@@ -27,6 +30,7 @@ public struct ProximityEvidence: Codable, Equatable, Sendable {
         if let latitude, let longitude {
             body["latitude"] = latitude
             body["longitude"] = longitude
+            if let location { body.merge(location.qualityColumns) { current, _ in current } }
         }
         if simulatorMock { body["simulator_mock"] = true }
         // Sensor readings and the hardware snapshot use the server's encounter column names.

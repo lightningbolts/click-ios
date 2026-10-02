@@ -3,11 +3,11 @@ import CoreMotion
 import Foundation
 import UIKit
 
-/// Opt-in encounter sensor context (Privacy → Encounter context). Barometric elevation and
-/// ambient noise are each sampled only when the user turned them on; nothing is stored on the
-/// device and the noise sample is a level, never audio (the temporary file is deleted at once).
-/// `elevation_category` is derived by the server from the barometric value (terrain-corrected),
-/// as for KMP.
+/// Opt-in encounter sensor context (Privacy → Encounter context). Ambient noise is sampled only
+/// when the user turned it on; nothing is stored on the device and the noise sample is a level,
+/// never audio (the temporary file is deleted at once). The barometer is read by the flow's
+/// `ConnectionCaptureSession` around the connection moment, with its reported uncertainty;
+/// `elevation_category` is derived by the server from it (terrain-corrected), as for KMP.
 @MainActor
 enum EncounterSensorSampler {
     /// - Parameter includeNoise: false while the microphone is busy (the tap's ultrasonic listen).
@@ -20,16 +20,13 @@ enum EncounterSensorSampler {
         includeHardware: Bool = false,
         timeout: Duration = .seconds(2)
     ) async -> EncounterSensorContext {
-        let wantsElevation = settings.barometricContextOptIn
         let wantsNoise = includeNoise && settings.ambientNoiseOptIn
-        async let meters = wantsElevation ? barometricElevation(timeout: timeout) : nil
         async let decibels = wantsNoise ? ambientNoiseDecibels(duration: timeout) : nil
         async let hardware = includeHardware ? HardwareVibeSampler.snapshot() : HardwareVibeSampler.Snapshot()
-        let (elevation, noise, vibe) = await (meters, decibels, hardware)
+        let (noise, vibe) = await (decibels, hardware)
         return EncounterSensorContext(
             noiseLevel: noise.map(noiseLevel(decibels:)),
             noiseDecibels: noise.map { ($0 * 10).rounded() / 10 },
-            barometricElevationMeters: elevation.map { ($0 * 10).rounded() / 10 },
             luxLevel: vibe.luxLevel,
             motionVariance: vibe.motionVariance,
             compassAzimuth: vibe.compassAzimuth,
@@ -51,23 +48,6 @@ enum EncounterSensorSampler {
     /// KMP's approximation: average power (dBFS) + 90, clamped to 0…100.
     nonisolated static func approximateDecibels(averagePower: Float) -> Double {
         min(100, max(0, Double(averagePower) + 90))
-    }
-
-    private static func barometricElevation(timeout: Duration) async -> Double? {
-        guard CMAltimeter.isAbsoluteAltitudeAvailable() else { return nil }
-        let altimeter = CMAltimeter()
-        let meters: Double? = await withCheckedContinuation { continuation in
-            let box = ResumeOnce(continuation)
-            altimeter.startAbsoluteAltitudeUpdates(to: .main) { data, _ in
-                box.resume(data.map { $0.altitude })
-            }
-            Task {
-                try? await Task.sleep(for: timeout)
-                box.resume(nil)
-            }
-        }
-        altimeter.stopAbsoluteAltitudeUpdates()
-        return meters
     }
 
     /// Meters the microphone for `duration` (KMP `IosAmbientNoiseMonitor`). Never prompts:
@@ -96,19 +76,6 @@ enum EncounterSensorSampler {
         let power = recorder.averagePower(forChannel: 0)
         recorder.stop()
         return approximateDecibels(averagePower: power)
-    }
-
-    private final class ResumeOnce: @unchecked Sendable {
-        private var continuation: CheckedContinuation<Double?, Never>?
-        private let lock = NSLock()
-        init(_ continuation: CheckedContinuation<Double?, Never>) { self.continuation = continuation }
-        func resume(_ value: Double?) {
-            lock.lock()
-            let pending = continuation
-            continuation = nil
-            lock.unlock()
-            pending?.resume(returning: value)
-        }
     }
 }
 

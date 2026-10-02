@@ -39,7 +39,10 @@ struct TapConnectView: View {
         }
         .navigationTitle("Tap to Connect")
         .navigationBarTitleDisplayMode(.inline)
-        .task { model.attach(env) }
+        .task {
+            model.attach(env)
+            model.warmUp()
+        }
         .onDisappear { model.cancel() }
         .onChange(of: scenePhase) { _, phase in
             switch phase {
