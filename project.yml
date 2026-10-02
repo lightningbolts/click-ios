@@ -38,6 +38,7 @@ targets:
       INFOPLIST_KEY_CADisableMinimumFrameDurationOnPhone: YES
       INFOPLIST_KEY_NSBluetoothAlwaysUsageDescription: "Click uses Bluetooth for Tap to Connect when you meet someone nearby."
       INFOPLIST_KEY_NSMicrophoneUsageDescription: "Click uses your microphone for Tap to Connect ultrasonic sensing and voice notes."
+      INFOPLIST_KEY_NSNearbyInteractionUsageDescription: "Click uses Nearby Interaction during Tap to Connect to measure proximity between nearby iPhones and help confirm you are connecting with the person physically next to you."
       INFOPLIST_KEY_NSCalendarsFullAccessUsageDescription: "Click reads your calendar to find mutual free time when you reconnect with a friend."
       INFOPLIST_KEY_NSCalendarsUsageDescription: "Click reads your calendar to find mutual free time when you reconnect with a friend."
       INFOPLIST_KEY_NSContactsUsageDescription: "Click hashes phone numbers and emails on this device to find people you already know. Your address book never leaves your phone."
