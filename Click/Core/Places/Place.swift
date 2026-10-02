@@ -100,7 +100,7 @@ public struct PulseSummary: Codable, Equatable, Sendable {
         let category = JSONFields.dictionary(row["category"])
         let distribution = (row["distribution"] as? [Any] ?? []).map { JSONFields.int($0) ?? 0 }
         return PulseSummary(
-            state: JSONFields.string(row["state"]).flatMap(State.init(rawValue:)) ?? .none,
+            state: JSONFields.string(row["state"]).flatMap(State.init(rawValue:)) ?? State.none,
             label: JSONFields.string(row["label"]).flatMap(EnergyLabel.init(rawValue:)),
             energyScore: JSONFields.double(row["energy_score"]),
             reportCount: JSONFields.int(row["report_count"]) ?? 0,

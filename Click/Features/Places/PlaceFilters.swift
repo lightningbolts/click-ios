@@ -17,7 +17,7 @@ public struct PlaceFilters: Codable, Equatable, Sendable {
     public var hereNow = false
 
     public static let none = PlaceFilters()
-    public var isActive: Bool { self != .none }
+    public var isActive: Bool { self != PlaceFilters.none }
 
     public init() {}
 
@@ -48,7 +48,7 @@ public struct PlaceFilters: Codable, Equatable, Sendable {
 
     static func load(from defaults: UserDefaults = .standard) -> PlaceFilters {
         guard let data = defaults.data(forKey: storageKey),
-              let filters = try? JSONDecoder().decode(PlaceFilters.self, from: data) else { return .none }
+              let filters = try? JSONDecoder().decode(PlaceFilters.self, from: data) else { return PlaceFilters.none }
         return filters
     }
 
