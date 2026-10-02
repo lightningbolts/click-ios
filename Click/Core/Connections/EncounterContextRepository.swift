@@ -1,13 +1,14 @@
 import Foundation
 
 /// Sensor context stored with an encounter (KMP `ConnectionSensorContext` + `HardwareVibeSnapshot`
-/// keys). Noise and barometric elevation are opt-in; the hardware snapshot (screen-brightness
-/// light proxy, motion variance, compass heading, battery) is captured at connect time only.
+/// keys). Noise and the barometer are opt-in; the hardware snapshot (screen-brightness light
+/// proxy, motion variance, compass heading, battery) is captured at connect time only. The
+/// barometer reading carries its own reported uncertainty (`AltitudeObservation`).
 public struct EncounterSensorContext: Codable, Equatable, Sendable {
     public var noiseLevel: String?
     public var noiseDecibels: Double?
     public var elevationCategory: String?
-    public var barometricElevationMeters: Double?
+    public var barometer: AltitudeObservation?
     public var luxLevel: Double?
     public var motionVariance: Double?
     public var compassAzimuth: Double?
@@ -17,7 +18,7 @@ public struct EncounterSensorContext: Codable, Equatable, Sendable {
         noiseLevel: String? = nil,
         noiseDecibels: Double? = nil,
         elevationCategory: String? = nil,
-        barometricElevationMeters: Double? = nil,
+        barometer: AltitudeObservation? = nil,
         luxLevel: Double? = nil,
         motionVariance: Double? = nil,
         compassAzimuth: Double? = nil,
@@ -26,7 +27,7 @@ public struct EncounterSensorContext: Codable, Equatable, Sendable {
         self.noiseLevel = noiseLevel
         self.noiseDecibels = noiseDecibels
         self.elevationCategory = elevationCategory
-        self.barometricElevationMeters = barometricElevationMeters
+        self.barometer = barometer
         self.luxLevel = luxLevel
         self.motionVariance = motionVariance
         self.compassAzimuth = compassAzimuth
@@ -41,7 +42,7 @@ public struct EncounterSensorContext: Codable, Equatable, Sendable {
         if let noiseLevel { out["noise_level"] = noiseLevel }
         if let noiseDecibels { out["exact_noise_level_db"] = noiseDecibels }
         if let elevationCategory { out["elevation_category"] = elevationCategory }
-        if let barometricElevationMeters { out["exact_barometric_elevation_m"] = barometricElevationMeters }
+        if let barometer { out.merge(barometer.columns) { current, _ in current } }
         if let luxLevel { out["lux_level"] = luxLevel }
         if let motionVariance { out["motion_variance"] = motionVariance }
         if let compassAzimuth { out["compass_azimuth"] = compassAzimuth }

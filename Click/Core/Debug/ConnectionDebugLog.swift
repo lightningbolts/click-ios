@@ -33,6 +33,13 @@ final class ConnectionDebugLog {
         if entries.count > 30 { entries.removeLast(entries.count - 30) }
     }
 
+    /// A capture-diagnostics note (location / altimeter quality), shown with the requests.
+    func note(_ label: String, _ text: String) {
+        record(method: Self.noteMethod, path: label, status: nil, request: Data(text.utf8), response: nil)
+    }
+
+    static let noteMethod = "LOG"
+
     func clear() { entries.removeAll() }
 
     private static func pretty(_ data: Data?) -> String {
@@ -66,7 +73,9 @@ struct ConnectionDebugLogView: View {
                     VStack(alignment: .leading, spacing: 10) {
                         ForEach(log.entries) { entry in
                             VStack(alignment: .leading, spacing: 2) {
-                                Text("\(entry.method) \(entry.path) → \(entry.status.map(String.init) ?? "error")").font(.caption2.bold())
+                                Text(entry.method == ConnectionDebugLog.noteMethod
+                                     ? entry.path
+                                     : "\(entry.method) \(entry.path) → \(entry.status.map(String.init) ?? "error")").font(.caption2.bold())
                                 Text(entry.request).font(.system(size: 9, design: .monospaced))
                                 Text(entry.response).font(.system(size: 9, design: .monospaced)).foregroundStyle(.secondary)
                             }

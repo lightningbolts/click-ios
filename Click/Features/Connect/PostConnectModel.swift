@@ -131,10 +131,11 @@ final class PostConnectModel {
         }
     }
 
-    /// Samples opted-in sensors now that the tap's microphone use is over, then writes them to
-    /// this encounter (sensor-only patch; tags are saved separately). Silent on failure.
+    /// Samples ambient noise now that the tap's microphone use is over, then writes it to this
+    /// encounter (sensor-only patch; tags are saved separately). Silent on failure. The barometer
+    /// was already read at the connection moment, so a later reading never replaces it.
     func recordSensorContext(_ env: AppEnvironment) async {
-        guard env.settings.ambientNoiseOptIn || env.settings.barometricContextOptIn,
+        guard env.settings.ambientNoiseOptIn,
               let userID = env.session.currentSession?.userId else { return }
         let connectionIDs = match.isGroup ? match.peers.compactMap(\.connectionID) : [match.connectionID].compactMap { $0 }
         guard !connectionIDs.isEmpty else { return }

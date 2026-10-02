@@ -100,7 +100,7 @@ struct EncounterContextTests {
             EncounterContextRepository.EncounterRow(id: "mine", encounteredAt: now, contextTags: [], reportingUserID: "me"),
             EncounterContextRepository.EncounterRow(id: "theirs", encounteredAt: now, contextTags: [], reportingUserID: "peer")
         ]
-        let sensor = EncounterSensorContext(barometricElevationMeters: 12)
+        let sensor = EncounterSensorContext(noiseDecibels: 42)
         let patches = EncounterContextRepository.patches(rows: rows, tags: [], sensor: sensor, reportingUserID: "me", now: now)
         #expect(patches.map(\.id) == ["mine"])
     }
