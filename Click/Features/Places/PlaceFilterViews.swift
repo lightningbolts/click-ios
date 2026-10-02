@@ -25,7 +25,7 @@ struct PlaceFilterChips: View {
                 chip("Clicks have been", isOn: model.placeFilters.clicksBeenHere) { model.placeFilters.clicksBeenHere.toggle() }
                 chip("More…", isOn: false) { showingAll = true }
                 if model.placeFilters.isActive {
-                    chip("Clear", isOn: false) { model.placeFilters = .none }
+                    chip("Clear", isOn: false) { model.placeFilters = PlaceFilters.none }
                 }
             }
             .padding(.horizontal, 20)
@@ -97,7 +97,7 @@ struct PlaceFiltersSheet: View {
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .topBarLeading) {
-                    Button("Clear") { filters = .none }.disabled(!filters.isActive)
+                    Button("Clear") { filters = PlaceFilters.none }.disabled(!filters.isActive)
                 }
                 ToolbarItem(placement: .topBarTrailing) {
                     Button("Done") { dismiss() }

@@ -63,7 +63,7 @@ struct PlaceFilterTests {
         filters.save(to: defaults)
         #expect(PlaceFilters.load(from: defaults) == filters)
         defaults.set(Data("not json".utf8), forKey: PlaceFilters.storageKey)
-        #expect(PlaceFilters.load(from: defaults) == .none)
+        #expect(PlaceFilters.load(from: defaults) == PlaceFilters.none)
     }
 }
 
