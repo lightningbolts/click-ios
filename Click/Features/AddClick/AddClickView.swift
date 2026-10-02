@@ -670,7 +670,8 @@ private enum ClickConnectionRedeemer {
 
     /// Encounter context captured at the connection moment, as the body keys `/api/qr` and
     /// `/api/connections` read: this phone's own fix and its quality, the opted-in barometer
-    /// with its uncertainty, the hardware snapshot and timezone. Fixes coarser than
+    /// with its uncertainty, the hardware snapshot, timezone and the versioned
+    /// `sensor_observation`. Fixes coarser than
     /// `ConnectionLocationQuality.maximumUsefulAccuracy` are left out so a poor fix never
     /// fails `redeem_qr_token`'s 100 m check. Noise is sampled after the reveal
     /// (`PostConnectModel.recordSensorContext`).
@@ -691,6 +692,18 @@ private enum ClickConnectionRedeemer {
         context.barometer = observed.altitude
         var fields = context.columns
         fields["timezone_offset_minutes"] = TimeZone.current.secondsFromGMT() / 60
+        // This phone's own raw readings of the scan, aligned on the recognition moment.
+        let sensorObservation = ConnectionSensorObservation(
+            method: capture.method,
+            snapshot: observed,
+            includeLocation: captureLocation,
+            device: .current(
+                screenBrightnessProxy: context.screenBrightnessProxy,
+                preciseLocationAuthorized: env.location.isPrecise
+            )
+        )
+        sensorObservation.logDiagnostics()
+        if let payload = sensorObservation.payload { fields["sensor_observation"] = payload }
         guard captureLocation, let fix = observed.location else { return (fields, nil) }
         fields.merge(fix.qualityColumns) { current, _ in current }
         return (fields, fix)

@@ -47,6 +47,8 @@ final class TapConnectModel {
     /// This phone's location/altimeter capture, warmed while the flow is visible.
     private let capture = ConnectionCaptureSession(method: "tap")
     private var warmTask: Task<Void, Never>?
+    /// Aggregate sensor quality of the latest tap, attached to its outcome telemetry.
+    private var captureQuality: [String: TelemetryValue]?
     private var environment: AppEnvironment?
     private var runTask: Task<Void, Never>?
     private var pendingID: String?
@@ -210,6 +212,7 @@ final class TapConnectModel {
             )
         } else {
             let token = ProximityCodec.randomToken()
+            ultrasonic.resetTrace()
             do {
                 try await ultrasonic.activateSession()
             } catch {
@@ -243,6 +246,21 @@ final class TapConnectModel {
         stopCapture()
         evidence.sensor = await sensor
         evidence.sensor.barometer = observed.altitude
+        // This phone's own raw readings of the tap, aligned on the same connection moment.
+        let sensorObservation = ConnectionSensorObservation(
+            method: capture.method,
+            snapshot: observed,
+            includeLocation: captureLocation,
+            bluetooth: simulator ? nil : ble.trace,
+            acoustic: simulator ? nil : ultrasonic.trace,
+            device: .current(
+                screenBrightnessProxy: evidence.sensor.screenBrightnessProxy,
+                preciseLocationAuthorized: environment.location.isPrecise
+            )
+        )
+        sensorObservation.logDiagnostics()
+        evidence.sensorObservation = sensorObservation
+        captureQuality = sensorObservation.captureQuality
         if captureLocation {
             location = evidence.latitude == nil ? .none : .found
         }
@@ -351,11 +369,18 @@ final class TapConnectModel {
         reason: String? = nil
     ) {
         guard let telemetry = environment?.connectionTelemetry else { return }
+        let quality = Self.captureQualityEvents.contains(event) ? captureQuality : nil
         Task {
             await telemetry.track(event, peerCount: peerCount, isGroup: isGroup, isReconnect: isReconnect,
-                                  selectedCount: selectedCount, candidateCount: candidateCount, reason: reason)
+                                  selectedCount: selectedCount, candidateCount: candidateCount, reason: reason,
+                                  captureQuality: quality)
         }
     }
+
+    /// Outcomes of a submitted tap carry its capture quality (counts and accuracies only).
+    private static let captureQualityEvents: Set<ConnectionFlowTelemetry.Event> = [
+        .matched, .pending, .failed, .offlineQueued, .awaitingSelection, .reconnectRateLimited
+    ]
 
     /// A short machine code for a failure (never a server message or an identifier).
     static func telemetryReason(_ error: Error) -> String {
@@ -413,6 +438,7 @@ final class TapConnectModel {
     }
 
     private func resetFactors() {
+        captureQuality = nil
         bluetooth = .waiting
         sound = .waiting
         location = .waiting
