@@ -108,6 +108,8 @@ public enum AppRoute: Hashable, Sendable {
     /// A Click Place page (`click://p/{slug}`). `anchorToken` comes from a check-in QR code and
     /// only ever prompts "Check in at …?"; it is never put in share links.
     case place(idOrSlug: String, anchorToken: String?)
+    /// Me: the Places you've checked in at or met people at.
+    case myPlaces
     case myQR
     case scanQR
     case tapConnect
@@ -132,7 +134,7 @@ public enum AppRoute: Hashable, Sendable {
             .map
         case .myQR, .scanQR, .tapConnect, .connectionInvocation:
             .addClick
-        case .savedEvents, .settings, .history:
+        case .savedEvents, .settings, .history, .myPlaces:
             .settings
         }
     }

@@ -121,7 +121,8 @@ final class SelfDataStore {
         await run("privacy", force: force) { environment, userID in
             self.locationPrivacy.begin()
             do {
-                self.locationPrivacy.succeed(try await environment.me.locationPrivacy(userID: userID))
+                let places = environment.features.isEnabled(.clickPlaces)
+                self.locationPrivacy.succeed(try await environment.me.locationPrivacy(userID: userID, includePlaceVisits: places))
             } catch {
                 self.locationPrivacy.fail(error)
                 throw error

@@ -40,6 +40,8 @@ struct AppRouteDestination: View {
                 HubChatView(hubID: hubID)
             case .place(let idOrSlug, let anchorToken):
                 PlaceDetailView(idOrSlug: idOrSlug, anchorToken: anchorToken)
+            case .myPlaces:
+                MyPlacesView()
             case .myQR:
                 MyClickCodeView()
             case .scanQR:
