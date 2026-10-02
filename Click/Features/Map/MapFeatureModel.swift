@@ -371,7 +371,8 @@ final class MapFeatureModel {
             discovery.begin()
             var firstPageLoaded = false
             do {
-                var fresh = try await environment.beacons.discovery(around: center, userID: userID)
+                let places: PlaceRepository? = environment.features.isEnabled(.clickPlaces) ? environment.places : nil
+                var fresh = try await environment.beacons.discovery(around: center, userID: userID, places: places)
                 guard !Task.isCancelled else { return }
                 discovery.succeed(fresh)
                 firstPageLoaded = true
