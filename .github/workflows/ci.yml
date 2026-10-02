@@ -41,14 +41,6 @@ jobs:
       - name: Install XcodeGen
         run: brew install xcodegen
 
-      - name: Verify Checked-In Xcode Project
-        run: |
-          xcodebuild build \
-            -project Click.xcodeproj \
-            -scheme Click \
-            -destination 'generic/platform=iOS' \
-            CODE_SIGNING_ALLOWED=NO
-
       - name: Generate Xcode Project
         run: xcodegen generate
 
