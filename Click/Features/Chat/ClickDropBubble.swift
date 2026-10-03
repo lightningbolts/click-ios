@@ -47,11 +47,15 @@ struct ClickDropImageView: View {
                 retryBox
             } else if state == .developed, let developed {
                 Button { onOpen(developed.url) } label: {
-                    Image(uiImage: developed.image)
-                        .resizable()
+                    ClickDropDevelopingImage(image: developed.image, isDeveloped: true, plays: playsDevelop, contentMode: .fit)
                         .aspectRatio(developed.image.size, contentMode: .fit)
                         .frame(maxWidth: 240, maxHeight: 320)
-                        .clickDropDevelop(true, plays: playsDevelop)
+                        .background {
+                            // The drop's pixels stay underneath while it develops over them.
+                            if playsDevelop, let pixelated {
+                                Image(uiImage: pixelated).resizable().interpolation(.none).scaledToFill()
+                            }
+                        }
                 }
                 .buttonStyle(.plain)
                 .accessibilityLabel("Click Drop photo. Opens full screen.")
@@ -207,7 +211,7 @@ struct ClickDropImageView: View {
         withAnimation(fresh ? ClickMotion.subtleFade : nil) { developed = (image, url) }
         guard fresh else { return }
         ClickHaptics.impact(.light)
-        try? await Task.sleep(for: .seconds(ClickDropDevelopEffect.duration))
+        try? await Task.sleep(for: .seconds(ClickDropDevelopingImage.duration))
         controls.didShowDevelop()
     }
 }

@@ -137,10 +137,12 @@ struct EventRecapView: View {
     private func photo(_ drop: EventDrop) -> some View {
         if let photo = photos[drop.id] {
             // Each drop resolves out of its pixels the first time it shows this visit.
-            Color.clear.overlay { Image(uiImage: natural ? photo.natural : photo.look).resizable().scaledToFill() }
-                .clipped()
-                .clickDropDevelop(true, plays: !reduceMotion && !developedOnScreen.contains(drop.id))
-                .id(drop.id)
+            ZStack {
+                PixelatedPreview(url: drop.previewURL)
+                ClickDropDevelopingImage(image: natural ? photo.natural : photo.look, isDeveloped: true,
+                                         plays: !reduceMotion && !developedOnScreen.contains(drop.id))
+            }
+            .id(drop.id)
                 .transition(.opacity)
                 .accessibilityLabel(drop.isMine ? "Your drop" : "Drop from \(drop.userName)")
         } else if failed.contains(drop.id) {
