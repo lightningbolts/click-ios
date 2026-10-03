@@ -93,7 +93,6 @@ struct SharedDropStoryViewer: View {
                         .opacity(shown ? 1 : 0)
                 }
             }
-            .shimmering(!shown)
             .clipShape(RoundedRectangle(cornerRadius: 18, style: .continuous))
             .overlay(alignment: .bottom) {
                 if shown, let caption = drop.caption {

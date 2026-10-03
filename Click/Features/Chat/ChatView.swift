@@ -376,7 +376,7 @@ public struct ChatView: View {
 
     /// Rows for the timeline: the history loader, day headers, the "New messages" divider, messages, typing.
     private var timelineRows: [ChatTimelineRow] {
-        var rows: [ChatTimelineRow] = model.isLoadingOlder && model.hasMoreHistory ? [.historyLoader] : []
+        var rows: [ChatTimelineRow] = model.isLoadingOlder && model.hasMoreHistory && timeline.isAtTop ? [.historyLoader] : []
         rows.reserveCapacity(model.items.count + 8)
         var previousDay: Date?
         for item in model.items {

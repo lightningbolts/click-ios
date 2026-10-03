@@ -211,7 +211,7 @@ public struct HomeView: View {
                     overlapRow
                 } else if model.intents.isPending {
                     HomeRow(inset: 60) {
-                        ShimmerPlaceholder(cornerRadius: 14, width: 28, height: 28)
+                        ShimmerPlaceholder(cornerRadius: 14, width: 28, height: 28, animated: false)
                     } content: {
                         Text("Loading your plans…")
                             .font(ClickTypography.body)

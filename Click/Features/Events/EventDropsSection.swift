@@ -235,7 +235,6 @@ struct PixelatedPreview: View {
             .overlay {
                 if let shown { Image(uiImage: shown).resizable().interpolation(.none).scaledToFill() }
             }
-            .shimmering(shown == nil && url != nil)
             .clipped()
             .task(id: url) {
                 guard let url, image == nil else { return }

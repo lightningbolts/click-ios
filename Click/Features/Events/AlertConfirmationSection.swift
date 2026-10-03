@@ -33,7 +33,7 @@ struct AlertConfirmationSection: View {
                 Button("Couldn't load. Try again") { Task { await load() } }
                     .font(ClickTypography.supporting)
             } else {
-                ShimmerPlaceholder(cornerRadius: 10, height: 44)
+                ShimmerPlaceholder(cornerRadius: 10, height: 44, animated: false)
             }
 
             if let message {

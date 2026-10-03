@@ -505,7 +505,7 @@ struct PermissionsSettingsView: View {
             }
             .buttonStyle(.borderless)
         case nil:
-            ShimmerPlaceholder(cornerRadius: 5, width: 54, height: 14)
+            ShimmerPlaceholder(cornerRadius: 5, width: 54, height: 14, animated: false)
         default:
             Button(statuses[type] == .notDetermined ? "Not asked" : "Settings") {
                 env.permissions.openSystemSettings()
@@ -645,7 +645,7 @@ struct CalendarSettingsView: View {
                         }
                         .buttonStyle(.borderless)
                     case nil:
-                        ShimmerPlaceholder(cornerRadius: 5, width: 54, height: 14)
+                        ShimmerPlaceholder(cornerRadius: 5, width: 54, height: 14, animated: false)
                     default:
                         Button("Settings") { env.permissions.openSystemSettings() }
                             .buttonStyle(.borderless)

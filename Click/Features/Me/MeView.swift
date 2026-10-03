@@ -275,7 +275,7 @@ public struct MeView: View {
             .disabled(pendingFree != nil)
         } else {
             SettingsRowLabel(title: "Free currently", subtitle: profile.isPending ? "Loading…" : "Unavailable right now", systemImage: "sun.max") {
-                if profile.isPending { ShimmerPlaceholder(cornerRadius: 8, width: 51, height: 31) }
+                if profile.isPending { ShimmerPlaceholder(cornerRadius: 8, width: 51, height: 31, animated: false) }
             }
         }
     }

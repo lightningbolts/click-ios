@@ -276,7 +276,7 @@ struct GroupProfileView: View {
                     .foregroundStyle(ClickColors.textSecondary)
                     .monospacedDigit()
             } else if tabs.isPending {
-                ShimmerPlaceholder(cornerRadius: 5, width: 28, height: 14)
+                ShimmerPlaceholder(cornerRadius: 5, width: 28, height: 14, animated: false)
             } else {
                 Text("—").foregroundStyle(ClickColors.textTertiary)
             }

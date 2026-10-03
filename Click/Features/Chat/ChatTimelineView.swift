@@ -23,6 +23,9 @@ final class TimelineController {
 
     /// True while the newest message is (nearly) in view.
     fileprivate(set) var isNearBottom = true
+    /// True once the reader has scrolled themselves to the very top (never just by opening a
+    /// short chat), so the older-history loader only appears when someone is waiting on it.
+    fileprivate(set) var isAtTop = false
 
     func scrollToBottom(animated: Bool) {
         coordinator?.scrollToBottom(animated: animated)
@@ -48,7 +51,8 @@ final class TimelineController {
 ///   the true bottom before the first frame is shown.
 /// - **Older history** is prefetched while the reader is still 2.5 screens away from the top,
 ///   and prepending keeps the visible rows exactly where they are (content-size delta applied to
-///   the offset), so there is no jump; a loader row shows only while a page is still loading.
+///   the offset), so there is no jump. A loader row appears only if the reader scrolls all the
+///   way up while a page is still loading (never on open, so no empty band above the chat).
 /// - **Staying at the bottom**: while the reader is at the bottom, new messages, growing
 ///   bubbles (images decoding), composer/keyboard changes all keep the newest message visible.
 ///
@@ -106,8 +110,9 @@ struct ChatTimelineView: UIViewRepresentable {
         private var contentVersion = -1
         private var hasPositionedInitially = false
         private var lastNearBottom = true
-        private var pendingNearBottom: Bool?
-        private var nearBottomReportScheduled = false
+        private var lastAtTop = false
+        private var pendingPosition: (nearBottom: Bool, atTop: Bool)?
+        private var positionReportScheduled = false
         private var lastNearTopRequest = Date.distantPast
 
         func attach(_ view: TimelineCollectionView, controller: TimelineController) {
@@ -158,7 +163,11 @@ struct ChatTimelineView: UIViewRepresentable {
 
             let prepended = Self.isPrepend(old: previousRows, new: rows)
             let wasAtBottom = collectionView.stickToBottom
-            if prepended, hasPositionedInitially {
+            // The loader appearing for a reader resting at the top shows in view (content moves
+            // down by its height); everything else that lands above keeps the reader in place.
+            let loaderInView = rows.first == .historyLoader && Array(rows.dropFirst()) == previousRows
+                && collectionView.contentOffset.y + collectionView.adjustedContentInset.top < 60
+            if prepended, hasPositionedInitially, !loaderInView {
                 // Keep the reader's rows exactly in place while older history lands above.
                 let distanceFromBottom = collectionView.contentSize.height - collectionView.contentOffset.y
                 collectionView.isPreservingPosition = true
@@ -321,7 +330,7 @@ struct ChatTimelineView: UIViewRepresentable {
             guard let collectionView else { return }
             collectionView.stickToBottom = true
             collectionView.setContentOffset(CGPoint(x: 0, y: bottomOffset(collectionView)), animated: animated)
-            reportNearBottom(true)
+            reportPosition(nearBottom: true, atTop: false)
         }
 
         func scrollTo(row: ChatTimelineRow, animated: Bool) -> Bool {
@@ -343,12 +352,13 @@ struct ChatTimelineView: UIViewRepresentable {
             }
         }
 
-        private func reportNearBottom(_ near: Bool) {
-            guard near != lastNearBottom else { return }
-            lastNearBottom = near
-            pendingNearBottom = near
-            guard !nearBottomReportScheduled else { return }
-            nearBottomReportScheduled = true
+        private func reportPosition(nearBottom: Bool, atTop: Bool) {
+            guard nearBottom != lastNearBottom || atTop != lastAtTop else { return }
+            lastNearBottom = nearBottom
+            lastAtTop = atTop
+            pendingPosition = (nearBottom, atTop)
+            guard !positionReportScheduled else { return }
+            positionReportScheduled = true
 
             // UIKit can invoke scroll delegates while SwiftUI is synchronously updating this
             // representable. Task.yield() is not a sufficient boundary because the task may
@@ -356,11 +366,13 @@ struct ChatTimelineView: UIViewRepresentable {
             // and coalesce any intermediate values.
             DispatchQueue.main.async { [weak self] in
                 guard let self else { return }
-                self.nearBottomReportScheduled = false
-                guard let pending = self.pendingNearBottom else { return }
-                self.pendingNearBottom = nil
-                guard let controller = self.controller, controller.isNearBottom != pending else { return }
-                withAnimation(ClickMotion.selection) { controller.isNearBottom = pending }
+                self.positionReportScheduled = false
+                guard let pending = self.pendingPosition, let controller = self.controller else { return }
+                self.pendingPosition = nil
+                if controller.isNearBottom != pending.nearBottom {
+                    withAnimation(ClickMotion.selection) { controller.isNearBottom = pending.nearBottom }
+                }
+                if controller.isAtTop != pending.atTop { controller.isAtTop = pending.atTop }
             }
         }
 
@@ -383,7 +395,9 @@ struct ChatTimelineView: UIViewRepresentable {
             if scrollView.isTracking || scrollView.isDecelerating {
                 collectionView.stickToBottom = distanceFromBottom < 24
             }
-            reportNearBottom(distanceFromBottom < 120)
+            let distanceFromTop = scrollView.contentOffset.y + scrollView.adjustedContentInset.top
+            let userMoved = scrollView.isTracking || scrollView.isDecelerating
+            reportPosition(nearBottom: distanceFromBottom < 120, atTop: userMoved ? distanceFromTop < 60 : lastAtTop && distanceFromTop < 60)
             requestOlderIfNeeded()
         }
 
