@@ -825,8 +825,10 @@ private extension View {
         toolbarBackground(clear ? .hidden : .automatic, for: .navigationBar)
             .scrollEdgeEffectHiddenIfAvailable(clear, for: .top)
     }
+}
 
-    /// The page's one card style (info, people, hosting).
+extension View {
+    /// The event page's one card style (info, Click Drops, people, hosting).
     func detailCard() -> some View {
         background(ClickColors.fillSubtle, in: RoundedRectangle(cornerRadius: ClickRadius.surface, style: .continuous))
             .clipShape(RoundedRectangle(cornerRadius: ClickRadius.surface, style: .continuous))

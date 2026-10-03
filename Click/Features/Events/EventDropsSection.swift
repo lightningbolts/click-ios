@@ -66,11 +66,11 @@ struct EventDropsSection: View {
                     .foregroundStyle(ClickColors.textSecondary)
             }
             if hasCard(current) {
-                // Its own grouped card, like the page's other sections.
+                // The page's card style, like the info, people and hosting cards.
                 card(current)
-                    .padding(14)
+                    .padding(16)
                     .frame(maxWidth: .infinity, alignment: .leading)
-                    .groupedSurface()
+                    .detailCard()
             }
         }
     }
@@ -114,18 +114,16 @@ struct EventDropsSection: View {
                 } label: {
                     Label("Add a drop · \(current.remaining) left", systemImage: "camera")
                         .font(ClickTypography.supportingEmphasized)
-                        .foregroundStyle(ClickColors.textPrimary)
-                        .frame(maxWidth: .infinity, minHeight: 48)
-                        .overlay {
-                            RoundedRectangle(cornerRadius: 16, style: .continuous)
-                                .strokeBorder(ClickColors.separator, lineWidth: 1.5)
-                        }
-                        .contentShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
+                        .frame(maxWidth: .infinity, minHeight: 36)
                 }
-                .buttonStyle(.plain)
+                .buttonStyle(.bordered)
+                .buttonBorderShape(.capsule)
+                .controlSize(.large)
+                .tint(ClickColors.accentForeground)
             }
 
             if !current.myDrops.isEmpty {
+                Divider()
                 Toggle("Show to people who RSVP'd but couldn't make it", isOn: Binding(
                     get: { state.value?.showToAbsentees ?? true },
                     set: { shown in Task { await setShownToAbsentees(shown) } }

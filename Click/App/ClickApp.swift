@@ -270,6 +270,8 @@ final class ClickNotificationCoordinator {
         case connections
         /// A connection's shared drop that just developed: Home, then its story.
         case sharedDrop(dropID: String)
+        /// A new sign-in asking this device to approve it (the approval sheet).
+        case deviceApproval
         /// Unknown future categories keep the current app state.
         case none
     }
@@ -305,6 +307,8 @@ final class ClickNotificationCoordinator {
             return value(["chat_id", "chatId"]).map { .route(.conversation(chatID: $0, messageID: nil)) } ?? .connections
         case "availability_match":
             return .connections
+        case "device_approval":
+            return .deviceApproval
         case "shared_drop_released":
             return value(["drop_id"]).map { .sharedDrop(dropID: $0) } ?? .none
         default:
@@ -357,6 +361,8 @@ final class ClickNotificationCoordinator {
         case .connections:
             environment.router.selectedTab = .connections
             environment.router.connectionsPath.removeAll()
+        case .deviceApproval:
+            environment.refreshDeviceApprovals()
         case .sharedDrop(let dropID):
             environment.router.selectedTab = .home
             environment.router.homePath.removeAll()

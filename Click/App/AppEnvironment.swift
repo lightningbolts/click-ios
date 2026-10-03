@@ -53,6 +53,12 @@ public final class AppEnvironment {
     public var activeConnectionID: String?
     /// A shared drop to open in the Home strip's story viewer (from a "just developed" push).
     public var pendingSharedDropID: String?
+    /// Another of the user's devices asking this one for their past messages (the approval sheet).
+    var incomingDeviceApproval: ChatRepository.DeviceApproval?
+    /// This device's own request to read past messages (the Clicks banner while it waits).
+    var ownDeviceApproval: ChatRepository.DeviceApproval?
+    /// Requests the user put off this session ("later"), so the sheet doesn't come back at once.
+    @ObservationIgnored private var deferredDeviceApprovals: Set<String> = []
     /// The latest in-person Click Drop window (post-connect), so Drops sent in it carry the encounter.
     public var clickDropSession: ClickDropSession?
     /// A message to scroll to when its conversation next opens (search deep links).
@@ -251,6 +257,9 @@ public final class AppEnvironment {
         timelineCache.clear()
         beaconExtras.removeAll()
         pendingSharedDropID = nil
+        incomingDeviceApproval = nil
+        ownDeviceApproval = nil
+        deferredDeviceApprovals.removeAll()
         await places.clearCache()
         sharedDropsStore = SharedDropsStore()
         pendingSends.removeAll()
@@ -413,6 +422,31 @@ public final class AppEnvironment {
         lastDeviceHistorySync = Date()
         let chat = self.chat
         Task(priority: .utility) { _ = await chat.shareHistoryWithApprovedDevices(currentUserID: userID) }
+        refreshDeviceApprovals()
+    }
+
+    /// Reads approvals: another device waiting on this one (sheet) and this device's own request
+    /// (banner). On foreground, on a "New sign-in" push, and when Clicks appears.
+    func refreshDeviceApprovals() {
+        guard let userID = session.currentSession?.userId else { return }
+        Task {
+            guard let result = try? await chat.deviceApprovals(), session.currentSession?.userId == userID else { return }
+            ownDeviceApproval = result.own
+            if incomingDeviceApproval == nil {
+                incomingDeviceApproval = result.incoming.first { !deferredDeviceApprovals.contains($0.id) }
+            }
+        }
+    }
+
+    /// The sheet was swiped away: ask again next session, not on the next foreground.
+    func deferDeviceApproval(_ id: String) {
+        deferredDeviceApprovals.insert(id)
+        if incomingDeviceApproval?.id == id { incomingDeviceApproval = nil }
+    }
+
+    /// Decided on this device: never offered again.
+    func deviceApprovalDecided(_ id: String) {
+        deferredDeviceApprovals.insert(id)
     }
 
     func reportPresenceIfEnabled() {

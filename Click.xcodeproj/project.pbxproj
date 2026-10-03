@@ -149,6 +149,7 @@
 		7C2D27682F203AA8E50135DD /* ButtonStyles.swift in Sources */ = {isa = PBXBuildFile; fileRef = B67AD6209B5DAB6EC962D28A /* ButtonStyles.swift */; };
 		7CE3ECC7FF060EC55B6CAB09 /* ChatKindsTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 20EC856E20FF0D26024AD575 /* ChatKindsTests.swift */; };
 		7DA56504C85E6945007913AA /* AvatarService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 84C3EE0A0BDD6043F907666E /* AvatarService.swift */; };
+		7E81C8B13C50A30CF4771460 /* DeviceApprovalViews.swift in Sources */ = {isa = PBXBuildFile; fileRef = 777FD193146078828CA67767 /* DeviceApprovalViews.swift */; };
 		7FEFF204089EB2AA4C53F687 /* SettingsPages.swift in Sources */ = {isa = PBXBuildFile; fileRef = D8FC9A8E3F2EF66F73BBAEF4 /* SettingsPages.swift */; };
 		80915243C5479D8A91333C4A /* FrictionTelemetry.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3A9C809281EFE78177559CBF /* FrictionTelemetry.swift */; };
 		80E0FD617F57A87BEB475744 /* Manrope-Medium.ttf in Resources */ = {isa = PBXBuildFile; fileRef = 2AEC3B2ABCA6FD192389609D /* Manrope-Medium.ttf */; };
@@ -471,6 +472,7 @@
 		758475F38EA92E1DDE8CB3B9 /* APIError.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = APIError.swift; sourceTree = "<group>"; };
 		75F3B6683C059DAF391328A6 /* PendingSendStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PendingSendStore.swift; sourceTree = "<group>"; };
 		7706CFCC8974CFECA09912F7 /* EventVisual.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = EventVisual.swift; sourceTree = "<group>"; };
+		777FD193146078828CA67767 /* DeviceApprovalViews.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DeviceApprovalViews.swift; sourceTree = "<group>"; };
 		77CF1D6BB251C87ECF61B463 /* ClickTests.xctest */ = {isa = PBXFileReference; includeInIndex = 0; lastKnownFileType = wrapper.cfbundle; path = ClickTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 		7878BF7DD3F7FE11ED9C8866 /* MapFeatureModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MapFeatureModel.swift; sourceTree = "<group>"; };
 		78C43D61D08B8E0F50B37997 /* Phase3Repository.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Phase3Repository.swift; sourceTree = "<group>"; };
@@ -1329,6 +1331,7 @@
 				8E6A9877CF7ADA77BDF8CD49 /* ClickDropBubble.swift */,
 				68FA499EB03E1FC06A6AB7F6 /* ClickDropCameraView.swift */,
 				B5503A75FDC271224C037F0F /* ConversationModel.swift */,
+				777FD193146078828CA67767 /* DeviceApprovalViews.swift */,
 				1E191CC755847A105CAB84A4 /* DropReplyViews.swift */,
 				AAD7E291890A95117C367052 /* EmojiKeyboardPicker.swift */,
 				4AD0752BF44947825A2DF282 /* GifViews.swift */,
@@ -1644,6 +1647,7 @@
 				8A9F4D30BB33AF8EA16ADF1B /* ConversationTimelineCache.swift in Sources */,
 				9FFE49B750AFD7B106E7F990 /* CreateBeaconSheet.swift in Sources */,
 				E8C81D7F00C0A4745CB45C91 /* DebugLaunch.swift in Sources */,
+				7E81C8B13C50A30CF4771460 /* DeviceApprovalViews.swift in Sources */,
 				D3646E36CA545C20E2D35A93 /* DeviceIdentityVault.swift in Sources */,
 				96928271974843B8640BDE6B /* DropReplyViews.swift in Sources */,
 				82FD933DA8ABA69BA1BFED64 /* EdgeFade.swift in Sources */,
