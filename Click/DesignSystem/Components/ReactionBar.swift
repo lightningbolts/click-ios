@@ -1,7 +1,7 @@
 import SwiftUI
 
-/// Tap an emoji to react, tap it again to take it back (Locket-style). Owners see who reacted
-/// instead of the palette. Shared by soundtracks and shared drops.
+/// Tap an emoji to react, tap it again to take it back (Locket-style); "+" picks any other emoji.
+/// Owners see who reacted instead of the palette. Shared by soundtracks and shared drops.
 ///
 /// Reactions paint from the session cache on the first frame (shared drops arrive inline with the
 /// strip), and a value that's under a minute old isn't fetched again.
@@ -18,6 +18,7 @@ struct ReactionBar: View {
 
     @State private var state: ReactionsState?
     @State private var popped: String?
+    @State private var pickingEmoji = false
 
     private static let freshFor: TimeInterval = 60
 
@@ -35,6 +36,9 @@ struct ReactionBar: View {
             }
         }
         .animation(ClickMotion.content, value: shown?.reactions)
+        .sheet(isPresented: $pickingEmoji) {
+            EmojiPickerSheet { emoji in Task { await react(emoji) } }
+        }
         .task(id: id) {
             if state == nil { state = env.beaconExtras.cached(cacheKey) }
             guard !env.beaconExtras.isFresh(cacheKey, within: Self.freshFor) else { return }
@@ -45,27 +49,41 @@ struct ReactionBar: View {
     private var cacheKey: String { BeaconExtrasCache.reactions(target, id) }
 
     private func palette(_ state: ReactionsState) -> some View {
-        HStack(spacing: 0) {
+        // A reaction picked from "+" takes the last slot (tap it to take it back).
+        let custom = state.mine.flatMap { ReactionsState.palette.contains($0) ? nil : $0 }
+        return HStack(spacing: 0) {
             ForEach(ReactionsState.palette, id: \.self) { emoji in
                 let chosen = state.mine == emoji
-                Button {
+                emojiButton(Text(emoji), chosen: chosen, popped: popped == emoji, label: "React \(emoji)") {
                     Task { await react(chosen ? nil : emoji) }
-                } label: {
-                    Text(emoji)
-                        .font(.system(size: 28))
-                        .frame(width: 50, height: 50)
-                        .glassCircleBackground(tint: chosen ? ClickColors.accentForeground.opacity(0.35) : nil)
-                        .overlay { if chosen { Circle().strokeBorder(ClickColors.accentForeground, lineWidth: 2) } }
-                        .scaleEffect(popped == emoji ? 1.3 : (chosen ? 1.08 : 1))
-                        .frame(maxWidth: .infinity)
-                        .contentShape(Rectangle())
                 }
-                .buttonStyle(.plain)
-                .accessibilityLabel("React \(emoji)")
-                .accessibilityAddTraits(chosen ? .isSelected : [])
+            }
+            if let custom {
+                emojiButton(Text(custom), chosen: true, popped: popped == custom, label: "React \(custom)") {
+                    Task { await react(nil) }
+                }
+            } else {
+                emojiButton(Image(systemName: "plus").font(.system(size: 20, weight: .semibold)), chosen: false, popped: false,
+                            label: "More emoji") { pickingEmoji = true }
             }
         }
         .animation(ClickMotion.selection, value: state.mine)
+    }
+
+    private func emojiButton(_ face: some View, chosen: Bool, popped: Bool, label: String, action: @escaping () -> Void) -> some View {
+        Button(action: action) {
+            face
+                .font(.system(size: 26))
+                .frame(width: 46, height: 46)
+                .glassCircleBackground(tint: chosen ? ClickColors.accentForeground.opacity(0.35) : nil)
+                .overlay { if chosen { Circle().strokeBorder(ClickColors.accentForeground, lineWidth: 2) } }
+                .scaleEffect(popped ? 1.3 : (chosen ? 1.08 : 1))
+                .frame(maxWidth: .infinity)
+                .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .accessibilityLabel(label)
+        .accessibilityAddTraits(chosen ? .isSelected : [])
     }
 
     /// Who reacted: each face with their emoji pinned to it, like a story's viewer list.

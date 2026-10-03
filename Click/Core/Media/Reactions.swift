@@ -15,7 +15,7 @@ public struct ReactionsState: Sendable, Equatable, Codable {
         public let emoji: String
     }
 
-    /// The fixed palette (matches the server's allowlist).
+    /// The quick palette; "+" picks any other single emoji (the server accepts any).
     public static let palette = ["❤️", "🔥", "😂", "😍", "👏", "😮"]
 
     public var mine: String?
