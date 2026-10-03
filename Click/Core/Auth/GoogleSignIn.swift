@@ -13,6 +13,20 @@ enum GoogleSignIn {
         let idToken: String
         /// The raw nonce; Google's token carries its SHA-256, which Supabase verifies.
         let nonce: String
+
+        /// The given/family name claims of the ID token (requested with the `profile` scope).
+        var name: PersonNameComponents? {
+            let parts = idToken.split(separator: ".")
+            guard parts.count > 1 else { return nil }
+            var payload = parts[1].replacingOccurrences(of: "-", with: "+").replacingOccurrences(of: "_", with: "/")
+            payload += String(repeating: "=", count: (4 - payload.count % 4) % 4)
+            guard let data = Data(base64Encoded: payload),
+                  let claims = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else { return nil }
+            var name = PersonNameComponents()
+            name.givenName = claims["given_name"] as? String
+            name.familyName = claims["family_name"] as? String
+            return name.givenName == nil && name.familyName == nil ? nil : name
+        }
     }
 
     /// Held while the sign-in sheet is up (the session must be retained until it finishes).

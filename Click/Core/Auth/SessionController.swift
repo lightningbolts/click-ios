@@ -29,7 +29,7 @@ public protocol SessionControlling: AnyObject {
     var currentSession: SessionSnapshot? { get }
     func restoreSession() async
     func signInWithEmail(email: String, password: String) async throws
-    func signUpWithEmail(email: String, password: String, firstName: String, lastName: String, birthday: Date) async throws -> SignUpResult
+    func signUpWithEmail(email: String, password: String) async throws -> SignUpResult
     func completeProfileBasics(firstName: String, lastName: String, birthday: Date) async throws
     func signOut() async
     func refreshSession() async throws -> SessionSnapshot
@@ -122,6 +122,10 @@ public final class SessionController: SessionControlling {
         guard let recentProfile, recentProfile.userId == userId, Date().timeIntervalSince(recentProfile.at) < 10 else { return nil }
         return recentProfile.data
     }
+
+    /// A name the provider already gave us (Sign in with Apple, Google) or a partially filled
+    /// profile has, so Profile Basics opens prefilled instead of asking again.
+    public private(set) var profileNameHint: PersonNameComponents?
 
     public var apiClient: ClickAPIClient?
     public var settingsStore: SettingsStore?
@@ -316,6 +320,12 @@ public final class SessionController: SessionControlling {
                    settingsStore?.onboardingState(for: userId) == nil {
                     settingsStore?.saveOnboardingState(OnboardingState(), for: userId)
                 }
+                if firstName?.isEmpty == false || lastName?.isEmpty == false {
+                    var hint = profileNameHint ?? PersonNameComponents()
+                    if let firstName, !firstName.isEmpty { hint.givenName = firstName }
+                    if let lastName, !lastName.isEmpty { hint.familyName = lastName }
+                    profileNameHint = hint
+                }
                 state = .profileBasicsRequired(userId: userId)
             } else if let current = currentSession {
                 retainedSession = current
@@ -352,26 +362,11 @@ public final class SessionController: SessionControlling {
         onPostAuthResolved?()
     }
 
-    /// Signs up with email, password, and required personal details.
+    /// Signs up with email and password only. Name and birthday are asked next, by the Profile
+    /// Basics gate, which every account without them passes through.
     @discardableResult
-    public func signUpWithEmail(
-        email: String,
-        password: String,
-        firstName: String,
-        lastName: String,
-        birthday: Date
-    ) async throws -> SignUpResult {
-        let formatter = ISO8601DateFormatter()
-        formatter.formatOptions = [.withFullDate]
-        let birthdayIso = formatter.string(from: birthday)
-
-        let result = try await authService.signUp(
-            email: email,
-            password: password,
-            firstName: firstName,
-            lastName: lastName,
-            birthdayIso: birthdayIso
-        )
+    public func signUpWithEmail(email: String, password: String) async throws -> SignUpResult {
+        let result = try await authService.signUp(email: email, password: password)
 
         switch result {
         case .authenticated(let snapshot):
@@ -419,6 +414,7 @@ public final class SessionController: SessionControlling {
             requiresAuth: true
         )
         _ = try await api.executeRaw(request)
+        profileNameHint = nil
         await resolveProfileGate(for: current.userId)
 
         // The PATCH itself is the durable write. If the follow-up profile fetch was
@@ -431,7 +427,8 @@ public final class SessionController: SessionControlling {
     }
 
     /// Signs in directly with a given snapshot (for testing or external OAuth coordinators).
-    public func signIn(snapshot: SessionSnapshot) {
+    public func signIn(snapshot: SessionSnapshot, nameHint: PersonNameComponents? = nil) {
+        profileNameHint = nameHint
         vault.saveSession(snapshot)
         retainedSession = snapshot
         state = .restoring
@@ -455,6 +452,7 @@ public final class SessionController: SessionControlling {
         if let session = currentSession {
             await authService.signOut(jwt: session.jwt)
         }
+        profileNameHint = nil
         vault.deleteSession()
         migrator.deleteLegacySession()
         if let userId = signingOutUserId {

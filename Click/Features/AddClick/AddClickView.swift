@@ -33,6 +33,10 @@ public struct AddClickView: View {
                     HomeSectionTitle("Community")
                         .padding(.horizontal, 4)
                     VStack(spacing: 0) {
+                        communityRow("Find friends", subtitle: "See who from your contacts is on Click", systemImage: "person.crop.circle.badge.plus") {
+                            env.router.navigate(to: .findFriends)
+                        }
+                        Divider().padding(.leading, 56)
                         communityRow("Create Community Hub", subtitle: "Host a venue for nearby Clicks", systemImage: "house") {
                             sheet = .createHub
                         }

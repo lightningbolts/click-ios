@@ -1,6 +1,7 @@
 import SwiftUI
 
-/// Phase 2 Interests selection screen with category accordion and subcategory chips.
+/// Interests picker (onboarding step 2, and Settings): a grouped list of categories, each opening
+/// to selectable chips.
 public struct InterestsPickerView: View {
     @State private var selectedTags: Set<String>
     @State private var expandedCategories: Set<String>
@@ -54,119 +55,76 @@ public struct InterestsPickerView: View {
     }
 
     public var body: some View {
-        VStack(spacing: 0) {
-            OnboardingHeaderView(
-                title: title,
-                subtitle: "Pick at least \(minTags) interests to help find common ground with your connections."
-            )
-
-            // Counter & Search Bar
-            VStack(alignment: .leading, spacing: ClickSpacing.xs) {
-                // Selection Counter Badge
-                HStack(spacing: ClickSpacing.xs) {
-                    Text("\(selectedTags.count) selected")
-                        .font(ClickTypography.supportingEmphasized)
-                        .fontWeight(.semibold)
-
-                    if selectedTags.count < minTags {
-                        Text("· need \(minTags - selectedTags.count) more")
-                            .font(ClickTypography.supporting)
-                            .foregroundStyle(ClickColors.textSecondary)
-                    } else {
-                        Text("✓")
-                            .font(ClickTypography.supportingEmphasized)
-                            .fontWeight(.bold)
-                            .foregroundStyle(ClickColors.accentForeground)
+        let isSearching = !searchQuery.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+        OnboardingPage(
+            title: title,
+            subtitle: "Pick at least \(minTags). They help you find common ground with the people you meet."
+        ) {
+            HStack(spacing: ClickSpacing.sm) {
+                Image(systemName: "magnifyingglass")
+                    .foregroundStyle(ClickColors.textTertiary)
+                TextField("Search music, sports, food…", text: $searchQuery)
+                    .autocorrectionDisabled()
+                    .submitLabel(.search)
+                if isSearching {
+                    Button { searchQuery = "" } label: {
+                        Image(systemName: "xmark.circle.fill")
+                            .foregroundStyle(ClickColors.textTertiary)
                     }
-                    Spacer()
+                    .buttonStyle(.plain)
+                    .accessibilityLabel("Clear search")
                 }
-                .foregroundStyle(selectedTags.count >= minTags ? ClickColors.accentForeground : ClickColors.textPrimary)
-
-                // Search Bar
-                HStack(spacing: ClickSpacing.sm) {
-                    Image(systemName: "magnifyingglass")
-                        .foregroundStyle(ClickColors.textTertiary)
-                    TextField("Search music, sports, tech, food...", text: $searchQuery)
-                        .font(ClickTypography.body)
-                    if !searchQuery.isEmpty {
-                        Button(action: { searchQuery = "" }) {
-                            Image(systemName: "xmark.circle.fill")
-                                .foregroundStyle(ClickColors.textTertiary)
-                        }
-                    }
-                }
-                .padding(.horizontal, ClickSpacing.md)
-                .padding(.vertical, 10)
-                .background(ClickColors.surface)
-                .clipShape(RoundedRectangle(cornerRadius: ClickRadius.field))
-                .overlay(
-                    RoundedRectangle(cornerRadius: ClickRadius.field)
-                        .stroke(ClickColors.separator, lineWidth: ClickMetrics.strokeWidth)
-                )
-                .padding(.top, ClickSpacing.xs)
             }
-            .padding(.horizontal, ClickSpacing.lg)
-            .padding(.bottom, ClickSpacing.sm)
+            .font(ClickTypography.body)
+            .padding(.horizontal, 14)
+            .frame(minHeight: ClickMetrics.searchMinHeight)
+            .background(ClickColors.fillSubtle, in: Capsule())
 
-            if let error = errorMessage {
-                Text(error)
-                    .font(ClickTypography.metadata)
-                    .foregroundStyle(ClickColors.destructive)
-                    .padding(.horizontal, ClickSpacing.lg)
-                    .padding(.bottom, ClickSpacing.xs)
-            }
-
-            // Categories List
-            ScrollView {
-                LazyVStack(spacing: ClickSpacing.sm) {
-                    ForEach(filteredCategories) { category in
-                        CategoryAccordionRow(
+            let categories = filteredCategories
+            if categories.isEmpty {
+                Text("No interests match \u{201C}\(searchQuery)\u{201D}.")
+                    .font(ClickTypography.supporting)
+                    .foregroundStyle(ClickColors.textTertiary)
+                    .frame(maxWidth: .infinity)
+                    .padding(.vertical, ClickSpacing.lg)
+            } else {
+                VStack(spacing: 0) {
+                    ForEach(Array(categories.enumerated()), id: \.element.id) { index, category in
+                        if index > 0 { HomeDivider(inset: 60) }
+                        InterestCategoryRow(
                             category: category,
-                            isExpanded: expandedCategories.contains(category.id) || !searchQuery.isEmpty,
+                            isExpanded: isSearching || expandedCategories.contains(category.id),
                             selectedTags: selectedTags,
-                            onToggleCategory: {
-                                toggleTag(category.label)
-                            },
-                            onToggleSubcategory: { sub in
-                                toggleTag(sub)
-                            },
+                            onToggleTag: toggleTag,
                             onToggleExpand: {
-                                if expandedCategories.contains(category.id) {
-                                    expandedCategories.remove(category.id)
-                                } else {
-                                    expandedCategories.insert(category.id)
+                                withAnimation(ClickMotion.content) {
+                                    if expandedCategories.contains(category.id) {
+                                        expandedCategories.remove(category.id)
+                                    } else {
+                                        expandedCategories.insert(category.id)
+                                    }
                                 }
                             }
                         )
                     }
                 }
-                .padding(.horizontal, ClickSpacing.lg)
-                .padding(.vertical, ClickSpacing.sm)
-                .padding(.bottom, 80)
+                .groupedSurface()
             }
-
-            // Bottom Sticky Bar
-            VStack(spacing: 0) {
-                Divider()
-                    .overlay(ClickColors.separator)
-
-                Button(action: {
-                    saveAndContinue()
-                }) {
-                    if isSaving {
-                        ProgressView()
-                    } else {
-                        Text(actionTitle)
-                    }
+        } actions: {
+            if let errorMessage { FormNotice(text: errorMessage) }
+            Button(action: saveAndContinue) {
+                if isSaving {
+                    ProgressView()
+                } else if selectedTags.count < minTags {
+                    // Says what's missing instead of a silently disabled button.
+                    Text("Pick \(minTags - selectedTags.count) more")
+                } else {
+                    Text("\(actionTitle) · \(selectedTags.count) picked")
                 }
-                .buttonStyle(.clickPrimary)
-                .disabled(!canContinue)
-                .padding(.horizontal, ClickSpacing.lg)
-                .padding(.vertical, ClickSpacing.md)
-                .background(ClickColors.background)
             }
+            .buttonStyle(.clickPrimary)
+            .disabled(!canContinue)
         }
-        .background(ClickColors.background.ignoresSafeArea())
     }
 
     private func toggleTag(_ tag: String) {
@@ -197,123 +155,61 @@ public struct InterestsPickerView: View {
     }
 }
 
-/// An expandable row for an interest category showing selected badges and subcategory chip flow.
-private struct CategoryAccordionRow: View {
+/// One category in the grouped list: tap to show its chips. The category itself is the first
+/// chip, so "Music" and "Live Shows" are picked the same way.
+private struct InterestCategoryRow: View {
     let category: InterestCategory
     let isExpanded: Bool
     let selectedTags: Set<String>
-    let onToggleCategory: () -> Void
-    let onToggleSubcategory: (String) -> Void
+    let onToggleTag: (String) -> Void
     let onToggleExpand: () -> Void
 
-    private var isCategorySelected: Bool {
-        selectedTags.contains(category.label)
-    }
-
-    private var selectedSubCount: Int {
-        category.subcategories.filter { selectedTags.contains($0) }.count
+    private var pickedCount: Int {
+        ([category.label] + category.subcategories).filter(selectedTags.contains).count
     }
 
     var body: some View {
-        VStack(alignment: .leading, spacing: ClickSpacing.xs) {
-            // Category Header Card
-            HStack(spacing: ClickSpacing.md) {
-                Button(action: onToggleExpand) {
-                    HStack(spacing: ClickSpacing.md) {
-                        Text(category.emoji)
-                            .font(.system(size: 26))
-
-                        VStack(alignment: .leading, spacing: ClickSpacing.xxs) {
-                            Text(category.label)
-                                .font(ClickTypography.supportingEmphasized)
-                                .fontWeight(.semibold)
-                                .foregroundStyle(ClickColors.textPrimary)
-
-                            if selectedSubCount > 0 {
-                                Text("\(selectedSubCount) sub-interests picked")
-                                    .font(ClickTypography.metadata)
-                                    .foregroundStyle(ClickColors.accentForeground)
-                            }
-                        }
-
-                        Spacer()
+        VStack(alignment: .leading, spacing: 0) {
+            Button(action: onToggleExpand) {
+                HStack(spacing: 14) {
+                    Text(category.emoji)
+                        .font(.system(size: 24))
+                        .frame(width: 30)
+                    Text(category.label)
+                        .font(ClickTypography.body)
+                        .foregroundStyle(ClickColors.textPrimary)
+                    Spacer(minLength: 0)
+                    if pickedCount > 0 {
+                        Text(pickedCount, format: .number)
+                            .font(ClickTypography.badge)
+                            .foregroundStyle(ClickColors.primaryActionForeground)
+                            .frame(minWidth: 22, minHeight: 22)
+                            .background(ClickColors.primaryActionFill, in: Capsule())
                     }
+                    Image(systemName: "chevron.down")
+                        .font(.footnote.weight(.semibold))
+                        .foregroundStyle(ClickColors.textTertiary)
+                        .rotationEffect(.degrees(isExpanded ? 180 : 0))
                 }
-                .buttonStyle(.plain)
-
-                // Category Selection Checkbox
-                Button(action: onToggleCategory) {
-                    Image(systemName: isCategorySelected ? "checkmark.circle.fill" : "circle")
-                        .font(.system(size: 22))
-                        .foregroundStyle(isCategorySelected ? ClickColors.accentForeground : ClickColors.textTertiary)
-                }
-                .buttonStyle(.plain)
-
-                // Chevron to Expand/Collapse Subcategories
-                Button(action: onToggleExpand) {
-                    Image(systemName: isExpanded ? "chevron.up" : "chevron.down")
-                        .font(.system(size: 14, weight: .semibold))
-                        .foregroundStyle(ClickColors.textSecondary)
-                        .frame(width: 32, height: 32)
-                }
-                .buttonStyle(.plain)
+                .padding(.horizontal, ClickSpacing.surfacePadding)
+                .frame(minHeight: ClickMetrics.rowMinHeight)
+                .contentShape(Rectangle())
             }
-            .padding(.horizontal, ClickSpacing.md)
-            .padding(.vertical, ClickSpacing.sm)
-            .background(isCategorySelected ? ClickColors.selectionTint : ClickColors.surface)
-            .clipShape(RoundedRectangle(cornerRadius: ClickRadius.field, style: .continuous))
-            .overlay(
-                RoundedRectangle(cornerRadius: ClickRadius.field, style: .continuous)
-                    .stroke(isCategorySelected ? ClickColors.accentForeground : ClickColors.separator, lineWidth: ClickMetrics.strokeWidth)
-            )
+            .buttonStyle(.plain)
+            .accessibilityValue(pickedCount > 0 ? "\(pickedCount) picked" : "")
+            .accessibilityHint(isExpanded ? "Hides choices" : "Shows choices")
 
-            // Subcategory Chips Flow
             if isExpanded {
-                SubcategoryChipsFlow(
-                    subcategories: category.subcategories,
-                    selectedTags: selectedTags,
-                    onToggle: onToggleSubcategory
-                )
-                .padding(.top, ClickSpacing.xxs)
-                .padding(.bottom, ClickSpacing.xs)
-                .padding(.leading, ClickSpacing.md)
-            }
-        }
-    }
-}
-
-/// Flexible chip layout for subcategories.
-private struct SubcategoryChipsFlow: View {
-    let subcategories: [String]
-    let selectedTags: Set<String>
-    let onToggle: (String) -> Void
-
-    var body: some View {
-        FlowLayout(spacing: ClickSpacing.xs) {
-            ForEach(subcategories, id: \.self) { sub in
-                let isSelected = selectedTags.contains(sub)
-                Button(action: { onToggle(sub) }) {
-                    HStack(spacing: ClickSpacing.xxs) {
-                        if isSelected {
-                            Image(systemName: "checkmark")
-                                .font(.system(size: 11, weight: .bold))
-                        }
-                        Text(sub)
-                            .font(ClickTypography.supportingEmphasized)
+                FlowLayout(spacing: ClickSpacing.sm) {
+                    ForEach([category.label] + category.subcategories, id: \.self) { tag in
+                        SelectableChip(title: tag, isSelected: selectedTags.contains(tag)) { onToggleTag(tag) }
                     }
-                    .padding(.horizontal, 12)
-                    .padding(.vertical, 7)
-                    .background(isSelected ? ClickColors.selectionTint : ClickColors.surface)
-                    .foregroundStyle(isSelected ? ClickColors.accentForeground : ClickColors.textPrimary)
-                    .clipShape(Capsule())
-                    .overlay(
-                        Capsule()
-                            .stroke(isSelected ? ClickColors.accentForeground : ClickColors.separator, lineWidth: ClickMetrics.strokeWidth)
-                    )
                 }
-                .buttonStyle(.plain)
+                .padding(.leading, 60)
+                .padding(.trailing, ClickSpacing.surfacePadding)
+                .padding(.bottom, 14)
+                .transition(.opacity)
             }
         }
     }
 }
-

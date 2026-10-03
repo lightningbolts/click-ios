@@ -1,7 +1,7 @@
 import SwiftUI
 
-/// Blocking gate view required for accounts missing essential profile fields (first name, last name, birthday).
-/// Aligned with Click's Functional Clarity design system (Manrope, Click purple CTA, quiet borders).
+/// Blocking gate for accounts missing their name or birthday: every new email account (sign-up
+/// asks only for email and password) and any Apple/Google account the provider didn't name.
 public struct ProfileBasicsGateView: View {
     @Environment(AppEnvironment.self) private var env
 
@@ -9,9 +9,12 @@ public struct ProfileBasicsGateView: View {
 
     @State private var firstName: String = ""
     @State private var lastName: String = ""
-    @State private var birthday: Date = Calendar.current.date(byAdding: .year, value: -18, to: Date()) ?? Date()
+    @State private var birthday: Date?
     @State private var isLoading: Bool = false
     @State private var errorMessage: String?
+    @FocusState private var focusedField: Field?
+
+    private enum Field: Hashable { case firstName, lastName }
 
     public init(userId: String, initialFirstName: String = "", initialLastName: String = "") {
         self.userId = userId
@@ -19,153 +22,71 @@ public struct ProfileBasicsGateView: View {
         self._lastName = State(initialValue: initialLastName)
     }
 
-    private var isAgeValid: Bool {
-        let age = Calendar.current.dateComponents([.year], from: birthday, to: Date()).year ?? 0
-        return age >= 13
-    }
-
     private var canSave: Bool {
         !firstName.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty &&
         !lastName.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty &&
-        isAgeValid &&
+        BirthdayField.isOldEnough(birthday) &&
         !isLoading
     }
 
     public var body: some View {
-        NavigationStack {
-            ScrollView {
-                VStack(alignment: .leading, spacing: ClickSpacing.lg) {
-                    // Header
-                    VStack(alignment: .leading, spacing: ClickSpacing.sm) {
-                        Text("Complete your profile")
-                            .font(ClickTypography.largeTitle)
-                            .tracking(-0.5)
-                            .foregroundStyle(ClickColors.textPrimary)
-
-                        Text("We need your name and date of birth to continue. This keeps Click safe, authenticated, and age-appropriate.")
-                            .font(ClickTypography.body)
-                            .foregroundStyle(ClickColors.textSecondary)
-                    }
-                    .padding(.top, ClickSpacing.lg)
-
-                    // Error Banner
-                    if let error = errorMessage {
-                        HStack(spacing: ClickSpacing.sm) {
-                            Image(systemName: "exclamationmark.triangle.fill")
-                                .foregroundStyle(ClickColors.destructive)
-                            Text(error)
-                                .font(ClickTypography.supportingEmphasized)
-                                .foregroundStyle(ClickColors.destructive)
-                            Spacer()
-                        }
-                        .padding(ClickSpacing.sm)
-                        .background(ClickColors.destructive.opacity(0.12))
-                        .clipShape(RoundedRectangle(cornerRadius: ClickRadius.field))
-                    }
-
-                    // Fields
-                    VStack(spacing: ClickSpacing.md) {
-                        VStack(alignment: .leading, spacing: ClickSpacing.xs) {
-                            Text("FIRST NAME")
-                                .font(ClickTypography.metadata)
-                                .foregroundStyle(ClickColors.textSecondary)
-                            TextField("First name", text: $firstName)
-                                .font(ClickTypography.body)
-                                .textContentType(.givenName)
-                                .padding(.horizontal, ClickSpacing.md)
-                                .padding(.vertical, 14)
-                                .background(ClickColors.surface)
-                                .clipShape(RoundedRectangle(cornerRadius: ClickRadius.field))
-                                .overlay(
-                                    RoundedRectangle(cornerRadius: ClickRadius.field)
-                                        .stroke(ClickColors.separator, lineWidth: ClickMetrics.strokeWidth)
-                                )
-                        }
-
-                        VStack(alignment: .leading, spacing: ClickSpacing.xs) {
-                            Text("LAST NAME")
-                                .font(ClickTypography.metadata)
-                                .foregroundStyle(ClickColors.textSecondary)
-                            TextField("Last name", text: $lastName)
-                                .font(ClickTypography.body)
-                                .textContentType(.familyName)
-                                .padding(.horizontal, ClickSpacing.md)
-                                .padding(.vertical, 14)
-                                .background(ClickColors.surface)
-                                .clipShape(RoundedRectangle(cornerRadius: ClickRadius.field))
-                                .overlay(
-                                    RoundedRectangle(cornerRadius: ClickRadius.field)
-                                        .stroke(ClickColors.separator, lineWidth: ClickMetrics.strokeWidth)
-                                )
-                        }
-
-                        VStack(alignment: .leading, spacing: ClickSpacing.xs) {
-                            Text("DATE OF BIRTH")
-                                .font(ClickTypography.metadata)
-                                .foregroundStyle(ClickColors.textSecondary)
-
-                            HStack {
-                                DatePicker(
-                                    "Date of Birth",
-                                    selection: $birthday,
-                                    in: ...Date(),
-                                    displayedComponents: .date
-                                )
-                                .labelsHidden()
-
-                                Spacer()
-                            }
-                            .padding(.horizontal, ClickSpacing.md)
-                            .padding(.vertical, 8)
-                            .background(ClickColors.surface)
-                            .clipShape(RoundedRectangle(cornerRadius: ClickRadius.field))
-                            .overlay(
-                                RoundedRectangle(cornerRadius: ClickRadius.field)
-                                    .stroke(ClickColors.separator, lineWidth: ClickMetrics.strokeWidth)
-                            )
-
-                            if !isAgeValid {
-                                Text("You must be at least 13 years old to use Click.")
-                                    .font(ClickTypography.metadata)
-                                    .foregroundStyle(ClickColors.destructive)
-                                    .padding(.top, ClickSpacing.xxs)
-                            }
-                        }
-                    }
-
-                    Spacer(minLength: 40)
-
-                    // Save Button
-                    Button {
-                        saveProfileBasics()
-                    } label: {
-                        if isLoading {
-                            ProgressView()
-                        } else {
-                            Text("Save and Continue")
-                        }
-                    }
-                    .buttonStyle(.clickPrimary)
-                    .disabled(!canSave)
-                }
-                .padding(.horizontal, ClickSpacing.lg)
+        OnboardingPage(
+            title: "About you",
+            subtitle: "Your name is how people you meet will know you. Your birthday keeps Click age-appropriate."
+        ) {
+            GroupedSection {
+                TextField("First name", text: $firstName)
+                    .textContentType(.givenName)
+                    .submitLabel(.next)
+                    .focused($focusedField, equals: .firstName)
+                    .onSubmit { focusedField = .lastName }
+                TextField("Last name", text: $lastName)
+                    .textContentType(.familyName)
+                    .submitLabel(.done)
+                    .focused($focusedField, equals: .lastName)
+                BirthdayField(birthday: $birthday)
             }
-            .background(ClickColors.background.ignoresSafeArea())
+            .font(ClickTypography.body)
+
+            if BirthdayField.isTooYoung(birthday) {
+                FormNotice(text: "You must be at least \(BirthdayField.minimumAge) years old to use Click.")
+            } else if let errorMessage {
+                FormNotice(text: errorMessage)
+            }
+        } actions: {
+            Button(action: saveProfileBasics) {
+                if isLoading { ProgressView() } else { Text("Continue") }
+            }
+            .buttonStyle(.clickPrimary)
+            .disabled(!canSave)
+
+            // Signed in with the wrong Apple ID or Google account: a way back out.
+            Button("Use a different account") {
+                Task { await env.session.signOut() }
+            }
+            .buttonStyle(.onboardingText)
+            .disabled(isLoading)
+        }
+        .animation(ClickMotion.subtleFade, value: errorMessage)
+        .onAppear {
+            // Prefill what Apple/Google (or a partial profile) already told us.
+            let hint = env.session.profileNameHint
+            if firstName.isEmpty, let given = hint?.givenName { firstName = given }
+            if lastName.isEmpty, let family = hint?.familyName { lastName = family }
+            if firstName.isEmpty { focusedField = .firstName }
         }
     }
 
     private func saveProfileBasics() {
+        guard canSave, let birthday else { return }
         ClickHaptics.impact(.medium)
+        focusedField = nil
         isLoading = true
         errorMessage = nil
 
         Task {
             do {
-                try await env.session.completeProfileBasics(
-                    firstName: firstName,
-                    lastName: lastName,
-                    birthday: birthday
-                )
+                try await env.session.completeProfileBasics(firstName: firstName, lastName: lastName, birthday: birthday)
                 ClickHaptics.success()
             } catch {
                 errorMessage = error.localizedDescription

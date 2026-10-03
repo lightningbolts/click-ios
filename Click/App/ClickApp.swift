@@ -110,6 +110,7 @@ final class ClickAppDelegate: NSObject, UIApplicationDelegate, UNUserNotificatio
         // message the reader is looking at. Everything else still shows while in the app.
         let payload = ClickNotificationCoordinator.stringPayload(notification.request.content.userInfo)
         let isOnScreen = await ClickNotificationCoordinator.shared.isForVisibleConversation(payload)
+        await ClickNotificationCoordinator.shared.noteArrival(payload)
         return isOnScreen ? [] : [.banner, .sound, .badge]
     }
 
@@ -287,13 +288,13 @@ final class ClickNotificationCoordinator {
             return .chat(chatID: value(["chat_id", "chatId"]), connectionID: value(["connection_id", "connectionId"]),
                          senderUserID: value(["sender_user_id", "user_id", "peer_user_id"]),
                          senderName: value(["sender_name", "peer_name", "title"]))
-        case "event_reminder", "event_teaser", "shared_upcoming_event":
+        case "event_reminder", "event_teaser", "shared_upcoming_event", "event_rsvp", "event_rsvp_request":
             return value(["beacon_id", "event_id"]).map { .route(.event(beaconID: $0)) } ?? .none
-        case "event_drop_recap":
+        case "event_drop_recap", "event_recap":
             return value(["beacon_id", "event_id"]).map { .route(.eventRecap(beaconID: $0)) } ?? .none
         case "hub_message":
             return value(["hub_id", "venue_id"]).map { .route(.hub(hubID: $0)) } ?? .none
-        case "archive_warning", "reconnect_nudge", "anniversary", "memory_prompt", "hangout_confirm":
+        case "archive_warning", "reconnect_nudge", "anniversary", "memory_prompt", "hangout_confirm", "prior_connection_accepted":
             // The profile carries the moment: friendship, story, and a hangout to confirm.
             guard let userID = value(["peer_user_id", "user_id", "sender_user_id"]) else { return .connections }
             return .route(.userProfile(userID: userID, connectionID: value(["connection_id", "connectionId"])))
@@ -311,6 +312,12 @@ final class ClickNotificationCoordinator {
             return .deviceApproval
         case "shared_drop_released":
             return value(["drop_id"]).map { .sharedDrop(dropID: $0) } ?? .none
+        case "reaction":
+            guard let targetID = value(["target_id"]) else { return .none }
+            return payload["target_kind"] == "shared_drop" ? .sharedDrop(dropID: targetID) : .route(.beacon(beaconID: targetID))
+        case "prior_connection_request":
+            // Answered from the activity inbox (Accept / Ignore).
+            return .route(.activity)
         default:
             return .none
         }
@@ -350,14 +357,40 @@ final class ClickNotificationCoordinator {
         }
     }
 
-    func handleNotificationTap(_ payload: [String: String]) async {
+    /// Push types that are conversation traffic rather than activity-inbox entries.
+    private static let conversationTypes: Set<String> = ["chat_message", "new_message", "hub_message", "device_approval"]
+
+    /// A push shown while the app is open: the inbox (and the Home dot) picks it up now.
+    func noteArrival(_ payload: [String: String]) {
         guard let environment else { return }
-        switch Self.tapRoute(for: payload) {
+        let type = payload["type"] ?? payload["category"] ?? ""
+        guard !Self.conversationTypes.contains(type) else { return }
+        Task { await environment.activity.refresh(force: true) }
+        // Friend requests are answered from the inbox, which lists them from Clicks.
+        if type == "prior_connection_request" { Task { await environment.inbox?.refresh() } }
+    }
+
+    /// A push tapped from outside the app lands on the route's own tab.
+    func handleNotificationTap(_ payload: [String: String]) async {
+        await open(Self.tapRoute(for: payload), inApp: false)
+    }
+
+    /// An activity-inbox row: pushes onto the inbox's stack, so Back returns to the inbox.
+    func openActivity(_ item: ActivityItem) async {
+        await open(Self.tapRoute(for: item.data), inApp: true)
+    }
+
+    private func open(_ tap: TapRoute, inApp: Bool) async {
+        guard let environment else { return }
+        let show: (AppRoute) -> Void = inApp
+            ? { environment.router.navigate(to: $0) }
+            : { environment.handleIncomingRoute($0) }
+        switch tap {
         case let .chat(chatID, connectionID, senderUserID, senderName):
             await routeChat(chatID: chatID, connectionID: connectionID, senderUserID: senderUserID,
-                            senderName: senderName, environment: environment)
+                            senderName: senderName, environment: environment, show: show)
         case .route(let route):
-            environment.handleIncomingRoute(route)
+            show(route)
         case .connections:
             environment.router.selectedTab = .connections
             environment.router.connectionsPath.removeAll()
@@ -373,7 +406,7 @@ final class ClickNotificationCoordinator {
     }
 
     private func routeChat(chatID: String?, connectionID: String?, senderUserID: String?, senderName: String?,
-                           environment: AppEnvironment) async {
+                           environment: AppEnvironment, show: (AppRoute) -> Void) async {
 
         if let connectionID,
            let currentUserID = environment.session.currentSession?.userId {
@@ -386,7 +419,7 @@ final class ClickNotificationCoordinator {
             }
 
             if let connection = snapshot?.connections.first(where: { $0.connectionID == connectionID }) {
-                environment.handleIncomingRoute(
+                show(
                     .chat(
                         DirectChatRoute(
                             chatID: chatID,
@@ -410,7 +443,7 @@ final class ClickNotificationCoordinator {
            !senderUserID.isEmpty {
             let displayName = senderName ?? "Click"
 
-            environment.handleIncomingRoute(
+            show(
                 .chat(
                     DirectChatRoute(
                         chatID: chatID,
@@ -542,3 +575,4 @@ private final class PushTokenVault: @unchecked Sendable {
         SecItemDelete(query as CFDictionary)
     }
 }
+

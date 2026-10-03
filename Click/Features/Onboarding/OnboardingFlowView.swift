@@ -1,6 +1,7 @@
 import SwiftUI
 
-/// Top-level coordinator view rendering the Phase 2 onboarding step sequence.
+/// First-run onboarding: Welcome → Interests → Photo. Personality and Find Friends are
+/// optional prompts inside the app (Home's setup card), not gates.
 public struct OnboardingFlowView: View {
     @Environment(AppEnvironment.self) private var env
     @Bindable var coordinator: OnboardingCoordinator
@@ -19,17 +20,14 @@ public struct OnboardingFlowView: View {
 
     public var body: some View {
         VStack(spacing: 0) {
-            // Navigation Chrome
-            OnboardingShellChrome(
-                currentStepIndex: coordinator.visibleStepIndex,
-                totalSteps: coordinator.visibleStepCount,
-                canGoBack: coordinator.canGoBack,
-                onBack: {
-                    coordinator.goBack()
-                }
-            )
+            if coordinator.step != .loading {
+                OnboardingStepBar(
+                    step: coordinator.visibleStepIndex,
+                    count: OnboardingCoordinator.visibleStepCount,
+                    onBack: coordinator.canGoBack ? { coordinator.goBack() } : nil
+                )
+            }
 
-            // Step Content
             Group {
                 switch coordinator.step {
                 case .loading:
@@ -54,14 +52,6 @@ public struct OnboardingFlowView: View {
                         try await env.onboardingRepository.saveInterests(userId: userId, tags: tags)
                         coordinator.onInterestsSaved()
                     }
-                case .personality:
-                    PersonalityTaggingView { traits in
-                        guard let userId = env.session.currentSession?.userId else {
-                            throw APIError.unauthorized
-                        }
-                        try await env.onboardingRepository.savePersonality(userId: userId, traits: traits)
-                        coordinator.onPersonalitySaved()
-                    }
                 case .avatar:
                     AvatarUploadView(
                         onUpload: { data in
@@ -72,17 +62,6 @@ public struct OnboardingFlowView: View {
                             coordinator.onAvatarSetOrSkipped()
                         }
                     )
-                case .priorConnections:
-                    PriorConnectionsView(
-                        onComplete: {
-                            coordinator.onPriorConnectionsSetOrSkipped()
-                            onFinished()
-                        },
-                        onSkip: {
-                            coordinator.onPriorConnectionsSetOrSkipped()
-                            onFinished()
-                        }
-                    )
                 case .complete:
                     LaunchLoadingShimmerView()
                         .onAppear {
@@ -90,6 +69,7 @@ public struct OnboardingFlowView: View {
                         }
                 }
             }
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
             .animation(ClickMotion.subtleFade, value: coordinator.step)
         }
         .background(ClickColors.background.ignoresSafeArea())
@@ -125,11 +105,11 @@ private struct OnboardingLoadErrorView: View {
                 .foregroundStyle(ClickColors.textSecondary)
                 .multilineTextAlignment(.center)
                 .padding(.horizontal, ClickSpacing.xl)
-            Button("Try Again", action: onRetry)
-                .font(ClickTypography.bodyEmphasized)
-                .buttonStyle(.borderedProminent)
-                .tint(ClickColors.primaryActionFill)
             Spacer()
+            Button("Try Again", action: onRetry)
+                .buttonStyle(.clickPrimary)
+                .padding(.horizontal, ClickSpacing.screenGutter)
+                .padding(.bottom, ClickSpacing.sm)
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .background(ClickColors.background)

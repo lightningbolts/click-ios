@@ -29,26 +29,15 @@ struct OnboardingTests {
             #expect(coordinator.visibleStepIndex == 1)
             #expect(coordinator.canGoBack == true)
 
-            // 2. Interests -> Personality
+            // 2. Interests -> Photo (the last of three steps)
             coordinator.onInterestsSaved()
-            #expect(coordinator.step == .personality)
-            #expect(coordinator.visibleStepIndex == 2)
-            #expect(coordinator.canGoBack == true)
-
-            // 3. Personality -> Avatar
-            coordinator.onPersonalitySaved()
             #expect(coordinator.step == .avatar)
-            #expect(coordinator.visibleStepIndex == 3)
+            #expect(coordinator.visibleStepIndex == 2)
+            #expect(coordinator.visibleStepIndex == OnboardingCoordinator.visibleStepCount - 1)
             #expect(coordinator.canGoBack == true)
 
-            // 4. Avatar -> PriorConnections
+            // 3. Photo -> Complete
             coordinator.onAvatarSetOrSkipped()
-            #expect(coordinator.step == .priorConnections)
-            #expect(coordinator.visibleStepIndex == 4)
-            #expect(coordinator.canGoBack == true)
-
-            // 5. PriorConnections -> Complete
-            coordinator.onPriorConnectionsSetOrSkipped()
             #expect(coordinator.step == .complete)
             #expect(coordinator.needsOnboarding == false)
         }
@@ -77,7 +66,7 @@ struct OnboardingTests {
         let coordinator = await MainActor.run {
             let coord = OnboardingCoordinator(
                 userId: "test_back_user",
-                initialState: OnboardingState(welcomeSeen: true, interestsCompleted: true, personalityCompleted: true),
+                initialState: OnboardingState(welcomeSeen: true, interestsCompleted: true),
                 userHasAvatar: { false }
             )
             return coord
@@ -87,11 +76,7 @@ struct OnboardingTests {
             // Currently on avatar
             #expect(coordinator.step == .avatar)
 
-            // Avatar -> Personality
-            coordinator.goBack()
-            #expect(coordinator.step == .personality)
-
-            // Personality -> Interests
+            // Avatar -> Interests
             coordinator.goBack()
             #expect(coordinator.step == .interests)
 
@@ -206,7 +191,7 @@ struct OnboardingTests {
         defaults.removePersistentDomain(forName: suiteName)
     }
 
-    @Test("Onboarding completion is not persisted before Prior Connections")
+    @Test("Onboarding completion is persisted only after the photo step")
     @MainActor
     func completionIsNotPersistedEarly() {
         let suiteName = "test_onboarding_completion_\(UUID().uuidString)"
@@ -221,13 +206,11 @@ struct OnboardingTests {
 
         coordinator.onWelcomeAcknowledged()
         coordinator.onInterestsSaved()
-        coordinator.onPersonalitySaved()
-        coordinator.onAvatarSetOrSkipped()
 
-        #expect(coordinator.step == .priorConnections)
+        #expect(coordinator.step == .avatar)
         #expect(defaults.bool(forKey: "has_completed_onboarding") == false)
 
-        coordinator.onPriorConnectionsSetOrSkipped()
+        coordinator.onAvatarSetOrSkipped()
 
         #expect(coordinator.step == .complete)
         #expect(defaults.bool(forKey: "has_completed_onboarding") == true)
@@ -244,4 +227,69 @@ struct OnboardingTests {
         #expect(PriorKnownSince.unspecified.rawValue == "unspecified")
     }
 
+
+    @Test("Returning account on a new phone skips the skippable steps it already saw")
+    @MainActor
+    func returningAccountWithoutLocalMarkers() {
+        // Finished interests on another install, skipped the photo, no local cache.
+        let state = OnboardingRepository.reconcile(
+            cached: nil, legacyCompleted: false, interestCount: 6, personalityCount: 0,
+            hasAvatar: false, hasProfileIdentity: true
+        )
+        #expect(state.avatarSetOrSkipped)
+        #expect(state.isComplete)
+        #expect(OnboardingCoordinator(userId: "u", initialState: state, userHasAvatar: { false }).step == .complete)
+    }
+
+    @Test("Fresh signup still walks every step despite a populated profile")
+    func freshSignupKeepsSteps() {
+        let state = OnboardingRepository.reconcile(
+            cached: OnboardingState(), legacyCompleted: false, interestCount: 0, personalityCount: 0,
+            hasAvatar: false, hasProfileIdentity: true
+        )
+        #expect(!state.welcomeSeen)
+        #expect(!state.avatarSetOrSkipped)
+        #expect(state.completedAt == nil)
+    }
+
+    @Test("Account that stopped before interests resumes there on a new phone")
+    @MainActor
+    func partialAccountResumes() {
+        let state = OnboardingRepository.reconcile(
+            cached: nil, legacyCompleted: false, interestCount: 2, personalityCount: 0,
+            hasAvatar: false, hasProfileIdentity: true
+        )
+        #expect(state.welcomeSeen)
+        #expect(!state.interestsCompleted)
+        #expect(!state.isComplete)
+        #expect(OnboardingCoordinator(userId: "u", initialState: state, userHasAvatar: { false }).step == .interests)
+    }
+
+    @Test("An in-progress install that left after interests lands on the photo, not complete")
+    @MainActor
+    func cachedInstallResumesAtPhoto() {
+        let state = OnboardingRepository.reconcile(
+            cached: OnboardingState(welcomeSeen: true, interestsCompleted: true), legacyCompleted: false,
+            interestCount: 5, personalityCount: 0, hasAvatar: false, hasProfileIdentity: true
+        )
+        #expect(!state.isComplete)
+        #expect(OnboardingCoordinator(userId: "u", initialState: state, userHasAvatar: { false }).step == .avatar)
+    }
+
+    @Test("Home offers setup steps only once known, until done or hidden")
+    func homeSetupSteps() {
+        #expect(HomeSetupStep.pending(hidden: [], connectionCount: nil, personalityCount: nil).isEmpty)
+        #expect(HomeSetupStep.pending(hidden: [], connectionCount: 0, personalityCount: 0) == [.findFriends, .personality])
+        #expect(HomeSetupStep.pending(hidden: [], connectionCount: HomeSetupStep.fewConnections, personalityCount: 0) == [.personality])
+        #expect(HomeSetupStep.pending(hidden: [], connectionCount: 0, personalityCount: kPersonalityRequiredTagCount) == [.findFriends])
+        #expect(HomeSetupStep.pending(hidden: [.findFriends], connectionCount: 0, personalityCount: 0) == [.personality])
+    }
+
+    @Test("Birthday must be set and at least 13 years ago")
+    func birthdayAgeGate() {
+        let calendar = Calendar.current
+        #expect(!BirthdayField.isOldEnough(nil))
+        #expect(!BirthdayField.isOldEnough(calendar.date(byAdding: .year, value: -12, to: .now)))
+        #expect(BirthdayField.isOldEnough(calendar.date(byAdding: .year, value: -13, to: .now)))
+    }
 }
