@@ -206,7 +206,9 @@ struct HomeOpportunitySection: View {
                 Button {
                     onShowOnMap(event.id)
                 } label: {
+                    // Matches View details beside it (secondary buttons are shorter by default).
                     Label("Map", systemImage: "map")
+                        .frame(minHeight: ClickMetrics.primaryActionHeight)
                 }
                 .buttonStyle(.clickSecondary)
                 .frame(maxWidth: 110)

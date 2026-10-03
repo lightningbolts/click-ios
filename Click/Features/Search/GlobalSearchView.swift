@@ -259,6 +259,8 @@ struct GlobalSearchView: View {
             .navigationTitle("Search")
             .navigationBarTitleDisplayMode(.inline)
             .searchable(text: $query, isPresented: $isFieldActive, placement: .navigationBarDrawer(displayMode: .always), prompt: "People, messages, places, events")
+            // Activating the field must not hide the title bar: the field would jump up under the tap.
+            .searchPresentationToolbarBehavior(.avoidHidingContent)
             .onAppear { isFieldActive = true }
             .toolbar {
                 ToolbarItem(placement: .topBarTrailing) { Button("Done") { dismiss() } }

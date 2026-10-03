@@ -183,7 +183,7 @@ public struct ClickMapView: View {
     // MARK: - Map
 
     private var map: some View {
-        Map(position: $model.camera, selection: $model.selection) {
+        Map(position: $model.camera, selection: mapSelection) {
             UserAnnotation()
             ForEach(MapFeatureModel.clusters(model.items(pins: pins), zoom: model.renderZoom)) { cluster in
                 if cluster.items.count == 1, let item = cluster.items.first {
@@ -320,15 +320,26 @@ public struct ClickMapView: View {
         .padding(.horizontal, ClickSpacing.screenGutter)
     }
 
+    /// The map's selection, with stacked pins intercepted before they're selected: the chooser
+    /// opens and the tapped pin never pops up and back down.
+    private var mapSelection: Binding<MapSelection?> {
+        Binding(
+            get: { model.selection },
+            set: { selection in
+                if let selection, selection != model.chosenFromStack, model.overlapChoices.isEmpty,
+                   let stack = stackedChoices(for: selection) {
+                    env.friction.recordMeaningfulAction()
+                    model.overlapChoices = stack
+                } else {
+                    model.selection = selection
+                }
+            }
+        )
+    }
+
     private func handleSelection(_ selection: MapSelection?) {
         if selection != nil { env.friction.recordMeaningfulAction() }
-        if let selection, selection == model.chosenFromStack {
-            model.chosenFromStack = nil
-        } else if let selection, model.overlapChoices.isEmpty, let stack = stackedChoices(for: selection) {
-            model.selection = nil
-            model.overlapChoices = stack
-            return
-        }
+        if let selection, selection == model.chosenFromStack { model.chosenFromStack = nil }
         switch selection {
         case .person, nil:
             // First tap on a person shows the callout ("Priya Raman · first met here"); tapping
