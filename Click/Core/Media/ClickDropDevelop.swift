@@ -143,9 +143,4 @@ public enum ClickDropPixelation {
         let small = UIGraphicsImageRenderer(size: size, format: format).image { _ in image.draw(in: CGRect(origin: .zero, size: size)) }
         return pixelated(small)?.jpegData(compressionQuality: 0.8)
     }
-
-    /// Intermediate frames for the develop animation: pixels resolving toward the photo.
-    public nonisolated static func developFrames(_ image: UIImage) -> [UIImage] {
-        [24, 48, 96].compactMap { pixelated(image, blocksPerSide: $0) }
-    }
 }

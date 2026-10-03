@@ -24,6 +24,7 @@ struct PlanHangoutSheet: View {
     @State private var place: PlanPlace?
     @State private var search = PlaceSearch()
     @State private var metSpots: [FriendshipSpot] = []
+    @State private var calendarAccess: PermissionStatus?
     @FocusState private var placeFocused: Bool
 
     private static let ideas = ["☕️ Coffee", "🍜 Dinner", "🍻 Drinks", "🚶 Walk", "🎬 Movie", "🏋️ Workout"]
@@ -109,6 +110,7 @@ struct PlanHangoutSheet: View {
                     if hasEnd {
                         DatePicker("Ends", selection: $endsAt, in: startsAt.addingTimeInterval(900)..., displayedComponents: [.date, .hourAndMinute])
                     }
+                    calendarRow
                 }
                 .onChange(of: startsAt) { old, new in
                     // Keep the length when the start moves; never end before it starts.
@@ -196,6 +198,10 @@ struct PlanHangoutSheet: View {
                 }
             }
             .task {
+                calendarAccess = env.permissions.status(for: .calendar)
+                await env.calendar.refresh()
+            }
+            .task {
                 search.region = env.location.lastFix.map {
                     MKCoordinateRegion(center: $0.coordinate, latitudinalMeters: 20_000, longitudinalMeters: 20_000)
                 }
@@ -208,6 +214,36 @@ struct PlanHangoutSheet: View {
         .presentationDetents([.large])
     }
 
+    /// Whether you're free then, from your calendar (read on this iPhone only), with the next free
+    /// time when something overlaps. Asks for access here the first time, never on its own.
+    @ViewBuilder
+    private var calendarRow: some View {
+        if let fit = env.calendar.fit(start: startsAt, end: hasEnd ? endsAt : nil) {
+            HStack(spacing: 8) {
+                CalendarFitLabel(fit: fit)
+                Spacer(minLength: 8)
+                if case .busy(let next?) = fit {
+                    Button("Move to \(next.formatted(date: .omitted, time: .shortened))") {
+                        ClickHaptics.selection()
+                        startsAt = next
+                    }
+                    .font(ClickTypography.supportingEmphasized)
+                    .buttonStyle(.borderless)
+                }
+            }
+            .animation(ClickMotion.content, value: fit)
+        } else if calendarAccess == .notDetermined {
+            Button {
+                Task {
+                    calendarAccess = await env.permissions.requestPermission(for: .calendar)
+                    await env.calendar.refresh()
+                }
+            } label: {
+                Label("Check your calendar", systemImage: "calendar.badge.clock")
+            }
+        }
+    }
+
     private func chip(_ label: String, selected: Bool, action: @escaping () -> Void) -> some View {
         Button(action: { ClickHaptics.selection(); action() }) {
             Text(label)
@@ -218,6 +254,18 @@ struct PlanHangoutSheet: View {
                 .background(selected ? ClickColors.selectionTint : ClickColors.fillSubtle, in: Capsule())
         }
         .buttonStyle(.plain)
+    }
+}
+
+/// "You're free then" or "Busy on your calendar then", for plans and events.
+struct CalendarFitLabel: View {
+    let fit: CalendarAvailability.Fit
+
+    var body: some View {
+        Label(fit.text, systemImage: fit.systemImage)
+            .font(ClickTypography.supporting)
+            .foregroundStyle(fit == .free ? ClickColors.success : ClickColors.warning)
+            .contentTransition(.opacity)
     }
 }
 
@@ -299,6 +347,7 @@ struct PlanCardView: View {
     var onShowResponses: ((String) -> Void)? = nil
 
     @Environment(\.openURL) private var openURL
+    @Environment(AppEnvironment.self) private var env: AppEnvironment?
 
     private func count(_ reaction: String) -> Int {
         message.reactions.first { $0.reactionType == reaction }?.count ?? 0
@@ -324,6 +373,9 @@ struct PlanCardView: View {
             Label(Self.whenText(plan.startsAt, until: plan.endsAt), systemImage: "clock")
                 .font(ClickTypography.supporting)
                 .foregroundStyle(ClickColors.textSecondary)
+            if !isOver, let fit = env?.calendar.fit(start: plan.startsAt, end: plan.endsAt) {
+                CalendarFitLabel(fit: fit)
+            }
             if let placeName = plan.placeName {
                 Button {
                     openURL(Self.mapsURL(plan: plan, placeName: placeName))
@@ -378,6 +430,7 @@ struct PlanCardView: View {
         .overlay(RoundedRectangle(cornerRadius: ClickRadius.messageBubble, style: .continuous)
             .stroke(ClickColors.separator, lineWidth: ClickMetrics.strokeWidth))
         .accessibilityElement(children: .contain)
+        .task { if !isOver { await env?.calendar.refresh() } }
     }
 
     private func rsvpButton(_ title: String, systemImage: String, reaction: String, going: Bool) -> some View {

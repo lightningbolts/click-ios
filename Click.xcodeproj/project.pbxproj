@@ -116,6 +116,8 @@
 		5F70E6463EE4E9BCE71E8A72 /* ClickDropDevelopTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = E48DD112855D186C03848B60 /* ClickDropDevelopTests.swift */; };
 		5FDB728DAEC48C8F6842ADC4 /* MemoryCache.swift in Sources */ = {isa = PBXBuildFile; fileRef = B505B5487244EEC2DA1E81B1 /* MemoryCache.swift */; };
 		6116461327D4FF1806AC2945 /* HubMediaTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2CCD86C374B9F8179E86EDE2 /* HubMediaTests.swift */; };
+		A1D0DE7E10C0FFEE00000002 /* ClickDropDevelop.metal in Sources */ = {isa = PBXBuildFile; fileRef = A1D0DE7E10C0FFEE00000001 /* ClickDropDevelop.metal */; };
+		A1D0DE7E10C0FFEE00000004 /* ClickDropDevelopEffect.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1D0DE7E10C0FFEE00000003 /* ClickDropDevelopEffect.swift */; };
 		619B213920BF476FE52ECC38 /* GlassCircle.swift in Sources */ = {isa = PBXBuildFile; fileRef = C0EEFAB074A9D2D9EB6AA5B9 /* GlassCircle.swift */; };
 		61EE65603B29E4220E02CBA5 /* ClickLog.swift in Sources */ = {isa = PBXBuildFile; fileRef = F63751F6535F913F9900FA93 /* ClickLog.swift */; };
 		625357C7B3AC7DD95115FC6B /* ChatMessage.swift in Sources */ = {isa = PBXBuildFile; fileRef = BEC22CD1ECDF9E342ACCC942 /* ChatMessage.swift */; };
@@ -244,6 +246,7 @@
 		DA0BE1B2DF1438AE36DEA46C /* ConnectionLocationQuality.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2CE477D57049A35AB27C54D2 /* ConnectionLocationQuality.swift */; };
 		DA3BDB6CF8285305A5A70733 /* ListeningNowTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = B9707587A0701F1884D349C6 /* ListeningNowTests.swift */; };
 		DA964C45F465551076944CB1 /* AudioSessionController.swift in Sources */ = {isa = PBXBuildFile; fileRef = 72D81EDF1823BF01D30A9CE9 /* AudioSessionController.swift */; };
+		A1D0DE7E10C0FFEE00000006 /* CalendarAvailability.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1D0DE7E10C0FFEE00000005 /* CalendarAvailability.swift */; };
 		DCF918349766112AF4A11269 /* PermissionCoordinator.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2C5A7CE7107D552FF7C4C6AC /* PermissionCoordinator.swift */; };
 		DE83893E301F23E142D54F5F /* PlaceCopy.swift in Sources */ = {isa = PBXBuildFile; fileRef = 96701F50D69BDC8C6C0D5929 /* PlaceCopy.swift */; };
 		DFCC9DF32D532A6567CFF401 /* Manrope-SemiBold.ttf in Resources */ = {isa = PBXBuildFile; fileRef = 24F8E9B9D0F0B51D39CA35F3 /* Manrope-SemiBold.ttf */; };
@@ -392,6 +395,7 @@
 		2AD5FF3EB16F83E96A974A83 /* AppConfig.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppConfig.swift; sourceTree = "<group>"; };
 		2AEC3B2ABCA6FD192389609D /* Manrope-Medium.ttf */ = {isa = PBXFileReference; lastKnownFileType = file; path = "Manrope-Medium.ttf"; sourceTree = "<group>"; };
 		2C12F5C06BB5F4AD618B53D7 /* MeRepository.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MeRepository.swift; sourceTree = "<group>"; };
+		A1D0DE7E10C0FFEE00000005 /* CalendarAvailability.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CalendarAvailability.swift; sourceTree = "<group>"; };
 		2C5A7CE7107D552FF7C4C6AC /* PermissionCoordinator.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PermissionCoordinator.swift; sourceTree = "<group>"; };
 		2CCD86C374B9F8179E86EDE2 /* HubMediaTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HubMediaTests.swift; sourceTree = "<group>"; };
 		2CE477D57049A35AB27C54D2 /* ConnectionLocationQuality.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ConnectionLocationQuality.swift; sourceTree = "<group>"; };
@@ -557,6 +561,8 @@
 		C04BB0EDB80B1C58203CF1B1 /* UserProfileSnapshot.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = UserProfileSnapshot.swift; sourceTree = "<group>"; };
 		C08BEC2498706BAFA7106F16 /* PlanViews.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PlanViews.swift; sourceTree = "<group>"; };
 		C0B2DF5BC55B15BB7E899DFF /* BeaconExtrasCache.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BeaconExtrasCache.swift; sourceTree = "<group>"; };
+		A1D0DE7E10C0FFEE00000001 /* ClickDropDevelop.metal */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.metal; path = ClickDropDevelop.metal; sourceTree = "<group>"; };
+		A1D0DE7E10C0FFEE00000003 /* ClickDropDevelopEffect.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ClickDropDevelopEffect.swift; sourceTree = "<group>"; };
 		C0EEFAB074A9D2D9EB6AA5B9 /* GlassCircle.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GlassCircle.swift; sourceTree = "<group>"; };
 		C299FC0C972D362E0E78AF60 /* ClickToast.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ClickToast.swift; sourceTree = "<group>"; };
 		C2D7B43054D3829FDF8F8F3F /* ChatSendPipelineTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ChatSendPipelineTests.swift; sourceTree = "<group>"; };
@@ -654,6 +660,8 @@
 				10E9A0CD071D57AC06E1754F /* EdgeFade.swift */,
 				7706CFCC8974CFECA09912F7 /* EventVisual.swift */,
 				C8EA116736D43E0C9432BBF5 /* FlowLayout.swift */,
+				A1D0DE7E10C0FFEE00000001 /* ClickDropDevelop.metal */,
+				A1D0DE7E10C0FFEE00000003 /* ClickDropDevelopEffect.swift */,
 				C0EEFAB074A9D2D9EB6AA5B9 /* GlassCircle.swift */,
 				856572EA2FE8C0C700768A86 /* GroupAvatarView.swift */,
 				CEEFE47A4CBAB925D04FB0E9 /* GroupedSurface.swift */,
@@ -1160,6 +1168,7 @@
 		AD12D1A484E1A46DF66DBDC9 /* Permissions */ = {
 			isa = PBXGroup;
 			children = (
+				A1D0DE7E10C0FFEE00000005 /* CalendarAvailability.swift */,
 				2C5A7CE7107D552FF7C4C6AC /* PermissionCoordinator.swift */,
 			);
 			path = Permissions;
@@ -1697,6 +1706,8 @@
 				3FE6386864D536BECDB9FCCA /* FriendshipStats.swift in Sources */,
 				11211B46C418D0B80715BADB /* FriendshipViews.swift in Sources */,
 				26B0F1A9285726FAABC332E7 /* GifViews.swift in Sources */,
+				A1D0DE7E10C0FFEE00000002 /* ClickDropDevelop.metal in Sources */,
+				A1D0DE7E10C0FFEE00000004 /* ClickDropDevelopEffect.swift in Sources */,
 				619B213920BF476FE52ECC38 /* GlassCircle.swift in Sources */,
 				9059C7BC731D34781013C8E7 /* GlobalSearchView.swift in Sources */,
 				65913BCA1A985F6B26D21130 /* GoogleSignIn.swift in Sources */,
@@ -1756,6 +1767,7 @@
 				D3FBC1FCACB9E37591FF9776 /* OnboardingState.swift in Sources */,
 				306512AA3D989236575986CD /* PeerProfileModel.swift in Sources */,
 				ABA2B9996384B740238496CC /* PendingSendStore.swift in Sources */,
+				A1D0DE7E10C0FFEE00000006 /* CalendarAvailability.swift in Sources */,
 				DCF918349766112AF4A11269 /* PermissionCoordinator.swift in Sources */,
 				4A3E8D24E65F4FC92A145E37 /* PersonalityTaggingView.swift in Sources */,
 				E9BE06D7CA1990F770288CD1 /* PersonalityTaxonomy.swift in Sources */,
@@ -2038,8 +2050,8 @@
 				INFOPLIST_KEY_CFBundleDisplayName = Click;
 				INFOPLIST_KEY_ITSAppUsesNonExemptEncryption = NO;
 				INFOPLIST_KEY_NSBluetoothAlwaysUsageDescription = "Click uses Bluetooth for Tap to Connect when you meet someone nearby.";
-				INFOPLIST_KEY_NSCalendarsFullAccessUsageDescription = "Click reads your calendar to find mutual free time when you reconnect with a friend.";
-				INFOPLIST_KEY_NSCalendarsUsageDescription = "Click reads your calendar to find mutual free time when you reconnect with a friend.";
+				INFOPLIST_KEY_NSCalendarsFullAccessUsageDescription = "Click checks your calendar on this iPhone to show whether you're free for plans and events. It reads only busy times and never changes your calendar.";
+				INFOPLIST_KEY_NSCalendarsUsageDescription = "Click checks your calendar on this iPhone to show whether you're free for plans and events. It reads only busy times and never changes your calendar.";
 				INFOPLIST_KEY_NSCameraUsageDescription = "Click uses your camera to scan QR codes and capture photos.";
 				INFOPLIST_KEY_NSContactsUsageDescription = "Click hashes phone numbers and emails on this device to find people you already know. Your address book never leaves your phone.";
 				INFOPLIST_KEY_NSLocationAlwaysAndWhenInUseUsageDescription = "If you turn on Past meeting spots, Click is told when you arrive somewhere so it can remind you of a Click you met there. Your location is never stored or shown to anyone.";
@@ -2224,8 +2236,8 @@
 				INFOPLIST_KEY_CFBundleDisplayName = Click;
 				INFOPLIST_KEY_ITSAppUsesNonExemptEncryption = NO;
 				INFOPLIST_KEY_NSBluetoothAlwaysUsageDescription = "Click uses Bluetooth for Tap to Connect when you meet someone nearby.";
-				INFOPLIST_KEY_NSCalendarsFullAccessUsageDescription = "Click reads your calendar to find mutual free time when you reconnect with a friend.";
-				INFOPLIST_KEY_NSCalendarsUsageDescription = "Click reads your calendar to find mutual free time when you reconnect with a friend.";
+				INFOPLIST_KEY_NSCalendarsFullAccessUsageDescription = "Click checks your calendar on this iPhone to show whether you're free for plans and events. It reads only busy times and never changes your calendar.";
+				INFOPLIST_KEY_NSCalendarsUsageDescription = "Click checks your calendar on this iPhone to show whether you're free for plans and events. It reads only busy times and never changes your calendar.";
 				INFOPLIST_KEY_NSCameraUsageDescription = "Click uses your camera to scan QR codes and capture photos.";
 				INFOPLIST_KEY_NSContactsUsageDescription = "Click hashes phone numbers and emails on this device to find people you already know. Your address book never leaves your phone.";
 				INFOPLIST_KEY_NSLocationAlwaysAndWhenInUseUsageDescription = "If you turn on Past meeting spots, Click is told when you arrive somewhere so it can remind you of a Click you met there. Your location is never stored or shown to anyone.";

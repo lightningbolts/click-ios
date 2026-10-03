@@ -395,7 +395,8 @@ struct BeaconDetailView: View {
     private func infoCard(_ beacon: MapBeacon) -> some View {
         VStack(spacing: 0) {
             if let schedule = beacon.schedule {
-                infoRow(systemImage: "clock", title: EventFormatting.when(schedule), subtitle: relativeTime(schedule))
+                infoRow(systemImage: "clock", title: EventFormatting.when(schedule), subtitle: whenSubtitle(schedule))
+                    .task { await env.calendar.refresh() }
                 Divider().padding(.leading, 56)
             }
             Button {
@@ -475,6 +476,14 @@ struct BeaconDetailView: View {
         .padding(.horizontal, 16)
         .padding(.vertical, 14)
         .contentShape(Rectangle())
+    }
+
+    /// "Starts in 2 days · You're free then": an upcoming event says how it sits on your calendar
+    /// (read on this iPhone only) once you've allowed access.
+    private func whenSubtitle(_ schedule: EventSchedule) -> String? {
+        let relative = relativeTime(schedule)
+        guard schedule.start > .now, let fit = env.calendar.fit(DateInterval(start: schedule.start, end: schedule.end)) else { return relative }
+        return [relative, fit.text].compactMap { $0 }.joined(separator: " · ")
     }
 
     private func relativeTime(_ schedule: EventSchedule, now: Date = .now) -> String? {

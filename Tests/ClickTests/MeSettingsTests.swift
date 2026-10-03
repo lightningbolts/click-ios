@@ -103,3 +103,43 @@ struct MeSettingsTests {
         }
     }
 }
+
+@Suite("Calendar free/busy")
+struct CalendarAvailabilityTests {
+    private var utc: Calendar {
+        var calendar = Calendar(identifier: .gregorian)
+        calendar.timeZone = TimeZone(identifier: "UTC")!
+        return calendar
+    }
+
+    /// Today at `hour`:`minute` UTC, on a fixed day.
+    private func at(_ hour: Int, _ minute: Int = 0) -> Date {
+        utc.date(from: DateComponents(year: 2026, month: 10, day: 3, hour: hour, minute: minute))!
+    }
+
+    private func slot(_ from: Date, _ to: Date) -> DateInterval { DateInterval(start: from, end: to) }
+
+    @Test func mergesOverlappingAndTouchingTimes() {
+        let merged = CalendarAvailability.merged([slot(at(14), at(15)), slot(at(9), at(10)), slot(at(9, 30), at(11)), slot(at(11), at(12))])
+        #expect(merged == [slot(at(9), at(12)), slot(at(14), at(15))])
+    }
+
+    @Test func touchingIsFree() {
+        let busy = [slot(at(18), at(19))]
+        #expect(CalendarAvailability.fit(slot(at(19), at(20)), busy: busy, calendar: utc) == .free)
+        #expect(CalendarAvailability.fit(slot(at(17), at(18)), busy: busy, calendar: utc) == .free)
+    }
+
+    @Test func overlapSuggestsTheNextFreeQuarterHour() {
+        let busy = CalendarAvailability.merged([slot(at(18, 30), at(19, 20)), slot(at(20), at(21))])
+        // 19:30–20:30 would hit the 20:00 meeting, so the hour fits from 21:00.
+        #expect(CalendarAvailability.fit(slot(at(19), at(20)), busy: busy, calendar: utc) == .busy(nextFree: at(21)))
+        // A half hour fits in the gap at 19:30.
+        #expect(CalendarAvailability.fit(slot(at(19), at(19, 30)), busy: busy, calendar: utc) == .busy(nextFree: at(19, 30)))
+    }
+
+    @Test func noSuggestionPastTheDay() {
+        let busy = [slot(at(21), at(23, 30))]
+        #expect(CalendarAvailability.fit(slot(at(22), at(23)), busy: busy, calendar: utc) == .busy(nextFree: nil))
+    }
+}
