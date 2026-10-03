@@ -2,7 +2,7 @@ import SwiftUI
 import PhotosUI
 import UIKit
 
-/// Phase 2 Avatar selection & upload screen with live preview and skippable option.
+/// Profile photo picker (onboarding's last step, and Me): live preview, library or camera, skippable.
 public struct AvatarUploadView: View {
     @Environment(AppEnvironment.self) private var env
 
@@ -22,7 +22,7 @@ public struct AvatarUploadView: View {
     /// The Me root reuses this editor with its own copy; onboarding keeps the defaults.
     public init(
         title: String = "Add a photo",
-        subtitle: String = "A real face goes a long way — but you can skip and add it later from Settings.",
+        subtitle: String = "A real face helps people you meet recognize you. You can skip and add one later from your profile.",
         skipTitle: String = "Skip for now",
         onUpload: @escaping (Data) async throws -> Void,
         onSkip: @escaping () -> Void
@@ -39,115 +39,62 @@ public struct AvatarUploadView: View {
     }
 
     public var body: some View {
-        VStack(spacing: 0) {
-            OnboardingHeaderView(title: title, subtitle: subtitle)
+        OnboardingPage(title: title, subtitle: subtitle) {
+            VStack(spacing: ClickSpacing.md) {
+                // Tapping the preview opens the library too.
+                PhotosPicker(selection: $selectedItem, matching: .images, photoLibrary: .shared()) {
+                    preview
+                }
+                .buttonStyle(.plain)
+                .disabled(isUploading)
+                .accessibilityLabel(hasSelectedImage ? "Change photo" : "Choose a photo")
 
-            ScrollView {
-                VStack(spacing: ClickSpacing.lg) {
-                    // Circular Preview (168pt)
-                    ZStack {
-                        Circle()
-                            .fill(ClickColors.surface)
-                            .frame(width: 168, height: 168)
-                            .overlay(
-                                Circle()
-                                    .stroke(ClickColors.separator, lineWidth: 2)
-                            )
+                Button(action: requestCamera) {
+                    Label("Take a photo", systemImage: "camera")
+                        .font(ClickTypography.supportingEmphasized)
+                        .padding(.horizontal, ClickSpacing.md)
+                        .frame(minHeight: ClickMetrics.chipHeight)
+                        .background(ClickColors.fillSubtle, in: Capsule())
+                }
+                .buttonStyle(.plain)
+                .foregroundStyle(ClickColors.textPrimary)
+                .disabled(isUploading)
 
-                        if let data = selectedImageData, let uiImage = UIImage(data: data) {
-                            Image(uiImage: uiImage)
-                                .resizable()
-                                .scaledToFill()
-                                .frame(width: 168, height: 168)
-                                .clipShape(Circle())
-                        } else {
-                            VStack(spacing: ClickSpacing.xs) {
-                                Image(systemName: "person.fill")
-                                    .font(.system(size: 64))
-                                    .foregroundStyle(ClickColors.textTertiary.opacity(0.6))
-                            }
-                        }
-
-                        if isUploading {
-                            Circle()
-                                .fill(Color.black.opacity(0.4))
-                                .frame(width: 168, height: 168)
-                            ProgressView()
-                                .tint(.white)
-                                .scaleEffect(1.3)
-                        }
-                    }
-                    .padding(.vertical, ClickSpacing.md)
-
-                    // Source Buttons: Library & Camera
-                    HStack(spacing: ClickSpacing.md) {
-                        PhotosPicker(
-                            selection: $selectedItem,
-                            matching: .images,
-                            photoLibrary: .shared()
-                        ) {
-                            Label("From library", systemImage: "photo.on.rectangle.angled")
-                        }
-                        .buttonStyle(.clickSecondary)
-
-                        Button(action: requestCamera) {
-                            Label("Take photo", systemImage: "camera.fill")
-                        }
-                        .buttonStyle(.clickSecondary)
-                    }
-                    .padding(.horizontal, ClickSpacing.lg)
-
-                    if let error = errorMessage {
-                        VStack(spacing: ClickSpacing.xs) {
-                            Text(error)
-                                .font(ClickTypography.metadata)
-                                .foregroundStyle(ClickColors.destructive)
-
-                            if cameraPermissionDenied {
-                                Button("Open Settings") {
-                                    env.permissions.openSystemSettings()
-                                }
+                if let errorMessage {
+                    VStack(spacing: ClickSpacing.xs) {
+                        FormNotice(text: errorMessage)
+                        if cameraPermissionDenied {
+                            Button("Open Settings") { env.permissions.openSystemSettings() }
                                 .font(ClickTypography.supportingEmphasized)
                                 .foregroundStyle(ClickColors.accentForeground)
-                            }
                         }
-                        .padding(.horizontal, ClickSpacing.lg)
                     }
-
-                    Spacer(minLength: ClickSpacing.xl)
-
-                    // Action CTAs
-                    VStack(spacing: ClickSpacing.sm) {
-                        Button(action: uploadAvatar) {
-                            HStack(spacing: ClickSpacing.sm) {
-                                if isUploading {
-                                    ProgressView()
-                                    Text("Uploading…")
-                                } else {
-                                    Text(hasSelectedImage ? "Use this photo" : "Choose a photo")
-                                }
-                            }
-                        }
-                        .buttonStyle(.clickPrimary)
-                        .disabled(!hasSelectedImage || isUploading)
-
-                        Button(action: {
-                            ClickHaptics.selection()
-                            onSkip()
-                        }) {
-                            Text(skipTitle)
-                                .font(ClickTypography.bodyEmphasized)
-                                .foregroundStyle(ClickColors.textSecondary)
-                                .padding(.vertical, ClickSpacing.sm)
-                        }
-                        .disabled(isUploading)
-                    }
-                    .padding(.horizontal, ClickSpacing.lg)
-                    .padding(.bottom, ClickSpacing.xl)
                 }
             }
+            .frame(maxWidth: .infinity)
+            .padding(.top, ClickSpacing.md)
+        } actions: {
+            if hasSelectedImage {
+                Button(action: uploadAvatar) {
+                    if isUploading { ProgressView() } else { Text("Use this photo") }
+                }
+                .buttonStyle(.clickPrimary)
+                .disabled(isUploading)
+            } else {
+                // Never a disabled "Choose a photo": the primary action opens the picker.
+                PhotosPicker(selection: $selectedItem, matching: .images, photoLibrary: .shared()) {
+                    Text("Choose a photo")
+                }
+                .buttonStyle(.clickPrimary)
+            }
+            Button(skipTitle) {
+                ClickHaptics.selection()
+                onSkip()
+            }
+            .buttonStyle(.onboardingText)
+            .disabled(isUploading)
         }
-        .background(ClickColors.background.ignoresSafeArea())
+        .animation(ClickMotion.subtleFade, value: errorMessage)
         .onChange(of: selectedItem) { _, newItem in
             Task {
                 if let data = try? await newItem?.loadTransferable(type: Data.self) {
@@ -161,6 +108,40 @@ public struct AvatarUploadView: View {
                 selectedImageData = data
                 errorMessage = nil
             })
+        }
+    }
+
+    private static let previewSize: CGFloat = 176
+
+    private var preview: some View {
+        ZStack {
+            Circle().fill(ClickColors.surface)
+            if let data = selectedImageData, let uiImage = UIImage(data: data) {
+                Image(uiImage: uiImage)
+                    .resizable()
+                    .scaledToFill()
+                    .clipShape(Circle())
+            } else {
+                Image(systemName: "person.fill")
+                    .font(.system(size: 72))
+                    .foregroundStyle(ClickColors.fillStrong)
+            }
+            if isUploading {
+                Circle().fill(.black.opacity(0.4))
+                ProgressView().tint(.white).controlSize(.large)
+            }
+        }
+        .frame(width: Self.previewSize, height: Self.previewSize)
+        .overlay(alignment: .bottomTrailing) {
+            if !isUploading {
+                Image(systemName: hasSelectedImage ? "pencil" : "plus")
+                    .font(.system(size: 16, weight: .bold))
+                    .foregroundStyle(ClickColors.primaryActionForeground)
+                    .frame(width: 44, height: 44)
+                    .background(ClickColors.primaryActionFill, in: Circle())
+                    .overlay(Circle().stroke(ClickColors.background, lineWidth: 4))
+                    .offset(x: -4, y: -4)
+            }
         }
     }
 

@@ -142,14 +142,9 @@ public actor SupabaseAuthService {
         )
     }
 
-    /// Signs up with email, password, and basic profile metadata.
-    public func signUp(
-        email: String,
-        password: String,
-        firstName: String,
-        lastName: String,
-        birthdayIso: String
-    ) async throws -> SignUpResult {
+    /// Signs up with email and password. The new-user trigger leaves name and birthday empty,
+    /// which sends the account through the Profile Basics gate.
+    public func signUp(email: String, password: String) async throws -> SignUpResult {
         let url = baseURL.appendingPathComponent("/auth/v1/signup")
 
         var request = URLRequest(url: url)
@@ -159,21 +154,7 @@ public actor SupabaseAuthService {
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
 
         let cleanEmail = email.trimmingCharacters(in: .whitespacesAndNewlines)
-        let f = firstName.trimmingCharacters(in: .whitespacesAndNewlines)
-        let l = lastName.trimmingCharacters(in: .whitespacesAndNewlines)
-        let fullName = [f, l].filter { !$0.isEmpty }.joined(separator: " ")
-
-        let payload: [String: Any] = [
-            "email": cleanEmail,
-            "password": password,
-            "data": [
-                "first_name": f,
-                "last_name": l,
-                "birthday": birthdayIso,
-                "full_name": fullName,
-                "name": fullName
-            ]
-        ]
+        let payload: [String: Any] = ["email": cleanEmail, "password": password]
         request.httpBody = try JSONSerialization.data(withJSONObject: payload)
 
         let authResponse = try await execute(request)

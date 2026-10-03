@@ -48,6 +48,7 @@ public struct HomeView: View {
                 }
                 if let nudge = reconnectNudge { ReconnectNearbyCard(nudge: nudge) { reconnectNudge = nil } }
                 if env.features.isEnabled(.sharedDrops) { SharedDropsStrip() }
+                HomeSetupCard()
                 recentPeopleSection(promoted: opportunity)
                 if let recapCard { HomeEventRecapCard(card: recapCard) }
                 recapSection
@@ -92,11 +93,7 @@ public struct HomeView: View {
                 }
             }
             ToolbarItem(placement: .topBarTrailing) {
-                Button {
-                    env.router.presentSearch()
-                } label: {
-                    Label("Search", systemImage: "magnifyingglass")
-                }
+                ActivityBellButton()
             }
         }
         .task {

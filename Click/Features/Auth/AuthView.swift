@@ -8,336 +8,196 @@ public enum AuthMode: String, CaseIterable, Identifiable {
     public var id: String { rawValue }
 }
 
-/// Native SwiftUI authentication screen supporting Email/Password, Sign in with Apple, and Google OAuth.
-/// Formatted strictly according to Click's purple-first Functional Clarity visual identity.
+/// Sign in and sign up: Apple and Google first (one tap), then email and password. Sign-up asks
+/// for nothing else; the Profile Basics gate collects name and birthday next.
 public struct AuthView: View {
     @Environment(AppEnvironment.self) private var env
     @Environment(\.colorScheme) private var colorScheme
+    @Environment(\.openURL) private var openURL
 
     @State private var mode: AuthMode = .signIn
     @State private var email = ""
     @State private var password = ""
     @State private var isPasswordVisible = false
 
-    // Sign up specific fields
-    @State private var firstName = ""
-    @State private var lastName = ""
-    @State private var birthday = Calendar.current.date(byAdding: .year, value: -18, to: Date()) ?? Date()
-
     @State private var isLoading = false
     @State private var errorMessage: String?
     @State private var infoMessage: String?
     @State private var appleRawNonce: String?
+    @FocusState private var focusedField: Field?
+
+    private enum Field: Hashable { case email, password }
+
+    static let minimumPasswordLength = 8
 
     public init(initialMode: AuthMode = .signIn) {
         self._mode = State(initialValue: initialMode)
     }
 
-    private var isAgeValid: Bool {
-        let age = Calendar.current.dateComponents([.year], from: birthday, to: Date()).year ?? 0
-        return age >= 13
-    }
-
-    private var isPasswordValid: Bool {
-        if mode == .signUp {
-            return password.count >= 8
-        } else {
-            return !password.isEmpty
-        }
-    }
-
     private var canSubmit: Bool {
-        guard !email.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
-              isPasswordValid,
-              !isLoading else { return false }
-
-        if mode == .signUp {
-            return !firstName.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty &&
-                   !lastName.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty &&
-                   isAgeValid
-        }
-        return true
+        let hasEmail = !email.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+        let passwordOK = mode == .signUp ? password.count >= Self.minimumPasswordLength : !password.isEmpty
+        return hasEmail && passwordOK && !isLoading
     }
 
     public var body: some View {
-        NavigationStack {
-            ScrollView {
-                VStack(spacing: ClickSpacing.lg) {
-                    // Header Brand
-                    VStack(spacing: ClickSpacing.sm) {
-                        ClickLogo(size: 64)
-                            .padding(.top, ClickSpacing.md)
-
-                        Text("Click")
-                            .font(ClickTypography.largeTitle)
-                            .tracking(-0.5)
-                            .foregroundStyle(ClickColors.textPrimary)
-
-                        Text("In-person first connection & private messaging.")
-                            .font(ClickTypography.body)
-                            .foregroundStyle(ClickColors.textSecondary)
-                            .multilineTextAlignment(.center)
-                            .padding(.horizontal, ClickSpacing.lg)
+        OnboardingPage(
+            title: mode == .signIn ? "Welcome back" : "Join Click",
+            subtitle: "In-person first connections and private messaging.",
+            showsLogo: true
+        ) {
+            VStack(spacing: ClickSpacing.sm) {
+                SignInWithAppleButton(
+                    mode == .signIn ? .signIn : .continue,
+                    onRequest: { request in
+                        request.requestedScopes = [.fullName, .email]
+                        let rawNonce = AuthCrypto.randomToken()
+                        appleRawNonce = rawNonce
+                        request.nonce = AuthCrypto.sha256Hex(rawNonce)
+                    },
+                    onCompletion: { result in
+                        handleAppleSignIn(result)
                     }
+                )
+                .signInWithAppleButtonStyle(colorScheme == .dark ? .white : .black)
+                .frame(height: ClickMetrics.primaryActionHeight)
+                .clipShape(Capsule())
+                .id(colorScheme)
 
-                    // Mode Picker
-                    Picker("Authentication Mode", selection: $mode) {
-                        ForEach(AuthMode.allCases) { m in
-                            Text(m.rawValue).tag(m)
-                        }
-                    }
-                    .pickerStyle(.segmented)
-                    .padding(.horizontal, ClickSpacing.lg)
-
-                    // Error Banner
-                    if let error = errorMessage {
-                        HStack(spacing: ClickSpacing.sm) {
-                            Image(systemName: "exclamationmark.triangle.fill")
-                                .foregroundStyle(ClickColors.destructive)
-                            Text(error)
-                                .font(ClickTypography.supportingEmphasized)
-                                .foregroundStyle(ClickColors.destructive)
-                            Spacer()
-                        }
-                        .padding(ClickSpacing.sm)
-                        .background(ClickColors.destructive.opacity(0.12))
-                        .clipShape(RoundedRectangle(cornerRadius: ClickRadius.field))
-                        .padding(.horizontal, ClickSpacing.lg)
-                    }
-
-                    // Info / Verification Banner
-                    if let info = infoMessage {
-                        HStack(spacing: ClickSpacing.sm) {
-                            Image(systemName: "envelope.fill")
-                                .foregroundStyle(ClickColors.accentForeground)
-                            Text(info)
-                                .font(ClickTypography.supportingEmphasized)
-                                .foregroundStyle(ClickColors.accentForeground)
-                            Spacer()
-                        }
-                        .padding(ClickSpacing.sm)
-                        .background(ClickColors.selectionTint)
-                        .clipShape(RoundedRectangle(cornerRadius: ClickRadius.field))
-                        .padding(.horizontal, ClickSpacing.lg)
-                    }
-
-                    // Form Fields
-                    VStack(spacing: ClickSpacing.md) {
-                        if mode == .signUp {
-                            HStack(spacing: ClickSpacing.sm) {
-                                TextField("First name", text: $firstName)
-                                    .font(ClickTypography.body)
-                                    .textContentType(.givenName)
-                                    .padding(.horizontal, ClickSpacing.md)
-                                    .padding(.vertical, 14)
-                                    .background(ClickColors.surface)
-                                    .clipShape(RoundedRectangle(cornerRadius: ClickRadius.field))
-                                    .overlay(
-                                        RoundedRectangle(cornerRadius: ClickRadius.field)
-                                            .stroke(ClickColors.separator, lineWidth: ClickMetrics.strokeWidth)
-                                    )
-
-                                TextField("Last name", text: $lastName)
-                                    .font(ClickTypography.body)
-                                    .textContentType(.familyName)
-                                    .padding(.horizontal, ClickSpacing.md)
-                                    .padding(.vertical, 14)
-                                    .background(ClickColors.surface)
-                                    .clipShape(RoundedRectangle(cornerRadius: ClickRadius.field))
-                                    .overlay(
-                                        RoundedRectangle(cornerRadius: ClickRadius.field)
-                                            .stroke(ClickColors.separator, lineWidth: ClickMetrics.strokeWidth)
-                                    )
-                            }
-
-                            // Birthday Picker
-                            VStack(alignment: .leading, spacing: ClickSpacing.xs) {
-                                DatePicker(
-                                    "Date of Birth",
-                                    selection: $birthday,
-                                    in: ...Date(),
-                                    displayedComponents: .date
-                                )
-                                .font(ClickTypography.body)
-                                .padding(.horizontal, ClickSpacing.md)
-                                .padding(.vertical, 10)
-                                .background(ClickColors.surface)
-                                .clipShape(RoundedRectangle(cornerRadius: ClickRadius.field))
-                                .overlay(
-                                    RoundedRectangle(cornerRadius: ClickRadius.field)
-                                        .stroke(ClickColors.separator, lineWidth: ClickMetrics.strokeWidth)
-                                    )
-
-                                if !isAgeValid {
-                                    Text("You must be at least 13 years old to use Click.")
-                                        .font(ClickTypography.metadata)
-                                        .foregroundStyle(ClickColors.destructive)
-                                        .padding(.leading, ClickSpacing.xs)
-                                }
-                            }
-                        }
-
-                        // Email Field
-                        TextField("Email address", text: $email)
-                            .font(ClickTypography.body)
-                            .keyboardType(.emailAddress)
-                            .textContentType(.emailAddress)
-                            .autocorrectionDisabled()
-                            .textInputAutocapitalization(.never)
-                            .padding(.horizontal, ClickSpacing.md)
-                            .padding(.vertical, 14)
-                            .background(ClickColors.surface)
-                            .clipShape(RoundedRectangle(cornerRadius: ClickRadius.field))
-                            .overlay(
-                                RoundedRectangle(cornerRadius: ClickRadius.field)
-                                    .stroke(ClickColors.separator, lineWidth: ClickMetrics.strokeWidth)
-                            )
-
-                        // Password Field
-                        VStack(alignment: .leading, spacing: ClickSpacing.xs) {
-                            HStack {
-                                if isPasswordVisible {
-                                    TextField("Password", text: $password)
-                                        .font(ClickTypography.body)
-                                        .textContentType(mode == .signIn ? .password : .newPassword)
-                                } else {
-                                    SecureField("Password", text: $password)
-                                        .font(ClickTypography.body)
-                                        .textContentType(mode == .signIn ? .password : .newPassword)
-                                }
-
-                                Button {
-                                    isPasswordVisible.toggle()
-                                } label: {
-                                    Image(systemName: isPasswordVisible ? "eye.slash.fill" : "eye.fill")
-                                        .foregroundStyle(ClickColors.textSecondary)
-                                }
-                            }
-                            .padding(.horizontal, ClickSpacing.md)
-                            .padding(.vertical, 14)
-                            .background(ClickColors.surface)
-                            .clipShape(RoundedRectangle(cornerRadius: ClickRadius.field))
-                            .overlay(
-                                RoundedRectangle(cornerRadius: ClickRadius.field)
-                                    .stroke(ClickColors.separator, lineWidth: ClickMetrics.strokeWidth)
-                            )
-
-                            if mode == .signUp && !password.isEmpty && password.count < 8 {
-                                Text("Password must be at least 8 characters.")
-                                    .font(ClickTypography.metadata)
-                                    .foregroundStyle(ClickColors.destructive)
-                                    .padding(.leading, ClickSpacing.xs)
-                            }
-                        }
-                    }
-                    .padding(.horizontal, ClickSpacing.lg)
-
-                    // Primary Action Button (Canonical Click Purple)
-                    Button {
-                        handlePrimaryAction()
-                    } label: {
-                        if isLoading {
-                            ProgressView()
-                        } else {
-                            Text(mode == .signIn ? "Sign In" : "Create Account")
-                        }
-                    }
-                    .buttonStyle(.clickPrimary)
-                    .disabled(!canSubmit)
-                    .padding(.horizontal, ClickSpacing.lg)
-
-                    // Forgot Password Link
-                    if mode == .signIn {
-                        Button {
-                            if let url = URL(string: "https://joinclick.co/forgot-password") {
-                                UIApplication.shared.open(url)
-                            }
-                        } label: {
-                            Text("Forgot password?")
-                                .font(ClickTypography.supportingEmphasized)
-                                .foregroundStyle(ClickColors.accentForeground)
-                        }
-                    }
-
-                    // Divider
-                    HStack {
-                        Rectangle()
-                            .frame(height: ClickMetrics.strokeWidth)
-                            .foregroundStyle(ClickColors.separator)
-                        Text("or")
-                            .font(ClickTypography.supportingEmphasized)
-                            .foregroundStyle(ClickColors.textSecondary)
-                            .padding(.horizontal, ClickSpacing.sm)
-                        Rectangle()
-                            .frame(height: ClickMetrics.strokeWidth)
-                            .foregroundStyle(ClickColors.separator)
-                    }
-                    .padding(.horizontal, ClickSpacing.lg)
-                    .padding(.vertical, ClickSpacing.xs)
-
-                    // Third-Party Providers
-                    VStack(spacing: ClickSpacing.sm) {
-                        SignInWithAppleButton(
-                            .signIn,
-                            onRequest: { request in
-                                request.requestedScopes = [.fullName, .email]
-                                let rawNonce = AuthCrypto.randomToken()
-                                appleRawNonce = rawNonce
-                                request.nonce = AuthCrypto.sha256Hex(rawNonce)
-                            },
-                            onCompletion: { result in
-                                handleAppleSignIn(result)
-                            }
-                        )
-                        .signInWithAppleButtonStyle(colorScheme == .dark ? .white : .black)
-                        .frame(height: ClickMetrics.primaryActionHeight)
-                        .clipShape(Capsule())
-
-                        // Google Sign-In
-                        Button {
-                            handleGoogleOAuthSignIn()
-                        } label: {
-                            Label("Continue with Google", systemImage: "globe")
-                                .frame(minHeight: ClickMetrics.primaryActionHeight)
-                        }
-                        .buttonStyle(.clickSecondary)
-
-                    }
-                    .padding(.horizontal, ClickSpacing.lg)
+                Button(action: handleGoogleOAuthSignIn) {
+                    Label("Continue with Google", systemImage: "globe")
+                        .frame(minHeight: ClickMetrics.primaryActionHeight)
                 }
-                .padding(.bottom, ClickSpacing.xxl)
+                .buttonStyle(.clickSecondary)
             }
-            .background(ClickColors.background.ignoresSafeArea())
+            .disabled(isLoading)
+
+            HStack(spacing: ClickSpacing.md) {
+                Rectangle().fill(ClickColors.separator).frame(height: 0.5)
+                Text("or use email")
+                    .font(ClickTypography.metadata)
+                    .foregroundStyle(ClickColors.textTertiary)
+                    .fixedSize()
+                Rectangle().fill(ClickColors.separator).frame(height: 0.5)
+            }
+
+            VStack(alignment: .leading, spacing: ClickSpacing.sm) {
+                GroupedSection {
+                    TextField("Email", text: $email)
+                        .keyboardType(.emailAddress)
+                        .textContentType(.emailAddress)
+                        .autocorrectionDisabled()
+                        .textInputAutocapitalization(.never)
+                        .submitLabel(.next)
+                        .focused($focusedField, equals: .email)
+                        .onSubmit { focusedField = .password }
+                    HStack {
+                        Group {
+                            if isPasswordVisible {
+                                TextField("Password", text: $password)
+                                    .autocorrectionDisabled()
+                                    .textInputAutocapitalization(.never)
+                            } else {
+                                SecureField("Password", text: $password)
+                            }
+                        }
+                        .textContentType(mode == .signIn ? .password : .newPassword)
+                        .focused($focusedField, equals: .password)
+                        .submitLabel(.go)
+                        .onSubmit { if canSubmit { handlePrimaryAction() } }
+
+                        Button {
+                            isPasswordVisible.toggle()
+                        } label: {
+                            Image(systemName: isPasswordVisible ? "eye.slash" : "eye")
+                                .foregroundStyle(ClickColors.textTertiary)
+                                .frame(width: 32, height: 26)
+                                .contentShape(Rectangle())
+                        }
+                        .buttonStyle(.plain)
+                        .accessibilityLabel(isPasswordVisible ? "Hide password" : "Show password")
+                    }
+                }
+                .font(ClickTypography.body)
+
+                HStack {
+                    if mode == .signUp {
+                        Text("At least \(Self.minimumPasswordLength) characters")
+                            .foregroundStyle(password.isEmpty || password.count >= Self.minimumPasswordLength
+                                             ? ClickColors.textTertiary : ClickColors.destructive)
+                    } else {
+                        // The reset finishes on joinclick.co in Safari, which holds the link's
+                        // verifier; an in-app browser would strand the emailed link.
+                        Button("Forgot password?") {
+                            if let url = URL(string: "https://joinclick.co/forgot-password") { openURL(url) }
+                        }
+                        .foregroundStyle(ClickColors.accentForeground)
+                    }
+                    Spacer()
+                }
+                .font(ClickTypography.metadata)
+                .padding(.horizontal, ClickSpacing.surfacePadding)
+            }
+
+            if let errorMessage {
+                FormNotice(text: errorMessage)
+            } else if let infoMessage {
+                FormNotice(text: infoMessage, kind: .info)
+            }
+        } actions: {
+            Button(action: handlePrimaryAction) {
+                if isLoading { ProgressView() } else { Text(mode == .signIn ? "Sign In" : "Create Account") }
+            }
+            .buttonStyle(.clickPrimary)
+            .disabled(!canSubmit)
+
+            Button {
+                switchMode()
+            } label: {
+                Text(mode == .signIn ? "New to Click? " : "Have an account? ")
+                    + Text(mode == .signIn ? "Create an account" : "Sign in").foregroundStyle(ClickColors.accentForeground)
+            }
+            .buttonStyle(.onboardingText)
+            .disabled(isLoading)
         }
+        .animation(ClickMotion.subtleFade, value: mode)
+        .animation(ClickMotion.subtleFade, value: errorMessage)
+        .animation(ClickMotion.subtleFade, value: infoMessage)
     }
 
     // MARK: - Actions
+
+    /// Switching by hand clears the other form's banners (the verify-email handoff sets the mode
+    /// itself and keeps its banner).
+    private func switchMode() {
+        ClickHaptics.selection()
+        errorMessage = nil
+        infoMessage = nil
+        mode = mode == .signIn ? .signUp : .signIn
+    }
+
     private func handlePrimaryAction() {
+        guard canSubmit else { return }
         ClickHaptics.impact(.medium)
+        focusedField = nil
         isLoading = true
         errorMessage = nil
         infoMessage = nil
+        let email = email.trimmingCharacters(in: .whitespacesAndNewlines)
 
         Task {
             do {
                 if mode == .signIn {
-                    try await env.session.signInWithEmail(
-                        email: email.trimmingCharacters(in: .whitespacesAndNewlines),
-                        password: password
-                    )
+                    try await env.session.signInWithEmail(email: email, password: password)
                 } else {
-                    let result = try await env.session.signUpWithEmail(
-                        email: email.trimmingCharacters(in: .whitespacesAndNewlines),
-                        password: password,
-                        firstName: firstName.trimmingCharacters(in: .whitespacesAndNewlines),
-                        lastName: lastName.trimmingCharacters(in: .whitespacesAndNewlines),
-                        birthday: birthday
-                    )
-                    switch result {
+                    switch try await env.session.signUpWithEmail(email: email, password: password) {
                     case .authenticated:
                         break
                     case .verificationRequired(let userEmail):
-                        infoMessage = "Verification email sent to \(userEmail). Please confirm your email before signing in."
+                        // Hand off to Sign In with the credentials still filled: after tapping
+                        // the emailed link, one tap finishes.
+                        mode = .signIn
+                        infoMessage = "Check \(userEmail) and tap the link we sent. Then come back and sign in."
                     }
                 }
                 ClickHaptics.success()
@@ -372,7 +232,8 @@ public struct AuthView: View {
                     }
                     let authService = SupabaseAuthService()
                     let snapshot = try await authService.signInWithApple(idToken: token, nonce: nonce)
-                    env.session.signIn(snapshot: snapshot)
+                    // Apple shares the name only on the first authorization: keep it for Profile Basics.
+                    env.session.signIn(snapshot: snapshot, nameHint: credential.fullName)
                     ClickHaptics.success()
                 } catch {
                     errorMessage = error.localizedDescription
@@ -397,7 +258,7 @@ public struct AuthView: View {
             do {
                 let credential = try await GoogleSignIn.signIn()
                 let snapshot = try await SupabaseAuthService().signInWithGoogle(idToken: credential.idToken, nonce: credential.nonce)
-                env.session.signIn(snapshot: snapshot)
+                env.session.signIn(snapshot: snapshot, nameHint: credential.name)
                 ClickHaptics.success()
             } catch is CancellationError {
                 // Closed the sheet: nothing to report.

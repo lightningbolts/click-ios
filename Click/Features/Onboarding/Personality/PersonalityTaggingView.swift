@@ -1,17 +1,17 @@
 import SwiftUI
 
-/// Phase 2 Personality tagging screen with 4 affinity groups and exactly 5 traits required.
+/// Personality picker (Settings, and Home's setup prompt): exactly 5 traits from 4 groups.
 public struct PersonalityTaggingView: View {
     @State private var selectedTraits: Set<String>
     @State private var isSaving: Bool = false
     @State private var errorMessage: String?
+    @State private var showsSwapHint = false
 
     let title: String
     let subtitle: String
     let actionTitle: String
     let onSave: ([String]) async throws -> Void
 
-    /// Settings reuses this picker with its own copy; onboarding keeps the defaults.
     public init(
         initialTraits: [String] = [],
         title: String = "How would friends describe you?",
@@ -31,113 +31,57 @@ public struct PersonalityTaggingView: View {
     }
 
     public var body: some View {
-        VStack(spacing: 0) {
-            OnboardingHeaderView(title: title, subtitle: subtitle)
-
-            // Counter indicator
-            HStack(spacing: ClickSpacing.xs) {
-                Text("\(selectedTraits.count) of \(kPersonalityRequiredTagCount) selected")
-                    .font(ClickTypography.supportingEmphasized)
-                    .fontWeight(.semibold)
-
-                if selectedTraits.count == kPersonalityRequiredTagCount {
-                    Text("✓")
+        OnboardingPage(title: title, subtitle: subtitle) {
+            ForEach(kPersonalityTraitGroups) { group in
+                VStack(alignment: .leading, spacing: 10) {
+                    Text(group.title)
                         .font(ClickTypography.supportingEmphasized)
-                        .fontWeight(.bold)
-                        .foregroundStyle(ClickColors.accentForeground)
-                }
-                Spacer()
-            }
-            .padding(.horizontal, ClickSpacing.lg)
-            .padding(.bottom, ClickSpacing.sm)
-            .foregroundStyle(selectedTraits.count == kPersonalityRequiredTagCount ? ClickColors.accentForeground : ClickColors.textPrimary)
-
-            if let error = errorMessage {
-                Text(error)
-                    .font(ClickTypography.metadata)
-                    .foregroundStyle(ClickColors.destructive)
-                    .padding(.horizontal, ClickSpacing.lg)
-                    .padding(.bottom, ClickSpacing.xs)
-            }
-
-            // Trait Groups Scroll
-            ScrollView {
-                VStack(alignment: .leading, spacing: ClickSpacing.lg) {
-                    ForEach(kPersonalityTraitGroups) { group in
-                        VStack(alignment: .leading, spacing: ClickSpacing.sm) {
-                            Text(group.title.uppercased())
-                                .font(ClickTypography.metadata)
-                                .fontWeight(.bold)
-                                .foregroundStyle(ClickColors.textSecondary)
-
-                            FlowLayout(spacing: ClickSpacing.sm) {
-                                ForEach(group.traits, id: \.self) { trait in
-                                    let isSelected = selectedTraits.contains(trait)
-                                    Button(action: {
-                                        toggleTrait(trait)
-                                    }) {
-                                        HStack(spacing: ClickSpacing.xxs) {
-                                            if isSelected {
-                                                Image(systemName: "checkmark")
-                                                    .font(.system(size: 12, weight: .bold))
-                                            }
-                                            Text(trait)
-                                                .font(ClickTypography.body)
-                                        }
-                                        .padding(.horizontal, 16)
-                                        .padding(.vertical, 10)
-                                        .background(isSelected ? ClickColors.selectionTint : ClickColors.surface)
-                                        .foregroundStyle(isSelected ? ClickColors.accentForeground : ClickColors.textPrimary)
-                                        .clipShape(Capsule())
-                                        .overlay(
-                                            Capsule()
-                                                .stroke(isSelected ? ClickColors.accentForeground : ClickColors.separator, lineWidth: ClickMetrics.strokeWidth)
-                                        )
-                                    }
-                                    .buttonStyle(.plain)
-                                }
-                            }
+                        .foregroundStyle(ClickColors.textSecondary)
+                        .padding(.horizontal, 4)
+                        .accessibilityAddTraits(.isHeader)
+                    FlowLayout(spacing: ClickSpacing.sm) {
+                        ForEach(group.traits, id: \.self) { trait in
+                            SelectableChip(title: trait, isSelected: selectedTraits.contains(trait)) { toggleTrait(trait) }
                         }
                     }
                 }
-                .padding(.horizontal, ClickSpacing.lg)
-                .padding(.vertical, ClickSpacing.sm)
-                .padding(.bottom, 80)
             }
-
-            // Bottom Sticky Bar
-            VStack(spacing: 0) {
-                Divider()
-                    .overlay(ClickColors.separator)
-
-                Button(action: {
-                    saveAndContinue()
-                }) {
-                    if isSaving {
-                        ProgressView()
-                    } else {
-                        Text(actionTitle)
-                    }
+        } actions: {
+            if let errorMessage {
+                FormNotice(text: errorMessage)
+            } else if showsSwapHint, selectedTraits.count == kPersonalityRequiredTagCount {
+                // A 6th tap used to only buzz; say how to change a pick.
+                Text("That's 5. Tap one to swap it out.")
+                    .font(ClickTypography.metadata)
+                    .foregroundStyle(ClickColors.textSecondary)
+                    .transition(.opacity)
+            }
+            Button(action: saveAndContinue) {
+                if isSaving {
+                    ProgressView()
+                } else if selectedTraits.count < kPersonalityRequiredTagCount {
+                    Text("Pick \(kPersonalityRequiredTagCount - selectedTraits.count) more")
+                } else {
+                    Text(actionTitle)
                 }
-                .buttonStyle(.clickPrimary)
-                .disabled(!canContinue)
-                .padding(.horizontal, ClickSpacing.lg)
-                .padding(.vertical, ClickSpacing.md)
-                .background(ClickColors.background)
             }
+            .buttonStyle(.clickPrimary)
+            .disabled(!canContinue)
         }
-        .background(ClickColors.background.ignoresSafeArea())
+        .animation(ClickMotion.subtleFade, value: showsSwapHint)
     }
 
     private func toggleTrait(_ trait: String) {
         if selectedTraits.contains(trait) {
             ClickHaptics.selection()
             selectedTraits.remove(trait)
+            showsSwapHint = false
         } else if selectedTraits.count < kPersonalityRequiredTagCount {
             ClickHaptics.selection()
             selectedTraits.insert(trait)
         } else {
             ClickHaptics.error()
+            showsSwapHint = true
         }
     }
 

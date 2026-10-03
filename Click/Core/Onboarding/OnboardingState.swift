@@ -1,6 +1,8 @@
 import Foundation
 
 /// Persisted state representing an account's progress through the onboarding flow.
+/// Required steps: Welcome, Interests, Photo. `personalityCompleted` and
+/// `priorConnectionsSetOrSkipped` are kept for decoding older caches; neither gates the shell.
 public struct OnboardingState: Codable, Equatable, Sendable {
     public var welcomeSeen: Bool
     public var interestsCompleted: Bool
@@ -8,6 +10,11 @@ public struct OnboardingState: Codable, Equatable, Sendable {
     public var avatarSetOrSkipped: Bool
     public var priorConnectionsSetOrSkipped: Bool
     public var completedAt: Date?
+
+    /// Every required step is done and completion was recorded.
+    public var isComplete: Bool {
+        welcomeSeen && interestsCompleted && avatarSetOrSkipped && completedAt != nil
+    }
 
     public init(
         welcomeSeen: Bool = false,

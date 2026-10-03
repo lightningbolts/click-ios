@@ -570,12 +570,7 @@ struct PersonalitySettingsView: View {
     var body: some View {
         Group {
             if let current = profile.value {
-                PersonalityTaggingView(
-                    initialTraits: current.personality,
-                    title: "Your personality",
-                    subtitle: "Pick exactly 5 traits.",
-                    actionTitle: "Save"
-                ) { traits in
+                PersonalityTaggingView(initialTraits: current.personality, actionTitle: "Save") { traits in
                     try await env.onboardingRepository.savePersonality(userId: current.userID, traits: traits)
                     await CacheStore.shared.save(current.with(personality: traits), key: "self-profile", userID: current.userID)
                     env.selfData.apply(profile: current.with(personality: traits))

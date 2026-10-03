@@ -113,11 +113,15 @@ public enum AppRoute: Hashable, Sendable {
     case myQR
     case scanQR
     case tapConnect
+    /// People you already know who are on Click, matched from hashed device contacts.
+    case findFriends
     case savedEvents
     /// An event's Click Drops recap (spec F1).
     case eventRecap(beaconID: String)
     /// Everything you've been part of: events, beacons, hangouts, saved events (spec F2).
     case history
+    /// Every alert you got, newest first, with friend requests to answer (the Home bell).
+    case activity
     case settings(SettingsRoute)
     case connectionInvocation(ConnectionInvocation)
     /// A conversation known only by its chat ID (search hits, `click://chat/{id}`), resolved
@@ -132,10 +136,12 @@ public enum AppRoute: Hashable, Sendable {
             .connections
         case .event, .eventChat, .eventPeople, .guestList, .beacon, .hub, .eventRecap, .place:
             .map
-        case .myQR, .scanQR, .tapConnect, .connectionInvocation:
+        case .myQR, .scanQR, .tapConnect, .findFriends, .connectionInvocation:
             .addClick
         case .savedEvents, .settings, .history, .myPlaces:
             .settings
+        case .activity:
+            .home
         }
     }
 }

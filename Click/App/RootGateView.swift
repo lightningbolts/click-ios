@@ -19,6 +19,16 @@ public struct RootGateView: View {
                 }
             } else if DebugLaunch.has("-preview-clicks") {
                 ClicksPreviewHost()
+            } else if DebugLaunch.has("-preview-onboarding-welcome") {
+                onboardingPreview(step: 0) { WelcomeView(firstName: "Alex") {} }
+            } else if DebugLaunch.has("-preview-onboarding-interests") {
+                onboardingPreview(step: 1) { InterestsPickerView { _ in } }
+            } else if DebugLaunch.has("-preview-onboarding-avatar") {
+                onboardingPreview(step: 2) { AvatarUploadView(onUpload: { _ in }, onSkip: {}) }
+            } else if DebugLaunch.has("-preview-personality") {
+                NavigationStack { PersonalityTaggingView(actionTitle: "Save") { _ in } }
+            } else if DebugLaunch.has("-preview-find-friends") {
+                NavigationStack { FindFriendsView() }
             } else {
                 switch env.session.state {
                 case .restoring:
@@ -39,6 +49,15 @@ public struct RootGateView: View {
         .tint(ClickColors.accentForeground)
         .animation(ClickMotion.subtleFade, value: env.session.state.phase)
     }
+
+    /// DEBUG-only: one onboarding step under the real step bar, for layout checks.
+    private func onboardingPreview(step: Int, @ViewBuilder content: () -> some View) -> some View {
+        VStack(spacing: 0) {
+            OnboardingStepBar(step: step, count: OnboardingCoordinator.visibleStepCount, onBack: step > 0 ? {} : nil)
+            content()
+        }
+        .background(ClickColors.background.ignoresSafeArea())
+    }
 }
 
 /// Routes authenticated sessions through onboarding or into the main tab shell.
@@ -56,31 +75,6 @@ private struct AuthenticatedGateView: View {
                 }
             } else if DebugLaunch.has("-preview-clicks") {
                 ClicksPreviewHost()
-            } else if DebugLaunch.has("-preview-onboarding-welcome") {
-                VStack(spacing: 0) {
-                    OnboardingShellChrome(currentStepIndex: 0, totalSteps: 5, canGoBack: false, onBack: {})
-                    WelcomeView(firstName: "Alex") {}
-                }
-            } else if DebugLaunch.has("-preview-onboarding-interests") {
-                VStack(spacing: 0) {
-                    OnboardingShellChrome(currentStepIndex: 1, totalSteps: 5, canGoBack: true, onBack: {})
-                    InterestsPickerView { _ in }
-                }
-            } else if DebugLaunch.has("-preview-onboarding-personality") {
-                VStack(spacing: 0) {
-                    OnboardingShellChrome(currentStepIndex: 2, totalSteps: 5, canGoBack: true, onBack: {})
-                    PersonalityTaggingView { _ in }
-                }
-            } else if DebugLaunch.has("-preview-onboarding-avatar") {
-                VStack(spacing: 0) {
-                    OnboardingShellChrome(currentStepIndex: 3, totalSteps: 5, canGoBack: true, onBack: {})
-                    AvatarUploadView(onUpload: { _ in }, onSkip: {})
-                }
-            } else if DebugLaunch.has("-preview-onboarding-connections") {
-                VStack(spacing: 0) {
-                    OnboardingShellChrome(currentStepIndex: 4, totalSteps: 5, canGoBack: true, onBack: {})
-                    PriorConnectionsView(onComplete: {}, onSkip: {})
-                }
             } else if !DebugLaunch.has("-preview-onboarding-flow"), coordinator.step == .loading, !coordinator.isResolved, coordinator.loadErrorMessage == nil {
                 // Still resolving with no cached completion: keep the launch screen rather than
                 // the onboarding chrome, so returning users never glimpse onboarding.
@@ -88,7 +82,7 @@ private struct AuthenticatedGateView: View {
             } else if DebugLaunch.has("-preview-onboarding-flow") || coordinator.needsOnboarding {
                 OnboardingFlowView(
                     coordinator: coordinator,
-                    firstName: nil,
+                    firstName: coordinator.firstName,
                     onFinished: {
                         env.handlePostAuthResolved()
                     }
@@ -211,6 +205,7 @@ public struct MainTabShellView: View {
             switch phase {
             case .active:
                 Task { await conversations.resumeFromBackground() }
+                Task { await env.activity.refresh() }
                 Task {
                     await env.features.refresh()
                     await env.productTelemetry.appOpened()
@@ -250,8 +245,11 @@ public struct MainTabShellView: View {
             conversations.startRealtime()
             // Saved events drive the Save state on every event page; have them before one opens.
             async let saved: Void = env.selfData.seedIfNeeded()
+            // The Home bell's dot and the inbox itself are ready before either is looked at.
+            async let activity: Void = env.activity.start(userID: env.session.currentSession?.userId)
             await conversations.load()
             await saved
+            await activity
             await env.selfData.loadSavedEvents()
             // Replay Tap to Connect captures that were saved while offline (same user only).
             if let userID = env.session.currentSession?.userId,

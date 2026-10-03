@@ -27,6 +27,7 @@ public final class AppEnvironment {
     public let places: PlaceRepository
     public let encounterContext: EncounterContextRepository
     public let relationships: RelationshipRepository
+    public let activityRepository: ActivityRepository
     /// Server-driven feature flags (`/api/me/features`); everything new ships dark behind one.
     public let features: FeatureFlags
     /// Click Drop develop state (`/api/drops/*`).
@@ -42,6 +43,8 @@ public final class AppEnvironment {
     private(set) var sharedDropsStore = SharedDropsStore()
     /// The user's own profile, plans and saved events, shared by every screen that shows them.
     let selfData = SelfDataStore()
+    /// The activity inbox behind the Home bell (loaded by the shell at launch).
+    let activity = ActivityStore()
     public let network: NetworkMonitor
     /// Optimistic sends and uploads that outlive the chat screen.
     public let pendingSends = PendingSendStore()
@@ -213,6 +216,7 @@ public final class AppEnvironment {
             supabaseAnonKey: AppConfig.shared.supabaseAnonKey
         )
         self.relationships = RelationshipRepository(api: resolvedAPI)
+        self.activityRepository = ActivityRepository(api: resolvedAPI)
         self.connectionTelemetry = ConnectionFlowTelemetry(queue: telemetryQueue)
         self.friction = FrictionTelemetry(queue: telemetryQueue)
         self.productTelemetry = ProductTelemetry(queue: telemetryQueue)
@@ -245,6 +249,7 @@ public final class AppEnvironment {
             await self?.clearSessionCaches()
         }
         selfData.attach(self)
+        activity.attach(self)
         session.onPostAuthResolved = { [weak self] in
             self?.handlePostAuthResolved()
         }
@@ -256,6 +261,7 @@ public final class AppEnvironment {
         await identities.removeAll()
         timelineCache.clear()
         beaconExtras.removeAll()
+        activity.reset()
         pendingSharedDropID = nil
         incomingDeviceApproval = nil
         ownDeviceApproval = nil
@@ -301,7 +307,7 @@ public final class AppEnvironment {
             for attempt in 0..<3 {
                 do {
                     let resolved = try await self.onboardingRepository.resolveOnboardingState(for: userId, prefetchedProfile: prefetched)
-                    coordinator.hydrate(resolved.state, hasAvatar: resolved.hasAvatar)
+                    coordinator.hydrate(resolved.state, hasAvatar: resolved.hasAvatar, firstName: resolved.firstName)
                     self.handlePostAuthResolved()
                     return
                 } catch {
