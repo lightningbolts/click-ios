@@ -119,6 +119,15 @@ public struct ChatMessageItem: Identifiable, Hashable, Sendable, Codable {
 
     public var isMedia: Bool { media != nil }
 
+    /// Decrypted content for a v2 message whose epoch key this device was never given (it was
+    /// sent before this device was added). Another of the user's devices can share it later.
+    public static let lockedHistoryText = "Encrypted message unavailable on this device"
+    /// Decrypted content for a message whose ciphertext failed authentication.
+    public static let unverifiedText = "Encrypted message could not be verified"
+
+    /// Encrypted before this device existed; shown as a locked row, not as message text.
+    public var isLockedHistory: Bool { content == Self.lockedHistoryText }
+
     /// View identity for the whole life of a message: the client ID when known, so swapping
     /// the optimistic row for the server row (or a refresh) never re-inserts the view.
     public var stableID: String { clientMessageID ?? id }

@@ -26,12 +26,19 @@ enum InboxFormatting {
         case "call_log":
             return "Call"
         default:
-            if let decryptedText {
-                if let gif = ChatGif.previewLabel(for: decryptedText) { return gif }
-                return decryptedText.split(whereSeparator: \.isNewline).joined(separator: " ")
-            }
+            if let decryptedText { return textPreview(decryptedText) }
             let isEncrypted = ClickCryptoV1.isEncrypted(message.content) || ClickCryptoV2.isEncrypted(message.content)
             return isEncrypted ? "Message" : ChatGif.previewLabel(for: message.content) ?? message.content
+        }
+    }
+
+    /// A decrypted text message as one preview line. Messages this device can't read get a short,
+    /// calm label instead of the in-chat explanation.
+    static func textPreview(_ text: String) -> String {
+        switch text {
+        case ChatMessageItem.lockedHistoryText: return "🔒 Message from before this device"
+        case ChatMessageItem.unverifiedText: return "Message"
+        default: return ChatGif.previewLabel(for: text) ?? text.split(whereSeparator: \.isNewline).joined(separator: " ")
         }
     }
 

@@ -89,6 +89,12 @@ public struct ClickMapView: View {
                             model.layers = Set(MapLayer.allCases)
                         }
                     }
+                    Section {
+                        EventHistoryMenuItem()
+                        if env.features.isEnabled(.clickPlaces) {
+                            Button("My places", systemImage: "mappin.and.ellipse") { env.router.navigate(to: .myPlaces) }
+                        }
+                    }
                 }
             }
             ToolbarItem(placement: .topBarTrailing) {

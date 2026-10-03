@@ -7,14 +7,28 @@ import SwiftUI
 struct GifMessageView: View {
     let gif: ChatGif
 
-    @Environment(\.displayScale) private var displayScale
     @State private var image: UIImage?
     @State private var failed = false
 
+    init(gif: ChatGif) {
+        self.gif = gif
+        // Seen before (cell reuse, reopening the chat): playing from the first frame, no flash.
+        _image = State(initialValue: RemoteAnimatedImageLoader.shared.cached(for: gif.url, maxPixelSize: Self.pixelSize(gif)))
+    }
+
     private static let maxSize = CGSize(width: 240, height: 320)
 
-    private var size: CGSize {
-        let scale = min(Self.maxSize.width / CGFloat(gif.width), Self.maxSize.height / CGFloat(gif.height))
+    /// Decode size: fixed at 3× (the densest screens) so the cache key is the same in `init`,
+    /// which has no environment, and every later load.
+    private static func pixelSize(_ gif: ChatGif) -> CGFloat {
+        let size = fittedSize(gif)
+        return max(size.width, size.height) * 3
+    }
+
+    private var size: CGSize { Self.fittedSize(gif) }
+
+    private static func fittedSize(_ gif: ChatGif) -> CGSize {
+        let scale = min(maxSize.width / CGFloat(max(1, gif.width)), maxSize.height / CGFloat(max(1, gif.height)))
         let fitted = CGSize(width: CGFloat(gif.width) * scale, height: CGFloat(gif.height) * scale)
         // Never a sliver: very wide or tall GIFs keep a usable minimum side.
         return CGSize(width: max(120, fitted.width), height: max(90, fitted.height))
@@ -40,7 +54,7 @@ struct GifMessageView: View {
                 }
                 .buttonStyle(.plain)
             } else {
-                ShimmerPlaceholder()
+                MediaLoadingPlaceholder()
             }
         }
         .frame(width: size.width, height: size.height)
@@ -53,10 +67,12 @@ struct GifMessageView: View {
 
     private func load() async {
         guard image == nil else { return }
-        let loaded = await RemoteAnimatedImageLoader.shared.image(
-            for: gif.url, maxPixelSize: max(size.width, size.height) * displayScale
-        )
-        if let loaded { image = loaded } else { failed = true }
+        let loaded = await RemoteAnimatedImageLoader.shared.image(for: gif.url, maxPixelSize: Self.pixelSize(gif))
+        if let loaded {
+            withAnimation(ClickMotion.subtleFade) { image = loaded }
+        } else if !Task.isCancelled {
+            failed = true
+        }
     }
 }
 
@@ -176,6 +192,13 @@ private struct GifPickerCell: View {
 
     @State private var image: UIImage?
 
+    init(item: KlipyClient.Item) {
+        self.item = item
+        _image = State(initialValue: RemoteAnimatedImageLoader.shared.cached(
+            for: item.preview.url, maxPixelSize: Self.maxPixelSize, maxFrames: Self.maxFrames
+        ))
+    }
+
     /// Grid previews decode fewer, smaller frames than bubbles (a screen holds many at once).
     private static let maxPixelSize: CGFloat = 240
     private static let maxFrames = 40
@@ -193,6 +216,7 @@ private struct GifPickerCell: View {
             .clipShape(RoundedRectangle(cornerRadius: ClickRadius.compact, style: .continuous))
             .contentShape(Rectangle())
             .task(id: item.preview.url) {
+                guard image == nil else { return }
                 image = await RemoteAnimatedImageLoader.shared.image(
                     for: item.preview.url, maxPixelSize: Self.maxPixelSize, maxFrames: Self.maxFrames
                 )

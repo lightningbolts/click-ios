@@ -63,7 +63,27 @@ public struct MeView: View {
                     .animation(ClickMotion.subtleFade, value: showsCompactTitle)
             }
             ToolbarItem(placement: .topBarLeading) {
-                RootMenu()
+                RootMenu(showsSettings: false) {
+                    Section {
+                        Button("Edit profile", systemImage: "pencil") { env.router.navigate(to: .settings(.editProfile)) }
+                        Button("Change photo", systemImage: "camera") { isEditingPhoto = true }
+                        Button("I'm down for…", systemImage: "hand.wave") { isEditingAvailability = true }
+                    }
+                    Section {
+                        EventHistoryMenuItem()
+                        if env.features.isEnabled(.clickPlaces) {
+                            Button("My places", systemImage: "mappin.and.ellipse") { env.router.navigate(to: .myPlaces) }
+                        }
+                    }
+                    Section {
+                        Button("Alerts", systemImage: "bell.badge") { env.router.navigate(to: .settings(.alerts)) }
+                        Button("Privacy & data", systemImage: "hand.raised") { env.router.navigate(to: .settings(.privacy)) }
+                        Button("Blocked", systemImage: "nosign") { env.router.navigate(to: .settings(.blocked)) }
+                    }
+                    Link(destination: URL(string: "https://joinclick.co")!) {
+                        Label("Open web dashboard", systemImage: "safari")
+                    }
+                }
             }
             ToolbarItemGroup(placement: .topBarTrailing) {
                 Button {

@@ -1,27 +1,20 @@
 import SwiftUI
 
-/// The leading "…" menu shared by every tab root (Home, Add Click, Clicks, Map, Me), so the
-/// same slot always holds the same kind of control. Root-specific actions come first.
-struct RootMenu<Extra: View>: View {
+/// The leading "…" menu on every tab root (Home, Add Click, Clicks, Map, Me). Like WhatsApp's,
+/// it holds that screen's own actions, so the same slot is useful everywhere without every tab
+/// repeating one generic list. Each root passes its items; the only shared entry is Settings.
+struct RootMenu<Items: View>: View {
     @Environment(AppEnvironment.self) private var env
-    @ViewBuilder var extra: () -> Extra
+    /// Off on Me, which is where Settings lives.
+    var showsSettings = true
+    @ViewBuilder var items: () -> Items
 
     var body: some View {
         Menu {
-            extra()
-            Section {
-                if env.features.isEnabled(.eventHistory) {
-                    Button("History", systemImage: "clock.arrow.circlepath") { env.router.navigate(to: .history) }
-                } else {
-                    Button("Saved events", systemImage: "bookmark") { env.router.navigate(to: .savedEvents) }
-                }
-                Button("My QR code", systemImage: "qrcode") { env.router.navigate(to: .myQR) }
-                Button("Alerts", systemImage: "bell") { env.router.navigate(to: .settings(.alerts)) }
-                Button("Privacy & data", systemImage: "hand.raised") { env.router.navigate(to: .settings(.privacy)) }
-            }
-            Section {
-                Link(destination: URL(string: "https://joinclick.co")!) {
-                    Label("Open web dashboard", systemImage: "safari")
+            items()
+            if showsSettings {
+                Section {
+                    Button("Settings", systemImage: "gearshape") { env.router.selectTab(.settings) }
                 }
             }
         } label: {
@@ -31,8 +24,15 @@ struct RootMenu<Extra: View>: View {
     }
 }
 
-extension RootMenu where Extra == EmptyView {
-    init() {
-        self.extra = { EmptyView() }
+/// Saved events, or the fuller History when that's on: the same place every menu links to.
+struct EventHistoryMenuItem: View {
+    @Environment(AppEnvironment.self) private var env
+
+    var body: some View {
+        if env.features.isEnabled(.eventHistory) {
+            Button("History", systemImage: "clock.arrow.circlepath") { env.router.navigate(to: .history) }
+        } else {
+            Button("Saved events", systemImage: "bookmark") { env.router.navigate(to: .savedEvents) }
+        }
     }
 }

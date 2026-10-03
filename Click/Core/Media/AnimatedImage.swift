@@ -102,7 +102,8 @@ actor RemoteAnimatedImageLoader {
     static let shared = RemoteAnimatedImageLoader()
 
     private let session: URLSession
-    private let memory: NSCache<NSString, UIImage> = {
+    /// `NSCache` is thread-safe, so views can read it synchronously (`cached`) on their first frame.
+    nonisolated(unsafe) private let memory: NSCache<NSString, UIImage> = {
         let cache = NSCache<NSString, UIImage>()
         cache.totalCostLimit = 48 * 1024 * 1024
         return cache
@@ -118,8 +119,17 @@ actor RemoteAnimatedImageLoader {
         session = URLSession(configuration: config)
     }
 
+    private nonisolated static func key(_ url: URL, _ maxPixelSize: CGFloat, _ maxFrames: Int) -> String {
+        "\(url.absoluteString)#\(Int(maxPixelSize))#\(maxFrames)"
+    }
+
+    /// An already-decoded image, without waiting: lets a reused cell show its GIF immediately.
+    nonisolated func cached(for url: URL, maxPixelSize: CGFloat, maxFrames: Int = AnimatedImageDecoder.defaultMaxFrames) -> UIImage? {
+        memory.object(forKey: Self.key(url, maxPixelSize, maxFrames) as NSString)
+    }
+
     func image(for url: URL, maxPixelSize: CGFloat, maxFrames: Int = AnimatedImageDecoder.defaultMaxFrames) async -> UIImage? {
-        let key = "\(url.absoluteString)#\(Int(maxPixelSize))#\(maxFrames)"
+        let key = Self.key(url, maxPixelSize, maxFrames)
         if let hit = memory.object(forKey: key as NSString) { return hit }
         if let pending = inFlight[key] { return await pending.value }
         let session = self.session

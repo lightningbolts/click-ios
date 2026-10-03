@@ -305,13 +305,15 @@ private struct ChatImageView: View {
     @State private var pixelatedImage: UIImage?
     @State private var url: URL?
     @State private var failed = false
+    /// Sent before this device was added: no retry, it can only be unlocked from an older device.
+    @State private var historyLocked = false
 
     init(message: ChatMessageItem, load: @escaping () async throws -> URL, onOpen: @escaping (URL) -> Void) {
         self.message = message
         self.load = load
         self.onOpen = onOpen
         // Decoded before (another row, an earlier visit): on screen from the first frame.
-        if let cached = DecodedMediaCache.entry(message.id) {
+        if let cached = DecodedMediaCache.entry(for: message) {
             _image = State(initialValue: cached.image)
             _pixelatedImage = State(initialValue: cached.pixelated)
             _url = State(initialValue: cached.url)
@@ -361,12 +363,15 @@ private struct ChatImageView: View {
                         }
                 } else {
                     Button { onOpen(url) } label: {
+                        // Exactly the box the placeholder held (same aspect), so nothing shifts.
                         StillOrAnimatedImage(image: image)
-                            .frame(maxWidth: 240, maxHeight: 320)
+                            .frame(width: loadedSize(image).width, height: loadedSize(image).height)
                     }
                     .buttonStyle(.plain)
                     .accessibilityLabel("Photo. Opens full screen.")
                 }
+            } else if historyLocked {
+                LockedMediaBox(size: placeholderSize)
             } else if failed {
                 Button {
                     failed = false
@@ -382,12 +387,17 @@ private struct ChatImageView: View {
                 }
                 .buttonStyle(.plain)
             } else {
-                ShimmerPlaceholder(width: placeholderSize.width, height: placeholderSize.height)
+                MediaLoadingPlaceholder(width: placeholderSize.width, height: placeholderSize.height)
             }
         }
         .background(ClickColors.fillSubtle)
         .clipShape(RoundedRectangle(cornerRadius: ClickRadius.messageBubble, style: .continuous))
-        .task(id: message.id) { await fetch() }
+        .task(id: message.stableID) { await fetch() }
+    }
+
+    private func loadedSize(_ image: UIImage) -> CGSize {
+        guard image.size.width > 0, image.size.height > 0 else { return placeholderSize }
+        return MediaAspectCache.displaySize(aspect: image.size.width / image.size.height)
     }
 
     private func fetch() async {
@@ -409,12 +419,16 @@ private struct ChatImageView: View {
             }.value
             guard let decoded else { throw ChatRepositoryError.mediaUnavailable }
             MediaAspectCache.remember(decoded.0.size, for: message)
-            DecodedMediaCache.insert(decoded.0, pixelated: decoded.1, url: fileURL, for: message.id)
-            url = fileURL
-            pixelatedImage = decoded.1
-            image = decoded.0
+            DecodedMediaCache.insert(decoded.0, pixelated: decoded.1, url: fileURL, for: message)
+            withAnimation(ClickMotion.subtleFade) {
+                url = fileURL
+                pixelatedImage = decoded.1
+                image = decoded.0
+            }
+        } catch ChatRepositoryError.historyKeyUnavailable {
+            historyLocked = true
         } catch {
-            failed = true
+            if !error.isCancellation { failed = true }
         }
     }
 }
@@ -626,7 +640,7 @@ struct MediaViewer: View {
                         }
                         .accessibilityLabel("Photo")
                 } else {
-                    ShimmerPlaceholder()
+                    MediaLoadingPlaceholder(fill: .clear, tint: .white.opacity(0.7))
                 }
             }
             .toolbar {
@@ -1171,6 +1185,25 @@ private struct StagedAttachmentChip: View {
     }
 }
 
+/// A photo sent before this device was added to the account: its key was never shared with this
+/// device, so there is nothing to retry. Same box as the photo would have taken.
+struct LockedMediaBox: View {
+    let size: CGSize
+
+    var body: some View {
+        VStack(spacing: 6) {
+            Image(systemName: "lock.fill")
+            Text("Sent before this device was added")
+                .font(ClickTypography.metadata)
+                .multilineTextAlignment(.center)
+        }
+        .foregroundStyle(ClickColors.textSecondary)
+        .padding(12)
+        .frame(width: size.width, height: size.height)
+        .accessibilityElement(children: .combine)
+    }
+}
+
 /// Decoded chat photos by key (message ID), so a bubble or reply thumbnail that renders again
 /// (cell reuse, reopening the chat) shows its image on the first frame instead of decoding again.
 /// Memory only: decrypted private media never goes to a shared or on-disk cache.
@@ -1195,6 +1228,16 @@ enum DecodedMediaCache {
 
     static func entry(_ key: String) -> Entry? {
         cache.object(forKey: key as NSString)
+    }
+
+    /// A message's photo, keyed by its stable ID so the optimistic row and the server row that
+    /// replaces it share one entry (no reload, no flash on send). Falls back to the server ID.
+    static func entry(for message: ChatMessageItem) -> Entry? {
+        entry(message.stableID) ?? entry(message.id)
+    }
+
+    static func insert(_ image: UIImage, pixelated: UIImage? = nil, url: URL, for message: ChatMessageItem) {
+        insert(image, pixelated: pixelated, url: url, for: message.stableID)
     }
 
     static func insert(_ image: UIImage, pixelated: UIImage? = nil, url: URL, for key: String) {
@@ -1223,7 +1266,7 @@ enum MediaAspectCache {
     static func aspect(for message: ChatMessageItem) -> Double? {
         lock.lock()
         defer { lock.unlock() }
-        return aspects[message.id] ?? message.clientMessageID.flatMap { aspects[$0] }
+        return aspects[message.id] ?? message.clientMessageID.flatMap { aspects[$0] } ?? message.media?.aspect
     }
 
     static func remember(_ size: CGSize, for message: ChatMessageItem) {

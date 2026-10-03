@@ -87,6 +87,17 @@ public struct HomeView: View {
             }
             ToolbarItem(placement: .topBarLeading) {
                 RootMenu {
+                    Section {
+                        if env.features.isEnabled(.sharedDrops) {
+                            Button("Share a drop", systemImage: "camera") { env.sharedDropsStore.cameraRequested = true }
+                        }
+                        Button("I'm down for…", systemImage: "hand.wave") { isEditingAvailability = true }
+                    }
+                    Section {
+                        Button("Search", systemImage: "magnifyingglass") { env.router.presentSearch() }
+                        Button("Activity", systemImage: "bell") { env.router.navigate(to: .activity) }
+                        EventHistoryMenuItem()
+                    }
                     Button("Refresh", systemImage: "arrow.clockwise") {
                         Task { await model.refresh() }
                     }

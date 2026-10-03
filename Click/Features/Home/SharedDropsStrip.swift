@@ -45,9 +45,11 @@ struct SharedDropsStrip: View {
             }
         }
         .task {
+            openRequestedCamera()
             await store.load(env: env)
             openPendingDrop()
         }
+        .onChange(of: store.cameraRequested) { _, _ in openRequestedCamera() }
         // A "just developed" push opens that drop's story once it's in the strip.
         .onChange(of: env.pendingSharedDropID) { _, _ in openPendingDrop() }
         .onChange(of: store.drops.value?.map(\.id)) { _, _ in openPendingDrop() }
@@ -71,6 +73,12 @@ struct SharedDropsStrip: View {
             .presentationDetents([.large])
         }
         .dropViewer($viewing, sources: tileFrames)
+    }
+
+    private func openRequestedCamera() {
+        guard store.cameraRequested else { return }
+        store.cameraRequested = false
+        showingCamera = true
     }
 
     private func openPendingDrop() {

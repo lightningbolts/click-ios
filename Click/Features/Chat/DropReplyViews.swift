@@ -59,7 +59,7 @@ struct DropReplyHeader: View {
                     .padding(8)
                 }
             } else {
-                ShimmerPlaceholder()
+                MediaLoadingPlaceholder()
             }
         }
         .frame(width: Self.size.width, height: Self.size.height)

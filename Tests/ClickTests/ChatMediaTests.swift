@@ -1,6 +1,7 @@
 import CryptoKit
 import Testing
 import Foundation
+import UIKit
 @testable import Click
 
 @Suite("Chat media crypto and wire formats")
@@ -105,5 +106,30 @@ struct ChatMediaTests {
         #expect(file?.fileName == "report.pdf")
         #expect(file?.fileExtension == "pdf")
         #expect(MessageMedia.parse(messageType: "text", metadata: [:], decryptedContent: "hi", chatID: "c") == nil)
+    }
+
+    @Test("Photo aspect travels in metadata so the bubble is sized before the image loads")
+    func photoAspect() throws {
+        let renderer = UIGraphicsImageRenderer(size: CGSize(width: 40, height: 30), format: {
+            let format = UIGraphicsImageRendererFormat()
+            format.scale = 1
+            return format
+        }())
+        let jpeg = try #require(renderer.image { _ in }.jpegData(compressionQuality: 0.8))
+        #expect(MediaAspect.of(jpeg) == 1.33)
+        #expect(MediaAspect.of(Data([1, 2, 3])) == nil)
+
+        let draft = MediaDraft(kind: .image, data: jpeg, mimeType: "image/jpeg")
+        #expect(ChatRepository.draftMetadata(draft)["media_aspect"] as? Double == 1.33)
+        let voice = MediaDraft(kind: .audio, data: jpeg, mimeType: "audio/m4a")
+        #expect(ChatRepository.draftMetadata(voice)["media_aspect"] == nil)
+
+        let media = MessageMedia.parse(messageType: "image", metadata: ["media_url": "https://example.test/p.jpg", "media_aspect": 1.33], decryptedContent: " ", chatID: "c")
+        #expect(media?.aspect == 1.33)
+        // Junk and extremes never produce an unusable box.
+        #expect(MediaAspect.parse("wide") == nil)
+        #expect(MediaAspect.parse(-1) == nil)
+        #expect(MediaAspect.parse(40) == 5)
+        #expect(MediaAspect.parse("0.75") == 0.75)
     }
 }

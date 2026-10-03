@@ -564,7 +564,7 @@ final class ConversationListModel {
         case "beacon", "event", "event_share", "beacon_share": return prefix + "Shared an event"
         default:
             if let text = previewTexts[Self.groupPreviewKey(group.chatID)] {
-                return prefix + (ChatGif.previewLabel(for: text) ?? text.split(whereSeparator: \.isNewline).joined(separator: " "))
+                return prefix + InboxFormatting.textPreview(text)
             }
             let encrypted = ClickCryptoV1.isEncrypted(message.content) || ClickCryptoV2.isEncrypted(message.content)
                 || message.content.hasPrefix("e2e_grp:")

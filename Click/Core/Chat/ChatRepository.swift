@@ -266,6 +266,8 @@ public enum ChatRepositoryError: Error, LocalizedError, Sendable {
     case mediaTooLarge
     case mediaTypeNotAllowed
     case mediaUnavailable
+    /// Encrypted under an epoch this device was never given (sent before it was added).
+    case historyKeyUnavailable
 
     public var errorDescription: String? {
         switch self {
@@ -291,6 +293,8 @@ public enum ChatRepositoryError: Error, LocalizedError, Sendable {
             return "This device does not have the current secure conversation key."
         case .invalidServerPayload:
             return "The chat service returned an invalid response."
+        case .historyKeyUnavailable:
+            return "This was sent before this device was added. Open Click on a device you used then to unlock it."
         }
     }
 }
@@ -1963,14 +1967,7 @@ public actor ChatRepository: ChatRepositoryProtocol {
         let plain: Data
         if let v2 = media.v2 {
             guard v2.chatId == message.chatID else { throw ChatRepositoryError.mediaUnavailable }
-            guard
-                let session = try await resolveV2Session(
-                    scope: .chat(message.chatID),
-                    participantUserIDs: await participants(for: conversation, currentUserID: currentUserID),
-                    allowUpgrade: false
-                ),
-                let key = session.epochKeys[v2.epoch]
-            else { throw ChatRepositoryError.currentEpochKeyUnavailable }
+            let key = try await historicalEpochKey(v2.epoch, chatID: message.chatID, conversation: conversation, currentUserID: currentUserID)
             let raw = try await downloadMedia(media)
             plain = try ClickCryptoV2.decryptMedia(metadata: v2, epochKey: key, uploadedBytes: raw, replayGuard: messageReplayGuard)
         } else if media.kind == .file {
@@ -1992,6 +1989,22 @@ public actor ChatRepository: ChatRepositoryProtocol {
         return try await ChatMediaVault.shared.store(plain, messageID: message.id, fileExtension: media.fileExtension)
     }
 
+    /// The epoch key for media sent under `epoch`. A key missing from the cached session may have
+    /// been shared since by the user's other device, so it is re-read once (throttled) before
+    /// reporting the media as locked history.
+    private func historicalEpochKey(_ epoch: Int, chatID: String, conversation: ConversationIdentity, currentUserID: String) async throws -> Data {
+        let participantIDs = await participants(for: conversation, currentUserID: currentUserID)
+        guard let session = try await resolveV2Session(scope: .chat(chatID), participantUserIDs: participantIDs, allowUpgrade: false) else {
+            throw ChatRepositoryError.currentEpochKeyUnavailable
+        }
+        if let key = session.epochKeys[epoch] { return key }
+        if let refreshed = await refreshSessionForSharedHistory(chatID: chatID, participantUserIDs: participantIDs),
+           let key = refreshed.epochKeys[epoch] {
+            return key
+        }
+        throw ChatRepositoryError.historyKeyUnavailable
+    }
+
     static func dropOriginalVaultKey(_ messageID: String) -> String { "\(messageID)-original" }
 
     /// The decrypted original of a developed gated Click Drop, from the signed URL
@@ -2005,14 +2018,8 @@ public actor ChatRepository: ChatRepositoryProtocol {
         let raw = try await Self.fetch(signedURL)
         let plain: Data
         if let v2 = media.dropOriginalV2 {
-            guard v2.chatId == message.chatID,
-                  let session = try await resolveV2Session(
-                    scope: .chat(message.chatID),
-                    participantUserIDs: await participants(for: conversation, currentUserID: currentUserID),
-                    allowUpgrade: false
-                  ),
-                  let epochKey = session.epochKeys[v2.epoch]
-            else { throw ChatRepositoryError.currentEpochKeyUnavailable }
+            guard v2.chatId == message.chatID else { throw ChatRepositoryError.mediaUnavailable }
+            let epochKey = try await historicalEpochKey(v2.epoch, chatID: message.chatID, conversation: conversation, currentUserID: currentUserID)
             plain = try ClickCryptoV2.decryptMedia(metadata: v2, epochKey: epochKey, uploadedBytes: raw, replayGuard: messageReplayGuard)
         } else {
             guard let legacy = await legacyKeys(for: conversation, currentUserID: currentUserID) else {
@@ -2395,6 +2402,7 @@ public actor ChatRepository: ChatRepositoryProtocol {
     static func draftMetadata(_ draft: MediaDraft) -> [String: Any] {
         var metadata = clickDropMetadata(draft)
         if draft.isForwarded { metadata["forwarded"] = true }
+        if draft.kind == .image, let aspect = MediaAspect.of(draft.data) { metadata["media_aspect"] = aspect }
         return metadata
     }
 
@@ -2622,7 +2630,7 @@ public actor ChatRepository: ChatRepositoryProtocol {
             guard let session = v2Session,
                   let envelope = try? ClickCryptoV2.parseMessageEnvelope(wire: content),
                   let key = session.epochKeys[envelope.epoch] else {
-                return "Encrypted message unavailable on this device"
+                return ChatMessageItem.lockedHistoryText
             }
 
             let metadata = ClickCryptoV2.MessageMetadata(
@@ -2637,16 +2645,16 @@ public actor ChatRepository: ChatRepositoryProtocol {
                 envelope: content,
                 replayGuard: messageReplayGuard
             ) else {
-                return "Encrypted message could not be verified"
+                return ChatMessageItem.unverifiedText
             }
             return decrypted
         }
 
         if ClickCryptoV1.isGroupEncrypted(content) {
-            guard case .group(let master) = legacy else { return "Encrypted message unavailable on this device" }
+            guard case .group(let master) = legacy else { return ChatMessageItem.lockedHistoryText }
             let decrypted = ClickCryptoV1.decryptGroupContent(content, groupMasterKey32: master)
             return ClickCryptoV1.isAnyV1WireContent(decrypted)
-                ? "Encrypted message could not be verified"
+                ? ChatMessageItem.unverifiedText
                 : decrypted
         }
 
@@ -2654,11 +2662,11 @@ public actor ChatRepository: ChatRepositoryProtocol {
             let keys: ClickCryptoV1.DerivedKeys
             switch legacy {
             case .direct(let value), .hub(let value): keys = value
-            case .group, nil: return "Encrypted message unavailable on this device"
+            case .group, nil: return ChatMessageItem.lockedHistoryText
             }
             let decrypted = ClickCryptoV1.decryptContent(content, keys: keys)
             return ClickCryptoV1.isEncrypted(decrypted)
-                ? "Encrypted message could not be verified"
+                ? ChatMessageItem.unverifiedText
                 : decrypted
         }
 

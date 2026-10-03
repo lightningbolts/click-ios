@@ -53,6 +53,17 @@ public struct ClicksView: View {
         .toolbar {
             ToolbarItem(placement: .topBarLeading) {
                 RootMenu {
+                    Section {
+                        Button("New verified group", systemImage: "person.3") { creatingGroup = true }
+                        Button("Find friends", systemImage: "person.badge.plus") { env.router.navigate(to: .findFriends) }
+                    }
+                    Section {
+                        ForEach(InboxTab.allCases.filter { $0 != selectedTab }, id: \.self) { tab in
+                            Button(tab.menuTitle, systemImage: tab.systemImage) {
+                                withAnimation(ClickMotion.selection) { selectedTab = tab }
+                            }
+                        }
+                    }
                     Button("Refresh", systemImage: "arrow.clockwise") {
                         Task { await model.refresh() }
                     }
@@ -398,6 +409,22 @@ private enum InboxTab: CaseIterable {
         case .active: "Active"
         case .groups: "Groups"
         case .archived: "Archived"
+        }
+    }
+
+    var menuTitle: String {
+        switch self {
+        case .active: "Show active chats"
+        case .groups: "Show groups"
+        case .archived: "Show archived"
+        }
+    }
+
+    var systemImage: String {
+        switch self {
+        case .active: "bubble.left.and.bubble.right"
+        case .groups: "person.3"
+        case .archived: "archivebox"
         }
     }
 }
