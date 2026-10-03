@@ -113,16 +113,13 @@ struct SharedDropStoryViewer: View {
         let shown = isShown(drop.id)
         return Color.clear
             .overlay {
-                // The photo holds its pixels until it unveils, then resolves out of them; the
-                // preview's pixels stand in until it's here.
-                if let image {
-                    Color.clear
-                        .overlay { Image(uiImage: image).resizable().scaledToFill() }
-                        .clipped()
-                        .clickDropDevelop(shown, plays: playsDevelop(drop.id))
-                        .id(drop.id)
-                } else {
+                // The preview's pixels stay underneath; the photo develops over them.
+                ZStack {
                     PixelatedPreview(url: drop.previewURL)
+                    if let image {
+                        ClickDropDevelopingImage(image: image, isDeveloped: shown, plays: playsDevelop(drop.id))
+                            .id(drop.id)
+                    }
                 }
             }
             .clipShape(RoundedRectangle(cornerRadius: 18, style: .continuous))

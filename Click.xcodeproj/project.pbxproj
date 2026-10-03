@@ -116,7 +116,6 @@
 		5F70E6463EE4E9BCE71E8A72 /* ClickDropDevelopTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = E48DD112855D186C03848B60 /* ClickDropDevelopTests.swift */; };
 		5FDB728DAEC48C8F6842ADC4 /* MemoryCache.swift in Sources */ = {isa = PBXBuildFile; fileRef = B505B5487244EEC2DA1E81B1 /* MemoryCache.swift */; };
 		6116461327D4FF1806AC2945 /* HubMediaTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2CCD86C374B9F8179E86EDE2 /* HubMediaTests.swift */; };
-		A1D0DE7E10C0FFEE00000002 /* ClickDropDevelop.metal in Sources */ = {isa = PBXBuildFile; fileRef = A1D0DE7E10C0FFEE00000001 /* ClickDropDevelop.metal */; };
 		A1D0DE7E10C0FFEE00000004 /* ClickDropDevelopEffect.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1D0DE7E10C0FFEE00000003 /* ClickDropDevelopEffect.swift */; };
 		619B213920BF476FE52ECC38 /* GlassCircle.swift in Sources */ = {isa = PBXBuildFile; fileRef = C0EEFAB074A9D2D9EB6AA5B9 /* GlassCircle.swift */; };
 		61EE65603B29E4220E02CBA5 /* ClickLog.swift in Sources */ = {isa = PBXBuildFile; fileRef = F63751F6535F913F9900FA93 /* ClickLog.swift */; };
@@ -561,7 +560,6 @@
 		C04BB0EDB80B1C58203CF1B1 /* UserProfileSnapshot.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = UserProfileSnapshot.swift; sourceTree = "<group>"; };
 		C08BEC2498706BAFA7106F16 /* PlanViews.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PlanViews.swift; sourceTree = "<group>"; };
 		C0B2DF5BC55B15BB7E899DFF /* BeaconExtrasCache.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BeaconExtrasCache.swift; sourceTree = "<group>"; };
-		A1D0DE7E10C0FFEE00000001 /* ClickDropDevelop.metal */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.metal; path = ClickDropDevelop.metal; sourceTree = "<group>"; };
 		A1D0DE7E10C0FFEE00000003 /* ClickDropDevelopEffect.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ClickDropDevelopEffect.swift; sourceTree = "<group>"; };
 		C0EEFAB074A9D2D9EB6AA5B9 /* GlassCircle.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GlassCircle.swift; sourceTree = "<group>"; };
 		C299FC0C972D362E0E78AF60 /* ClickToast.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ClickToast.swift; sourceTree = "<group>"; };
@@ -660,7 +658,6 @@
 				10E9A0CD071D57AC06E1754F /* EdgeFade.swift */,
 				7706CFCC8974CFECA09912F7 /* EventVisual.swift */,
 				C8EA116736D43E0C9432BBF5 /* FlowLayout.swift */,
-				A1D0DE7E10C0FFEE00000001 /* ClickDropDevelop.metal */,
 				A1D0DE7E10C0FFEE00000003 /* ClickDropDevelopEffect.swift */,
 				C0EEFAB074A9D2D9EB6AA5B9 /* GlassCircle.swift */,
 				856572EA2FE8C0C700768A86 /* GroupAvatarView.swift */,
@@ -1706,7 +1703,6 @@
 				3FE6386864D536BECDB9FCCA /* FriendshipStats.swift in Sources */,
 				11211B46C418D0B80715BADB /* FriendshipViews.swift in Sources */,
 				26B0F1A9285726FAABC332E7 /* GifViews.swift in Sources */,
-				A1D0DE7E10C0FFEE00000002 /* ClickDropDevelop.metal in Sources */,
 				A1D0DE7E10C0FFEE00000004 /* ClickDropDevelopEffect.swift in Sources */,
 				619B213920BF476FE52ECC38 /* GlassCircle.swift in Sources */,
 				9059C7BC731D34781013C8E7 /* GlobalSearchView.swift in Sources */,
