@@ -42,8 +42,13 @@ struct SharedDropStoryViewer: View {
     private var sequence: [SharedDrop] { store.viewable }
     private var current: SharedDrop? { store.drop(currentID) }
     private func photo(_ id: String) -> UIImage? { full[id] ?? store.originals[id] }
+    /// A photo already on hand (and not just developed) shows from the first frame, so nothing
+    /// swaps in while the viewer is still zooming open.
+    private func isShown(_ id: String) -> Bool {
+        unveiled.contains(id) || (photo(id) != nil && !store.freshlyDeveloped.contains(id))
+    }
     private var isPaused: Bool {
-        holding || replyFocused || confirmDelete || reporting || !unveiled.contains(currentID)
+        holding || replyFocused || confirmDelete || reporting || !isShown(currentID)
     }
 
     var body: some View {
@@ -97,7 +102,7 @@ struct SharedDropStoryViewer: View {
 
     private func photoLayer(_ drop: SharedDrop) -> some View {
         let image = photo(drop.id)
-        let shown = unveiled.contains(drop.id)
+        let shown = isShown(drop.id)
         return Color.clear
             .overlay {
                 // Pixels underneath until the photo unveils over them.
@@ -203,6 +208,7 @@ struct SharedDropStoryViewer: View {
                 .buttonStyle(.plain)
                 .accessibilityLabel("Close")
             }
+            .glassGroup()
             .foregroundStyle(.white)
         }
         .padding(.horizontal, 12)
@@ -222,24 +228,25 @@ struct SharedDropStoryViewer: View {
         return when + (audience == .core ? " · Core connections" : " · All connections")
     }
 
-    @ViewBuilder
+    /// The reactions keep their place while hidden (developing, or typing a reply) and only fade,
+    /// so nothing at the bottom moves or slides through the reply field.
     private func footer(_ drop: SharedDrop) -> some View {
-        VStack(spacing: 14) {
-            if unveiled.contains(drop.id) && !replyFocused {
-                ReactionBar(target: .sharedDrop, id: drop.id, isOwner: drop.isMine) { emoji in
-                    send(emoji, about: drop, reaction: true)
-                }
-                .id(drop.id)
-                .transition(.move(edge: .bottom).combined(with: .opacity))
+        let showsReactions = isShown(drop.id) && !replyFocused
+        return VStack(spacing: 14) {
+            ReactionBar(target: .sharedDrop, id: drop.id, isOwner: drop.isMine) { emoji in
+                send(emoji, about: drop, reaction: true)
             }
+            .id(drop.id)
+            .opacity(showsReactions ? 1 : 0)
+            .allowsHitTesting(showsReactions)
+            .accessibilityHidden(!showsReactions)
+            .animation(ClickMotion.subtleFade, value: showsReactions)
             if !drop.isMine, drop.connectionID != nil {
                 replyField(drop)
             }
         }
         .padding(.horizontal, 14)
         .padding(.bottom, 10)
-        .animation(ClickMotion.content, value: replyFocused)
-        .animation(ClickMotion.content, value: unveiled.contains(drop.id))
     }
 
     private func replyField(_ drop: SharedDrop) -> some View {
@@ -277,7 +284,7 @@ struct SharedDropStoryViewer: View {
     private func open(_ id: String) async {
         progress = 0
         guard let drop = store.drop(id) else { return }
-        if photo(id) != nil, !store.freshlyDeveloped.contains(id) { unveiled.insert(id) }
+        if isShown(id) { unveiled.insert(id) }
         if drop.state() == .ready { await store.develop([drop], fresh: true, env: env) }
         guard let latest = store.drop(id), latest.state() == .developed else { return }
         // Unveil as soon as any copy is here; the full-size one swaps in without a second animation.

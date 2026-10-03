@@ -35,6 +35,21 @@ extension View {
         #endif
     }
 
+    /// Renders a row of glass controls as one Liquid Glass pass on iOS 26+. Separate glass views
+    /// redraw one by one while a parent scales or fades (a drop opening), which flickers.
+    @ViewBuilder
+    public func glassGroup(spacing: CGFloat? = nil) -> some View {
+        #if compiler(>=6.2)
+        if #available(iOS 26.0, *) {
+            GlassEffectContainer(spacing: spacing) { self }
+        } else {
+            self
+        }
+        #else
+        self
+        #endif
+    }
+
     /// Hides a scroll view's iOS 26 scroll-edge effect (the bar's blur and hairline) at `edges`;
     /// no effect below iOS 26, which has none.
     @ViewBuilder

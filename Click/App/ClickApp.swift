@@ -288,7 +288,8 @@ final class ClickNotificationCoordinator {
             return .chat(chatID: value(["chat_id", "chatId"]), connectionID: value(["connection_id", "connectionId"]),
                          senderUserID: value(["sender_user_id", "user_id", "peer_user_id"]),
                          senderName: value(["sender_name", "peer_name", "title"]))
-        case "event_reminder", "event_teaser", "shared_upcoming_event", "event_rsvp", "event_rsvp_request":
+        case "event_reminder", "event_teaser", "shared_upcoming_event", "event_rsvp", "event_rsvp_request",
+             "friends_going", "event_trending":
             return value(["beacon_id", "event_id"]).map { .route(.event(beaconID: $0)) } ?? .none
         case "event_drop_recap", "event_recap":
             return value(["beacon_id", "event_id"]).map { .route(.eventRecap(beaconID: $0)) } ?? .none
@@ -301,7 +302,7 @@ final class ClickNotificationCoordinator {
         case "reconnect_nearby":
             return .chat(chatID: nil, connectionID: value(["connection_id", "connectionId"]),
                          senderUserID: value(["peer_user_id"]), senderName: value(["sender_name"]))
-        case "wave":
+        case "wave", "new_connection":
             return .chat(chatID: nil, connectionID: value(["connection_id", "connectionId"]),
                          senderUserID: value(["peer_user_id", "sender_user_id"]), senderName: nil)
         case "group_revival":
