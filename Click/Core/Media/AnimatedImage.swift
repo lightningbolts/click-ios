@@ -96,18 +96,32 @@ struct StillOrAnimatedImage: View {
     }
 }
 
+/// A bounded memory cache of decoded images. `NSCache` is thread-safe; this wrapper says so to
+/// the compiler, which can't see it (works the same on the Swift 6.0 and later toolchains).
+final class DecodedImageMemory: @unchecked Sendable {
+    private let cache = NSCache<NSString, UIImage>()
+
+    init(totalCostLimit: Int) {
+        cache.totalCostLimit = totalCostLimit
+    }
+
+    func image(for key: String) -> UIImage? {
+        cache.object(forKey: key as NSString)
+    }
+
+    func insert(_ image: UIImage, for key: String, cost: Int) {
+        cache.setObject(image, forKey: key as NSString, cost: cost)
+    }
+}
+
 /// Loads KLIPY GIF media straight from the URL KLIPY returned (their terms forbid re-hosting),
 /// with in-flight de-duplication and a bounded memory cache of decoded frames.
 actor RemoteAnimatedImageLoader {
     static let shared = RemoteAnimatedImageLoader()
 
     private let session: URLSession
-    /// `NSCache` is thread-safe, so views can read it synchronously (`cached`) on their first frame.
-    nonisolated(unsafe) private let memory: NSCache<NSString, UIImage> = {
-        let cache = NSCache<NSString, UIImage>()
-        cache.totalCostLimit = 48 * 1024 * 1024
-        return cache
-    }()
+    /// Readable synchronously (`cached`) so a view shows its GIF on its first frame.
+    private nonisolated let memory = DecodedImageMemory(totalCostLimit: 48 * 1024 * 1024)
     private var inFlight: [String: Task<UIImage?, Never>] = [:]
 
     init() {
@@ -125,12 +139,12 @@ actor RemoteAnimatedImageLoader {
 
     /// An already-decoded image, without waiting: lets a reused cell show its GIF immediately.
     nonisolated func cached(for url: URL, maxPixelSize: CGFloat, maxFrames: Int = AnimatedImageDecoder.defaultMaxFrames) -> UIImage? {
-        memory.object(forKey: Self.key(url, maxPixelSize, maxFrames) as NSString)
+        memory.image(for: Self.key(url, maxPixelSize, maxFrames))
     }
 
     func image(for url: URL, maxPixelSize: CGFloat, maxFrames: Int = AnimatedImageDecoder.defaultMaxFrames) async -> UIImage? {
         let key = Self.key(url, maxPixelSize, maxFrames)
-        if let hit = memory.object(forKey: key as NSString) { return hit }
+        if let hit = memory.image(for: key) { return hit }
         if let pending = inFlight[key] { return await pending.value }
         let session = self.session
         let task = Task.detached(priority: .userInitiated) { () -> UIImage? in
@@ -145,7 +159,7 @@ actor RemoteAnimatedImageLoader {
         if let image {
             let frames = image.images ?? [image]
             let cost = frames.reduce(0) { $0 + ($1.cgImage.map { $0.bytesPerRow * $0.height } ?? 0) }
-            memory.setObject(image, forKey: key as NSString, cost: cost)
+            memory.insert(image, for: key, cost: cost)
         }
         return image
     }
