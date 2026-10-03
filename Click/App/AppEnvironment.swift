@@ -45,6 +45,8 @@ public final class AppEnvironment {
     let selfData = SelfDataStore()
     /// The activity inbox behind the Home bell (loaded by the shell at launch).
     let activity = ActivityStore()
+    /// Free/busy from this iPhone's calendars, for plans and events (read-only, on-device).
+    let calendar = CalendarAvailability()
     public let network: NetworkMonitor
     /// Optimistic sends and uploads that outlive the chat screen.
     public let pendingSends = PendingSendStore()

@@ -26,8 +26,8 @@ struct ClickDropImageView: View {
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @State private var pixelated: UIImage?
     @State private var developed: (image: UIImage, url: URL)?
-    /// The develop animation's current frame (nil when not animating).
-    @State private var frame: UIImage?
+    /// This bubble plays the develop (developed on this screen just now).
+    @State private var playsDevelop = false
     @State private var failed = false
     @State private var historyLocked = false
     /// Bumped at reveal time so a pending drop becomes ready on screen.
@@ -47,11 +47,11 @@ struct ClickDropImageView: View {
                 retryBox
             } else if state == .developed, let developed {
                 Button { onOpen(developed.url) } label: {
-                    Image(uiImage: frame ?? developed.image)
+                    Image(uiImage: developed.image)
                         .resizable()
-                        .interpolation(frame == nil ? .high : .none)
                         .aspectRatio(developed.image.size, contentMode: .fit)
                         .frame(maxWidth: 240, maxHeight: 320)
+                        .clickDropDevelop(true, plays: playsDevelop)
                 }
                 .buttonStyle(.plain)
                 .accessibilityLabel("Click Drop photo. Opens full screen.")
@@ -188,14 +188,10 @@ struct ClickDropImageView: View {
         }
         do {
             let url = try await controls.loadDeveloped()
-            let animate = controls.isFreshlyDeveloped() && !reduceMotion
-            let decoded = await Task.detached(priority: .userInitiated) { () -> (UIImage, [UIImage])? in
-                guard let image = Self.thumbnail(url) else { return nil }
-                return (image, animate ? ClickDropPixelation.developFrames(image) : [])
-            }.value
-            guard let decoded else { throw ChatRepositoryError.mediaUnavailable }
-            DecodedMediaCache.insert(decoded.0, url: url, for: key)
-            await present(decoded.0, url: url, frames: decoded.1)
+            let image = await Task.detached(priority: .userInitiated) { Self.thumbnail(url) }.value
+            guard let image else { throw ChatRepositoryError.mediaUnavailable }
+            DecodedMediaCache.insert(image, url: url, for: key)
+            await present(image, url: url)
         } catch ChatRepositoryError.historyKeyUnavailable {
             historyLocked = true
         } catch {
@@ -203,22 +199,15 @@ struct ClickDropImageView: View {
         }
     }
 
-    /// Pixels resolve over ~0.4 s with a light haptic; Reduce Motion cross-fades instead.
-    private func present(_ image: UIImage, url: URL, frames: [UIImage]) async {
+    /// A drop developed just now resolves out of its pixels with a light haptic (a quick fade
+    /// under Reduce Motion); one developed before shows the photo at once.
+    private func present(_ image: UIImage, url: URL) async {
         let fresh = controls.isFreshlyDeveloped()
-        if fresh { ClickHaptics.impact(.light) }
-        if frames.isEmpty {
-            withAnimation(fresh ? ClickMotion.subtleFade : nil) { developed = (image, url) }
-        } else {
-            frame = frames.first
-            developed = (image, url)
-            for next in frames.dropFirst() {
-                try? await Task.sleep(for: .milliseconds(110))
-                frame = next
-            }
-            try? await Task.sleep(for: .milliseconds(110))
-            withAnimation(ClickMotion.subtleFade) { frame = nil }
-        }
-        if fresh { controls.didShowDevelop() }
+        playsDevelop = fresh && !reduceMotion
+        withAnimation(fresh ? ClickMotion.subtleFade : nil) { developed = (image, url) }
+        guard fresh else { return }
+        ClickHaptics.impact(.light)
+        try? await Task.sleep(for: .seconds(ClickDropDevelopEffect.duration))
+        controls.didShowDevelop()
     }
 }

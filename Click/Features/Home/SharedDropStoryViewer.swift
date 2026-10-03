@@ -10,7 +10,8 @@ struct SharedDropStoryViewer: View {
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     @State private var currentID: String
-    @State private var progress: CGFloat = 0
+    /// Ticks in its own view (the progress bar), so the viewer doesn't re-render while a drop plays.
+    @State private var clock = StoryClock()
     @State private var holding = false
     @State private var pressStart: Date?
     @State private var reply = ""
@@ -18,6 +19,8 @@ struct SharedDropStoryViewer: View {
     /// Full-size photos for this viewing (tiles keep small copies).
     @State private var full: [String: UIImage] = [:]
     @State private var unveiled: Set<String> = []
+    /// Developed on this screen just now: they play the develop when they unveil.
+    @State private var playing: Set<String> = []
     @State private var dragY: CGFloat = 0
     @State private var toast: String?
     @State private var confirmDelete = false
@@ -28,6 +31,8 @@ struct SharedDropStoryViewer: View {
     private let sources: DropTileFrames?
 
     private static let secondsPerDrop: Double = 6
+    /// Your own drop's reactor row (a face, its emoji and a name), held while reactions load.
+    private static let reactorRowHeight: CGFloat = 68
     /// Quicker than the system zoom, so a drop feels like it pops open.
     private static let zoom = Animation.snappy(duration: 0.26)
 
@@ -46,6 +51,9 @@ struct SharedDropStoryViewer: View {
     /// swaps in while the viewer is still zooming open.
     private func isShown(_ id: String) -> Bool {
         unveiled.contains(id) || (photo(id) != nil && !store.freshlyDeveloped.contains(id))
+    }
+    private func playsDevelop(_ id: String) -> Bool {
+        !reduceMotion && (playing.contains(id) || store.freshlyDeveloped.contains(id))
     }
     private var isPaused: Bool {
         holding || replyFocused || confirmDelete || reporting || !isShown(currentID)
@@ -105,17 +113,16 @@ struct SharedDropStoryViewer: View {
         let shown = isShown(drop.id)
         return Color.clear
             .overlay {
-                // Pixels underneath until the photo unveils over them.
-                PixelatedPreview(url: drop.previewURL).opacity(shown ? 0 : 1)
-            }
-            .overlay {
+                // The photo holds its pixels until it unveils, then resolves out of them; the
+                // preview's pixels stand in until it's here.
                 if let image {
-                    Image(uiImage: image)
-                        .resizable()
-                        .scaledToFill()
-                        .blur(radius: shown ? 0 : 16)
-                        .scaleEffect(shown ? 1 : 1.03)
-                        .opacity(shown ? 1 : 0)
+                    Color.clear
+                        .overlay { Image(uiImage: image).resizable().scaledToFill() }
+                        .clipped()
+                        .clickDropDevelop(shown, plays: playsDevelop(drop.id))
+                        .id(drop.id)
+                } else {
+                    PixelatedPreview(url: drop.previewURL)
                 }
             }
             .clipShape(RoundedRectangle(cornerRadius: 18, style: .continuous))
@@ -168,18 +175,7 @@ struct SharedDropStoryViewer: View {
 
     private func header(_ drop: SharedDrop) -> some View {
         VStack(spacing: 10) {
-            HStack(spacing: 4) {
-                ForEach(sequence) { item in
-                    Capsule()
-                        .fill(.white.opacity(0.3))
-                        .overlay(alignment: .leading) {
-                            GeometryReader { proxy in
-                                Capsule().fill(.white).frame(width: proxy.size.width * fill(for: item))
-                            }
-                        }
-                        .frame(height: 2.5)
-                }
-            }
+            StoryProgressBar(ids: sequence.map(\.id), currentID: currentID, clock: clock)
             HStack(spacing: 10) {
                 AvatarView(imageURL: drop.avatarURL, seed: drop.userID, initials: Phase3Repository.initials(from: drop.userName), size: 34)
                 VStack(alignment: .leading, spacing: 1) {
@@ -215,12 +211,6 @@ struct SharedDropStoryViewer: View {
         .padding(.top, 10)
     }
 
-    private func fill(for item: SharedDrop) -> CGFloat {
-        guard let mine = sequence.firstIndex(where: { $0.id == currentID }),
-              let index = sequence.firstIndex(where: { $0.id == item.id }) else { return 0 }
-        return index < mine ? 1 : (index == mine ? progress : 0)
-    }
-
     private func subtitle(_ drop: SharedDrop) -> String? {
         guard let created = drop.createdAt else { return nil }
         let when = created.formatted(.relative(presentation: .named))
@@ -228,19 +218,22 @@ struct SharedDropStoryViewer: View {
         return when + (audience == .core ? " · Core connections" : " · All connections")
     }
 
-    /// The reactions keep their place while hidden (developing, or typing a reply) and only fade,
-    /// so nothing at the bottom moves or slides through the reply field.
+    /// The reactions sit still from the first frame: no fade while the viewer zooms open or the
+    /// photo develops (Liquid Glass flickers under a changing opacity), and your own drop's
+    /// reactor row keeps its height while it loads, so nothing at the bottom moves. They only
+    /// fade while you type a reply, so they never sit over the keyboard.
     private func footer(_ drop: SharedDrop) -> some View {
-        let showsReactions = isShown(drop.id) && !replyFocused
+        let reactable = isShown(drop.id) && !replyFocused
         return VStack(spacing: 14) {
             ReactionBar(target: .sharedDrop, id: drop.id, isOwner: drop.isMine) { emoji in
                 send(emoji, about: drop, reaction: true)
             }
             .id(drop.id)
-            .opacity(showsReactions ? 1 : 0)
-            .allowsHitTesting(showsReactions)
-            .accessibilityHidden(!showsReactions)
-            .animation(ClickMotion.subtleFade, value: showsReactions)
+            .frame(minHeight: drop.isMine ? Self.reactorRowHeight : nil, alignment: .bottomLeading)
+            .opacity(replyFocused ? 0 : 1)
+            .allowsHitTesting(reactable)
+            .accessibilityHidden(!reactable)
+            .animation(ClickMotion.subtleFade, value: replyFocused)
             if !drop.isMine, drop.connectionID != nil {
                 replyField(drop)
             }
@@ -282,27 +275,29 @@ struct SharedDropStoryViewer: View {
     // MARK: - Flow
 
     private func open(_ id: String) async {
-        progress = 0
+        clock.progress = 0
         guard let drop = store.drop(id) else { return }
         if isShown(id) { unveiled.insert(id) }
         if drop.state() == .ready { await store.develop([drop], fresh: true, env: env) }
         guard let latest = store.drop(id), latest.state() == .developed else { return }
         // Unveil as soon as any copy is here; the full-size one swaps in without a second animation.
         reveal(id)
-        if full[id] == nil, let image = await store.fullImage(for: latest, env: env) { full[id] = image }
+        if full[id] == nil, let image = await store.fullImage(for: latest, env: env) {
+            withAnimation(ClickMotion.subtleFade) { full[id] = image }
+        }
         reveal(id)
         prefetchNext(after: id)
     }
 
-    /// The photo unveils from its pixels: a quick blur clearing as it settles (a cross-fade under
-    /// Reduce Motion), with a haptic the first time a drop develops.
+    /// The photo unveils: a drop developed just now resolves out of its pixels with a haptic
+    /// (a quick fade under Reduce Motion); the label and caption cross-fade.
     private func reveal(_ id: String) {
         guard !unveiled.contains(id), photo(id) != nil else { return }
-        let fresh = store.freshlyDeveloped.remove(id) != nil
-        if fresh { ClickHaptics.impact(.medium) }
-        withAnimation(fresh && !reduceMotion ? .snappy(duration: 0.4) : ClickMotion.subtleFade) {
-            _ = unveiled.insert(id)
+        if store.freshlyDeveloped.remove(id) != nil {
+            ClickHaptics.impact(.medium)
+            playing.insert(id)
         }
+        withAnimation(ClickMotion.subtleFade) { _ = unveiled.insert(id) }
     }
 
     /// The next developed drop's photo is decoded before it's shown.
@@ -317,20 +312,22 @@ struct SharedDropStoryViewer: View {
 
     private func runTimer() async {
         guard !isPaused else { return }
-        while !Task.isCancelled && progress < 1 {
+        while !Task.isCancelled && clock.progress < 1 {
             try? await Task.sleep(for: .milliseconds(50))
             guard !Task.isCancelled else { return }
-            progress = min(1, progress + 0.05 / Self.secondsPerDrop)
+            clock.progress = min(1, clock.progress + 0.05 / Self.secondsPerDrop)
         }
-        if progress >= 1 { advance(1) }
+        if clock.progress >= 1 { advance(1) }
     }
 
     private func advance(_ step: Int) {
         guard let index = sequence.firstIndex(where: { $0.id == currentID }) else { return close() }
         let next = index + step
         if next >= sequence.count { return close() }
-        guard next >= 0 else { progress = 0; return }
+        guard next >= 0 else { clock.progress = 0; return }
         ClickHaptics.selection()
+        // A drop seen again shows developed; it doesn't play its develop twice.
+        playing.removeAll()
         currentID = sequence[next].id
     }
 
@@ -414,6 +411,38 @@ struct SharedDropStoryViewer: View {
             toast = "Thanks. The Click team will take a look."
         } catch {
             if !error.isCancellation { toast = "Couldn't send the report. \(error.userFacingMessage)" }
+        }
+    }
+}
+
+/// How far the current drop has played, 0 to 1.
+@Observable
+@MainActor
+final class StoryClock {
+    var progress: CGFloat = 0
+}
+
+/// One segment per drop: earlier ones full, the current one filling. Only this view reads the
+/// clock, so its ticks redraw the bar and nothing else.
+private struct StoryProgressBar: View {
+    let ids: [String]
+    let currentID: String
+    let clock: StoryClock
+
+    var body: some View {
+        let current = ids.firstIndex(of: currentID) ?? 0
+        HStack(spacing: 4) {
+            ForEach(Array(ids.enumerated()), id: \.element) { index, _ in
+                let fill = index < current ? 1 : (index == current ? clock.progress : 0)
+                Capsule()
+                    .fill(.white.opacity(0.3))
+                    .overlay(alignment: .leading) {
+                        GeometryReader { proxy in
+                            Capsule().fill(.white).frame(width: proxy.size.width * fill)
+                        }
+                    }
+                    .frame(height: 2.5)
+            }
         }
     }
 }

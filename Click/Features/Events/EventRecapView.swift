@@ -17,7 +17,6 @@ struct EventRecapView: View {
     @State private var isPaused = false
     /// Drops that already played their develop animation this visit.
     @State private var developedOnScreen: Set<String> = []
-    @State private var frame: UIImage?
     @State private var confirmDelete: EventDrop?
     @State private var reporting: EventDrop?
     @State private var notice: String?
@@ -136,10 +135,12 @@ struct EventRecapView: View {
 
     @ViewBuilder
     private func photo(_ drop: EventDrop) -> some View {
-        if let frame {
-            Color.clear.overlay { Image(uiImage: frame).resizable().interpolation(.none).scaledToFill() }
-        } else if let photo = photos[drop.id] {
+        if let photo = photos[drop.id] {
+            // Each drop resolves out of its pixels the first time it shows this visit.
             Color.clear.overlay { Image(uiImage: natural ? photo.natural : photo.look).resizable().scaledToFill() }
+                .clipped()
+                .clickDropDevelop(true, plays: !reduceMotion && !developedOnScreen.contains(drop.id))
+                .id(drop.id)
                 .transition(.opacity)
                 .accessibilityLabel(drop.isMine ? "Your drop" : "Drop from \(drop.userName)")
         } else if failed.contains(drop.id) {
@@ -268,22 +269,12 @@ struct EventRecapView: View {
         }
     }
 
-    /// The first time a drop shows, its pixels resolve (light haptic); Reduce Motion cross-fades.
+    /// The first time a drop shows it develops on screen (its photo resolves out of its pixels):
+    /// a light haptic, and it won't play again this visit.
     private func present(_ drop: EventDrop) async {
-        frame = nil
-        guard let photo = photos[drop.id], !developedOnScreen.contains(drop.id) else { return }
+        guard photos[drop.id] != nil, !developedOnScreen.contains(drop.id) else { return }
         developedOnScreen.insert(drop.id)
         ClickHaptics.impact(.light)
-        guard !reduceMotion else { return }
-        let source = natural ? photo.natural : photo.look
-        let steps = await Task.detached(priority: .userInitiated) { ClickDropPixelation.developFrames(source) }.value
-        for step in steps {
-            // Moving on mid-animation must never leave an old frame over the next drop.
-            guard !Task.isCancelled else { frame = nil; return }
-            frame = step
-            try? await Task.sleep(for: .milliseconds(110))
-        }
-        withAnimation(ClickMotion.subtleFade) { frame = nil }
     }
 
     private func delete(_ drop: EventDrop) async {

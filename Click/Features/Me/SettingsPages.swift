@@ -460,7 +460,7 @@ struct PermissionsSettingsView: View {
         (.camera, "Camera", "camera", "QR scanning, photos"),
         (.photoLibrary, "Photos", "photo", "Sharing and saving photos"),
         (.contacts, "Contacts", "person.crop.circle", "Finding people you know (hashed on this iPhone)"),
-        (.calendar, "Calendar", "calendar", "Free/busy for availability"),
+        (.calendar, "Calendar", "calendar", "Shows when you're free for plans"),
         (.notifications, "Notifications", "bell", "Messages and alerts")
     ]
 
@@ -636,7 +636,10 @@ struct CalendarSettingsView: View {
                         Text("Allowed").foregroundStyle(ClickColors.textTertiary)
                     case .notDetermined?:
                         Button("Allow") {
-                            Task { status = await env.permissions.requestPermission(for: .calendar) }
+                            Task {
+                                status = await env.permissions.requestPermission(for: .calendar)
+                                await env.calendar.refresh()
+                            }
                         }
                         .buttonStyle(.borderless)
                     case nil:
@@ -647,7 +650,7 @@ struct CalendarSettingsView: View {
                     }
                 }
             } footer: {
-                Text("Click reads only busy and free times on this iPhone for availability. Event titles, locations, and attendees never leave your device, and Click never adds or changes calendar events.")
+                Text("Plans and events show whether you're free then, and suggest the next free time when you're not. Click reads only busy and free times, on this iPhone. Event titles, locations, and attendees never leave your device, and Click never adds or changes calendar events.")
             }
         }
         .navigationTitle("Calendar")
