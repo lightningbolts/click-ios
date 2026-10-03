@@ -11,6 +11,7 @@ public struct AvatarUploadView: View {
     @State private var isUploading: Bool = false
     @State private var errorMessage: String?
     @State private var showCamera: Bool = false
+    @State private var showLibrary = false
     @State private var cameraPermissionDenied: Bool = false
 
     let title: String
@@ -42,9 +43,7 @@ public struct AvatarUploadView: View {
         OnboardingPage(title: title, subtitle: subtitle) {
             VStack(spacing: ClickSpacing.md) {
                 // Tapping the preview opens the library too.
-                PhotosPicker(selection: $selectedItem, matching: .images, photoLibrary: .shared()) {
-                    preview
-                }
+                Button { showLibrary = true } label: { preview }
                 .buttonStyle(.plain)
                 .disabled(isUploading)
                 .accessibilityLabel(hasSelectedImage ? "Change photo" : "Choose a photo")
@@ -82,9 +81,7 @@ public struct AvatarUploadView: View {
                 .disabled(isUploading)
             } else {
                 // Never a disabled "Choose a photo": the primary action opens the picker.
-                PhotosPicker(selection: $selectedItem, matching: .images, photoLibrary: .shared()) {
-                    Text("Choose a photo")
-                }
+                Button("Choose a photo") { showLibrary = true }
                 .buttonStyle(.clickPrimary)
             }
             Button(skipTitle) {
@@ -95,6 +92,9 @@ public struct AvatarUploadView: View {
             .disabled(isUploading)
         }
         .animation(ClickMotion.subtleFade, value: errorMessage)
+        // One picker for both entry points (a label closure that reads view state doesn't
+        // compile under Xcode 16's Sendable checks).
+        .photosPicker(isPresented: $showLibrary, selection: $selectedItem, matching: .images, photoLibrary: .shared())
         .onChange(of: selectedItem) { _, newItem in
             Task {
                 if let data = try? await newItem?.loadTransferable(type: Data.self) {

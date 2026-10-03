@@ -61,7 +61,19 @@ public struct AddClickView: View {
         .navigationBarTitleDisplayMode(.inline)
         .toolbar {
             ToolbarItem(placement: .topBarLeading) {
-                RootMenu()
+                RootMenu {
+                    Section {
+                        Button("Tap to connect", systemImage: "wave.3.right") { env.router.navigate(to: .tapConnect) }
+                        Button("Find friends", systemImage: "person.badge.plus") { env.router.navigate(to: .findFriends) }
+                        Button("My QR code", systemImage: "qrcode") { env.router.navigate(to: .myQR) }
+                    }
+                    Section {
+                        Button("New verified group", systemImage: "person.3") { sheet = .newGroup }
+                        Button("Create a hub", systemImage: "plus.bubble") { sheet = .createHub }
+                        Button("Join a hub", systemImage: "number") { sheet = .joinHub }
+                    }
+                    Button("How Click works", systemImage: "questionmark.circle") { sheet = .howItWorks }
+                }
             }
             ToolbarItem(placement: .topBarTrailing) {
                 Button {

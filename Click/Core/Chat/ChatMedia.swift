@@ -1,4 +1,5 @@
 import Foundation
+import ImageIO
 
 /// Media carried by a chat message (spec §37). Built from the server metadata plus the
 /// decrypted body (file descriptors travel inside the encrypted content).
@@ -35,6 +36,10 @@ public struct MessageMedia: Hashable, Sendable, Codable {
     /// How to decrypt the gated original (`metadata.drop_original`): its own v2 media fields, or
     /// nil for a legacy (v1) chat, whose original uses the chat's legacy media keys.
     public var dropOriginalV2: ClickCryptoV2.MediaMetadata? = nil
+    /// A photo's width ÷ height (`metadata.media_aspect`, iOS-written and additive), so its bubble
+    /// is laid out at the final size before the image downloads. Rounded to two decimals so it
+    /// reveals no more than the shape of the photo.
+    public var aspect: Double? = nil
 
     public var isGatedDrop: Bool { isDisposable && dropGated == true }
 
@@ -107,7 +112,8 @@ public struct MessageMedia: Hashable, Sendable, Codable {
                 revealAt: JSONFields.date(meta["reveal_at"]) ?? JSONFields.date(meta["collaboration_ttl"]),
                 waveform: isImage ? nil : VoiceWaveform.parse(meta["waveform"]),
                 dropGated: isImage ? JSONFields.bool(meta["drop_gated"]) : nil,
-                dropOriginalV2: isImage ? dropOriginalMetadata(meta["drop_original"], chatID: chatID) : nil
+                dropOriginalV2: isImage ? dropOriginalMetadata(meta["drop_original"], chatID: chatID) : nil,
+                aspect: isImage ? MediaAspect.parse(meta["media_aspect"]) : nil
             )
         case "file", "document":
             let descriptor = AttachmentEnvelope.decode(decryptedContent)
@@ -343,5 +349,30 @@ public enum VoiceWaveform {
     /// Rounded for the wire (two decimals keeps metadata small).
     static func wire(_ bins: [Double]) -> [Double] {
         bins.map { ($0 * 100).rounded() / 100 }
+    }
+}
+
+/// Photo aspect ratios carried in message metadata (`media_aspect`).
+enum MediaAspect {
+    /// Extremes are clamped: bubbles fit within 240 × 320 and a sliver photo is still tappable.
+    static let range: ClosedRange<Double> = 0.2...5
+
+    static func parse(_ raw: Any?) -> Double? {
+        let value = (raw as? Double) ?? (raw as? NSNumber)?.doubleValue ?? (raw as? String).flatMap(Double.init)
+        guard let value, value.isFinite, value > 0 else { return nil }
+        return min(max(value, range.lowerBound), range.upperBound)
+    }
+
+    /// Width ÷ height of encoded image `data`, read from its header (no decode), rounded to 0.01.
+    /// EXIF orientations that rotate by 90° swap the sides, matching how the photo displays.
+    static func of(_ data: Data) -> Double? {
+        guard let source = CGImageSourceCreateWithData(data as CFData, [kCGImageSourceShouldCache: false] as CFDictionary),
+              let properties = CGImageSourceCopyPropertiesAtIndex(source, 0, nil) as? [CFString: Any],
+              let width = (properties[kCGImagePropertyPixelWidth] as? NSNumber)?.doubleValue,
+              let height = (properties[kCGImagePropertyPixelHeight] as? NSNumber)?.doubleValue,
+              width > 0, height > 0 else { return nil }
+        let orientation = (properties[kCGImagePropertyOrientation] as? NSNumber)?.intValue ?? 1
+        let ratio = (5...8).contains(orientation) ? height / width : width / height
+        return parse((ratio * 100).rounded() / 100)
     }
 }

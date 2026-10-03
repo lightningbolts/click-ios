@@ -442,7 +442,7 @@ struct ReplyThumbnail: View {
         self.load = load
         self.size = size
         // The quoted photo is usually decoded already (its own bubble, an earlier render).
-        _image = State(initialValue: (DecodedMediaCache.entry(Self.cacheKey(target)) ?? DecodedMediaCache.entry(target.id))?.image)
+        _image = State(initialValue: (DecodedMediaCache.entry(Self.cacheKey(target)) ?? DecodedMediaCache.entry(for: target))?.image)
     }
 
     private static func cacheKey(_ target: ChatMessageItem) -> String { target.id + "#reply" }

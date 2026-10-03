@@ -89,9 +89,12 @@ struct FindFriendsView: View {
                     .font(ClickTypography.supporting)
                     .foregroundStyle(ClickColors.textSecondary)
                     .multilineTextAlignment(.center)
-                Button("Tap to Connect") { env.router.navigate(to: .tapConnect) }
-                    .buttonStyle(.clickSecondary)
-                    .padding(.top, ClickSpacing.sm)
+                HStack(spacing: ClickSpacing.sm) {
+                    InviteFriendsLink()
+                    Button("Tap to Connect") { env.router.navigate(to: .tapConnect) }
+                        .buttonStyle(.clickSecondary)
+                }
+                .padding(.top, ClickSpacing.sm)
             }
             .frame(maxWidth: .infinity)
             .padding(ClickSpacing.surfacePadding)
@@ -107,6 +110,7 @@ struct FindFriendsView: View {
                     }
                 }
                 .groupedSurface()
+                InviteFriendsLink().padding(.top, ClickSpacing.xs)
             }
         }
     }
@@ -212,6 +216,19 @@ struct FindFriendsView: View {
                 errorMessage = "Couldn't send that request. Try again."
                 ClickHaptics.error()
             }
+        }
+    }
+}
+
+/// Texts (or shares) the App Store link to people not on Click yet. Hidden until the app is
+/// live: `CLICK_APP_STORE_URL` is empty before launch.
+struct InviteFriendsLink: View {
+    var body: some View {
+        if let url = AppConfig.shared.appStoreURL {
+            ShareLink(item: url, message: Text("I'm on Click. Come find me:")) {
+                Label("Invite friends", systemImage: "message")
+            }
+            .buttonStyle(.clickSecondary)
         }
     }
 }

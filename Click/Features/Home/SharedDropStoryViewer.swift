@@ -22,19 +22,33 @@ struct SharedDropStoryViewer: View {
     @State private var toast: String?
     @State private var confirmDelete = false
     @State private var reporting = false
+    /// False while zoomed into the source tile: before the open, and while closing.
+    @State private var presented = false
+    @State private var frame: CGRect = .zero
+    private let sources: DropTileFrames?
 
     private static let secondsPerDrop: Double = 6
+    /// Quicker than the system zoom, so a drop feels like it pops open.
+    private static let zoom = Animation.snappy(duration: 0.26)
 
-    init(startID: String) {
+    /// Present with animations disabled: the viewer runs its own zoom out of `sources`' tile
+    /// (or a fade without one, or under Reduce Motion).
+    init(startID: String, sources: DropTileFrames? = nil) {
         _currentID = State(initialValue: startID)
+        self.sources = sources
     }
 
     private var store: SharedDropsStore { env.sharedDropsStore }
     private var sequence: [SharedDrop] { store.viewable }
     private var current: SharedDrop? { store.drop(currentID) }
     private func photo(_ id: String) -> UIImage? { full[id] ?? store.originals[id] }
+    /// A photo already on hand (and not just developed) shows from the first frame, so nothing
+    /// swaps in while the viewer is still zooming open.
+    private func isShown(_ id: String) -> Bool {
+        unveiled.contains(id) || (photo(id) != nil && !store.freshlyDeveloped.contains(id))
+    }
     private var isPaused: Bool {
-        holding || replyFocused || confirmDelete || reporting || !unveiled.contains(currentID)
+        holding || replyFocused || confirmDelete || reporting || !isShown(currentID)
     }
 
     var body: some View {
@@ -53,15 +67,24 @@ struct SharedDropStoryViewer: View {
         }
         .offset(y: dragY)
         .scaleEffect(1 - min(dragY, 400) / 2400)
+        .scaleEffect(collapsed?.scale ?? 1)
+        .offset(collapsed?.offset ?? .zero)
+        .opacity(presented ? 1 : 0)
+        .onGeometryChange(for: CGRect.self, of: { $0.frame(in: .global) }) { frame = $0 }
+        .presentationBackground(.clear)
         .simultaneousGesture(dismissDrag)
-        // Our own swipe-down (which also pauses) dismisses; the zoom back to the tile still plays.
+        // Our own swipe-down (which also pauses) closes, zooming back into the tile.
         .interactiveDismissDisabled()
+        .task {
+            await Task.yield()
+            withAnimation(Self.zoom) { presented = true }
+        }
         .environment(\.colorScheme, .dark)
         .statusBarHidden()
         .clickToast($toast, edge: .top)
         .task(id: currentID) { await open(currentID) }
         .task(id: "\(currentID)|\(isPaused)") { await runTimer() }
-        .onChange(of: current == nil) { _, gone in if gone { dismiss() } }
+        .onChange(of: current == nil) { _, gone in if gone { close() } }
         .confirmation("Delete this drop?", isPresented: $confirmDelete, keep: "Keep It",
                       message: "It's removed for everyone it was shared with.") {
             Button("Delete", role: .destructive) { Task { await delete() } }
@@ -79,7 +102,7 @@ struct SharedDropStoryViewer: View {
 
     private func photoLayer(_ drop: SharedDrop) -> some View {
         let image = photo(drop.id)
-        let shown = unveiled.contains(drop.id)
+        let shown = isShown(drop.id)
         return Color.clear
             .overlay {
                 // Pixels underneath until the photo unveils over them.
@@ -179,12 +202,13 @@ struct SharedDropStoryViewer: View {
                 // Keeps the Liquid Glass circle as the only pressed surface (no rectangular chrome).
                 .buttonStyle(.plain)
                 .accessibilityLabel("More")
-                Button { dismiss() } label: {
+                Button { close() } label: {
                     ComposerCircleLabel(systemImage: "xmark", foreground: .white).contentShape(Circle())
                 }
                 .buttonStyle(.plain)
                 .accessibilityLabel("Close")
             }
+            .glassGroup()
             .foregroundStyle(.white)
         }
         .padding(.horizontal, 12)
@@ -204,24 +228,25 @@ struct SharedDropStoryViewer: View {
         return when + (audience == .core ? " · Core connections" : " · All connections")
     }
 
-    @ViewBuilder
+    /// The reactions keep their place while hidden (developing, or typing a reply) and only fade,
+    /// so nothing at the bottom moves or slides through the reply field.
     private func footer(_ drop: SharedDrop) -> some View {
-        VStack(spacing: 14) {
-            if unveiled.contains(drop.id) && !replyFocused {
-                ReactionBar(target: .sharedDrop, id: drop.id, isOwner: drop.isMine) { emoji in
-                    send(emoji, about: drop, reaction: true)
-                }
-                .id(drop.id)
-                .transition(.move(edge: .bottom).combined(with: .opacity))
+        let showsReactions = isShown(drop.id) && !replyFocused
+        return VStack(spacing: 14) {
+            ReactionBar(target: .sharedDrop, id: drop.id, isOwner: drop.isMine) { emoji in
+                send(emoji, about: drop, reaction: true)
             }
+            .id(drop.id)
+            .opacity(showsReactions ? 1 : 0)
+            .allowsHitTesting(showsReactions)
+            .accessibilityHidden(!showsReactions)
+            .animation(ClickMotion.subtleFade, value: showsReactions)
             if !drop.isMine, drop.connectionID != nil {
                 replyField(drop)
             }
         }
         .padding(.horizontal, 14)
         .padding(.bottom, 10)
-        .animation(ClickMotion.content, value: replyFocused)
-        .animation(ClickMotion.content, value: unveiled.contains(drop.id))
     }
 
     private func replyField(_ drop: SharedDrop) -> some View {
@@ -259,7 +284,7 @@ struct SharedDropStoryViewer: View {
     private func open(_ id: String) async {
         progress = 0
         guard let drop = store.drop(id) else { return }
-        if photo(id) != nil, !store.freshlyDeveloped.contains(id) { unveiled.insert(id) }
+        if isShown(id) { unveiled.insert(id) }
         if drop.state() == .ready { await store.develop([drop], fresh: true, env: env) }
         guard let latest = store.drop(id), latest.state() == .developed else { return }
         // Unveil as soon as any copy is here; the full-size one swaps in without a second animation.
@@ -301,12 +326,35 @@ struct SharedDropStoryViewer: View {
     }
 
     private func advance(_ step: Int) {
-        guard let index = sequence.firstIndex(where: { $0.id == currentID }) else { return dismiss() }
+        guard let index = sequence.firstIndex(where: { $0.id == currentID }) else { return close() }
         let next = index + step
-        if next >= sequence.count { return dismiss() }
+        if next >= sequence.count { return close() }
         guard next >= 0 else { progress = 0; return }
         ClickHaptics.selection()
         currentID = sequence[next].id
+    }
+
+    /// The scale and offset that shrink the viewer onto the current drop's tile while it's not
+    /// presented; nil (a plain fade) without a visible tile or under Reduce Motion.
+    private var collapsed: (scale: CGFloat, offset: CGSize)? {
+        guard !presented, !reduceMotion, frame.width > 0,
+              let tile = sources?.byID[currentID], tile.intersects(frame) else { return nil }
+        return (tile.width / frame.width, CGSize(width: tile.midX - frame.midX, height: tile.midY - frame.midY))
+    }
+
+    /// Zooms back into the tile (or fades), then dismisses without the system animation.
+    private func close() {
+        guard presented else { return }
+        replyFocused = false
+        holding = true
+        withAnimation(Self.zoom) {
+            presented = false
+            dragY = 0
+        } completion: {
+            var transaction = Transaction()
+            transaction.disablesAnimations = true
+            withTransaction(transaction) { dismiss() }
+        }
     }
 
     private var dismissDrag: some Gesture {
@@ -319,7 +367,7 @@ struct SharedDropStoryViewer: View {
             .onEnded { value in
                 holding = false
                 if value.translation.height > 140 || value.predictedEndTranslation.height > 400 {
-                    dismiss()
+                    close()
                 } else {
                     withAnimation(ClickMotion.content) { dragY = 0 }
                 }
@@ -367,5 +415,32 @@ struct SharedDropStoryViewer: View {
         } catch {
             if !error.isCancellation { toast = "Couldn't send the report. \(error.userFacingMessage)" }
         }
+    }
+}
+
+/// Where each drop's tile sits on screen, for the viewer's zoom. A plain reference, not observed:
+/// scrolling updates it without re-rendering the strip.
+final class DropTileFrames {
+    var byID: [String: CGRect] = [:]
+}
+
+extension View {
+    /// Records this tile's on-screen frame for the drop viewer to zoom out of and back into.
+    func dropTileSource(_ id: String, in frames: DropTileFrames) -> some View {
+        onGeometryChange(for: CGRect.self, of: { $0.frame(in: .global) }) { frames.byID[id] = $0 }
+    }
+
+    /// Presents the drop viewer without the system's animation; it runs its own quicker zoom.
+    func dropViewer(_ viewing: Binding<SharedDropsStrip.ViewerStart?>, sources: DropTileFrames) -> some View {
+        fullScreenCover(item: viewing) { start in SharedDropStoryViewer(startID: start.id, sources: sources) }
+    }
+}
+
+extension SharedDropsStrip.ViewerStart {
+    /// Opens a drop with the presentation itself unanimated (the viewer animates its own way in).
+    static func open(_ id: String, in viewing: Binding<SharedDropsStrip.ViewerStart?>) {
+        var transaction = Transaction()
+        transaction.disablesAnimations = true
+        withTransaction(transaction) { viewing.wrappedValue = .init(id: id) }
     }
 }

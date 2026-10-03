@@ -29,6 +29,7 @@ struct ClickDropImageView: View {
     /// The develop animation's current frame (nil when not animating).
     @State private var frame: UIImage?
     @State private var failed = false
+    @State private var historyLocked = false
     /// Bumped at reveal time so a pending drop becomes ready on screen.
     @State private var tick = 0
 
@@ -40,7 +41,9 @@ struct ClickDropImageView: View {
         let _ = tick
         let state = controls.state()
         Group {
-            if failed {
+            if historyLocked {
+                LockedMediaBox(size: placeholderSize)
+            } else if failed {
                 retryBox
             } else if state == .developed, let developed {
                 Button { onOpen(developed.url) } label: {
@@ -55,12 +58,12 @@ struct ClickDropImageView: View {
             } else if let pixelated {
                 lockedImage(pixelated, state: state)
             } else {
-                ShimmerPlaceholder(width: placeholderSize.width, height: placeholderSize.height)
+                MediaLoadingPlaceholder(width: placeholderSize.width, height: placeholderSize.height)
             }
         }
         .background(ClickColors.fillSubtle)
         .clipShape(RoundedRectangle(cornerRadius: ClickRadius.messageBubble, style: .continuous))
-        .task(id: message.id) { await loadPixelated() }
+        .task(id: message.stableID) { await loadPixelated() }
         .task(id: state == .developed) {
             guard state == .developed, developed == nil else { return }
             await loadDeveloped()
@@ -156,7 +159,7 @@ struct ClickDropImageView: View {
 
     private func loadPixelated() async {
         guard pixelated == nil else { return }
-        if let cached = DecodedMediaCache.entry(message.id)?.pixelated {
+        if let cached = DecodedMediaCache.entry(for: message)?.pixelated {
             pixelated = cached
             return
         }
@@ -168,8 +171,10 @@ struct ClickDropImageView: View {
             }.value
             guard let decoded else { throw ChatRepositoryError.mediaUnavailable }
             MediaAspectCache.remember(decoded.0.size, for: message)
-            DecodedMediaCache.insert(decoded.0, pixelated: decoded.1, url: url, for: message.id)
-            pixelated = decoded.1
+            DecodedMediaCache.insert(decoded.0, pixelated: decoded.1, url: url, for: message)
+            withAnimation(ClickMotion.subtleFade) { pixelated = decoded.1 }
+        } catch ChatRepositoryError.historyKeyUnavailable {
+            historyLocked = true
         } catch {
             if !error.isCancellation { failed = true }
         }
@@ -191,6 +196,8 @@ struct ClickDropImageView: View {
             guard let decoded else { throw ChatRepositoryError.mediaUnavailable }
             DecodedMediaCache.insert(decoded.0, url: url, for: key)
             await present(decoded.0, url: url, frames: decoded.1)
+        } catch ChatRepositoryError.historyKeyUnavailable {
+            historyLocked = true
         } catch {
             if !error.isCancellation { failed = true }
         }

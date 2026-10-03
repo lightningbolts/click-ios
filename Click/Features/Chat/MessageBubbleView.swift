@@ -336,6 +336,12 @@ public struct MessageBubbleView: View {
 
     /// The message text with web links tappable; a call log leads with its direction/outcome icon.
     private var bodyText: Text {
+        if message.isLockedHistory {
+            // Not an error: end-to-end encryption means a device added later can't read what
+            // came before until one of the user's earlier devices shares the key.
+            return (Text(Image(systemName: "lock.fill")) + Text(verbatim: " ") + Text("Sent before this device was added").italic())
+                .foregroundColor(foreground.opacity(0.7))
+        }
         guard message.messageType == .callLog else { return Text(Self.linkified(message.content)) }
         let unanswered = CallLogFormatting.isUnanswered(message.content)
         let symbol = unanswered ? "phone.down.fill" : (message.isOutgoing ? "phone.arrow.up.right.fill" : "phone.arrow.down.left.fill")

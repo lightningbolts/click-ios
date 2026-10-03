@@ -91,6 +91,12 @@ struct ActivityTests {
                 == Route.route(.userProfile(userID: "u2", connectionID: "c1")))
         #expect(ClickNotificationCoordinator.tapRoute(for: ["type": "prior_connection_request", "connection_id": "c1"])
                 == Route.route(.activity))
+        #expect(ClickNotificationCoordinator.tapRoute(for: ["type": "friends_going", "beacon_id": "b1"])
+                == Route.route(.event(beaconID: "b1")))
+        #expect(ClickNotificationCoordinator.tapRoute(for: ["type": "event_trending", "beacon_id": "b1", "trend": "hot"])
+                == Route.route(.event(beaconID: "b1")))
+        #expect(ClickNotificationCoordinator.tapRoute(for: ["type": "new_connection", "peer_user_id": "u2", "connection_id": "c1"])
+                == Route.chat(chatID: nil, connectionID: "c1", senderUserID: "u2", senderName: nil))
     }
 
     @Test("The inbox opens on Home when it arrives from outside the app")

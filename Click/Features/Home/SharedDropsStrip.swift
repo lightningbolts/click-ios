@@ -10,7 +10,7 @@ struct SharedDropsStrip: View {
     @State private var captured: CapturedPhoto?
     @State private var viewing: ViewerStart?
     /// The story opens out of (and closes back into) the tapped tile.
-    @Namespace private var zoom
+    @State private var tileFrames = DropTileFrames()
     private var store: SharedDropsStore { env.sharedDropsStore }
 
     struct CapturedPhoto: Identifiable {
@@ -45,9 +45,11 @@ struct SharedDropsStrip: View {
             }
         }
         .task {
+            openRequestedCamera()
             await store.load(env: env)
             openPendingDrop()
         }
+        .onChange(of: store.cameraRequested) { _, _ in openRequestedCamera() }
         // A "just developed" push opens that drop's story once it's in the strip.
         .onChange(of: env.pendingSharedDropID) { _, _ in openPendingDrop() }
         .onChange(of: store.drops.value?.map(\.id)) { _, _ in openPendingDrop() }
@@ -70,16 +72,19 @@ struct SharedDropsStrip: View {
             }
             .presentationDetents([.large])
         }
-        .fullScreenCover(item: $viewing) { start in
-            SharedDropStoryViewer(startID: start.id)
-                .navigationTransition(.zoom(sourceID: start.id, in: zoom))
-        }
+        .dropViewer($viewing, sources: tileFrames)
+    }
+
+    private func openRequestedCamera() {
+        guard store.cameraRequested else { return }
+        store.cameraRequested = false
+        showingCamera = true
     }
 
     private func openPendingDrop() {
         guard let id = env.pendingSharedDropID, viewing == nil, store.drop(id).map({ !$0.state().isPending }) == true else { return }
         env.pendingSharedDropID = nil
-        viewing = ViewerStart(id: id)
+        ViewerStart.open(id, in: $viewing)
     }
 
     private var nextReveal: Date? {
@@ -115,7 +120,7 @@ struct SharedDropsStrip: View {
         let state = drop.state()
         let developing = store.developing.contains(drop.id)
         return Button {
-            if !state.isPending { viewing = ViewerStart(id: drop.id) }
+            if !state.isPending { ViewerStart.open(drop.id, in: $viewing) }
         } label: {
             // A fixed frame with overlays: a filling photo never pushes the labels out of the tile.
             Group {
@@ -151,7 +156,7 @@ struct SharedDropsStrip: View {
             // Glass over a photo reads as dark glass, so the white labels always hold.
             .environment(\.colorScheme, .dark)
             .animation(ClickMotion.reveal, value: store.originals[drop.id] != nil)
-            .matchedTransitionSource(id: drop.id, in: zoom)
+            .dropTileSource(drop.id, in: tileFrames)
         }
         .buttonStyle(.plain)
         .disabled(state.isPending)

@@ -26,6 +26,8 @@ final class SharedDropsStore {
     var uploads: [PendingShare] = []
     var message: String?
     var fetchedAt: Date?
+    /// Set by Home's menu: the strip opens its camera (it owns the capture flow).
+    var cameraRequested = false
 
     nonisolated static let tilePixels: CGFloat = 720
     nonisolated static let viewerPixels: CGFloat = 2048

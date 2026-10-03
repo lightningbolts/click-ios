@@ -102,7 +102,7 @@ struct ActivityView: View {
             ContentUnavailableView {
                 Label("No activity yet", systemImage: "bell")
             } description: {
-                Text("Reactions, RSVPs, event updates, and friend requests show up here.")
+                Text("New Clicks, reactions, RSVPs, friends’ plans, and events picking up near you show up here.")
             } actions: {
                 Button("Find friends") { env.router.navigate(to: .findFriends) }
                     .buttonStyle(.clickSecondary)
@@ -262,8 +262,12 @@ struct ActivityKind: Equatable {
             (symbol, color) = ("hand.wave.fill", ClickColors.warning)
         case "anniversary":
             (symbol, color) = ("gift.fill", ClickColors.warning)
-        case "prior_connection_accepted":
+        case "prior_connection_accepted", "new_connection":
             (symbol, color) = ("person.fill.checkmark", ClickColors.success)
+        case "friends_going":
+            (symbol, color) = ("person.2.fill", ClickColors.accentForeground)
+        case "event_trending":
+            (symbol, color) = ("flame.fill", .orange)
         case "archive_warning":
             (symbol, color) = ("archivebox.fill", ClickColors.warning)
         case "reconnect_nudge", "reconnect_lull", "reconnect_nearby", "group_revival":

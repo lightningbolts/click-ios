@@ -181,4 +181,11 @@ struct InboxFormattingTests {
         #expect(InboxFormatting.sayHiRemaining(until: now.addingTimeInterval(30 * 60), now: now) == "<1h left")
         #expect(InboxFormatting.sayHiRemaining(until: now.addingTimeInterval(-1), now: now) == nil)
     }
+
+    @Test("Messages this device can't read preview as a calm label, not the in-chat explanation")
+    func lockedPreview() {
+        #expect(InboxFormatting.textPreview(ChatMessageItem.lockedHistoryText) == "🔒 Message from before this device")
+        #expect(InboxFormatting.textPreview(ChatMessageItem.unverifiedText) == "Message")
+        #expect(InboxFormatting.textPreview("see you\nat 7") == "see you at 7")
+    }
 }

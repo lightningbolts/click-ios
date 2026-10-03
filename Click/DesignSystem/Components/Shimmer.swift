@@ -71,3 +71,35 @@ struct ShimmerPlaceholder: View {
         ShimmerPlaceholder(cornerRadius: 5, width: 54, height: 14, animated: false)
     }
 }
+
+/// The chat media loading state: the reserved box in a calm fill, with a small spinner that only
+/// appears if loading takes long enough to notice (~⅓ s). Cached and fast loads never show it, so
+/// a photo simply fades in where its box already was.
+struct MediaLoadingPlaceholder: View {
+    var width: CGFloat?
+    var height: CGFloat?
+    var fill: Color = ClickColors.fillSubtle
+    var tint: Color = ClickColors.textSecondary
+    @State private var showsSpinner = false
+
+    var body: some View {
+        Rectangle()
+            .fill(fill)
+            .frame(width: width, height: height)
+            .frame(maxWidth: width == nil ? .infinity : nil, maxHeight: height == nil ? .infinity : nil)
+            .overlay {
+                if showsSpinner {
+                    ProgressView()
+                        .controlSize(.small)
+                        .tint(tint)
+                        .transition(.opacity)
+                }
+            }
+            .task {
+                try? await Task.sleep(for: .milliseconds(350))
+                guard !Task.isCancelled else { return }
+                withAnimation(ClickMotion.subtleFade) { showsSpinner = true }
+            }
+            .accessibilityLabel("Loading")
+    }
+}

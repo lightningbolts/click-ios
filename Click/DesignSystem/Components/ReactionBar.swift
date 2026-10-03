@@ -67,6 +67,7 @@ struct ReactionBar: View {
                             label: "More emoji") { pickingEmoji = true }
             }
         }
+        .glassGroup()
         .animation(ClickMotion.selection, value: state.mine)
     }
 
