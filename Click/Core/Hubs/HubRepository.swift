@@ -9,6 +9,9 @@ public struct HubInfo: Equatable, Sendable, Codable {
     public let eventBeaconID: String?
     /// Geofence radius for community hubs (`radius_meters`; older servers omit it).
     public var radiusMeters: Int? = nil
+    /// The listed Click Place this hub belongs to (a Place Hub), if any.
+    public var placeID: String? = nil
+    public var placeName: String? = nil
 
     public var isEventHub: Bool { eventBeaconID != nil }
 }
@@ -53,7 +56,9 @@ public actor HubRepository {
             category: JSONFields.string(row["category"]),
             creatorID: JSONFields.string(row["creator_id"]),
             eventBeaconID: JSONFields.string(row["event_beacon_id"]),
-            radiusMeters: JSONFields.int(row["radius_meters"])
+            radiusMeters: JSONFields.int(row["radius_meters"]),
+            placeID: JSONFields.dictionary(row["place"]).flatMap { JSONFields.string($0["id"]) },
+            placeName: JSONFields.dictionary(row["place"]).flatMap { JSONFields.string($0["name"]) }
         )
     }
 

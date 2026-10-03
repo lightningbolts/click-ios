@@ -26,8 +26,27 @@ struct HubInfoView: View {
     var body: some View {
         NavigationStack {
             List {
+                if let placeID = hub.placeID, env.features.isEnabled(.clickPlaces) {
+                    Section {
+                        Button {
+                            dismiss()
+                            env.router.navigate(to: .place(idOrSlug: placeID, anchorToken: nil))
+                        } label: {
+                            Label {
+                                VStack(alignment: .leading, spacing: 2) {
+                                    Text(hub.placeName ?? "Open Place").foregroundStyle(ClickColors.textPrimary)
+                                    Text("This is the Place's hub. See its Pulse, events and who's here.")
+                                        .font(ClickTypography.supporting)
+                                        .foregroundStyle(ClickColors.textSecondary)
+                                }
+                            } icon: {
+                                Image(systemName: "building.2")
+                            }
+                        }
+                    }
+                }
                 Section {
-                    LabeledContent("Type", value: hub.isEventHub ? "Event hub" : "Community hub")
+                    LabeledContent("Type", value: hub.isEventHub ? "Event hub" : (hub.placeID != nil ? "Place hub" : "Community hub"))
                     if isOwner, !hub.isEventHub {
                         Picker("Category", selection: $category) {
                             ForEach(HubCategory.allCases) { Text($0.label).tag($0.rawValue) }

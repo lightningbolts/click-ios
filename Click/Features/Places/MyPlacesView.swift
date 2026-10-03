@@ -42,7 +42,7 @@ struct MyPlacesView: View {
                     Button("Try again") { Task { await load() } }
                 }
             } else {
-                ProgressView()
+                ClickLoadingView()
             }
         }
         .navigationTitle("Places")

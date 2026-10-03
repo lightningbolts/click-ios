@@ -646,6 +646,11 @@ public final class ConversationModel {
                 sent.replyToSnippet = item.replyToSnippet
                 sent.replyToSenderName = item.replyToSenderName
                 server = sent
+            case .dropReply(let dropReply)?:
+                server = try await chatRepository.sendDropReply(
+                    conversation: identity, currentUserID: currentUserID, currentUserName: currentUserName,
+                    content: item.content, dropReply: dropReply, clientMessageID: clientID
+                )
             case nil:
                 server = try await chatRepository.sendMessage(
                     conversation: identity,
@@ -761,6 +766,14 @@ public final class ConversationModel {
         var optimistic = makeOptimistic(content: plan.summary, type: .text, reply: nil, clientID: clientID)
         optimistic.plan = plan
         await performSend(optimistic, payload: .plan(plan))
+    }
+
+    /// Replies (or reacts) to the peer's shared Click Drop, story-style (same optimistic row and retry).
+    public func sendDropReply(_ text: String, to dropReply: ChatDropReply) async {
+        let clientID = UUID().uuidString.lowercased()
+        var optimistic = makeOptimistic(content: text, type: .text, reply: nil, clientID: clientID)
+        optimistic.dropReply = dropReply
+        await performSend(optimistic, payload: .dropReply(dropReply))
     }
 
     /// Going / can't make it: exclusive reactions on the plan message, plus a local reminder
@@ -963,6 +976,9 @@ public final class ConversationModel {
     /// Text for a reply quote, never exposing attachment envelopes.
     static func quoteText(_ item: ChatMessageItem) -> String {
         if item.gif != nil { return "GIF" }
+        if let reply = item.dropReply {
+            return reply.isReaction ? "Reacted \(item.content) to a drop" : "Replied to a drop: \(item.content)"
+        }
         if let beacon = item.beacon { return beacon.title }
         if let media = item.media { return media.kind == .file ? "📎 \(media.displayName)" : media.displayName }
         return item.content

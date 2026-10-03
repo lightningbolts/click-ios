@@ -25,6 +25,8 @@ final class PlaceDetailModel {
 
     private(set) var detail: PlaceDetail?
     private(set) var loadState: LoadState = .idle
+    /// The first fetch reports how the Place was opened (`source`); refreshes don't.
+    private var hasFetched = false
     private(set) var checkInPhase: CheckInPhase = .idle
     private(set) var pulsePhase: PulsePhase = .idle
     /// From a check-in QR code: asks "Check in at …?" and is sent with the check-in.
@@ -88,9 +90,16 @@ final class PlaceDetailModel {
     // MARK: - Load
 
     func load() async {
+        // A Place seen this session paints at once (well inside the loader's delay) and refreshes behind.
+        if detail == nil, let cached = await repository.cachedDetail(idOrSlug: idOrSlug) {
+            detail = cached
+            loadState = .loaded
+        }
         if detail == nil { loadState = .loading }
         do {
-            detail = try await repository.detail(idOrSlug: idOrSlug, source: detail == nil ? source : nil)
+            let fresh = try await repository.detail(idOrSlug: idOrSlug, source: hasFetched ? nil : source)
+            hasFetched = true
+            detail = fresh
             loadState = .loaded
         } catch {
             guard !error.isCancellation else { return }

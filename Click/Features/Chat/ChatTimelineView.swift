@@ -7,6 +7,8 @@ enum ChatTimelineRow: Hashable, Sendable {
     case unreadDivider
     case message(String)      // stableID
     case typing
+    /// Older history loading above the first row (a real row, so it never covers a day stamp).
+    case historyLoader
 }
 
 /// Imperative handle ChatView uses to move the timeline (jump to latest, jump to a message).
@@ -46,7 +48,7 @@ final class TimelineController {
 ///   the true bottom before the first frame is shown.
 /// - **Older history** is prefetched while the reader is still 2.5 screens away from the top,
 ///   and prepending keeps the visible rows exactly where they are (content-size delta applied to
-///   the offset), so there is no jump and no spinner row.
+///   the offset), so there is no jump; a loader row shows only while a page is still loading.
 /// - **Staying at the bottom**: while the reader is at the bottom, new messages, growing
 ///   bubbles (images decoding), composer/keyboard changes all keep the newest message visible.
 ///
@@ -274,10 +276,12 @@ struct ChatTimelineView: UIViewRepresentable {
 
         /// True when `new` is `old` with rows added only at the top.
         nonisolated static func isPrepend(old: [ChatTimelineRow], new: [ChatTimelineRow]) -> Bool {
-            guard !old.isEmpty, new.count > old.count else { return false }
-            // Ignore the typing row, which only ever sits at the end.
-            let oldCore = old.filter { $0 != .typing }
-            let newCore = new.filter { $0 != .typing }
+            guard !old.isEmpty else { return false }
+            // Ignore the typing row (only ever at the end) and the history loader (only ever first).
+            let oldCore = old.filter { $0 != .typing && $0 != .historyLoader }
+            let newCore = new.filter { $0 != .typing && $0 != .historyLoader }
+            // The loader appearing or leaving at the top is a top change too.
+            if newCore == oldCore { return old.contains(.historyLoader) != new.contains(.historyLoader) }
             guard newCore.count > oldCore.count else { return false }
             return Array(newCore.suffix(oldCore.count)) == oldCore
                 // A date header for the old first day can move below the new rows; allow it.

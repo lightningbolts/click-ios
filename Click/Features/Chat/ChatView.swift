@@ -374,9 +374,9 @@ public struct ChatView: View {
         Task { await ClickNotificationCoordinator.shared.clearDeliveredForOpenConversation() }
     }
 
-    /// Rows for the timeline: day headers, the "New messages" divider, messages, typing.
+    /// Rows for the timeline: the history loader, day headers, the "New messages" divider, messages, typing.
     private var timelineRows: [ChatTimelineRow] {
-        var rows: [ChatTimelineRow] = []
+        var rows: [ChatTimelineRow] = model.isLoadingOlder && model.hasMoreHistory ? [.historyLoader] : []
         rows.reserveCapacity(model.items.count + 8)
         var previousDay: Date?
         for item in model.items {
@@ -416,6 +416,8 @@ public struct ChatView: View {
                     AnyView(UnreadDivider())
                 case .typing:
                     AnyView(typingIndicator)
+                case .historyLoader:
+                    AnyView(ClickLoadingView(size: 34, fillsSpace: false).frame(maxWidth: .infinity))
                 case .message(let stableID):
                     if let index = indexByStableID[stableID], items.indices.contains(index) {
                         AnyView(VStack(spacing: 0) {
@@ -435,12 +437,6 @@ public struct ChatView: View {
             }
         )
         .ignoresSafeArea(.container, edges: .top)
-        .overlay(alignment: .top) {
-            // Only when the reader has genuinely reached the start while a page is loading.
-            if model.isLoadingOlder, model.items.count < 8 {
-                ClickLoadingView(size: 24, fillsSpace: false).padding(.top, 4)
-            }
-        }
         .dropDestination(for: Data.self) { payloads, _ in
             Task {
                 for data in payloads.prefix(ConversationModel.maxStaged) {

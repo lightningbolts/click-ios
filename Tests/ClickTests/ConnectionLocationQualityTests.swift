@@ -32,6 +32,29 @@ struct ConnectionLocationQualityTests {
         )
     }
 
+    // MARK: Fusion
+
+    private func fix(_ accuracy: Double, at offset: TimeInterval, north meters: Double) -> LocationObservation {
+        LocationObservation(
+            latitude: 47.6101 + meters / 111_320, longitude: -122.3421,
+            horizontalAccuracyMeters: accuracy, verticalAccuracyMeters: nil, altitudeMeters: nil, ellipsoidalAltitudeMeters: nil,
+            observedAt: t0.addingTimeInterval(offset), floorLevel: nil, isFullAccuracy: true,
+            isSimulatedBySoftware: nil, isProducedByAccessory: nil
+        )
+    }
+
+    @Test("Consistent fixes average toward the tighter ones; outliers and lone fixes don't fuse")
+    func fusion() throws {
+        let fixes = [fix(5, at: -0.2, north: 0), fix(5, at: -0.6, north: 4), fix(20, at: -1, north: 300)]
+        let fused = try #require(Quality.fused(fixes, around: t0, until: t0))
+        #expect(fused.fixCount == 2)
+        let northMeters = (fused.latitude - 47.6101) * 111_320
+        #expect(northMeters > 1 && northMeters < 3)
+        // Never claims much better than the best single fix (errors are correlated).
+        #expect(fused.radiusMeters >= Quality.effectiveRadius(fixes[0], moment: t0) / 2)
+        #expect(Quality.fused([fix(5, at: -0.2, north: 0)], around: t0, until: t0) == nil)
+    }
+
     // MARK: Selection
 
     @Test("A slightly worse fix at the moment beats a better one seconds earlier")

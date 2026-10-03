@@ -51,7 +51,7 @@ struct HistoryView: View {
                             Button("Couldn't load more. Retry") { Task { await env.selfData.loadMoreHistory(filter) } }
                                 .font(ClickTypography.supporting)
                         } else {
-                            ProgressView()
+                            ClickLoadingView(size: 28, fillsSpace: false)
                         }
                     }
                     .frame(maxWidth: .infinity)

@@ -6,7 +6,8 @@ import Foundation
 
 public enum PlaceCategory: String, Codable, CaseIterable, Sendable {
     case cafe, bar, nightlife, musicVenue = "music_venue", restaurant, gym, coworking,
-         studySpace = "study_space", entertainment, bookstore, campusSpace = "campus_space", other
+         studySpace = "study_space", entertainment, bookstore, campusSpace = "campus_space",
+         eventSpace = "event_space", office, other
 
     public init(raw: String?) {
         self = raw.flatMap(PlaceCategory.init(rawValue:)) ?? .other
@@ -26,6 +27,8 @@ public enum PlaceCategory: String, Codable, CaseIterable, Sendable {
         case .entertainment: "Entertainment"
         case .bookstore: "Bookstore"
         case .campusSpace: "Campus space"
+        case .eventSpace: "Event space"
+        case .office: "Company office"
         case .other: "Place"
         }
     }
@@ -44,6 +47,8 @@ public enum PlaceCategory: String, Codable, CaseIterable, Sendable {
         case .entertainment: "gamecontroller.fill"
         case .bookstore: "book.fill"
         case .campusSpace: "building.columns.fill"
+        case .eventSpace: "party.popper.fill"
+        case .office: "building.2.fill"
         case .other: "mappin.circle.fill"
         }
     }

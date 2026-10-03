@@ -13,6 +13,8 @@ final class BeaconExtrasCache {
     private var versions: [String: Int] = [:]
     /// Bumped on sign-out; loads from an earlier session never publish.
     private var generation = 0
+    /// When each value last arrived, so a screen can skip a refresh that would change nothing.
+    private var storedAt: [String: Date] = [:]
 
     static func listening(_ beaconID: String) -> String { "listening:\(beaconID)" }
     static func reactions(_ target: ReactionTarget, _ id: String) -> String { "reactions:\(target.rawValue):\(id)" }
@@ -25,6 +27,18 @@ final class BeaconExtrasCache {
     func store(_ value: any Sendable, for key: String) {
         invalidate(key)
         values[key] = value
+        storedAt[key] = .now
+    }
+
+    /// Records a value that arrived inline with something else (reactions with the drops strip).
+    func seed(_ value: any Sendable, for key: String) {
+        values[key] = value
+        storedAt[key] = .now
+    }
+
+    /// Whether the value for `key` arrived within the last `seconds`.
+    func isFresh(_ key: String, within seconds: TimeInterval) -> Bool {
+        storedAt[key].map { Date().timeIntervalSince($0) < seconds } ?? false
     }
 
     /// After a write whose result isn't a full value: the next load starts a fresh request.
@@ -49,6 +63,7 @@ final class BeaconExtrasCache {
         if inFlight[key]?.task == task { inFlight[key] = nil }
         guard session == generation, versions[key, default: 0] == version, let typed = value as? T else { throw CancellationError() }
         values[key] = value
+        storedAt[key] = .now
         return typed
     }
 
@@ -77,5 +92,6 @@ final class BeaconExtrasCache {
         inFlight.removeAll()
         values.removeAll()
         versions.removeAll()
+        storedAt.removeAll()
     }
 }

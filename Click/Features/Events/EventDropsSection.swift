@@ -154,26 +154,9 @@ struct EventDropsSection: View {
     }
 
     private func uploadTile(_ upload: PendingUpload) -> some View {
-        ZStack {
-            ClickColors.fillSubtle
-            if upload.failed {
-                Button {
-                    Task { await retry(upload) }
-                } label: {
-                    VStack(spacing: 4) {
-                        Image(systemName: "arrow.clockwise")
-                        Text("Retry").font(ClickTypography.caption)
-                    }
-                    .foregroundStyle(ClickColors.textSecondary)
-                }
-                .buttonStyle(.plain)
-                .accessibilityLabel("Upload failed. Retry.")
-            } else {
-                ProgressView()
-            }
+        UploadingDropTile(jpeg: upload.jpeg, failed: upload.failed, size: CGSize(width: 72, height: 96), cornerRadius: 12) {
+            Task { await retry(upload) }
         }
-        .frame(width: 72, height: 96)
-        .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
     }
 
     // MARK: - Loading & writes
@@ -237,25 +220,64 @@ struct EventDropsSection: View {
     }
 }
 
-/// A drop's server-pixelated preview (never the original), drawn with hard pixel edges.
+/// A drop's server-pixelated preview (never the original), drawn with hard pixel edges. Previews
+/// are immutable, so one seen before paints on the first frame (cached by object, not by token).
 struct PixelatedPreview: View {
     let url: URL?
     @State private var image: UIImage?
 
+    private static let pixels: CGFloat = 480
+
     var body: some View {
+        let shown = image ?? url.flatMap { ImagePipeline.shared.cachedImage(for: $0, maxPixelSize: Self.pixels, signed: true) }
         // The fill takes the proposed size; the image fills inside it and never grows the view.
         ClickColors.fillSubtle
             .overlay {
-                if let image {
-                    Image(uiImage: image).resizable().interpolation(.none).scaledToFill()
-                } else if url != nil {
-                    ProgressView()
-                }
+                if let shown { Image(uiImage: shown).resizable().interpolation(.none).scaledToFill() }
             }
+            .shimmering(shown == nil && url != nil)
             .clipped()
             .task(id: url) {
                 guard let url, image == nil else { return }
-                image = await ImagePipeline.shared.image(for: url, maxPixelSize: 480)
+                let loaded = await ImagePipeline.shared.image(for: url, maxPixelSize: Self.pixels, signed: true)
+                withAnimation(ClickMotion.subtleFade) { image = loaded }
             }
+    }
+}
+
+/// A drop still uploading: your own photo, softly shimmering until it lands (never a spinner);
+/// Retry over it if the upload failed.
+struct UploadingDropTile: View {
+    let jpeg: Data
+    let failed: Bool
+    let size: CGSize
+    let cornerRadius: CGFloat
+    let retry: () -> Void
+    @State private var photo: UIImage?
+
+    var body: some View {
+        ClickColors.fillSubtle
+            .overlay { if let photo { Image(uiImage: photo).resizable().scaledToFill().opacity(failed ? 0.45 : 0.8) } }
+            .shimmering(!failed)
+            .overlay {
+                if failed {
+                    Button(action: retry) {
+                        VStack(spacing: 4) {
+                            Image(systemName: "arrow.clockwise")
+                            Text("Retry").font(ClickTypography.caption)
+                        }
+                        .foregroundStyle(.white)
+                        .padding(8)
+                        .glassCircleBackground()
+                        .environment(\.colorScheme, .dark)
+                    }
+                    .buttonStyle(.plain)
+                    .accessibilityLabel("Upload failed. Retry.")
+                }
+            }
+            .frame(width: size.width, height: size.height)
+            .clipShape(RoundedRectangle(cornerRadius: cornerRadius, style: .continuous))
+            .accessibilityLabel(failed ? "Upload failed" : "Uploading your drop")
+            .task { photo = ClickDropService.thumbnail(jpeg, maxPixels: max(size.width, size.height) * 3) }
     }
 }

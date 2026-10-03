@@ -7,8 +7,8 @@ public enum ReactionTarget: String, Sendable {
     case sharedDrop = "shared_drop"
 }
 
-public struct ReactionsState: Sendable, Equatable {
-    public struct Reaction: Sendable, Equatable, Identifiable {
+public struct ReactionsState: Sendable, Equatable, Codable {
+    public struct Reaction: Sendable, Equatable, Identifiable, Codable {
         public let id: String
         public let name: String
         public let avatarURL: String?

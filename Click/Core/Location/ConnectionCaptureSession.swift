@@ -21,6 +21,8 @@ final class ConnectionCaptureSession: NSObject, CLLocationManagerDelegate {
         var startedAt: Date?
         var finishedAt = Date.now
         var location: LocationObservation?
+        /// Every useful fix in the selection window (for the fused estimate and the trail).
+        var locationFixes: [LocationObservation] = []
         var locationUpdates = 0
         var altitude: AltitudeObservation?
         var absoluteAltitudeSamples: [AbsoluteAltitudeSample] = []
@@ -133,6 +135,7 @@ final class ConnectionCaptureSession: NSObject, CLLocationManagerDelegate {
             startedAt: startedAt,
             finishedAt: end,
             location: fix,
+            locationFixes: fixes.filter { Quality.isUseful($0) && $0.observedAt >= earliest && $0.observedAt <= end },
             locationUpdates: updatesSeen,
             altitude: AltitudeStabilizer.stabilized(
                 absolute: absoluteSamples, relative: relativeSamples, around: moment, until: end
