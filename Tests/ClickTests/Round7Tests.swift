@@ -70,6 +70,11 @@ struct TimelineTransportTests {
         #expect(ChatTimelineView.Coordinator.isPrepend(old: old, new: [.message("3"), .message("4"), .message("5"), .message("6")]))
         #expect(!ChatTimelineView.Coordinator.isPrepend(old: old, new: [.message("5"), .message("6"), .message("7")]))
         #expect(ChatTimelineView.Coordinator.isPrepend(old: old + [.typing], new: [.message("4"), .message("5"), .message("6"), .typing]))
+        // The history loader coming, being replaced by the page, or leaving keeps the reader in place.
+        #expect(ChatTimelineView.Coordinator.isPrepend(old: old, new: [.historyLoader] + old))
+        #expect(ChatTimelineView.Coordinator.isPrepend(old: [.historyLoader] + old, new: [.message("4")] + old))
+        #expect(ChatTimelineView.Coordinator.isPrepend(old: [.historyLoader] + old, new: old))
+        #expect(!ChatTimelineView.Coordinator.isPrepend(old: old, new: old))
     }
 
     @Test("Only rows arriving at the end (messages, typing) animate in")

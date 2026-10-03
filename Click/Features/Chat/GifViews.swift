@@ -40,7 +40,7 @@ struct GifMessageView: View {
                 }
                 .buttonStyle(.plain)
             } else {
-                ProgressView()
+                ShimmerPlaceholder()
             }
         }
         .frame(width: size.width, height: size.height)
@@ -116,7 +116,7 @@ struct GifPickerSheet: View {
                     .padding(.horizontal, 12)
                 }
                 if isLoading {
-                    ProgressView().padding(.vertical, 16)
+                    ClickLoadingView(size: 28, fillsSpace: false)
                 }
             }
             .searchable(text: $query, placement: .navigationBarDrawer(displayMode: .always), prompt: "Search KLIPY")

@@ -85,9 +85,13 @@ public protocol PlaceRepositoryProtocol: Sendable {
     func submitPulse(placeID: String, energy: Int?, talkable: Int?, categoryAnswer: Int?, wouldReturn: Int?) async throws -> (pulseID: String, editableUntil: Date?, summary: PulseSummary)
     func updatePulse(placeID: String, pulseID: String, talkable: Int?, categoryAnswer: Int?) async throws -> PulseSummary
     func myPlaces() async throws -> [MyPlaceVisit]
+    /// The last detail loaded this session for this ID or slug, so a Place reopens filled.
+    func cachedDetail(idOrSlug: String) async -> PlaceDetail?
 }
 
 extension PlaceRepositoryProtocol {
+    public func cachedDetail(idOrSlug: String) async -> PlaceDetail? { nil }
+
     public func detail(idOrSlug: String) async throws -> PlaceDetail {
         try await detail(idOrSlug: idOrSlug, source: nil)
     }
@@ -97,6 +101,8 @@ extension PlaceRepositoryProtocol {
 /// per action by the caller; nothing here reads location or runs in the background.
 public actor PlaceRepository: PlaceRepositoryProtocol {
     private let api: ClickAPIClient
+    /// Details seen this session, by the key they were opened with, their ID and their slug.
+    private var details: [String: PlaceDetail] = [:]
 
     public init(api: ClickAPIClient) {
         self.api = api
@@ -133,8 +139,14 @@ public actor PlaceRepository: PlaceRepositoryProtocol {
         let query = source.map { [URLQueryItem(name: "source", value: $0)] } ?? []
         let root = try await object(APIRequest(path: path(idOrSlug), queryItems: query))
         guard let detail = PlaceDetail.decode(JSONFields.dictionary(root["place"])) else { throw PlaceError.network }
+        for key in [idOrSlug, detail.summary.id, detail.summary.slug] { details[key] = detail }
         return detail
     }
+
+    public func cachedDetail(idOrSlug: String) async -> PlaceDetail? { details[idOrSlug] }
+
+    /// On sign-out: nothing from one account paints for the next.
+    public func clearCache() { details.removeAll() }
 
     public func checkIn(
         placeID: String,

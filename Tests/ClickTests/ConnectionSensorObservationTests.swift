@@ -218,6 +218,13 @@ struct ConnectionSensorObservationTests {
             altitudeMeters: nil, ellipsoidalAltitudeMeters: nil, observedAt: t0.addingTimeInterval(-0.22),
             floorLevel: 3, isFullAccuracy: true, isSimulatedBySoftware: false, isProducedByAccessory: false
         ) : nil
+        snapshot.locationFixes = snapshot.location.map { best in
+            [best, LocationObservation(
+                latitude: 47.61002, longitude: -122.34001, horizontalAccuracyMeters: 6, verticalAccuracyMeters: nil,
+                altitudeMeters: nil, ellipsoidalAltitudeMeters: nil, observedAt: t0.addingTimeInterval(-1.2),
+                floorLevel: nil, isFullAccuracy: true, isSimulatedBySoftware: nil, isProducedByAccessory: nil
+            )]
+        } ?? []
         snapshot.locationUpdates = 7
         snapshot.motionSamples = (0..<50).map { motion(at: moment - 1 + Double($0) / 25) }
         return snapshot
@@ -227,7 +234,10 @@ struct ConnectionSensorObservationTests {
     func payload() throws {
         let observation = ConnectionSensorObservation(method: "qr", snapshot: snapshot(location: true), includeLocation: true, device: nil)
         let payload = try #require(observation.payload)
-        #expect(payload["schema_version"] as? Int == 2)
+        #expect(payload["schema_version"] as? Int == 3)
+        let clock = try #require(payload["clock"] as? [String: Any])
+        #expect(clock["sent_at"] is String)
+        #expect(clock["time_zone_offset_s"] is Int)
         #expect(payload["connection_moment"] is String)
         #expect(payload["capture_duration_ms"] as? Int == 3200)
         let location = try #require(payload["location"] as? [String: Any])
@@ -235,6 +245,11 @@ struct ConnectionSensorObservationTests {
         #expect(location["age_at_moment_ms"] as? Int == 220)
         #expect(location["floor"] as? Int == 3)
         #expect(location["updates_seen"] as? Int == 7)
+        let fused = try #require(location["fused"] as? [String: Any])
+        #expect(fused["fix_count"] as? Int == 2)
+        #expect((fused["radius_m"] as? Double).map { $0 >= 2.4 } == true)
+        let trail = try #require(location["trail"] as? [[String: Any]])
+        #expect(trail.map { $0["t_ms"] as? Int } == [-1200, -220])
         let motion = try #require(payload["motion"] as? [String: Any])
         let first = try #require((motion["samples"] as? [[String: Any]])?.first)
         #expect(first["t_ms"] is Int)

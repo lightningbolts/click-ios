@@ -299,7 +299,7 @@ struct MyClickCodeView: View {
                     .frame(width: 236, height: 236)
                     .accessibilityLabel("Your Click QR code")
             } else {
-                ProgressView().tint(.black)
+                ShimmerPlaceholder(cornerRadius: 12, width: 236, height: 236)
             }
         }
     }
@@ -434,7 +434,7 @@ struct ScanClickCodeView: View {
             } else if permission == .denied || permission == .restricted {
                 scannerDenied
             } else {
-                ProgressView().tint(.white)
+                ClickLoadingView(size: 34, fillsSpace: false)
             }
 
             VStack {
@@ -865,7 +865,7 @@ struct ConnectionInvocationView: View {
                     .font(.system(size: 44))
                     .foregroundStyle(ClickColors.online)
             } else {
-                ProgressView().tint(ClickColors.accentForeground)
+                ClickLoadingView(size: 44, fillsSpace: false, appearDelay: .zero)
             }
 
             Text(status)

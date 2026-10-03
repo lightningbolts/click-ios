@@ -249,6 +249,12 @@ public struct MessageBubbleView: View {
                     .overlay { UploadStateOverlay(message: message, onRetry: onRetrySend, onDiscard: onDiscardFailed) }
                 mediaMetaRow
             }
+        } else if let dropReply = message.dropReply {
+            VStack(alignment: message.isOutgoing ? .trailing : .leading, spacing: 4) {
+                DropReplyHeader(reply: dropReply, isOutgoing: message.isOutgoing,
+                                emoji: dropReply.isReaction ? message.content : nil)
+                if dropReply.isReaction { mediaMetaRow } else { bubbleContainer }
+            }
         } else if let media = message.media {
             VStack(alignment: message.isOutgoing ? .trailing : .leading, spacing: 4) {
                 if message.isForwarded {

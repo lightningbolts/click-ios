@@ -96,13 +96,15 @@ public struct ChatMessageItem: Identifiable, Hashable, Sendable, Codable {
     public var plan: HangoutPlan?
     /// A KLIPY GIF (`metadata.gif`); `content` is its media URL.
     public var gif: ChatGif?
+    /// A reply or reaction to a shared Click Drop (`metadata.drop_reply`).
+    public var dropReply: ChatDropReply?
 
     /// Persisted fields (LocalStore). The local media path and upload progress are
     /// device/session-specific and never stored.
     private enum CodingKeys: String, CodingKey {
         case id, chatID, senderID, senderName, senderAvatarURL, content, rawContent, messageType
         case createdAt, deliveryStatus, isOutgoing, replyToID, replyToSnippet, replyToSenderName
-        case reactions, isEdited, media, beacon, clientMessageID, isDeleted, forwarded, plan, gif
+        case reactions, isEdited, media, beacon, clientMessageID, isDeleted, forwarded, plan, gif, dropReply
     }
 
     /// The placeholder that replaces a deleted message in place.
@@ -144,8 +146,10 @@ public struct ChatMessageItem: Identifiable, Hashable, Sendable, Codable {
         clientMessageID: String? = nil,
         forwarded: Bool? = nil,
         plan: HangoutPlan? = nil,
-        gif: ChatGif? = nil
+        gif: ChatGif? = nil,
+        dropReply: ChatDropReply? = nil
     ) {
+        self.dropReply = dropReply
         self.forwarded = forwarded
         self.plan = plan
         self.gif = gif

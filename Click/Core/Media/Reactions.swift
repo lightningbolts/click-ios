@@ -7,15 +7,15 @@ public enum ReactionTarget: String, Sendable {
     case sharedDrop = "shared_drop"
 }
 
-public struct ReactionsState: Sendable, Equatable {
-    public struct Reaction: Sendable, Equatable, Identifiable {
+public struct ReactionsState: Sendable, Equatable, Codable {
+    public struct Reaction: Sendable, Equatable, Identifiable, Codable {
         public let id: String
         public let name: String
         public let avatarURL: String?
         public let emoji: String
     }
 
-    /// The fixed palette (matches the server's allowlist).
+    /// The quick palette; "+" picks any other single emoji (the server accepts any).
     public static let palette = ["❤️", "🔥", "😂", "😍", "👏", "😮"]
 
     public var mine: String?

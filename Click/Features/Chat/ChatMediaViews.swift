@@ -382,8 +382,7 @@ private struct ChatImageView: View {
                 }
                 .buttonStyle(.plain)
             } else {
-                ProgressView()
-                    .frame(width: placeholderSize.width, height: placeholderSize.height)
+                ShimmerPlaceholder(width: placeholderSize.width, height: placeholderSize.height)
             }
         }
         .background(ClickColors.fillSubtle)
@@ -627,7 +626,7 @@ struct MediaViewer: View {
                         }
                         .accessibilityLabel("Photo")
                 } else {
-                    ProgressView().tint(.white)
+                    ShimmerPlaceholder()
                 }
             }
             .toolbar {
@@ -897,7 +896,7 @@ struct BeaconSharePicker: View {
                     ContentUnavailableView("Nothing to share yet", systemImage: "mappin.slash",
                                            description: Text("Events and beacons near you or saved by you show up here."))
                 } else if !loaded {
-                    ProgressView()
+                    ClickLoadingView(size: 34, fillsSpace: false)
                 }
             }
             .navigationTitle("Share Event or Beacon")

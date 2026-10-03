@@ -7,6 +7,7 @@ enum SearchScope: String, CaseIterable, Identifiable {
     case messages = "Messages"
     case groups = "Groups"
     case events = "Events"
+    case places = "Places"
     case hubs = "Hubs"
 
     var id: String { rawValue }
@@ -26,6 +27,8 @@ enum SearchResult: Identifiable, Equatable {
     case sharedContextPerson(RemotePerson)
     case remoteEvent(RemoteEvent)
     case joinedHub(JoinedHub)
+    /// A Click Place near you (from the map's cached discovery).
+    case place(PlaceSummary)
 
     var id: String {
         switch self {
@@ -39,6 +42,7 @@ enum SearchResult: Identifiable, Equatable {
         case .sharedContextPerson(let person): "user.\(person.userID)"
         case .remoteEvent(let event): "beacon.\(event.beaconID)"
         case .joinedHub(let hub): "hub.\(hub.hubID)"
+        case .place(let place): "place.\(place.id)"
         }
     }
 
@@ -48,6 +52,7 @@ enum SearchResult: Identifiable, Equatable {
         case .group: .groups
         case .beacon, .remoteEvent, .ownIntent: .events
         case .hub, .joinedHub: .hubs
+        case .place: .places
         case .message, .storedMessage: .messages
         }
     }
@@ -114,7 +119,8 @@ enum SearchIndex {
         groups: [CliqueItem],
         beacons: [MapBeacon],
         hubs: [NearbyHub],
-        intents: [AvailabilityIntentPost]
+        intents: [AvailabilityIntentPost],
+        places: [PlaceSummary] = []
     ) -> [SearchResult] {
         let q = query.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !q.isEmpty else { return [] }
@@ -141,6 +147,7 @@ enum SearchIndex {
             }
         }
         results += beacons.filter { has($0.title) || has($0.locationName) || $0.eventCategories.contains(where: has) }.map(SearchResult.beacon)
+        results += places.filter { has($0.name) || has($0.category.label) || has($0.city) || has($0.addressLine) }.map(SearchResult.place)
         results += hubs.filter { has($0.name) || has($0.category) }.map(SearchResult.hub)
         return results
     }
@@ -162,6 +169,7 @@ struct GlobalSearchView: View {
     @State private var scope: SearchScope = .all
     @State private var beacons: [MapBeacon] = []
     @State private var hubs: [NearbyHub] = []
+    @State private var places: [PlaceSummary] = []
     @State private var intents: [AvailabilityIntentPost] = []
     @State private var stored: [StoredMessageHit] = []
     @State private var remote = ModuleState<RemoteResults>()
@@ -188,7 +196,8 @@ struct GlobalSearchView: View {
             groups: conversations.groups,
             beacons: beacons,
             hubs: hubs,
-            intents: intents
+            intents: intents,
+            places: places
         ) + conversations.hubs
             .filter { hub in clean.count >= 1 && ([hub.name, hub.category ?? ""].contains { $0.localizedCaseInsensitiveContains(clean) }) }
             .filter { hub in !hubs.contains { $0.id == hub.hubID } }
@@ -218,7 +227,7 @@ struct GlobalSearchView: View {
                     Section {
                         ScrollView(.horizontal, showsIndicators: false) {
                             HStack(spacing: 8) {
-                                ForEach(SearchScope.allCases) { item in
+                                ForEach(SearchScope.allCases.filter { $0 != .places || env.features.isEnabled(.clickPlaces) }) { item in
                                     Button(item.rawValue) { scope = item }
                                         .buttonStyle(.bordered)
                                         .tint(scope == item ? ClickColors.accentForeground : ClickColors.textSecondary)
@@ -362,6 +371,13 @@ struct GlobalSearchView: View {
                 subtitle: "Hub · \(hub.category)",
                 avatar: AnyView(EventVisual(seed: hub.id, symbol: "dot.radiowaves.left.and.right").frame(width: 40, height: 40))
             ) { open(.hub(hubID: hub.id)) }
+        case .place(let place):
+            resultRow(
+                title: place.name,
+                subtitle: ["Place", place.category.label, place.city, place.hereNowCount > 0 ? "\(place.hereNowCount) here now" : nil]
+                    .compactMap { $0 }.joined(separator: " · "),
+                avatar: AnyView(EventVisual(seed: place.id, imageURL: place.photoURL?.absoluteString, symbol: place.category.symbol).frame(width: 40, height: 40))
+            ) { open(.place(idOrSlug: place.id, anchorToken: nil)) }
         case .joinedHub(let hub):
             resultRow(
                 title: hub.name,
@@ -455,6 +471,7 @@ struct GlobalSearchView: View {
         if let discovery = await env.beacons.cachedDiscovery(userID: userID) {
             beacons = discovery.beacons.filter { $0.isActive() }
             hubs = discovery.hubs
+            if env.features.isEnabled(.clickPlaces) { places = discovery.places }
         }
         intents = await env.me.cachedIntents(userID: userID) ?? []
     }

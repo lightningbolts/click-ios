@@ -1053,7 +1053,7 @@ struct ProfileMediaThumbnail: View {
                 } else if failed {
                     Image(systemName: "photo.badge.exclamationmark").foregroundStyle(ClickColors.textTertiary)
                 } else {
-                    ProgressView()
+                    ShimmerPlaceholder()
                 }
             }
             .background(ClickColors.fillSubtle)

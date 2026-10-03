@@ -6,6 +6,7 @@ public enum PendingSendPayload: Sendable {
     case beacon(MapBeacon)
     case plan(HangoutPlan)
     case gif(ChatGif)
+    case dropReply(ChatDropReply)
 }
 
 /// Receives pending-send changes for the conversation currently on screen.

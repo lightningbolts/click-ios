@@ -248,6 +248,7 @@ public final class AppEnvironment {
         await identities.removeAll()
         timelineCache.clear()
         beaconExtras.removeAll()
+        await places.clearCache()
         sharedDropsStore = SharedDropsStore()
         pendingSends.removeAll()
         await beacons.clearCache()

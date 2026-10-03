@@ -55,7 +55,7 @@ struct ClickDropImageView: View {
             } else if let pixelated {
                 lockedImage(pixelated, state: state)
             } else {
-                ProgressView().frame(width: placeholderSize.width, height: placeholderSize.height)
+                ShimmerPlaceholder(width: placeholderSize.width, height: placeholderSize.height)
             }
         }
         .background(ClickColors.fillSubtle)
@@ -78,6 +78,7 @@ struct ClickDropImageView: View {
                 .interpolation(.none)
                 .aspectRatio(image.size, contentMode: .fit)
                 .frame(maxWidth: 240, maxHeight: 320)
+                .shimmering(state == .developed || controls.isDeveloping())
                 .overlay { stateLabel(state) }
         }
         .buttonStyle(.plain)
@@ -100,14 +101,11 @@ struct ClickDropImageView: View {
                 Image(systemName: "hourglass")
                 Text("Click Drop · develops \(revealAt.formatted(.relative(presentation: .named)))")
             case .ready:
-                if controls.isDeveloping() {
-                    ProgressView().tint(.white).controlSize(.small)
-                } else {
-                    Image(systemName: "sparkles")
-                }
-                Text("Tap to develop")
+                Image(systemName: "sparkles")
+                Text(controls.isDeveloping() ? "Developing…" : "Tap to develop")
             case .developed:
-                ProgressView().tint(.white).controlSize(.small)
+                Image(systemName: "sparkles")
+                Text("Developing…")
             }
         }
         .font(ClickTypography.metadataEmphasized)

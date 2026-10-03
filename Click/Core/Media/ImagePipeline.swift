@@ -31,14 +31,19 @@ public actor ImagePipeline {
     }
 
     /// Synchronous memory-cache lookup so views can render a cached image on their first frame.
-    public nonisolated func cachedImage(for url: URL, maxPixelSize: CGFloat) -> UIImage? {
-        memory.image(forKey: Self.key(url, maxPixelSize))
+    public nonisolated func cachedImage(for url: URL, maxPixelSize: CGFloat, signed: Bool = false) -> UIImage? {
+        memory.image(forKey: Self.key(signed ? Self.stable(url) : url, maxPixelSize))
     }
 
     /// Returns the image downsampled so its longest side is at most `maxPixelSize` pixels,
     /// or `nil` if it could not be loaded or decoded.
-    public func image(for url: URL, maxPixelSize: CGFloat) async -> UIImage? {
-        let key = Self.key(url, maxPixelSize)
+    ///
+    /// `signed`: a short-lived signed URL for an immutable object (a drop's pixelated preview).
+    /// Its token changes on every signing, so it's cached under the URL without its query:
+    /// a preview seen once paints from memory or disk ever after, with no re-download.
+    public func image(for url: URL, maxPixelSize: CGFloat, signed: Bool = false) async -> UIImage? {
+        let identity = signed ? Self.stable(url) : url
+        let key = Self.key(identity, maxPixelSize)
         if let cached = memory.image(forKey: key) { return cached }
         if let pending = inFlight[key] { return await pending.value }
 
@@ -46,16 +51,19 @@ public actor ImagePipeline {
         let task = Task.detached(priority: .userInitiated) { () -> UIImage? in
             // Disk first, even when stale: a picture seen before appears at once (no network
             // wait after a cold start); a background revalidation refreshes it for next time.
-            let request = URLRequest(url: url)
+            let request = URLRequest(url: identity)
             if let cached = session.configuration.urlCache?.cachedResponse(for: request),
                let image = Self.downsample(cached.data, maxPixelSize: maxPixelSize) {
-                Task.detached(priority: .utility) { _ = try? await session.data(for: request) }
+                if !signed { Task.detached(priority: .utility) { _ = try? await session.data(for: request) } }
                 return image
             }
             guard
                 let (data, response) = try? await session.data(from: url),
                 (response as? HTTPURLResponse).map({ (200..<300).contains($0.statusCode) }) ?? true
             else { return nil }
+            if signed {
+                session.configuration.urlCache?.storeCachedResponse(CachedURLResponse(response: response, data: data), for: request)
+            }
             return Self.downsample(data, maxPixelSize: maxPixelSize)
         }
         inFlight[key] = task
@@ -75,6 +83,13 @@ public actor ImagePipeline {
                 for url in pending { group.addTask { _ = await self.image(for: url, maxPixelSize: maxPixelSize) } }
             }
         }
+    }
+
+    /// A signed URL's object identity: the URL without its token.
+    private nonisolated static func stable(_ url: URL) -> URL {
+        guard var parts = URLComponents(url: url, resolvingAgainstBaseURL: false) else { return url }
+        parts.query = nil
+        return parts.url ?? url
     }
 
     private nonisolated static func key(_ url: URL, _ maxPixelSize: CGFloat) -> String {

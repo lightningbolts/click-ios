@@ -47,6 +47,14 @@ extension ChatRepositoryProtocol {
         sent.plan = plan
         return sent
     }
+    public func sendDropReply(conversation: ConversationIdentity, currentUserID: String, currentUserName: String,
+                              content: String, dropReply: ChatDropReply, clientMessageID: String) async throws -> ChatMessageItem {
+        var sent = try await sendMessage(conversation: conversation, currentUserID: currentUserID, currentUserName: currentUserName,
+                                         content: content, replyToID: nil, replyToSnippet: nil, replyToSenderName: nil,
+                                         clientMessageID: clientMessageID)
+        sent.dropReply = dropReply
+        return sent
+    }
 
     public func fetchMessages(conversation: ConversationIdentity, currentUserID: String, since: Int64, limit: Int) async throws -> [ChatMessageItem] {
         try await fetchMessages(conversation: conversation, currentUserID: currentUserID, cursor: nil, limit: limit)
@@ -117,6 +125,9 @@ public protocol ChatRepositoryProtocol: Sendable {
     /// A proposed hangout (text summary + `metadata.plan`), direct and group chats.
     func sendPlan(conversation: ConversationIdentity, currentUserID: String, currentUserName: String,
                   plan: HangoutPlan, clientMessageID: String) async throws -> ChatMessageItem
+    /// A reply or reaction to a shared Click Drop: the (encrypted) text plus `metadata.drop_reply`.
+    func sendDropReply(conversation: ConversationIdentity, currentUserID: String, currentUserName: String,
+                       content: String, dropReply: ChatDropReply, clientMessageID: String) async throws -> ChatMessageItem
     /// A KLIPY GIF: its media URL as the (encrypted) text plus `metadata.gif`. Direct and group chats.
     func sendGif(conversation: ConversationIdentity, currentUserID: String, currentUserName: String,
                  gif: ChatGif, replyToID: String?, clientMessageID: String) async throws -> ChatMessageItem
@@ -374,12 +385,18 @@ public actor ChatRepository: ChatRepositoryProtocol {
 
     // MARK: - Device registration / E2EE v2 session lifecycle
 
+    /// Remembers that this device is registered (see the versioning note in `registerDevice`).
+    static func registeredKey(_ deviceID: String) -> String { "click.v2.registered.2.\(deviceID)" }
+
     public func registerDevice() async throws {
         guard !deviceRegistered else { return }
         let identity = try vault.loadOrCreate()
         // Registered on an earlier launch: skip the round trip. Discovery re-registers if the
-        // server doesn't list this device (see `resolveV2Session`).
-        let registeredKey = "click.v2.registered.\(identity.info.deviceID)"
+        // server doesn't list this device (see `resolveV2Session`). Versioned: devices registered
+        // before email-approved history (2026-09-29) post once more, which is what makes the server
+        // email the approval link and lets the account's other devices share past chat keys
+        // (otherwise such a device could never read older messages).
+        let registeredKey = Self.registeredKey(identity.info.deviceID)
         if UserDefaults.standard.bool(forKey: registeredKey) {
             deviceRegistered = true
             return
@@ -585,7 +602,7 @@ public actor ChatRepository: ChatRepositoryProtocol {
             // (a remembered registration may be for another account) and refresh once.
             guard !didRetryDiscovery else { throw ChatRepositoryError.currentDeviceNotRegistered }
             deviceRegistered = false
-            UserDefaults.standard.removeObject(forKey: "click.v2.registered.\(identity.info.deviceID)")
+            UserDefaults.standard.removeObject(forKey: Self.registeredKey(identity.info.deviceID))
             return try await resolveV2Session(
                 scope: scope,
                 participantUserIDs: participantUserIDs,
@@ -958,6 +975,15 @@ public actor ChatRepository: ChatRepositoryProtocol {
                                       content: gif.content, replyToID: replyToID, replyToSnippet: nil, replyToSenderName: nil,
                                       clientMessageID: clientMessageID, extraMetadata: [ChatGif.metadataKey: gif.wire])
         sent.gif = gif
+        return sent
+    }
+
+    public func sendDropReply(conversation: ConversationIdentity, currentUserID: String, currentUserName: String,
+                              content: String, dropReply: ChatDropReply, clientMessageID: String) async throws -> ChatMessageItem {
+        var sent = try await sendText(conversation: conversation, currentUserID: currentUserID, currentUserName: currentUserName,
+                                      content: content, replyToID: nil, replyToSnippet: nil, replyToSenderName: nil,
+                                      clientMessageID: clientMessageID, extraMetadata: [ChatDropReply.metadataKey: dropReply.wire])
+        sent.dropReply = dropReply
         return sent
     }
 
@@ -1461,7 +1487,8 @@ public actor ChatRepository: ChatRepositoryProtocol {
             clientMessageID: string(payload.metadata?["client_message_id"]),
             forwarded: payload.metadata?["forwarded"] as? Bool,
             plan: HangoutPlan.parse(metadata: payload.metadata),
-            gif: ChatGif.parse(messageType: payload.messageType, metadata: payload.metadata, content: decrypted)
+            gif: ChatGif.parse(messageType: payload.messageType, metadata: payload.metadata, content: decrypted),
+            dropReply: ChatDropReply.parse(messageType: payload.messageType, metadata: payload.metadata)
         )
     }
 
@@ -2468,7 +2495,8 @@ public actor ChatRepository: ChatRepositoryProtocol {
             clientMessageID: raw.metadata?.clientMessageID,
             forwarded: metadata?["forwarded"] as? Bool,
             plan: HangoutPlan.parse(metadata: metadata),
-            gif: ChatGif.parse(messageType: raw.messageType ?? "text", metadata: metadata, content: content)
+            gif: ChatGif.parse(messageType: raw.messageType ?? "text", metadata: metadata, content: content),
+            dropReply: ChatDropReply.parse(messageType: raw.messageType ?? "text", metadata: metadata)
         )
     }
 

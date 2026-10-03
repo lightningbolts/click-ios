@@ -2,7 +2,7 @@ import Foundation
 import UIKit
 
 /// A shared Click Drop (spec F3): one photo to all your connections or only core ones, developing
-/// 24 hours after it's posted. Not end-to-end encrypted like chat drops — only the people it's
+/// an hour after it's posted, like a story. Not end-to-end encrypted like chat drops — only the people it's
 /// shared with can see it, and the original stays on the server until it develops.
 public struct SharedDrop: Identifiable, Sendable, Equatable, Codable {
     public enum Audience: String, Sendable, CaseIterable, Codable { case all, core }
@@ -22,6 +22,11 @@ public struct SharedDrop: Identifiable, Sendable, Equatable, Codable {
     public let previewURL: URL?
     /// Locket-style caption; the server sends it to others only once the drop develops.
     public var caption: String? = nil
+    /// Signed URL for the original once this viewer has developed it (fresh from the server only;
+    /// it expires, so a copy read back from disk is dropped).
+    public var originalURL: URL? = nil
+    /// Reactions, inline once this viewer has developed it, so the viewer opens filled.
+    public var reactions: ReactionsState? = nil
 
     /// Captions are capped at this many characters (as people count them).
     public static let captionLimit = 100
@@ -45,7 +50,9 @@ public struct SharedDrop: Identifiable, Sendable, Equatable, Codable {
             revealAt: JSONFields.date(row["reveal_at"]),
             developedAt: JSONFields.date(row["developed_at"]),
             previewURL: JSONFields.string(row["preview_url"]).flatMap(URL.init(string:)),
-            caption: JSONFields.string(row["caption"]).flatMap { $0.isEmpty ? nil : $0 }
+            caption: JSONFields.string(row["caption"]).flatMap { $0.isEmpty ? nil : $0 },
+            originalURL: JSONFields.string(row["original_url"]).flatMap(URL.init(string:)),
+            reactions: JSONFields.dictionary(row["reactions"]).map(ReactionsState.parse)
         )
     }
 }
@@ -61,22 +68,28 @@ public enum SharedDropPostError: Error, Equatable, LocalizedError {
     }
 }
 
-/// Developed shared-drop photos kept on disk per user, so the Home strip paints them at once on the
-/// next launch instead of developing them again. Pruned to the drops still in the strip.
+/// Developed shared-drop originals kept on disk per user (the bytes as downloaded), so the strip
+/// and the viewer paint at once on every later open and launch instead of downloading again.
+/// Pruned to the drops still in the strip.
 enum SharedDropPhotoCache {
     private static func directory(_ userID: String) -> URL {
         FileManager.default.urls(for: .cachesDirectory, in: .userDomainMask)[0]
-            .appendingPathComponent("shared-drops/\(userID)", isDirectory: true)
+            .appendingPathComponent("shared-drops-v2/\(userID)", isDirectory: true)
     }
 
-    static func load(_ dropID: String, userID: String) -> UIImage? {
-        UIImage(contentsOfFile: directory(userID).appendingPathComponent("\(dropID).jpg").path)
+    private static func file(_ dropID: String, userID: String) -> URL {
+        directory(userID).appendingPathComponent("\(dropID).jpg")
     }
 
-    static func save(_ image: UIImage, dropID: String, userID: String) {
-        let dir = directory(userID)
-        try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
-        try? image.jpegData(compressionQuality: 0.85)?.write(to: dir.appendingPathComponent("\(dropID).jpg"), options: .atomic)
+    /// Decoded at most `maxPixels` on its longest side (720 for tiles, more for the viewer).
+    static func load(_ dropID: String, userID: String, maxPixels: CGFloat) -> UIImage? {
+        guard let data = try? Data(contentsOf: file(dropID, userID: userID)) else { return nil }
+        return ClickDropService.thumbnail(data, maxPixels: maxPixels)
+    }
+
+    static func save(_ data: Data, dropID: String, userID: String) {
+        try? FileManager.default.createDirectory(at: directory(userID), withIntermediateDirectories: true)
+        try? data.write(to: file(dropID, userID: userID), options: [.atomic, .completeFileProtectionUntilFirstUserAuthentication])
     }
 
     static func prune(keeping dropIDs: Set<String>, userID: String) {
@@ -85,6 +98,8 @@ enum SharedDropPhotoCache {
         where !dropIDs.contains((file as NSString).deletingPathExtension) {
             try? FileManager.default.removeItem(at: dir.appendingPathComponent(file))
         }
+        // Thumbnails from the first version of this cache.
+        try? FileManager.default.removeItem(at: dir.deletingLastPathComponent().deletingLastPathComponent().appendingPathComponent("shared-drops"))
     }
 }
 

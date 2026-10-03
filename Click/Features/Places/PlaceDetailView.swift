@@ -53,7 +53,7 @@ private struct PlaceDetailContent: View {
                 if let detail = model.detail {
                     content(detail)
                 } else {
-                    ProgressView().frame(maxWidth: .infinity, maxHeight: .infinity)
+                    ClickLoadingView()
                 }
             }
         }

@@ -1,4 +1,5 @@
 import CoreLocation
+import AVFoundation
 import CoreMotion
 import Foundation
 import NearbyInteraction
@@ -30,7 +31,7 @@ enum SensorClock {
 /// Derived product fields (`motion_variance`, `elevation_category`, …) stay separate and never
 /// replace these. Never contains audio, camera frames, Wi-Fi lists or unrelated BLE devices.
 public struct ConnectionSensorObservation: Codable, Equatable, Sendable {
-    static let currentSchemaVersion = 2
+    static let currentSchemaVersion = 3
     /// Stays under the server's 64 KB cap; motion samples are dropped first (summary kept).
     static let maximumPayloadBytes = 56 * 1024
 
@@ -51,6 +52,14 @@ public struct ConnectionSensorObservation: Codable, Equatable, Sendable {
     /// Reserved for Nearby Interaction ranging. Optional; never required to connect.
     var uwb: UWB?
     var device: Device?
+    /// This phone's clock when the observation was sent; the server stamps its own receipt time
+    /// beside it, so two phones' timelines can be aligned despite clock skew.
+    var clock: Clock?
+
+    struct Clock: Codable, Equatable, Sendable {
+        var sentAt: Date
+        var timeZoneOffsetS: Int
+    }
 
     struct Location: Codable, Equatable, Sendable {
         var lat: Double
@@ -70,6 +79,45 @@ public struct ConnectionSensorObservation: Codable, Equatable, Sendable {
         var simulated: Bool?
         var externalAccessory: Bool?
         var updatesSeen: Int
+        /// Consistent fixes combined (see `ConnectionLocationQuality.fused`); the fix above stays canonical.
+        var fused: Fused?
+        /// The fixes nearest the moment, oldest first, for analysis beyond the single best fix.
+        var trail: [TrailFix]?
+
+        static let maximumTrail = 8
+
+        struct Fused: Codable, Equatable, Sendable {
+            var lat: Double
+            var lon: Double
+            var radiusM: Double
+            var fixCount: Int
+            var spanMs: Int
+        }
+
+        struct TrailFix: Codable, Equatable, Sendable {
+            var tMs: Int
+            var lat: Double
+            var lon: Double
+            var accuracyM: Double
+            var speedMps: Double?
+        }
+
+        mutating func attach(_ fixes: [LocationObservation], moment: Date, until latest: Date) {
+            if let combined = ConnectionLocationQuality.fused(fixes, around: moment, until: latest) {
+                fused = Fused(lat: combined.latitude, lon: combined.longitude,
+                              radiusM: LocationObservation.rounded(combined.radiusMeters, places: 2),
+                              fixCount: combined.fixCount, spanMs: combined.spanMs)
+            }
+            let nearest = fixes
+                .sorted { abs($0.observedAt.timeIntervalSince(moment)) < abs($1.observedAt.timeIntervalSince(moment)) }
+                .prefix(Self.maximumTrail)
+                .sorted { $0.observedAt < $1.observedAt }
+            trail = nearest.isEmpty ? nil : nearest.map {
+                TrailFix(tMs: SensorClock.milliseconds($0.observedAt.timeIntervalSince(moment)), lat: $0.latitude, lon: $0.longitude,
+                         accuracyM: LocationObservation.rounded($0.horizontalAccuracyMeters, places: 2),
+                         speedMps: $0.speedMetersPerSecond.map { LocationObservation.rounded($0, places: 2) })
+            }
+        }
 
         init(_ fix: LocationObservation, moment: Date, updatesSeen: Int) {
             lat = fix.latitude
@@ -213,6 +261,11 @@ public struct ConnectionSensorObservation: Codable, Equatable, Sendable {
         /// Screen brightness × 1000 (the legacy `lux_level`) — not ambient light.
         var screenBrightnessProxy: Double?
         var capabilities: Capabilities
+        /// Where audio was routed (e.g. "Speaker", "BluetoothA2DPOutput"): headphones or a car
+        /// take over the speaker and explain ultrasonic misses.
+        var audioOutput: String? = nil
+        var audioInput: String? = nil
+        var charging: Bool? = nil
 
         struct Capabilities: Codable, Equatable, Sendable {
             var barometer: Bool
@@ -245,7 +298,11 @@ extension ConnectionSensorObservation {
             connectionMoment: moment,
             captureDurationMs: snapshot.startedAt.map { SensorClock.milliseconds(snapshot.finishedAt.timeIntervalSince($0)) },
             location: includeLocation
-                ? snapshot.location.map { Location($0, moment: moment, updatesSeen: snapshot.locationUpdates) }
+                ? snapshot.location.map {
+                    var location = Location($0, moment: moment, updatesSeen: snapshot.locationUpdates)
+                    location.attach(snapshot.locationFixes, moment: moment, until: snapshot.finishedAt)
+                    return location
+                }
                 : nil,
             barometer: Barometer(snapshot.altitude, absolute: snapshot.absoluteAltitudeSamples,
                                  relative: snapshot.relativeAltitudeSamples, moment: moment),
@@ -264,7 +321,9 @@ extension ConnectionSensorObservation {
     /// The `sensor_observation` request value (snake_case JSON). Bounded: if it would exceed
     /// `maximumPayloadBytes`, motion samples are dropped (their summary stays).
     var payload: [String: Any]? {
-        for candidate in [self, withoutMotionSamples] {
+        var stamped = self
+        stamped.clock = Clock(sentAt: .now, timeZoneOffsetS: TimeZone.current.secondsFromGMT())
+        for candidate in [stamped, stamped.withoutMotionSamples] {
             guard let data = try? Self.encoder.encode(candidate), data.count <= Self.maximumPayloadBytes else { continue }
             return (try? JSONSerialization.jsonObject(with: data)) as? [String: Any]
         }
@@ -305,6 +364,10 @@ extension ConnectionSensorObservation {
             out["location_full_accuracy"] = .bool(location.fullAccuracy)
             out["location_update_count"] = .int(location.updatesSeen)
             out["floor_available"] = .bool(location.floor != nil)
+            if let fused = location.fused {
+                out["location_fused_fix_count"] = .int(fused.fixCount)
+                out["location_fused_radius_m"] = .double(fused.radiusM)
+            }
         }
         if let captureDurationMs {
             out["capture_duration_ms"] = .int(max(0, captureDurationMs))
@@ -380,8 +443,10 @@ extension ConnectionSensorObservation.Device {
         let wasMonitoring = device.isBatteryMonitoringEnabled
         device.isBatteryMonitoringEnabled = true
         let level = device.batteryLevel
+        let batteryState = device.batteryState
         device.isBatteryMonitoringEnabled = wasMonitoring
         let motion = CMMotionManager()
+        let route = AVAudioSession.sharedInstance().currentRoute
         return Self(
             batteryPercent: level.isFinite && level >= 0 ? min(100, Int((level * 100).rounded())) : nil,
             lowPowerMode: ProcessInfo.processInfo.isLowPowerModeEnabled,
@@ -396,7 +461,10 @@ extension ConnectionSensorObservation.Device {
                 magnetometer: motion.isMagnetometerAvailable,
                 uwb: NISession.deviceCapabilities.supportsPreciseDistanceMeasurement,
                 preciseLocationAuthorized: preciseLocationAuthorized
-            )
+            ),
+            audioOutput: route.outputs.first?.portType.rawValue,
+            audioInput: route.inputs.first?.portType.rawValue,
+            charging: batteryState == .unknown ? nil : (batteryState == .charging || batteryState == .full)
         )
     }
 

@@ -90,6 +90,55 @@ enum ConnectionLocationQuality {
         return abs(a.observedAt.timeIntervalSince(moment)) < abs(b.observedAt.timeIntervalSince(moment))
     }
 
+    /// Several consistent fixes near the moment, combined (supplemental to `best`, which stays
+    /// canonical). An inverse-variance weighted mean over time-adjusted radii; fixes farther from
+    /// the best fix than their combined radii (a jump, a multipath outlier) are left out. Phone
+    /// GPS errors are correlated over seconds, so the radius is never claimed below half the best
+    /// fix's. Nil with fewer than two consistent fixes.
+    struct Fused: Equatable, Sendable {
+        let latitude: Double
+        let longitude: Double
+        let radiusMeters: Double
+        let fixCount: Int
+        /// Time between the earliest and latest fix used.
+        let spanMs: Int
+    }
+
+    static func fused(_ fixes: [LocationObservation], around moment: Date, until latest: Date) -> Fused? {
+        guard let anchor = best(fixes, around: moment, until: latest) else { return nil }
+        let earliest = moment.addingTimeInterval(-selectionLookback)
+        let anchorRadius = effectiveRadius(anchor, moment: moment)
+        let metersPerDegree = 111_320.0
+        let cosLat = cos(anchor.latitude * .pi / 180)
+        let offset = { (fix: LocationObservation) -> (x: Double, y: Double) in
+            ((fix.longitude - anchor.longitude) * metersPerDegree * cosLat, (fix.latitude - anchor.latitude) * metersPerDegree)
+        }
+        let consistent = fixes.filter { fix in
+            guard isUseful(fix), fix.isFullAccuracy == anchor.isFullAccuracy,
+                  fix.observedAt >= earliest, fix.observedAt <= latest else { return false }
+            let (x, y) = offset(fix)
+            return (x * x + y * y).squareRoot() <= effectiveRadius(fix, moment: moment) + anchorRadius
+        }
+        guard consistent.count >= 2 else { return nil }
+        var sumW = 0.0, sumX = 0.0, sumY = 0.0
+        for fix in consistent {
+            let radius = max(1, effectiveRadius(fix, moment: moment))
+            let w = 1 / (radius * radius)
+            let (x, y) = offset(fix)
+            sumW += w
+            sumX += w * x
+            sumY += w * y
+        }
+        let times = consistent.map(\.observedAt)
+        return Fused(
+            latitude: anchor.latitude + (sumY / sumW) / metersPerDegree,
+            longitude: anchor.longitude + (sumX / sumW) / (metersPerDegree * cosLat),
+            radiusMeters: max((1 / sumW).squareRoot(), anchorRadius / 2),
+            fixCount: consistent.count,
+            spanMs: SensorClock.milliseconds((times.max() ?? moment).timeIntervalSince(times.min() ?? moment))
+        )
+    }
+
     /// True once the minimum window has passed and `best` is at least `settleAccuracy`.
     static func isSettled(_ best: LocationObservation?, moment: Date, startedAt: Date, now: Date, wait: Wait) -> Bool {
         guard let best, now.timeIntervalSince(startedAt) >= minimumCaptureDuration else { return false }

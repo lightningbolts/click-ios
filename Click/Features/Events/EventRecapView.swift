@@ -152,8 +152,7 @@ struct EventRecapView: View {
             }
         } else {
             ZStack {
-                PixelatedPreview(url: drop.previewURL)
-                ProgressView().tint(.white)
+                PixelatedPreview(url: drop.previewURL).shimmering()
             }
         }
     }
