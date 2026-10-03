@@ -51,6 +51,8 @@ public final class AppEnvironment {
     public var activeChatID: String?
     /// The on-screen direct chat's connection ID (pushes may carry either ID).
     public var activeConnectionID: String?
+    /// A shared drop to open in the Home strip's story viewer (from a "just developed" push).
+    public var pendingSharedDropID: String?
     /// The latest in-person Click Drop window (post-connect), so Drops sent in it carry the encounter.
     public var clickDropSession: ClickDropSession?
     /// A message to scroll to when its conversation next opens (search deep links).
@@ -248,6 +250,7 @@ public final class AppEnvironment {
         await identities.removeAll()
         timelineCache.clear()
         beaconExtras.removeAll()
+        pendingSharedDropID = nil
         await places.clearCache()
         sharedDropsStore = SharedDropsStore()
         pendingSends.removeAll()

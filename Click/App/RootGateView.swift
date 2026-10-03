@@ -213,6 +213,7 @@ public struct MainTabShellView: View {
                 env.reportPresenceIfEnabled()
                 env.syncDeviceHistory()
                 env.flushTelemetry()
+                Task { await EventReminderScheduler.pruneRetired() }
             case .background:
                 conversations.stopRealtime()
                 env.flushTelemetry()

@@ -392,6 +392,9 @@ struct RelationshipMomentRoutingTests {
                 == Route.chat(chatID: nil, connectionID: "c1", senderUserID: "u2", senderName: nil))
         #expect(ClickNotificationCoordinator.tapRoute(for: ["type": "group_revival", "chat_id": "g1"])
                 == Route.route(.conversation(chatID: "g1", messageID: nil)))
+        #expect(ClickNotificationCoordinator.tapRoute(for: ["type": "shared_drop_released", "drop_id": "d1", "poster_id": "u2"])
+                == Route.sharedDrop(dropID: "d1"))
+        #expect(ClickNotificationCoordinator.tapRoute(for: ["type": "shared_drop_released"]) == Route.none)
     }
 }
 

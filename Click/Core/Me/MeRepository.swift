@@ -458,6 +458,7 @@ public struct SelfProfile: Codable, Equatable, Sendable {
 public struct NotificationPreferences: Codable, Equatable, Sendable {
     public enum Key: String, CaseIterable, Sendable {
         case messages = "message_push_enabled"
+        case dropReleases = "drop_release_push_enabled"
         case eventReminders = "event_reminder_push_enabled"
         case reconnectNudges = "reconnect_nudge_push_enabled"
         case availabilityMatches = "availability_match_push_enabled"
@@ -466,6 +467,7 @@ public struct NotificationPreferences: Codable, Equatable, Sendable {
         public var title: String {
             switch self {
             case .messages: "Message notifications"
+            case .dropReleases: "Click Drops"
             case .eventReminders: "Event reminders"
             case .reconnectNudges: "Relationship moments"
             case .availabilityMatches: "Availability matches"
@@ -476,6 +478,7 @@ public struct NotificationPreferences: Codable, Equatable, Sendable {
         public var detail: String {
             switch self {
             case .messages: "New messages, archive warnings, and Click Drop reveals"
+            case .dropReleases: "When a connection's shared drop develops"
             case .eventReminders: "Day-of and one-hour-before reminders for your events"
             case .reconnectNudges: "Anniversaries, memories, quiet groups, reconnecting and shared events"
             case .availabilityMatches: "When a Click's plans overlap with yours"

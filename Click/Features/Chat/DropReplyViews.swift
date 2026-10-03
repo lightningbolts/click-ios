@@ -12,6 +12,7 @@ struct DropReplyHeader: View {
 
     @State private var image: UIImage?
     @State private var viewing: SharedDropsStrip.ViewerStart?
+    @Namespace private var zoom
 
     private static let size = CGSize(width: 96, height: 128)
 
@@ -24,13 +25,15 @@ struct DropReplyHeader: View {
             Button {
                 if env.sharedDropsStore.drop(reply.dropID) != nil { viewing = .init(id: reply.dropID) }
             } label: {
-                thumbnail
+                thumbnail.matchedTransitionSource(id: reply.dropID, in: zoom)
             }
             .buttonStyle(.plain)
             .accessibilityLabel(label)
         }
         .task(id: reply.dropID) { await load() }
-        .fullScreenCover(item: $viewing) { start in SharedDropStoryViewer(startID: start.id) }
+        .fullScreenCover(item: $viewing) { start in
+            SharedDropStoryViewer(startID: start.id).navigationTransition(.zoom(sourceID: start.id, in: zoom))
+        }
     }
 
     private var label: String {

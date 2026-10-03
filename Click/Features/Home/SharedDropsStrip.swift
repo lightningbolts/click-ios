@@ -9,6 +9,8 @@ struct SharedDropsStrip: View {
     @State private var showingCamera = false
     @State private var captured: CapturedPhoto?
     @State private var viewing: ViewerStart?
+    /// The story opens out of (and closes back into) the tapped tile.
+    @Namespace private var zoom
     private var store: SharedDropsStore { env.sharedDropsStore }
 
     struct CapturedPhoto: Identifiable {
@@ -23,6 +25,7 @@ struct SharedDropsStrip: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
             HomeSectionTitle("Click Drops").padding(.horizontal, 4)
+            // Its own grouped card, like every other Home section; tiles scroll inside it.
             ScrollView(.horizontal, showsIndicators: false) {
                 HStack(spacing: 10) {
                     shareTile
@@ -34,14 +37,20 @@ struct SharedDropsStrip: View {
                     ForEach(store.drops.value ?? []) { tile($0) }
                 }
                 .animation(ClickMotion.subtleFade, value: store.drops.value?.map(\.id))
-                .padding(.horizontal, ClickSpacing.screenGutter)
+                .padding(12)
             }
-            .padding(.horizontal, -ClickSpacing.screenGutter)
+            .groupedSurface()
             if let message = store.message {
                 Text(message).font(ClickTypography.supporting).foregroundStyle(ClickColors.textSecondary).padding(.horizontal, 4)
             }
         }
-        .task { await store.load(env: env) }
+        .task {
+            await store.load(env: env)
+            openPendingDrop()
+        }
+        // A "just developed" push opens that drop's story once it's in the strip.
+        .onChange(of: env.pendingSharedDropID) { _, _ in openPendingDrop() }
+        .onChange(of: store.drops.value?.map(\.id)) { _, _ in openPendingDrop() }
         // Live develop: a drop that reaches zero while the strip is on screen develops by itself.
         .task(id: nextReveal) {
             guard let next = nextReveal else { return }
@@ -63,7 +72,14 @@ struct SharedDropsStrip: View {
         }
         .fullScreenCover(item: $viewing) { start in
             SharedDropStoryViewer(startID: start.id)
+                .navigationTransition(.zoom(sourceID: start.id, in: zoom))
         }
+    }
+
+    private func openPendingDrop() {
+        guard let id = env.pendingSharedDropID, viewing == nil, store.drop(id).map({ !$0.state().isPending }) == true else { return }
+        env.pendingSharedDropID = nil
+        viewing = ViewerStart(id: id)
     }
 
     private var nextReveal: Date? {
@@ -135,6 +151,7 @@ struct SharedDropsStrip: View {
             // Glass over a photo reads as dark glass, so the white labels always hold.
             .environment(\.colorScheme, .dark)
             .animation(ClickMotion.reveal, value: store.originals[drop.id] != nil)
+            .matchedTransitionSource(id: drop.id, in: zoom)
         }
         .buttonStyle(.plain)
         .disabled(state.isPending)

@@ -1,11 +1,13 @@
 import Foundation
 import UserNotifications
 
-/// Local reminders 60 and 15 minutes before an event the user RSVP'd to or saved (spec §59).
+/// A local reminder an hour before an event the user RSVP'd to or saved (spec §59).
 /// Honors the Alerts "Event reminders" preference, never prompts for permission on its own,
 /// and uses the same `event_reminder` payload as server pushes so taps route to the event.
 enum EventReminderScheduler {
-    static let offsets: [Int] = [60, 15]
+    static let offsets: [Int] = [60]
+    /// Offsets no longer scheduled; their pending requests are still cancelled.
+    private static let retiredOffsets: [Int] = [15]
 
     /// Fire dates still in the future, by minutes-before.
     nonisolated static func triggers(start: Date, now: Date = .now) -> [(minutes: Int, date: Date)] {
@@ -28,8 +30,7 @@ enum EventReminderScheduler {
         for trigger in triggers(start: start) {
             let content = UNMutableNotificationContent()
             content.title = title
-            let lead = trigger.minutes == 60 ? "Starts in an hour" : "Starts in 15 minutes"
-            content.body = lead + (place.map { " · \($0)" } ?? "")
+            content.body = "Starts in an hour" + (place.map { " · \($0)" } ?? "")
             content.sound = .click
             content.userInfo = ["type": "event_reminder", "beacon_id": beaconID]
             let components = Calendar.current.dateComponents([.year, .month, .day, .hour, .minute], from: trigger.date)
@@ -44,8 +45,17 @@ enum EventReminderScheduler {
 
     static func cancel(beaconID: String) async {
         UNUserNotificationCenter.current().removePendingNotificationRequests(
-            withIdentifiers: offsets.map { identifier(beaconID, minutes: $0) }
+            withIdentifiers: (offsets + retiredOffsets).map { identifier(beaconID, minutes: $0) }
         )
+    }
+
+    /// Removes reminders scheduled by earlier versions at retired offsets (the 15-minute one).
+    static func pruneRetired() async {
+        let center = UNUserNotificationCenter.current()
+        let suffixes = retiredOffsets.map { ".\($0)" }
+        let retired = await center.pendingNotificationRequests().map(\.identifier)
+            .filter { id in id.hasPrefix("event-reminder.") && suffixes.contains { id.hasSuffix($0) } }
+        if !retired.isEmpty { center.removePendingNotificationRequests(withIdentifiers: retired) }
     }
 
     /// Alerts → Event reminders turned off, or sign-out.
