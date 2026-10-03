@@ -68,4 +68,27 @@ struct DeviceHistoryShareTests {
         #expect(ChatRepository.missingEpochs(in: contents, held: [3]) == [1, 2])
         #expect(ChatRepository.missingEpochs(in: contents, held: [1, 2, 3]).isEmpty)
     }
+
+    @Test("A device-approval challenge wrapped by click-web unwraps on iOS to the original bytes")
+    func approvalChallengeInterop() throws {
+        // Produced by click-web's wrapEpochKey (lib/server/deviceApproval.ts uses it unchanged).
+        let privateKey = try Curve25519.KeyAgreement.PrivateKey(rawRepresentation: Data(base64Encoded: "cDTzJNWtViwSUkyhdLJIOg6fyxudPR3gU53r3S3V43k=")!)
+        let envelope = "e2e2:eyJjaGF0SWQiOiJhcHByb3ZhbDoxMTExMTExMS0xMTExLTQxMTEtODExMS0xMTExMTExMTExMTEiLCJlcG9jaCI6MSwic2VuZGVyRGV2aWNlSWQiOiJjbGljay1kZXZpY2UtYXBwcm92YWwiLCJyZWNpcGllbnREZXZpY2VJZCI6InBob25lLWRldiIsInYiOjIsInR5cGUiOiJlcG9jaC1rZXktd3JhcCIsImNyeXB0b1ZlcnNpb24iOjIsImVwaGVtZXJhbFB1YmxpY0tleSI6Ik1Db3dCUVlESzJWdUF5RUF6L3lpYmdJOS8rcGU4VkxuRGgyWmR3RmlVYUpxRmx6dWZPUVVXaGhYOFNrPSIsIm5vbmNlIjoicFVKTStvRFF4R25CTXdITCIsImNpcGhlcnRleHQiOiIvRXZSc2FMdS9OM0JnUDZLbFk0WTc5ZmVDZlNnRlpZVlVkOXIyQXNyUnFQckxLN0dlUVpWMUdpREUyTURWcXZmIn0="
+        let proof = try ClickCryptoV2.unwrapEpochKey(
+            metadata: .init(chatId: "approval:11111111-1111-4111-8111-111111111111", epoch: 1,
+                            senderDeviceId: "click-device-approval", recipientDeviceId: "phone-dev"),
+            recipientPrivateKey: privateKey,
+            envelope: envelope
+        )
+        #expect(proof == Data((1...32).map { UInt8($0) }))
+        // Bound to the request and the approving device: any other metadata fails.
+        #expect(throws: (any Error).self) {
+            try ClickCryptoV2.unwrapEpochKey(
+                metadata: .init(chatId: "approval:11111111-1111-4111-8111-111111111111", epoch: 1,
+                                senderDeviceId: "click-device-approval", recipientDeviceId: "other-dev"),
+                recipientPrivateKey: privateKey,
+                envelope: envelope
+            )
+        }
+    }
 }

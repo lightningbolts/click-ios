@@ -379,13 +379,15 @@ public final class ChatRealtimeManager {
             if let ref, ref == pendingHeartbeatRef {
                 pendingHeartbeatRef = nil
                 lastAckAt = .now
+                // Stable for a heartbeat: only now forget the backoff, so a channel that joins
+                // and then errors (e.g. a failing subscription) backs off instead of looping.
+                if health == .connected { reconnectAttempt = 0 }
                 return
             }
             guard ref == nil || ref == joinRef else { return }
             if status == "ok" {
                 let isRejoin = hasJoinedOnce
                 health = .connected
-                reconnectAttempt = 0
                 lastAckAt = .now
                 hasJoinedOnce = true
                 // Anything sent while we were disconnected must be fetched.

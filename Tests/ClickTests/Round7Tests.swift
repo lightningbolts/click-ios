@@ -395,6 +395,7 @@ struct RelationshipMomentRoutingTests {
         #expect(ClickNotificationCoordinator.tapRoute(for: ["type": "shared_drop_released", "drop_id": "d1", "poster_id": "u2"])
                 == Route.sharedDrop(dropID: "d1"))
         #expect(ClickNotificationCoordinator.tapRoute(for: ["type": "shared_drop_released"]) == Route.none)
+        #expect(ClickNotificationCoordinator.tapRoute(for: ["type": "device_approval", "request_id": "r1"]) == Route.deviceApproval)
     }
 }
 

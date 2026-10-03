@@ -190,6 +190,12 @@ public struct MainTabShellView: View {
             .environment(meTabAvatar)
             .environment(conversations)
         }
+        .sheet(item: Binding(
+            get: { env.incomingDeviceApproval },
+            set: { if $0 == nil, let id = env.incomingDeviceApproval?.id { env.deferDeviceApproval(id) } }
+        )) { approval in
+            DeviceApprovalSheet(approval: approval)
+        }
         .sheet(item: $r.searchRequest, onDismiss: { r.searchDidDismiss() }) { request in
             GlobalSearchView(initialQuery: request.query)
                 .environment(meTabAvatar)

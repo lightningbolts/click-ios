@@ -1,5 +1,6 @@
 import Foundation
 import CryptoKit
+import UIKit
 
 /// A pinned message in a direct or group chat.
 public struct MessagePin: Codable, Hashable, Sendable {
@@ -404,7 +405,9 @@ public actor ChatRepository: ChatRepositoryProtocol {
         let body = try JSONSerialization.data(
             withJSONObject: [
                 "device_id": identity.info.deviceID,
-                "identity_public_key": identity.info.publicKeySpkiBase64
+                "identity_public_key": identity.info.publicKeySpkiBase64,
+                // Shown when another of the user's devices is asked to approve this one.
+                "device_label": await Self.deviceLabel()
             ],
             options: []
         )
@@ -531,6 +534,105 @@ public actor ChatRepository: ChatRepositoryProtocol {
             if (try? await apiClient.executeRaw(transfer)) != nil { shared += 1 }
         }
         return shared
+    }
+
+    // MARK: - Approving new devices (on a device already in use; the emailed link is the fallback)
+
+    /// "iPhone" / "iPad": what kind of device this is, never its name.
+    @MainActor private static func deviceLabel() -> String { UIDevice.current.model }
+
+    /// A device of this account waiting for (or decided on) permission to read chat history.
+    public struct DeviceApproval: Sendable, Equatable, Identifiable {
+        public enum Status: String, Sendable { case pending, approved, denied }
+        public let id: String
+        public let status: Status
+        public let deviceLabel: String?
+        public let createdAt: Date?
+        public let expired: Bool
+        public let emailSent: Bool
+
+        static func parse(_ row: [String: Any]?) -> DeviceApproval? {
+            guard let row, let id = JSONFields.string(row["id"]),
+                  let status = JSONFields.string(row["status"]).flatMap(Status.init(rawValue:)) else { return nil }
+            return DeviceApproval(id: id, status: status, deviceLabel: JSONFields.string(row["device_label"]),
+                                  createdAt: JSONFields.date(row["created_at"]), expired: JSONFields.bool(row["expired"]) ?? false,
+                                  emailSent: JSONFields.bool(row["email_sent"]) ?? false)
+        }
+    }
+
+    private var askedForHistory = false
+
+    /// Other devices of this account this one can approve (`incoming`), and this device's own request.
+    public func deviceApprovals() async throws -> (incoming: [DeviceApproval], own: DeviceApproval?) {
+        let identity = try vault.loadOrCreate()
+        let (data, _) = try await apiClient.executeRaw(APIRequest(
+            path: "/api/chat/devices/history-requests",
+            queryItems: [URLQueryItem(name: "device_id", value: identity.info.deviceID)]
+        ))
+        let root = try JSONFields.object(data)
+        return (JSONFields.rows(root["incoming"]).compactMap(DeviceApproval.parse), DeviceApproval.parse(JSONFields.dictionary(root["own"])))
+    }
+
+    /// Asks the account's other devices to share chat history with this one (idempotent).
+    /// `reopen` asks again after a denial.
+    @discardableResult
+    public func askForHistory(reopen: Bool = false) async throws -> DeviceApproval? {
+        let identity = try vault.loadOrCreate()
+        try await registerDevice()
+        var body: [String: Any] = ["device_id": identity.info.deviceID]
+        if reopen { body["reopen"] = true }
+        let (data, _) = try await apiClient.executeRaw(APIRequest(
+            path: "/api/chat/devices/history-requests", method: .post,
+            body: try JSONSerialization.data(withJSONObject: body)
+        ))
+        return DeviceApproval.parse(JSONFields.dictionary(try JSONFields.object(data)["own"]))
+    }
+
+    /// Once per launch, when a chat holds messages from epochs this device was never given.
+    private func askForHistoryOnce() async {
+        guard !askedForHistory else { return }
+        askedForHistory = true
+        _ = try? await askForHistory()
+    }
+
+    /// Approves (or denies) another device of this account from this one. The server checks this
+    /// device holds its identity key: it wraps a one-time challenge to it, which is unwrapped here
+    /// and sent back. After approving, this device shares the history it holds right away.
+    public func decideDeviceApproval(id: String, approve: Bool, currentUserID: String) async throws {
+        let identity = try vault.loadOrCreate()
+        try await registerDevice()
+        let base = "/api/chat/devices/history-requests/\(id)"
+        let (challengeData, _) = try await apiClient.executeRaw(APIRequest(
+            path: base + "/challenge", method: .post,
+            body: try JSONSerialization.data(withJSONObject: ["approving_device_id": identity.info.deviceID])
+        ))
+        let challenge = try JSONFields.object(challengeData)
+        guard let challengeID = JSONFields.string(challenge["challenge_id"]),
+              let envelope = JSONFields.string(challenge["envelope"]),
+              let chatID = JSONFields.string(challenge["chat_id"]),
+              let epoch = JSONFields.int(challenge["epoch"]),
+              let sender = JSONFields.string(challenge["sender_device_id"]) else { throw APIError.decoding }
+        let proof = try ClickCryptoV2.unwrapEpochKey(
+            metadata: .init(chatId: chatID, epoch: epoch, senderDeviceId: sender, recipientDeviceId: identity.info.deviceID),
+            recipientPrivateKey: identity.privateKey,
+            envelope: envelope
+        )
+        _ = try await apiClient.executeRaw(APIRequest(
+            path: base, method: .post,
+            body: try JSONSerialization.data(withJSONObject: [
+                "decision": approve ? "approve" : "deny",
+                "approving_device_id": identity.info.deviceID,
+                "challenge_id": challengeID,
+                "proof": proof.base64EncodedString()
+            ])
+        ))
+        if approve { _ = await shareHistoryWithApprovedDevices(currentUserID: currentUserID) }
+    }
+
+    /// "Email me a link" from the waiting device. False when the email already went out.
+    public func emailDeviceApprovalLink(id: String) async throws -> Bool {
+        let (data, _) = try await apiClient.executeRaw(APIRequest(path: "/api/chat/devices/history-requests/\(id)/email", method: .post))
+        return JSONFields.bool(try JSONFields.object(data)["sent"]) ?? false
     }
 
     /// Where a v2 epoch lives: chat routes (direct + group) or hub routes. Hub envelopes bind to
@@ -909,6 +1011,11 @@ public actor ChatRepository: ChatRepositoryProtocol {
            !Self.missingEpochs(in: rawResponse.messages.map(\.content), held: Set(current.epochKeys.keys)).isEmpty,
            let refreshed = await refreshSessionForSharedHistory(chatID: canonicalChatID, participantUserIDs: participantIDs) {
             v2Session = refreshed
+        }
+        // Still missing: ask the user's other devices to share this chat's history with this one.
+        if let current = v2Session,
+           !Self.missingEpochs(in: rawResponse.messages.map(\.content), held: Set(current.epochKeys.keys)).isEmpty {
+            await askForHistoryOnce()
         }
 
         if !conversation.isDirect {

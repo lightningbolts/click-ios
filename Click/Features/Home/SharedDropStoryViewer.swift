@@ -58,7 +58,7 @@ struct SharedDropStoryViewer: View {
         .interactiveDismissDisabled()
         .environment(\.colorScheme, .dark)
         .statusBarHidden()
-        .clickToast($toast)
+        .clickToast($toast, edge: .top)
         .task(id: currentID) { await open(currentID) }
         .task(id: "\(currentID)|\(isPaused)") { await runTimer() }
         .onChange(of: current == nil) { _, gone in if gone { dismiss() } }
@@ -90,8 +90,8 @@ struct SharedDropStoryViewer: View {
                     Image(uiImage: image)
                         .resizable()
                         .scaledToFill()
-                        .blur(radius: shown ? 0 : 28)
-                        .scaleEffect(shown ? 1 : 1.08)
+                        .blur(radius: shown ? 0 : 16)
+                        .scaleEffect(shown ? 1 : 1.03)
                         .opacity(shown ? 1 : 0)
                 }
             }
@@ -262,18 +262,20 @@ struct SharedDropStoryViewer: View {
         if photo(id) != nil, !store.freshlyDeveloped.contains(id) { unveiled.insert(id) }
         if drop.state() == .ready { await store.develop([drop], fresh: true, env: env) }
         guard let latest = store.drop(id), latest.state() == .developed else { return }
+        // Unveil as soon as any copy is here; the full-size one swaps in without a second animation.
+        reveal(id)
         if full[id] == nil, let image = await store.fullImage(for: latest, env: env) { full[id] = image }
         reveal(id)
         prefetchNext(after: id)
     }
 
-    /// The photo unveils from its pixels: a soft blur clearing as it settles (a cross-fade under
+    /// The photo unveils from its pixels: a quick blur clearing as it settles (a cross-fade under
     /// Reduce Motion), with a haptic the first time a drop develops.
     private func reveal(_ id: String) {
         guard !unveiled.contains(id), photo(id) != nil else { return }
         let fresh = store.freshlyDeveloped.remove(id) != nil
         if fresh { ClickHaptics.impact(.medium) }
-        withAnimation(fresh && !reduceMotion ? .easeOut(duration: 1.1) : ClickMotion.subtleFade) {
+        withAnimation(fresh && !reduceMotion ? .snappy(duration: 0.4) : ClickMotion.subtleFade) {
             _ = unveiled.insert(id)
         }
     }

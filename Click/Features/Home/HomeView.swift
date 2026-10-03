@@ -43,13 +43,8 @@ public struct HomeView: View {
                         }
                     )
                     .frame(minHeight: HomeFeedModel.opportunityPlaceholderHeight, alignment: .top)
+                    // No reserved empty box while it loads (most visits have no card); it fades in.
                     .transition(.opacity)
-                } else if model.isOpportunityPending {
-                    // Reserved space: the card fades in without shifting the sections below.
-                    RoundedRectangle(cornerRadius: 18, style: .continuous)
-                        .fill(ClickColors.surface)
-                        .frame(height: HomeFeedModel.opportunityPlaceholderHeight)
-                        .accessibilityHidden(true)
                 }
                 if let nudge = reconnectNudge { ReconnectNearbyCard(nudge: nudge) { reconnectNudge = nil } }
                 if env.features.isEnabled(.sharedDrops) { SharedDropsStrip() }

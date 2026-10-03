@@ -23,6 +23,7 @@ public struct ClicksView: View {
                         Task { await model.refresh() }
                     }
                 }
+                DeviceHistoryBanner()
                 SearchLaunchField()
                 filterChips
                 if showsRememberStrip {
@@ -38,6 +39,8 @@ public struct ClicksView: View {
             }
         }
         .listStyle(.plain)
+        // Whether this device is waiting to unlock older messages (the banner above).
+        .task { env.refreshDeviceApprovals() }
         .scrollContentBackground(.hidden)
         .background(ClickColors.background.ignoresSafeArea())
         .overlay {
