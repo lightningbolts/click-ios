@@ -49,7 +49,7 @@ final class CalendarAvailability {
         _ = NotificationCenter.default.addObserver(forName: .EKEventStoreChanged, object: nil, queue: .main) { [weak self] _ in
             MainActor.assumeIsolated {
                 guard let self else { return }
-                readAt = nil
+                self.readAt = nil
                 Task { await self.refresh() }
             }
         }
