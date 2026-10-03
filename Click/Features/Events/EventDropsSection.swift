@@ -56,7 +56,7 @@ struct EventDropsSection: View {
     }
 
     private func content(_ current: EventDropsState) -> some View {
-        VStack(alignment: .leading, spacing: 12) {
+        VStack(alignment: .leading, spacing: 10) {
             VStack(alignment: .leading, spacing: 2) {
                 Text(current.access == .absentee && current.phase == .revealed ? "What you missed" : "Click Drops")
                     .font(ClickTypography.sectionTitle)
@@ -65,7 +65,24 @@ struct EventDropsSection: View {
                     .font(ClickTypography.supporting)
                     .foregroundStyle(ClickColors.textSecondary)
             }
+            if hasCard(current) {
+                // Its own grouped card, like the page's other sections.
+                card(current)
+                    .padding(14)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .groupedSurface()
+            }
+        }
+    }
 
+    private func hasCard(_ current: EventDropsState) -> Bool {
+        (current.phase == .revealed && !current.drops.isEmpty)
+            || (current.phase != .revealed && (!current.myDrops.isEmpty || !uploads.isEmpty))
+            || current.canPost || !current.myDrops.isEmpty || message != nil
+    }
+
+    private func card(_ current: EventDropsState) -> some View {
+        VStack(alignment: .leading, spacing: 12) {
             if current.phase == .revealed, !current.drops.isEmpty {
                 Button {
                     env.router.navigate(to: .eventRecap(beaconID: beacon.id))

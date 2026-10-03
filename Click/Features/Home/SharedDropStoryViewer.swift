@@ -1,7 +1,7 @@
 import SwiftUI
 
-/// Shared Click Drops, Instagram-story style: full screen, one drop after another with progress
-/// segments, tap the sides to move, hold to pause, swipe down to close. A ready drop develops right
+/// Shared Click Drops, Instagram-story style: zooms out of the tapped tile, then one drop after
+/// another with progress segments; tap the sides to move, hold to pause, swipe down to close. A ready drop develops right
 /// here, unveiling from its pixels. Replies and reactions go to your chat with the poster and
 /// carry the drop with them; your own drops show who reacted instead.
 struct SharedDropStoryViewer: View {
@@ -54,6 +54,8 @@ struct SharedDropStoryViewer: View {
         .offset(y: dragY)
         .scaleEffect(1 - min(dragY, 400) / 2400)
         .simultaneousGesture(dismissDrag)
+        // Our own swipe-down (which also pauses) dismisses; the zoom back to the tile still plays.
+        .interactiveDismissDisabled()
         .environment(\.colorScheme, .dark)
         .statusBarHidden()
         .clickToast($toast)
@@ -172,19 +174,21 @@ struct SharedDropStoryViewer: View {
                         Button("Report", systemImage: "flag") { reporting = true }
                     }
                 } label: {
-                    Image(systemName: "ellipsis").frame(width: 40, height: 40).contentShape(Rectangle())
+                    ComposerCircleLabel(systemImage: "ellipsis", foreground: .white).contentShape(Circle())
                 }
+                // Keeps the Liquid Glass circle as the only pressed surface (no rectangular chrome).
+                .buttonStyle(.plain)
                 .accessibilityLabel("More")
                 Button { dismiss() } label: {
-                    Image(systemName: "xmark").font(.system(size: 17, weight: .semibold)).frame(width: 40, height: 40).contentShape(Rectangle())
+                    ComposerCircleLabel(systemImage: "xmark", foreground: .white).contentShape(Circle())
                 }
+                .buttonStyle(.plain)
                 .accessibilityLabel("Close")
             }
             .foregroundStyle(.white)
         }
         .padding(.horizontal, 12)
         .padding(.top, 10)
-        .shadow(color: .black.opacity(0.35), radius: 6)
     }
 
     private func fill(for item: SharedDrop) -> CGFloat {

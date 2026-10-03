@@ -268,6 +268,8 @@ final class ClickNotificationCoordinator {
         case route(AppRoute)
         /// Clicks root (unknown identity, availability matches).
         case connections
+        /// A connection's shared drop that just developed: Home, then its story.
+        case sharedDrop(dropID: String)
         /// Unknown future categories keep the current app state.
         case none
     }
@@ -303,6 +305,8 @@ final class ClickNotificationCoordinator {
             return value(["chat_id", "chatId"]).map { .route(.conversation(chatID: $0, messageID: nil)) } ?? .connections
         case "availability_match":
             return .connections
+        case "shared_drop_released":
+            return value(["drop_id"]).map { .sharedDrop(dropID: $0) } ?? .none
         default:
             return .none
         }
@@ -353,6 +357,10 @@ final class ClickNotificationCoordinator {
         case .connections:
             environment.router.selectedTab = .connections
             environment.router.connectionsPath.removeAll()
+        case .sharedDrop(let dropID):
+            environment.router.selectedTab = .home
+            environment.router.homePath.removeAll()
+            environment.pendingSharedDropID = dropID
         case .none:
             break
         }

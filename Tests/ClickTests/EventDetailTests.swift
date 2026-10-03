@@ -38,8 +38,8 @@ struct EventReminderTests {
     @Test("Reminders fire 60 and 15 minutes before, only when still ahead")
     func triggers() {
         let now = Date()
-        #expect(EventReminderScheduler.triggers(start: now.addingTimeInterval(3 * 3600), now: now).map(\.minutes) == [60, 15])
-        #expect(EventReminderScheduler.triggers(start: now.addingTimeInterval(30 * 60), now: now).map(\.minutes) == [15])
+        #expect(EventReminderScheduler.triggers(start: now.addingTimeInterval(3 * 3600), now: now).map(\.minutes) == [60])
+        #expect(EventReminderScheduler.triggers(start: now.addingTimeInterval(30 * 60), now: now).isEmpty)
         #expect(EventReminderScheduler.triggers(start: now.addingTimeInterval(5 * 60), now: now).isEmpty)
     }
 

@@ -60,7 +60,8 @@ extension View {
     }
 }
 
-/// The composer's 40 pt circular control ("+", mic, send), one shape for all three.
+/// The app's 40 pt Liquid Glass circular control: the composer's "+", mic and send, and the
+/// close / more buttons over full-screen media (drop stories).
 public struct ComposerCircleLabel: View {
     let systemImage: String
     let isProminent: Bool
