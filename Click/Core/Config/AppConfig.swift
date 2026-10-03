@@ -9,6 +9,8 @@ public struct AppConfig: Sendable {
     public let supabaseAnonKey: String
     /// KLIPY GIF API app key (`KLIPY_APP_KEY`); nil hides GIF search.
     public let klipyAppKey: String?
+    /// The App Store listing (`CLICK_APP_STORE_URL`); nil until the app is live, which hides invites.
+    public let appStoreURL: URL?
 
     public init(bundle: Bundle = .main) {
         self.apiBaseURL = Self.urlValue(
@@ -27,13 +29,16 @@ public struct AppConfig: Sendable {
         // SupabaseAuthService reports a typed configuration error only when auth is used.
         self.supabaseAnonKey = Self.resolvedValue(key: "SUPABASE_ANON_KEY", bundle: bundle) ?? ""
         self.klipyAppKey = Self.resolvedValue(key: "KLIPY_APP_KEY", bundle: bundle)
+        self.appStoreURL = Self.resolvedValue(key: "CLICK_APP_STORE_URL", bundle: bundle)
+            .flatMap(URL.init(string:)).flatMap { $0.scheme == "https" ? $0 : nil }
     }
 
-    public init(apiBaseURL: URL, supabaseURL: URL, supabaseAnonKey: String, klipyAppKey: String? = nil) {
+    public init(apiBaseURL: URL, supabaseURL: URL, supabaseAnonKey: String, klipyAppKey: String? = nil, appStoreURL: URL? = nil) {
         self.apiBaseURL = apiBaseURL
         self.supabaseURL = supabaseURL
         self.supabaseAnonKey = supabaseAnonKey
         self.klipyAppKey = klipyAppKey
+        self.appStoreURL = appStoreURL
     }
 
     private static func resolvedValue(key: String, bundle: Bundle) -> String? {
