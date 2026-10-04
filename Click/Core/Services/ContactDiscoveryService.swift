@@ -175,6 +175,14 @@ public final class ContactDiscoveryService: Sendable {
         return response.phone
     }
 
+    /// "That's my number": reports the account holding a number you tried to save, for review.
+    public func reportPhoneClaim(_ phone: String, client: ClickAPIClient) async throws {
+        let body = try JSONSerialization.data(withJSONObject: ["phone": phone])
+        _ = try await client.executeRaw(
+            APIRequest(path: "/api/me/phone/report", method: .post, body: body, requiresAuth: true)
+        )
+    }
+
     public func removeMyPhone(client: ClickAPIClient) async throws {
         _ = try await client.executeRaw(APIRequest(path: "/api/me/phone", method: .delete, requiresAuth: true))
     }

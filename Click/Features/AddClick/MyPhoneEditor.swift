@@ -13,6 +13,9 @@ struct MyPhoneEditor: View {
     @State private var loaded = false
     @State private var isWorking = false
     @State private var errorMessage: String?
+    /// The number another account holds, after a save was refused; offers "That's my number".
+    @State private var takenNumber: String?
+    @State private var reported = false
 
     var body: some View {
         VStack(alignment: .leading, spacing: ClickSpacing.xs) {
@@ -45,6 +48,16 @@ struct MyPhoneEditor: View {
                     .font(ClickTypography.metadata)
                     .foregroundStyle(ClickColors.destructive)
             }
+            if reported {
+                Text("Thanks. We'll look into it and free up your number if it's yours.")
+                    .font(ClickTypography.metadata)
+                    .foregroundStyle(ClickColors.textSecondary)
+            } else if takenNumber != nil {
+                Button("That's my number") { Task { await report() } }
+                    .font(ClickTypography.supportingEmphasized)
+                    .foregroundStyle(ClickColors.accentForeground)
+                    .disabled(isWorking)
+            }
         }
         .animation(ClickMotion.subtleFade, value: saved)
         .task { await load() }
@@ -62,6 +75,8 @@ struct MyPhoneEditor: View {
     private func save() async {
         isWorking = true
         errorMessage = nil
+        takenNumber = nil
+        reported = false
         defer { isWorking = false }
         do {
             let phone = try await ContactDiscoveryService.shared.saveMyPhone(draft, client: env.api)
@@ -73,9 +88,25 @@ struct MyPhoneEditor: View {
             errorMessage = switch error as? APIError {
             case .conflict?: "That number is already on another Click account."
             case .validation?: "Enter a full phone number, with area code."
+            case .rateLimited?: "You've changed your number a few times today. Try again tomorrow."
             default: "Your number wasn't saved. \(error.userFacingMessage)"
             }
+            if case .conflict? = error as? APIError { takenNumber = draft }
             ClickHaptics.error()
+        }
+    }
+
+    private func report() async {
+        guard let takenNumber else { return }
+        isWorking = true
+        defer { isWorking = false }
+        do {
+            try await ContactDiscoveryService.shared.reportPhoneClaim(takenNumber, client: env.api)
+            reported = true
+            errorMessage = nil
+            ClickHaptics.success()
+        } catch {
+            errorMessage = "Your report wasn't sent. \(error.userFacingMessage)"
         }
     }
 
