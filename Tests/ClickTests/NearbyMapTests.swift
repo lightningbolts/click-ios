@@ -37,6 +37,35 @@ struct NearbyMapTests {
         #expect(abs(mid - 44 * 0.85 * 156_543.033_92 / 65_536) < 0.01)
     }
 
+    private func event(_ id: String, going: Int, hoursOld: Double, lat: Double, now: Date) -> MapItem {
+        let created = now.addingTimeInterval(-hoursOld * 3600).ISO8601Format()
+        let row: [String: Any] = ["id": id, "lat": lat, "lng": -122.32, "beacon_type": "event", "created_at": created,
+                                  "rsvp_count": going, "metadata": ["title": id]]
+        return MapItem(kind: .beacon(MapBeacon.decode(row)!))
+    }
+
+    @Test("Events show their RSVP count; Nearby sorts by distance, A–Z, new and rising")
+    func sorting() {
+        let now = Date()
+        let here = CLLocationCoordinate2D(latitude: 47.62, longitude: -122.32)
+        // "Old" is busiest but a day old; "Fresh" is filling up fast; "Quiet" has no one yet.
+        let items = [
+            event("Old", going: 40, hoursOld: 24, lat: 47.63, now: now),
+            event("Quiet", going: 0, hoursOld: 0.5, lat: 47.64, now: now),
+            event("Fresh", going: 8, hoursOld: 1, lat: 47.65, now: now)
+        ]
+        #expect(items.map(\.peopleLabel) == ["40 going", nil, "8 going"])
+        func order(_ sort: NearbySort, from origin: CLLocationCoordinate2D? = here) -> [String] {
+            MapFeatureModel.sorted(items, by: sort, from: origin, now: now).map(\.title)
+        }
+        #expect(order(.relevance) == ["Old", "Quiet", "Fresh"])
+        #expect(order(.distance) == ["Old", "Quiet", "Fresh"])
+        #expect(order(.distance, from: nil) == ["Fresh", "Old", "Quiet"])
+        #expect(order(.alphabetical) == ["Fresh", "Old", "Quiet"])
+        #expect(order(.new) == ["Quiet", "Fresh", "Old"])
+        #expect(order(.rising) == ["Fresh", "Old", "Quiet"])
+    }
+
     @Test("A cluster tap always lands in pin mode")
     func clusterTapZoom() {
         let cluster = MapCluster(id: "x", coordinate: .init(latitude: 0, longitude: 0),

@@ -61,7 +61,7 @@ struct NearbyLip: View {
 
     private var previewVisuals: some View {
         HStack(spacing: -8) {
-            ForEach(model.items(pins: []).prefix(3)) { item in
+            ForEach(model.items(pins: pins).prefix(3)) { item in
                 if case .beacon(let beacon) = item.kind {
                     EventVisual(seed: beacon.id, imageURL: beacon.imageURL, cornerRadius: 17)
                         .frame(width: 34, height: 34)
@@ -106,9 +106,9 @@ struct NearbyListView: View {
 
             list
         }
-        // Search and refresh live in a real (transparent) navigation bar rather than a hidden
-        // one: every screen opened from here has a bar, so a hidden one popped in on each push
-        // and shifted everything.
+        // Search, sort and refresh live in a real (transparent) navigation bar rather than a
+        // hidden one: every screen opened from here has a bar, so a hidden one popped in on each
+        // push and shifted everything. Sort and refresh share one group (one glass capsule).
         .navigationTitle("Nearby")
         .navigationBarTitleDisplayMode(.inline)
         .toolbarBackground(.hidden, for: .navigationBar)
@@ -116,7 +116,8 @@ struct NearbyListView: View {
             ToolbarItem(placement: .principal) {
                 searchField.frame(maxWidth: .infinity)
             }
-            ToolbarItem(placement: .topBarTrailing) {
+            ToolbarItemGroup(placement: .topBarTrailing) {
+                sortMenu
                 Button("Refresh nearby", systemImage: "arrow.clockwise") { model.refresh() }
             }
         }
@@ -174,15 +175,16 @@ struct NearbyListView: View {
     private func chip(_ title: String, count: Int?, isOn: Bool, action: @escaping () -> Void) -> some View {
         Button {
             ClickHaptics.selection()
-            action()
+            withAnimation(.snappy) { action() }
         } label: {
+            // One weight for both states, so selecting never changes a chip's width.
             HStack(spacing: 5) {
                 Text(title)
                 if let count {
                     Text(count, format: .number).opacity(0.7).monospacedDigit()
                 }
             }
-            .font(ClickTypography.supporting.weight(isOn ? .semibold : .medium))
+            .font(ClickTypography.supporting.weight(.medium))
             .foregroundStyle(isOn ? ClickColors.accentForeground : ClickColors.textSecondary)
             .padding(.horizontal, 14)
             .frame(minHeight: ClickMetrics.chipHeight)
@@ -190,6 +192,24 @@ struct NearbyListView: View {
         }
         .buttonStyle(.plain)
         .accessibilityAddTraits(isOn ? .isSelected : [])
+    }
+
+    /// Row order. The button wears the current order's icon, morphing between them in a
+    /// fixed frame so the capsule never resizes; rows animate to their new places.
+    private var sortMenu: some View {
+        Menu {
+            Picker("Sort by", selection: $model.sort.animation(.snappy)) {
+                ForEach(NearbySort.allCases) { sort in
+                    Label(sort.label, systemImage: sort.systemImage).tag(sort)
+                }
+            }
+        } label: {
+            Image(systemName: model.sort.systemImage)
+                .contentTransition(.symbolEffect(.replace))
+                .frame(width: 24, height: 24)
+        }
+        .accessibilityLabel("Sort by \(model.sort.label)")
+        .onChange(of: model.sort) { ClickHaptics.selection() }
     }
 
     @ViewBuilder
@@ -201,7 +221,9 @@ struct NearbyListView: View {
             return items.isEmpty ? nil : NearbySection(id: section.id, title: section.title, items: items)
         }
         ScrollView {
-            LazyVStack(alignment: .leading, spacing: 20) {
+            // Rows are direct children of the lazy stack (a section is not one eager VStack), so
+            // only what's on screen is built, even with thousands of beacons in an area.
+            LazyVStack(alignment: .leading, spacing: 0) {
                 if sections.isEmpty {
                     if search.isEmpty {
                         emptyState
@@ -219,25 +241,35 @@ struct NearbyListView: View {
                     }
                 }
                 ForEach(sections) { section in
-                    VStack(alignment: .leading, spacing: 8) {
+                    Section {
+                        ForEach(section.items) { item in
+                            let isFirst = item.id == section.items.first?.id
+                            let isLast = item.id == section.items.last?.id
+                            Button { onOpen(item) } label: {
+                                NearbyRow(item: item, origin: model.origin)
+                            }
+                            .buttonStyle(.plain)
+                            .overlay(alignment: .bottom) {
+                                if !isLast { Divider().padding(.leading, 76) }
+                            }
+                            // Each row draws its slice of the section's card. A translucent fill,
+                            // not an opaque surface: it reads the same over the sheet's glass at
+                            // the medium height as over its solid full height.
+                            .background(ClickColors.fillSubtle, in: UnevenRoundedRectangle(
+                                topLeadingRadius: isFirst ? ClickRadius.surface : 0,
+                                bottomLeadingRadius: isLast ? ClickRadius.surface : 0,
+                                bottomTrailingRadius: isLast ? ClickRadius.surface : 0,
+                                topTrailingRadius: isFirst ? ClickRadius.surface : 0,
+                                style: .continuous
+                            ))
+                        }
+                    } header: {
                         Text(section.title)
                             .font(.title3.weight(.semibold))
                             .foregroundStyle(ClickColors.textPrimary)
                             .padding(.horizontal, 4)
-                        VStack(spacing: 0) {
-                            ForEach(section.items) { item in
-                                Button { onOpen(item) } label: {
-                                    NearbyRow(item: item, userCoordinate: model.userCoordinate)
-                                }
-                                .buttonStyle(.plain)
-                                if item.id != section.items.last?.id {
-                                    Divider().padding(.leading, 76)
-                                }
-                            }
-                        }
-                        // A translucent fill, not an opaque surface: it reads the same over the
-                        // sheet's glass at the medium height as over its solid full height.
-                        .background(ClickColors.fillSubtle, in: RoundedRectangle(cornerRadius: ClickRadius.surface, style: .continuous))
+                            .padding(.top, section.id == sections.first?.id ? 0 : 20)
+                            .padding(.bottom, 8)
                     }
                 }
             }
@@ -273,7 +305,7 @@ struct NearbyListView: View {
 
 private struct NearbyRow: View {
     let item: MapItem
-    let userCoordinate: CLLocationCoordinate2D?
+    let origin: CLLocationCoordinate2D?
 
     var body: some View {
         HStack(spacing: 14) {
@@ -294,12 +326,19 @@ private struct NearbyRow: View {
                     .lineLimit(1)
             }
             Spacer(minLength: 8)
-            if let distance {
-                Text(distance)
-                    .font(ClickTypography.metadataEmphasized)
-                    .foregroundStyle(ClickColors.textTertiary)
-                    .monospacedDigit()
+            VStack(alignment: .trailing, spacing: 2) {
+                if let distance {
+                    Text(distance)
+                        .font(ClickTypography.metadataEmphasized)
+                }
+                if let people = item.peopleLabel {
+                    Text(people)
+                        .font(ClickTypography.metadata)
+                }
             }
+            .foregroundStyle(ClickColors.textTertiary)
+            .monospacedDigit()
+            .lineLimit(1)
         }
         .padding(.horizontal, 14)
         .padding(.vertical, 10)
@@ -308,9 +347,8 @@ private struct NearbyRow: View {
     }
 
     private var distance: String? {
-        guard let userCoordinate else { return nil }
-        let meters = CLLocation(latitude: userCoordinate.latitude, longitude: userCoordinate.longitude)
-            .distance(from: CLLocation(latitude: item.coordinate.latitude, longitude: item.coordinate.longitude))
+        guard let origin else { return nil }
+        let meters = MapFeatureModel.distanceMeters(origin, item.coordinate)
         return Measurement(value: meters, unit: UnitLength.meters)
             .formatted(.measurement(width: .abbreviated, usage: .road, numberFormatStyle: .number.precision(.fractionLength(0...1))))
     }

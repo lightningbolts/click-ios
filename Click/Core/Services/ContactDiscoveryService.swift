@@ -7,24 +7,37 @@ public struct DiscoveredContactCard: Identifiable, Equatable, Sendable, Decodabl
     public let name: String
     public let avatarUrl: String?
     public let tags: [String]
+    /// Set on contacts you already have a connection with (`known`); nil on new matches.
+    public let status: Status?
+
+    public enum Status: String, Decodable, Sendable {
+        case connected
+        /// A request either way.
+        case pending
+    }
 
     enum CodingKeys: String, CodingKey {
         case id
         case name
         case avatarUrl = "avatar_url"
         case tags
+        case status
     }
 
-    public init(id: String, name: String, avatarUrl: String? = nil, tags: [String] = []) {
+    public init(id: String, name: String, avatarUrl: String? = nil, tags: [String] = [], status: Status? = nil) {
         self.id = id
         self.name = name
         self.avatarUrl = avatarUrl
         self.tags = tags
+        self.status = status
     }
 }
 
 public struct DiscoverContactsResponse: Decodable, Sendable {
     public let matches: [DiscoveredContactCard]
+    /// Contacts on Click you already have a connection with, left out of `matches`.
+    /// Older servers send only the counts below.
+    public let known: [DiscoveredContactCard]
     /// Contacts on Click you're already connected with; they're left out of `matches`.
     public let alreadyConnected: Int
     /// Contacts on Click with a request pending either way; also left out of `matches`.
@@ -32,12 +45,14 @@ public struct DiscoverContactsResponse: Decodable, Sendable {
 
     enum CodingKeys: String, CodingKey {
         case matches
+        case known
         case alreadyConnected = "already_connected"
         case pending
     }
 
-    public init(matches: [DiscoveredContactCard], alreadyConnected: Int = 0, pending: Int = 0) {
+    public init(matches: [DiscoveredContactCard], known: [DiscoveredContactCard] = [], alreadyConnected: Int = 0, pending: Int = 0) {
         self.matches = matches
+        self.known = known
         self.alreadyConnected = alreadyConnected
         self.pending = pending
     }
@@ -45,6 +60,7 @@ public struct DiscoverContactsResponse: Decodable, Sendable {
     public init(from decoder: Decoder) throws {
         let container = try decoder.container(keyedBy: CodingKeys.self)
         matches = try container.decode([DiscoveredContactCard].self, forKey: .matches)
+        known = try container.decodeIfPresent([DiscoveredContactCard].self, forKey: .known) ?? []
         alreadyConnected = try container.decodeIfPresent(Int.self, forKey: .alreadyConnected) ?? 0
         pending = try container.decodeIfPresent(Int.self, forKey: .pending) ?? 0
     }

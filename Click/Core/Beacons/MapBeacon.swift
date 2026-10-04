@@ -136,6 +136,8 @@ public struct MapBeacon: Codable, Identifiable, Hashable, Sendable {
     public var venueID: String? = nil
     /// Set only when that Place is listed (click-web §5.11); older servers omit it.
     public var place: MapBeaconPlace? = nil
+    /// Events: people going (Click RSVPs plus guests), as of the fetch; older servers omit it.
+    public var rsvpCount: Int? = nil
 
     public var coordinate: CLLocationCoordinate2D {
         CLLocationCoordinate2D(latitude: latitude, longitude: longitude)
@@ -207,7 +209,8 @@ public struct MapBeacon: Codable, Identifiable, Hashable, Sendable {
             trackName: JSONFields.string(meta, "track_name", "track_title"),
             albumArtURL: SoundtrackResolver.artwork(JSONFields.string(meta, "album_art_url", "artworkUrl100", "artwork_url")),
             venueID: JSONFields.string(row["venue_id"]),
-            place: MapBeaconPlace.decode(JSONFields.dictionary(row["place"]))
+            place: MapBeaconPlace.decode(JSONFields.dictionary(row["place"])),
+            rsvpCount: JSONFields.int(row["rsvp_count"])
         )
     }
 
