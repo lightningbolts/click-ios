@@ -86,7 +86,6 @@ struct NearbyListView: View {
         VStack(spacing: 0) {
             ScrollView(.horizontal) {
                 HStack(spacing: 8) {
-                    sortMenu
                     chip("All", count: nil, isOn: model.filter == nil) { model.filter = nil }
                     ForEach(model.layerCounts(pins: pins), id: \.layer) { entry in
                         chip(entry.layer.label, count: entry.count, isOn: model.filter == entry.layer) {
@@ -107,9 +106,9 @@ struct NearbyListView: View {
 
             list
         }
-        // Search and refresh live in a real (transparent) navigation bar rather than a hidden
-        // one: every screen opened from here has a bar, so a hidden one popped in on each push
-        // and shifted everything.
+        // Search, sort and refresh live in a real (transparent) navigation bar rather than a
+        // hidden one: every screen opened from here has a bar, so a hidden one popped in on each
+        // push and shifted everything. Sort and refresh share one group (one glass capsule).
         .navigationTitle("Nearby")
         .navigationBarTitleDisplayMode(.inline)
         .toolbarBackground(.hidden, for: .navigationBar)
@@ -117,7 +116,8 @@ struct NearbyListView: View {
             ToolbarItem(placement: .principal) {
                 searchField.frame(maxWidth: .infinity)
             }
-            ToolbarItem(placement: .topBarTrailing) {
+            ToolbarItemGroup(placement: .topBarTrailing) {
+                sortMenu
                 Button("Refresh nearby", systemImage: "arrow.clockwise") { model.refresh() }
             }
         }
@@ -177,43 +177,35 @@ struct NearbyListView: View {
             ClickHaptics.selection()
             action()
         } label: {
-            chipLabel(isOn: isOn) {
+            // One weight for both states, so selecting never changes a chip's width.
+            HStack(spacing: 5) {
                 Text(title)
                 if let count {
                     Text(count, format: .number).opacity(0.7).monospacedDigit()
                 }
             }
+            .font(ClickTypography.supporting.weight(.medium))
+            .foregroundStyle(isOn ? ClickColors.accentForeground : ClickColors.textSecondary)
+            .padding(.horizontal, 14)
+            .frame(minHeight: ClickMetrics.chipHeight)
+            .background(isOn ? ClickColors.selectionTint : ClickColors.fillSubtle, in: Capsule())
+            .animation(.snappy(duration: 0.2), value: isOn)
         }
         .buttonStyle(.plain)
         .accessibilityAddTraits(isOn ? .isSelected : [])
     }
 
-    /// Row order: a chip that opens the choices, highlighted when it isn't the default.
+    /// Row order. A fixed icon, so choosing never resizes or moves anything; the menu's
+    /// checkmark shows the current order.
     private var sortMenu: some View {
-        Menu {
-            Picker("Sort by", selection: $model.sort) {
+        Menu("Sort by \(model.sort.label)", systemImage: "arrow.up.arrow.down") {
+            Picker("Sort by", selection: $model.sort.animation(.snappy)) {
                 ForEach(NearbySort.allCases) { sort in
                     Label(sort.label, systemImage: sort.systemImage).tag(sort)
                 }
             }
-        } label: {
-            chipLabel(isOn: model.sort != .relevance) {
-                Image(systemName: "arrow.up.arrow.down")
-                Text(model.sort.label)
-            }
         }
-        .buttonStyle(.plain)
-        .accessibilityLabel("Sort by \(model.sort.label)")
         .onChange(of: model.sort) { ClickHaptics.selection() }
-    }
-
-    private func chipLabel(isOn: Bool, @ViewBuilder content: () -> some View) -> some View {
-        HStack(spacing: 5, content: content)
-            .font(ClickTypography.supporting.weight(isOn ? .semibold : .medium))
-            .foregroundStyle(isOn ? ClickColors.accentForeground : ClickColors.textSecondary)
-            .padding(.horizontal, 14)
-            .frame(minHeight: ClickMetrics.chipHeight)
-            .background(isOn ? ClickColors.selectionTint : ClickColors.fillSubtle, in: Capsule())
     }
 
     @ViewBuilder
