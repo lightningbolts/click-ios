@@ -10,6 +10,8 @@ struct FindFriendsView: View {
     @State private var matches: [DiscoveredContactCard]?
     /// Contacts on Click you're already connected with (left out of `matches`).
     @State private var alreadyConnected = 0
+    /// Contacts on Click with a request pending either way (also left out of `matches`).
+    @State private var pending = 0
     /// Nil until loaded; the "let friends find you" card shows while you have no number saved.
     @State private var myPhone: String??
     @State private var requested: Set<String> = []
@@ -111,9 +113,12 @@ struct FindFriendsView: View {
     }
 
     private var emptyTitle: String {
-        switch alreadyConnected {
-        case 0: "None of your contacts are on Click yet"
-        case 1: "1 contact on Click, and you're already connected"
+        switch (alreadyConnected, pending) {
+        case (0, 0): "None of your contacts are on Click yet"
+        case (0, _): pending == 1
+            ? "1 contact on Click, with a request waiting"
+            : "\(pending) contacts on Click, with requests waiting"
+        case (1, _): "1 contact on Click, and you're already connected"
         default: "\(alreadyConnected) contacts on Click, and you're already connected"
         }
     }
@@ -125,7 +130,7 @@ struct FindFriendsView: View {
                 Text(emptyTitle)
                     .font(ClickTypography.supportingEmphasized)
                     .foregroundStyle(ClickColors.textPrimary)
-                Text(alreadyConnected > 0
+                Text(alreadyConnected + pending > 0
                      ? "Invite others, or connect in person with Tap or your QR code."
                      : "Invite them, or connect in person with Tap or your QR code.")
                     .font(ClickTypography.supporting)
@@ -232,6 +237,7 @@ struct FindFriendsView: View {
                 let hashes = try await ContactDiscoveryService.shared.collectAndHashDeviceContacts()
                 let response = try await ContactDiscoveryService.shared.discoverMatches(hashes: hashes, client: env.api)
                 alreadyConnected = response.alreadyConnected
+                pending = response.pending
                 matches = response.matches
                 AvatarView.prefetch(matches?.map(\.avatarUrl) ?? [], size: 48)
                 ClickHaptics.success()

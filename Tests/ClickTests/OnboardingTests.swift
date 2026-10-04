@@ -143,10 +143,11 @@ struct OnboardingTests {
 
     @Test("Discover decodes the already-connected count and tolerates servers without it")
     func discoverResponseDecoding() throws {
-        let current = Data(#"{"matches":[{"id":"u1","name":"Bee","avatar_url":null,"tags":[]}],"already_connected":3}"#.utf8)
+        let current = Data(#"{"matches":[{"id":"u1","name":"Bee","avatar_url":null,"tags":[]}],"already_connected":3,"pending":2}"#.utf8)
         let decoded = try JSONDecoder().decode(DiscoverContactsResponse.self, from: current)
         #expect(decoded.matches.map(\.id) == ["u1"])
         #expect(decoded.alreadyConnected == 3)
+        #expect(decoded.pending == 2)
 
         let older = Data(#"{"matches":[]}"#.utf8)
         #expect(try JSONDecoder().decode(DiscoverContactsResponse.self, from: older).alreadyConnected == 0)

@@ -27,21 +27,26 @@ public struct DiscoverContactsResponse: Decodable, Sendable {
     public let matches: [DiscoveredContactCard]
     /// Contacts on Click you're already connected with; they're left out of `matches`.
     public let alreadyConnected: Int
+    /// Contacts on Click with a request pending either way; also left out of `matches`.
+    public let pending: Int
 
     enum CodingKeys: String, CodingKey {
         case matches
         case alreadyConnected = "already_connected"
+        case pending
     }
 
-    public init(matches: [DiscoveredContactCard], alreadyConnected: Int = 0) {
+    public init(matches: [DiscoveredContactCard], alreadyConnected: Int = 0, pending: Int = 0) {
         self.matches = matches
         self.alreadyConnected = alreadyConnected
+        self.pending = pending
     }
 
     public init(from decoder: Decoder) throws {
         let container = try decoder.container(keyedBy: CodingKeys.self)
         matches = try container.decode([DiscoveredContactCard].self, forKey: .matches)
         alreadyConnected = try container.decodeIfPresent(Int.self, forKey: .alreadyConnected) ?? 0
+        pending = try container.decodeIfPresent(Int.self, forKey: .pending) ?? 0
     }
 }
 
