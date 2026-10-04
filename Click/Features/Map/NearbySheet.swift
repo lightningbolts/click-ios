@@ -175,7 +175,7 @@ struct NearbyListView: View {
     private func chip(_ title: String, count: Int?, isOn: Bool, action: @escaping () -> Void) -> some View {
         Button {
             ClickHaptics.selection()
-            action()
+            withAnimation(.snappy) { action() }
         } label: {
             // One weight for both states, so selecting never changes a chip's width.
             HStack(spacing: 5) {
@@ -189,22 +189,26 @@ struct NearbyListView: View {
             .padding(.horizontal, 14)
             .frame(minHeight: ClickMetrics.chipHeight)
             .background(isOn ? ClickColors.selectionTint : ClickColors.fillSubtle, in: Capsule())
-            .animation(.snappy(duration: 0.2), value: isOn)
         }
         .buttonStyle(.plain)
         .accessibilityAddTraits(isOn ? .isSelected : [])
     }
 
-    /// Row order. A fixed icon, so choosing never resizes or moves anything; the menu's
-    /// checkmark shows the current order.
+    /// Row order. The button wears the current order's icon, morphing between them in a
+    /// fixed frame so the capsule never resizes; rows animate to their new places.
     private var sortMenu: some View {
-        Menu("Sort by \(model.sort.label)", systemImage: "arrow.up.arrow.down") {
+        Menu {
             Picker("Sort by", selection: $model.sort.animation(.snappy)) {
                 ForEach(NearbySort.allCases) { sort in
                     Label(sort.label, systemImage: sort.systemImage).tag(sort)
                 }
             }
+        } label: {
+            Image(systemName: model.sort.systemImage)
+                .contentTransition(.symbolEffect(.replace))
+                .frame(width: 24, height: 24)
         }
+        .accessibilityLabel("Sort by \(model.sort.label)")
         .onChange(of: model.sort) { ClickHaptics.selection() }
     }
 
