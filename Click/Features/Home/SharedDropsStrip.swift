@@ -1,8 +1,9 @@
 import SwiftUI
 
-/// Shared Click Drops on Home (spec F3): one bounded strip — your recent drops and the ones your
-/// connections shared with you — never a feed. No likes, views or counts. Ready and developed
-/// drops open in the story viewer, where replies and reactions go to your chat with the poster.
+/// Shared Click Drops on Home (spec F3): one bounded strip — the last day's drops, or the newest
+/// 25 on a quieter day — one tile per person, Instagram-style. No likes, views or counts. A tile
+/// opens the story viewer on that person's drops, then carries on to the next person; replies and
+/// reactions go to your chat with the poster. Everything older is in the archive ("View all").
 struct SharedDropsStrip: View {
     @Environment(AppEnvironment.self) private var env
 
@@ -20,11 +21,12 @@ struct SharedDropsStrip: View {
 
     struct ViewerStart: Identifiable {
         let id: String
+        var playlist: StoryPlaylist = .people
     }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
-            HomeSectionTitle("Click Drops").padding(.horizontal, 4)
+            header
             // Its own grouped card, like every other Home section; tiles scroll inside it.
             ScrollView(.horizontal, showsIndicators: false) {
                 HStack(spacing: 10) {
@@ -34,9 +36,9 @@ struct SharedDropsStrip: View {
                             Task { await store.retry(upload, env: env) }
                         }
                     }
-                    ForEach(store.drops.value ?? []) { tile($0) }
+                    ForEach(store.groups) { tile($0) }
                 }
-                .animation(ClickMotion.subtleFade, value: store.drops.value?.map(\.id))
+                .animation(ClickMotion.subtleFade, value: store.groups.map(\.id))
                 .padding(12)
             }
             .groupedSurface()
@@ -75,6 +77,31 @@ struct SharedDropsStrip: View {
         .dropViewer($viewing, sources: tileFrames)
     }
 
+    /// The title, with "View all" (the archive) once there's anything to see.
+    @ViewBuilder
+    private var header: some View {
+        if store.drops.value?.isEmpty == false || store.archive.value?.drops.isEmpty == false {
+            Button { env.router.navigate(to: .dropsArchive) } label: {
+                HStack(alignment: .firstTextBaseline) {
+                    HomeSectionTitle("Click Drops")
+                    Spacer()
+                    Text("View all")
+                        .font(ClickTypography.supporting)
+                        .foregroundStyle(ClickColors.textSecondary)
+                    Image(systemName: "chevron.right")
+                        .font(.footnote.weight(.semibold))
+                        .foregroundStyle(ClickColors.textTertiary)
+                }
+                .padding(.horizontal, 4)
+                .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            .accessibilityHint("Opens every drop, older ones included.")
+        } else {
+            HomeSectionTitle("Click Drops").padding(.horizontal, 4)
+        }
+    }
+
     private func openRequestedCamera() {
         guard store.cameraRequested else { return }
         store.cameraRequested = false
@@ -82,7 +109,8 @@ struct SharedDropsStrip: View {
     }
 
     private func openPendingDrop() {
-        guard let id = env.pendingSharedDropID, viewing == nil, store.drop(id).map({ !$0.state().isPending }) == true else { return }
+        guard let id = env.pendingSharedDropID, viewing == nil,
+              store.drops.value?.first(where: { $0.id == id }).map({ !$0.state().isPending }) == true else { return }
         env.pendingSharedDropID = nil
         ViewerStart.open(id, in: $viewing)
     }
@@ -116,11 +144,15 @@ struct SharedDropsStrip: View {
 
     private static let tileSize = CGSize(width: 104, height: 140)
 
-    private func tile(_ drop: SharedDrop) -> some View {
+    /// One person: their cover photo (the drop the story opens on), a ring while any is ready to
+    /// develop, and how many they shared when it's more than one.
+    private func tile(_ group: SharedDropGroup) -> some View {
+        let drop = group.cover
         let state = drop.state()
         let developing = store.developing.contains(drop.id)
+        let ready = group.drops.contains { $0.state() == .ready }
         return Button {
-            if !state.isPending { ViewerStart.open(drop.id, in: $viewing) }
+            if let start = group.start { ViewerStart.open(start.id, in: $viewing) }
         } label: {
             // A fixed frame with overlays: a filling photo never pushes the labels out of the tile.
             Group {
@@ -132,7 +164,10 @@ struct SharedDropsStrip: View {
                 }
             }
             .frame(width: Self.tileSize.width, height: Self.tileSize.height)
-            .overlay(alignment: .topTrailing) { badge(state: state).padding(6) }
+            .overlay(alignment: .topTrailing) { badge(state: ready ? .ready : state).padding(6) }
+            .overlay(alignment: .topLeading) {
+                if group.drops.count > 1 { DropCountBadge(count: group.drops.count).padding(6) }
+            }
             .overlay(alignment: .bottomLeading) {
                 HStack(spacing: 5) {
                     AvatarView(imageURL: drop.avatarURL, seed: drop.userID, initials: Phase3Repository.initials(from: drop.userName), size: 18)
@@ -148,7 +183,7 @@ struct SharedDropsStrip: View {
                 .padding(6)
             }
             .overlay {
-                if state == .ready {
+                if ready {
                     RoundedRectangle(cornerRadius: 16, style: .continuous).strokeBorder(ClickColors.accentForeground, lineWidth: 2)
                 }
             }
@@ -156,11 +191,12 @@ struct SharedDropsStrip: View {
             // Glass over a photo reads as dark glass, so the white labels always hold.
             .environment(\.colorScheme, .dark)
             .animation(ClickMotion.reveal, value: store.originals[drop.id] != nil)
-            .dropTileSource(drop.id, in: tileFrames)
+            // Keyed by person: the viewer closes back into this tile from any of their drops.
+            .dropTileSource(group.userID, in: tileFrames)
         }
         .buttonStyle(.plain)
-        .disabled(state.isPending)
-        .accessibilityLabel(accessibility(drop, state: state))
+        .disabled(group.start == nil)
+        .accessibilityLabel(accessibility(group, state: ready ? .ready : state))
     }
 
     /// Pending: a short countdown ("45m"). Ready: a sparkle to tap. Developed: nothing.
@@ -191,13 +227,33 @@ struct SharedDropsStrip: View {
         return minutes >= 1 ? "\(minutes)m" : "<1m"
     }
 
-    private func accessibility(_ drop: SharedDrop, state: ClickDropDevelopState) -> String {
-        let who = drop.isMine ? "Your drop" : "Drop from \(drop.userName)"
+    private func accessibility(_ group: SharedDropGroup, state: ClickDropDevelopState) -> String {
+        let drop = group.cover
+        let count = group.drops.count > 1 ? ", \(group.drops.count) drops" : ""
+        let who = (drop.isMine ? "Your drops" : "Drops from \(drop.userName)") + count
         switch state {
         case .pending(let reveal): return "\(who), develops \(reveal.formatted(.relative(presentation: .named)))"
-        case .ready: return "\(who), ready to develop. Opens it."
-        case .developed: return "\(who). Opens it."
+        case .ready: return "\(who), ready to develop. Opens them."
+        case .developed: return "\(who). Opens them."
         }
+    }
+}
+
+/// How many drops a person's tile holds: a small stacked-photos glyph and the number.
+struct DropCountBadge: View {
+    let count: Int
+
+    var body: some View {
+        HStack(spacing: 3) {
+            Image(systemName: "square.stack.fill")
+            Text("\(count)").monospacedDigit()
+        }
+        .font(ClickTypography.badge)
+        .foregroundStyle(.white)
+        .padding(.horizontal, 7)
+        .padding(.vertical, 4)
+        .glassCircleBackground()
+        .accessibilityHidden(true)
     }
 }
 

@@ -1,7 +1,16 @@
 import SwiftUI
 
+/// What the viewer plays through, chapter by chapter.
+enum StoryPlaylist: Hashable {
+    /// The Home strip: a chapter per person (their drops, oldest first), in strip order.
+    case people
+    /// The archive: every drop its own chapter, in grid order.
+    case archive
+}
+
 /// Shared Click Drops, Instagram-story style: zooms out of the tapped tile, then one drop after
-/// another with progress segments; tap the sides to move, hold to pause, swipe down to close. A ready drop develops right
+/// another with progress segments for the current person; past their last drop it carries on to
+/// the next person. Tap the sides to move, swipe sideways to skip a person, hold to pause, swipe down to close. A ready drop develops right
 /// here, unveiling from its pixels. Replies and reactions go to your chat with the poster and
 /// carry the drop with them; your own drops show who reacted instead.
 struct SharedDropStoryViewer: View {
@@ -34,7 +43,11 @@ struct SharedDropStoryViewer: View {
     /// The header's and footer's heights: the photo sits in the space between them.
     @State private var headerHeight: CGFloat = 0
     @State private var footerHeight: CGFloat = 0
+    /// The people in the order they were when the viewer opened, so watching (which can move a
+    /// tile) never changes what comes next.
+    @State private var peopleOrder: [String]?
     private let sources: DropTileFrames?
+    private let playlist: StoryPlaylist
 
     private static let secondsPerDrop: Double = 6
     /// Your own drop's reactor row (a face, its emoji and a name), held while reactions load.
@@ -46,13 +59,62 @@ struct SharedDropStoryViewer: View {
 
     /// Present with animations disabled: the viewer runs its own zoom out of `sources`' tile
     /// (or a fade without one, or under Reduce Motion).
-    init(startID: String, sources: DropTileFrames? = nil) {
+    init(startID: String, playlist: StoryPlaylist = .people, sources: DropTileFrames? = nil) {
         _currentID = State(initialValue: startID)
+        self.playlist = playlist
         self.sources = sources
     }
 
     private var store: SharedDropsStore { env.sharedDropsStore }
-    private var sequence: [SharedDrop] { store.viewable }
+
+    // MARK: - Chapters
+
+    private var chapterKeys: [String] {
+        switch playlist {
+        case .people: peopleOrder ?? store.groups.map(\.userID)
+        // Append-only as pages load, so it's read live.
+        case .archive: store.archiveViewable.map(\.id)
+        }
+    }
+
+    private func chapterKey(_ drop: SharedDrop) -> String {
+        playlist == .people ? drop.userID : drop.id
+    }
+
+    /// A chapter's drops that can be opened, in play order.
+    private func chapter(_ key: String) -> [SharedDrop] {
+        switch playlist {
+        case .people: store.group(key)?.viewable ?? []
+        case .archive: store.drop(key).map { $0.state().isPending ? [] : [$0] } ?? []
+        }
+    }
+
+    private func chapterStart(_ key: String) -> String? {
+        switch playlist {
+        case .people: store.group(key)?.start?.id
+        case .archive: chapter(key).first?.id
+        }
+    }
+
+    /// The current chapter: what the progress bar shows and taps move through.
+    private var sequence: [SharedDrop] { current.map { chapter(chapterKey($0)) } ?? [] }
+
+    /// The drops that play after `id`, across chapters, for prefetching.
+    private func upcoming(after id: String, count: Int) -> [SharedDrop] {
+        guard let drop = store.drop(id) else { return [] }
+        let key = chapterKey(drop)
+        let here = chapter(key)
+        var out = Array(here.drop { $0.id != id }.dropFirst().prefix(count))
+        let keys = chapterKeys
+        var index = (keys.firstIndex(of: key) ?? keys.count) + 1
+        while out.count < count, keys.indices.contains(index) {
+            let next = chapter(keys[index])
+            let start = chapterStart(keys[index])
+            out += next.drop { $0.id != start }.prefix(count - out.count)
+            index += 1
+        }
+        return out
+    }
     private var current: SharedDrop? { store.drop(currentID) }
     private func photo(_ id: String) -> UIImage? { full[id] ?? store.originals[id] }
     /// A photo already on hand (and not just developed) shows from the first frame, so nothing
@@ -91,6 +153,7 @@ struct SharedDropStoryViewer: View {
         .statusBarHidden()
         .clickToast($toast, edge: .top)
         .task(id: currentID) { await open(currentID) }
+        .onAppear { if playlist == .people, peopleOrder == nil { peopleOrder = store.groups.map(\.userID) } }
         .task(id: "\(currentID)|\(isPaused)") { await runTimer() }
         .onChange(of: current == nil) { _, gone in if gone { close() } }
         .confirmation("Delete this drop?", isPresented: $confirmDelete, keep: "Keep It",
@@ -169,6 +232,7 @@ struct SharedDropStoryViewer: View {
             .accessibilityLabel(drop.isMine ? "Your drop" : "Drop from \(drop.userName)")
             .accessibilityAction(named: "Next") { advance(1) }
             .accessibilityAction(named: "Previous") { advance(-1) }
+            .accessibilityAction(named: playlist == .people ? "Next person" : "Next drop") { jumpChapter(1) }
     }
 
     private func developingLabel(_ drop: SharedDrop) -> some View {
@@ -196,6 +260,11 @@ struct SharedDropStoryViewer: View {
                             holding = false
                             let quick = Date().timeIntervalSince(pressStart ?? .now) < 0.25
                             pressStart = nil
+                            // A sideways swipe skips to the next (or back to the previous) person.
+                            let dx = value.translation.width, dy = value.translation.height
+                            if !replyFocused, abs(dx) > 50, abs(dx) > abs(dy) * 1.5 {
+                                return jumpChapter(dx < 0 ? 1 : -1)
+                            }
                             guard quick, abs(value.translation.width) < 16, abs(value.translation.height) < 16 else { return }
                             if replyFocused { replyFocused = false; return }
                             advance(value.location.x < proxy.size.width / 3 ? -1 : 1)
@@ -333,15 +402,29 @@ struct SharedDropStoryViewer: View {
         withAnimation(ClickMotion.subtleFade) { _ = unveiled.insert(id) }
     }
 
-    /// The next developed drop's photo is decoded before it's shown.
+    /// The next two developed drops (into the next person's, past this person's last) are decoded
+    /// before they're shown; near the end of what the archive has loaded, its next page follows.
     private func prefetchNext(after id: String) {
-        guard let index = sequence.firstIndex(where: { $0.id == id }), index + 1 < sequence.count else { return }
-        let next = sequence[index + 1]
-        guard next.state() == .developed, full[next.id] == nil else { return }
-        Task {
-            if let image = await store.fullImage(for: next, env: env) { full[next.id] = image }
+        for next in upcoming(after: id, count: Self.prefetchCount) where next.state() == .developed && full[next.id] == nil {
+            Task {
+                if let image = await store.fullImage(for: next, env: env), keepsFull(next.id) { full[next.id] = image }
+            }
+        }
+        if playlist == .archive, let index = store.archiveViewable.firstIndex(where: { $0.id == id }),
+           index >= store.archiveViewable.count - 5 {
+            Task { await store.loadMoreArchive(env: env) }
         }
     }
+
+    private static let prefetchCount = 2
+
+    /// Full-size photos stay only for the current drop, the one before it and the next few:
+    /// each is several megabytes decoded.
+    private func keepsFull(_ id: String) -> Bool {
+        id == currentID || id == previousID || upcoming(after: currentID, count: Self.prefetchCount).contains { $0.id == id }
+    }
+
+    @State private var previousID: String?
 
     private func runTimer() async {
         guard !isPaused else { return }
@@ -353,15 +436,36 @@ struct SharedDropStoryViewer: View {
         if clock.progress >= 1 { advance(1) }
     }
 
+    /// Through this chapter, then on into the next (or back into the previous) one.
     private func advance(_ step: Int) {
-        guard let index = sequence.firstIndex(where: { $0.id == currentID }) else { return close() }
+        let ids = sequence.map(\.id)
+        guard let index = ids.firstIndex(of: currentID) else { return close() }
         let next = index + step
-        if next >= sequence.count { return close() }
-        guard next >= 0 else { clock.progress = 0; return }
+        if ids.indices.contains(next) { return go(to: ids[next]) }
+        jumpChapter(step)
+    }
+
+    /// The next person's story (or the previous one's); past the last, the viewer closes, and
+    /// before the first, the current drop starts over.
+    private func jumpChapter(_ step: Int) {
+        let keys = chapterKeys
+        guard let drop = current, let at = keys.firstIndex(of: chapterKey(drop)) else { return close() }
+        var index = at + step
+        while keys.indices.contains(index) {
+            if let start = chapterStart(keys[index]) { return go(to: start) }
+            index += step
+        }
+        if step > 0 { close() } else { clock.progress = 0 }
+    }
+
+    private func go(to id: String) {
+        guard id != currentID else { clock.progress = 0; return }
         ClickHaptics.selection()
         // A drop seen again shows developed; it doesn't play its develop twice.
         playing.removeAll()
-        currentID = sequence[next].id
+        previousID = currentID
+        currentID = id
+        full = full.filter { keepsFull($0.key) }
     }
 
     private func aspect(_ id: String) -> CGFloat? {
@@ -385,7 +489,8 @@ struct SharedDropStoryViewer: View {
     /// plain fade) without a visible tile or under Reduce Motion.
     private var collapsed: (scale: CGFloat, offset: CGSize, crop: CGRect)? {
         guard !presented, !reduceMotion, frame.width > 0,
-              let tile = sources?.byID[currentID], tile.intersects(frame) else { return nil }
+              let tile = sources?.byID[currentID] ?? current.flatMap({ sources?.byID[$0.userID] }),
+              tile.intersects(frame) else { return nil }
         let photo = photoRect
         let scale = max(tile.width / photo.width, tile.height / photo.height)
         // scaleEffect scales about the viewer's center; the offset then moves the photo's center
@@ -533,16 +638,16 @@ extension View {
 
     /// Presents the drop viewer without the system's animation; it runs its own quicker zoom.
     func dropViewer(_ viewing: Binding<SharedDropsStrip.ViewerStart?>, sources: DropTileFrames) -> some View {
-        fullScreenCover(item: viewing) { start in SharedDropStoryViewer(startID: start.id, sources: sources) }
+        fullScreenCover(item: viewing) { start in SharedDropStoryViewer(startID: start.id, playlist: start.playlist, sources: sources) }
     }
 }
 
 extension SharedDropsStrip.ViewerStart {
     /// Opens a drop with the presentation itself unanimated (the viewer animates its own way in).
-    static func open(_ id: String, in viewing: Binding<SharedDropsStrip.ViewerStart?>) {
+    static func open(_ id: String, playlist: StoryPlaylist = .people, in viewing: Binding<SharedDropsStrip.ViewerStart?>) {
         var transaction = Transaction()
         transaction.disablesAnimations = true
-        withTransaction(transaction) { viewing.wrappedValue = .init(id: id) }
+        withTransaction(transaction) { viewing.wrappedValue = .init(id: id, playlist: playlist) }
     }
 }
 

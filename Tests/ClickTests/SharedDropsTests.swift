@@ -61,6 +61,46 @@ struct SharedDropsTests {
         #expect(drops[0].audience == nil)
     }
 
+    @Test("The strip groups by person: yours first, then by newest drop; a story starts at the first unseen")
+    func groupsByPerson() async throws {
+        let past = "2000-01-01T00:00:00Z", seen = "\"2000-01-02T00:00:00Z\""
+        func row(_ id: String, _ user: String, mine: Bool = false, developed: String = "null", reveal: String = past) -> String {
+            #"{"id":"\#(id)","user":{"id":"\#(user)","name":"\#(user)"},"is_mine":\#(mine),"reveal_at":"\#(reveal)","developed_at":\#(developed)}"#
+        }
+        // Newest first, as the server sends them.
+        let rows = [
+            row("m3", "maya", developed: seen),
+            row("j2", "jo", developed: seen),
+            row("me1", "me", mine: true, reveal: "2999-01-01T00:00:00Z"),
+            row("m2", "maya"),
+            row("m1", "maya", developed: seen),
+            row("j1", "jo", developed: seen)
+        ]
+        SharedDropsMockURLProtocol.handler = { _ in (200, #"{"drops":[\#(rows.joined(separator: ","))]}"#) }
+        let groups = SharedDropGroup.group(try await service().sharedDrops())
+        #expect(groups.map(\.userID) == ["me", "maya", "jo"])
+        #expect(groups[1].drops.map(\.id) == ["m1", "m2", "m3"])
+        #expect(groups[1].start?.id == "m2")
+        #expect(groups[1].cover.id == "m2")
+        #expect(groups[2].start?.id == "j1")
+        #expect(groups[0].start == nil)
+        #expect(groups[0].cover.id == "me1")
+    }
+
+    @Test("The archive pages with its cursor")
+    func archivePage() async throws {
+        var asked: URL?
+        SharedDropsMockURLProtocol.handler = { request in
+            asked = request.url
+            return (200, #"{"drops":[{"id":"a","user":{"id":"u1","name":"Maya"},"reveal_at":"2000-01-01T00:00:00Z"}],"next_before":"2026-10-01T00:00:00Z"}"#)
+        }
+        let page = try await service().sharedDropArchive(before: "2026-10-03T00:00:00Z")
+        #expect(page.drops.map(\.id) == ["a"])
+        #expect(page.nextBefore == "2026-10-01T00:00:00Z")
+        #expect(asked?.path == "/api/me/shared-drops/archive")
+        #expect(asked?.query?.contains("before=2026-10-03T00:00:00Z") == true)
+    }
+
     @Test("Past the daily cap, sharing says so plainly")
     func capReached() async {
         SharedDropsMockURLProtocol.handler = { _ in (409, #"{"code":"cap_reached"}"#) }
