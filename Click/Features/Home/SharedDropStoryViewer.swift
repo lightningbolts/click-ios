@@ -72,7 +72,7 @@ struct SharedDropStoryViewer: View {
             // Home dims to black behind the zooming card, so the card's growing edge never wipes
             // across the tab bar. Plain black, no glass, so it can fade; it lifts as you drag.
             Color.black.ignoresSafeArea()
-                .opacity(presented ? 1 - min(dragY, 240) / 240 : 0)
+                .opacity(presented ? Double(1 - min(dragY, 240) / 240) : 0)
             card
         }
         .presentationBackground(.clear)
