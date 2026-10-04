@@ -69,30 +69,12 @@ struct SharedDropStoryViewer: View {
 
     var body: some View {
         ZStack {
+            // Home dims to black behind the zooming card, so the card's growing edge never wipes
+            // across the tab bar. Plain black, no glass, so it can fade; it lifts as you drag.
             Color.black.ignoresSafeArea()
-            if let drop = current {
-                photoLayer(drop)
-                    .ignoresSafeArea(.keyboard)
-                VStack(spacing: 0) {
-                    header(drop)
-                        .onGeometryChange(for: CGFloat.self, of: { $0.size.height }) { headerHeight = $0 }
-                    Spacer(minLength: 0)
-                    footer(drop)
-                        // Held while typing, so a growing reply never shrinks the photo.
-                        .onGeometryChange(for: CGFloat.self, of: { $0.size.height }) { if !replyFocused { footerHeight = $0 } }
-                }
-            }
+                .opacity(presented ? 1 - min(dragY, 240) / 240 : 0)
+            card
         }
-        .offset(y: dragY)
-        .scaleEffect(1 - min(dragY, 400) / 2400)
-        // Zooming, the viewer stays opaque and is cropped to the tile's shape instead of fading:
-        // Liquid Glass (the header, caption and reactions) flickers under a changing opacity.
-        .clipShape(crop)
-        .scaleEffect(collapsed?.scale ?? 1)
-        .offset(collapsed?.offset ?? .zero)
-        .opacity(presented || collapsed != nil ? 1 : 0)
-        .onGeometryChange(for: CGRect.self, of: { $0.frame(in: .global) }) { frame = $0 }
-        .onGeometryChange(for: EdgeInsets.self, of: { $0.safeAreaInsets }) { insets = $0 }
         .presentationBackground(.clear)
         .simultaneousGesture(dismissDrag)
         // Our own swipe-down (which also pauses) closes, zooming back into the tile.
@@ -122,6 +104,35 @@ struct SharedDropStoryViewer: View {
         } message: {
             Text("Reports go quietly to the Click team. Nobody else sees them.")
         }
+    }
+
+    /// The viewer itself: opaque, zoomed out of and back into the tile.
+    private var card: some View {
+        ZStack {
+            Color.black.ignoresSafeArea()
+            if let drop = current {
+                photoLayer(drop)
+                    .ignoresSafeArea(.keyboard)
+                VStack(spacing: 0) {
+                    header(drop)
+                        .onGeometryChange(for: CGFloat.self, of: { $0.size.height }) { headerHeight = $0 }
+                    Spacer(minLength: 0)
+                    footer(drop)
+                        // Held while typing, so a growing reply never shrinks the photo.
+                        .onGeometryChange(for: CGFloat.self, of: { $0.size.height }) { if !replyFocused { footerHeight = $0 } }
+                }
+            }
+        }
+        .offset(y: dragY)
+        .scaleEffect(1 - min(dragY, 400) / 2400)
+        // Zooming, the viewer stays opaque and is cropped to the tile's shape instead of fading:
+        // Liquid Glass (the header, caption and reactions) flickers under a changing opacity.
+        .clipShape(crop)
+        .scaleEffect(collapsed?.scale ?? 1)
+        .offset(collapsed?.offset ?? .zero)
+        .opacity(presented || collapsed != nil ? 1 : 0)
+        .onGeometryChange(for: CGRect.self, of: { $0.frame(in: .global) }) { frame = $0 }
+        .onGeometryChange(for: EdgeInsets.self, of: { $0.safeAreaInsets }) { insets = $0 }
     }
 
     // MARK: - Photo
