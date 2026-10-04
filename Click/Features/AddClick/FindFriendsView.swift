@@ -12,6 +12,8 @@ struct FindFriendsView: View {
     @State private var alreadyConnected = 0
     /// Contacts on Click with a request pending either way (also left out of `matches`).
     @State private var pending = 0
+    /// Who those contacts are (empty from older servers, which send only the counts).
+    @State private var known: [DiscoveredContactCard] = []
     /// Nil until loaded; the "let friends find you" card shows while you have no number saved.
     @State private var myPhone: String??
     @State private var requested: Set<String> = []
@@ -113,7 +115,9 @@ struct FindFriendsView: View {
     }
 
     private var emptyTitle: String {
-        switch (alreadyConnected, pending) {
+        // The list below shows who they are.
+        if !known.isEmpty { return "No one new from your contacts yet" }
+        return switch (alreadyConnected, pending) {
         case (0, 0): "None of your contacts are on Click yet"
         case (0, _): pending == 1
             ? "1 contact on Click, with a request waiting"
@@ -134,38 +138,82 @@ struct FindFriendsView: View {
     @ViewBuilder
     private func results(_ matches: [DiscoveredContactCard]) -> some View {
         if matches.isEmpty {
-            VStack(spacing: ClickSpacing.xs) {
-                Text(emptyTitle)
-                    .font(ClickTypography.supportingEmphasized)
-                    .foregroundStyle(ClickColors.textPrimary)
-                Text(emptySubtitle)
-                    .font(ClickTypography.supporting)
-                    .foregroundStyle(ClickColors.textSecondary)
-                HStack(spacing: ClickSpacing.sm) {
-                    InviteFriendsLink()
-                    Button("Tap to Connect") { env.router.navigate(to: .tapConnect) }
-                        .buttonStyle(.clickSecondary)
-                }
-                .padding(.top, ClickSpacing.sm)
-            }
-            .multilineTextAlignment(.center)
-            .frame(maxWidth: .infinity)
-            .padding(ClickSpacing.surfacePadding)
-            .groupedSurface()
+            emptyCard
         } else {
             VStack(alignment: .leading, spacing: 10) {
-                HomeSectionTitle(matches.count == 1 ? "1 friend on Click" : "\(matches.count) friends on Click")
-                    .padding(.horizontal, 4)
-                VStack(spacing: 0) {
-                    ForEach(Array(matches.enumerated()), id: \.element.id) { index, match in
-                        if index > 0 { HomeDivider(inset: 76) }
-                        row(match)
-                    }
-                }
-                .groupedSurface()
+                section(matches.count == 1 ? "1 friend on Click" : "\(matches.count) friends on Click", matches, row: row)
                 InviteFriendsLink().padding(.top, ClickSpacing.xs)
             }
         }
+        if !known.isEmpty {
+            section("Already on Click", known, row: knownRow)
+        }
+    }
+
+    private func section<Row: View>(_ title: String, _ people: [DiscoveredContactCard],
+                                    row: @escaping (DiscoveredContactCard) -> Row) -> some View {
+        VStack(alignment: .leading, spacing: 10) {
+            HomeSectionTitle(title).padding(.horizontal, 4)
+            VStack(spacing: 0) {
+                ForEach(Array(people.enumerated()), id: \.element.id) { index, person in
+                    if index > 0 { HomeDivider(inset: 76) }
+                    row(person)
+                }
+            }
+            .groupedSurface()
+        }
+    }
+
+    private var emptyCard: some View {
+        VStack(spacing: ClickSpacing.xs) {
+            Text(emptyTitle)
+                .font(ClickTypography.supportingEmphasized)
+                .foregroundStyle(ClickColors.textPrimary)
+            Text(emptySubtitle)
+                .font(ClickTypography.supporting)
+                .foregroundStyle(ClickColors.textSecondary)
+            HStack(spacing: ClickSpacing.sm) {
+                InviteFriendsLink()
+                Button("Tap to Connect") { env.router.navigate(to: .tapConnect) }
+                    .buttonStyle(.clickSecondary)
+            }
+            .padding(.top, ClickSpacing.sm)
+        }
+        .multilineTextAlignment(.center)
+        .frame(maxWidth: .infinity)
+        .padding(ClickSpacing.surfacePadding)
+        .groupedSurface()
+    }
+
+    /// Someone you already have a connection with: opens their profile.
+    private func knownRow(_ person: DiscoveredContactCard) -> some View {
+        Button {
+            env.router.navigate(to: person.status == .connected
+                ? .userProfile(userID: person.id, connectionID: nil)
+                : .publicProfile(userID: person.id))
+        } label: {
+            HStack(spacing: 12) {
+                AvatarView(imageURL: person.avatarUrl, seed: person.id,
+                           initials: Phase3Repository.initials(from: person.name), size: 48)
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(person.name)
+                        .font(ClickTypography.bodyEmphasized)
+                        .foregroundStyle(ClickColors.textPrimary)
+                        .lineLimit(1)
+                    Text(person.status == .connected ? "Connected" : "Request pending")
+                        .font(ClickTypography.metadata)
+                        .foregroundStyle(ClickColors.textSecondary)
+                }
+                Spacer(minLength: 8)
+                Image(systemName: "chevron.right")
+                    .font(.footnote.weight(.semibold))
+                    .foregroundStyle(ClickColors.textTertiary)
+            }
+            .padding(.horizontal, ClickSpacing.surfacePadding)
+            .padding(.vertical, 10)
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
     }
 
     private func row(_ match: DiscoveredContactCard) -> some View {
@@ -244,8 +292,9 @@ struct FindFriendsView: View {
                 let response = try await ContactDiscoveryService.shared.discoverMatches(hashes: hashes, client: env.api)
                 alreadyConnected = response.alreadyConnected
                 pending = response.pending
+                known = response.known
                 matches = response.matches
-                AvatarView.prefetch(matches?.map(\.avatarUrl) ?? [], size: 48)
+                AvatarView.prefetch((response.matches + response.known).map(\.avatarUrl), size: 48)
                 ClickHaptics.success()
             } catch {
                 errorMessage = "Couldn't check your contacts. Try again."

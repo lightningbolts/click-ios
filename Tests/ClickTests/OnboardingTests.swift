@@ -141,13 +141,25 @@ struct OnboardingTests {
         #expect(ContactDiscoveryService.normalizeEmail("invalid-email") == nil)
     }
 
-    @Test("Discover decodes the already-connected count and tolerates servers without it")
+    @Test("Discover decodes who you already know, and tolerates older servers")
     func discoverResponseDecoding() throws {
-        let current = Data(#"{"matches":[{"id":"u1","name":"Bee","avatar_url":null,"tags":[]}],"already_connected":3,"pending":2}"#.utf8)
+        let current = Data(#"""
+        {"matches":[{"id":"u1","name":"Bee","avatar_url":null,"tags":[]}],
+         "known":[{"id":"u2","name":"Cee","avatar_url":null,"tags":[],"status":"connected"},
+                  {"id":"u3","name":"Dee","avatar_url":null,"tags":[],"status":"pending"}],
+         "already_connected":1,"pending":1}
+        """#.utf8)
         let decoded = try JSONDecoder().decode(DiscoverContactsResponse.self, from: current)
         #expect(decoded.matches.map(\.id) == ["u1"])
-        #expect(decoded.alreadyConnected == 3)
-        #expect(decoded.pending == 2)
+        #expect(decoded.matches.first?.status == nil)
+        #expect(decoded.known.map(\.status) == [.connected, .pending])
+        #expect(decoded.alreadyConnected == 1)
+        #expect(decoded.pending == 1)
+
+        let counts = Data(#"{"matches":[],"already_connected":3}"#.utf8)
+        let countsOnly = try JSONDecoder().decode(DiscoverContactsResponse.self, from: counts)
+        #expect(countsOnly.known.isEmpty)
+        #expect(countsOnly.alreadyConnected == 3)
 
         let older = Data(#"{"matches":[]}"#.utf8)
         #expect(try JSONDecoder().decode(DiscoverContactsResponse.self, from: older).alreadyConnected == 0)
