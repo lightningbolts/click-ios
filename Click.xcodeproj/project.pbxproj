@@ -196,6 +196,7 @@
 		9B5130FF9140BEAE3CCDE585 /* SavedEventsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8A25B36F7B43CDA3235FEFDD /* SavedEventsView.swift */; };
 		9BCC7EC969F64D6BDC9AB051 /* EventReminderScheduler.swift in Sources */ = {isa = PBXBuildFile; fileRef = FCB1638F35F178E0F0FE80F1 /* EventReminderScheduler.swift */; };
 		9E2076DD9D531A1C096BC3C9 /* AlertConfirmationTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 01E41A22521ABAE888EEBCDF /* AlertConfirmationTests.swift */; };
+		9F990A7BA45B050C9B85AD6C /* ClipModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = 002CFEA32E7459B5D7AC4BAA /* ClipModel.swift */; };
 		9FFE49B750AFD7B106E7F990 /* CreateBeaconSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1704BBFEC1035AD1234E1B8D /* CreateBeaconSheet.swift */; };
 		A08898F5B6D91DED2768116E /* SharedDropsStrip.swift in Sources */ = {isa = PBXBuildFile; fileRef = F98A417595AD773FE33925C7 /* SharedDropsStrip.swift */; };
 		A30461AB84F2BAE2A8A57572 /* EventEngagementRepository.swift in Sources */ = {isa = PBXBuildFile; fileRef = AC24CFA0E6E02114CAA8699B /* EventEngagementRepository.swift */; };
@@ -349,6 +350,7 @@
 /* End PBXCopyFilesBuildPhase section */
 
 /* Begin PBXFileReference section */
+		002CFEA32E7459B5D7AC4BAA /* ClipModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ClipModel.swift; sourceTree = "<group>"; };
 		003194C59DD7C08710C713C1 /* CacheStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CacheStore.swift; sourceTree = "<group>"; };
 		005D701DA8A071928D68AB22 /* HomeView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HomeView.swift; sourceTree = "<group>"; };
 		01DF541D37D451BAB9008186 /* Phase3FeedTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Phase3FeedTests.swift; sourceTree = "<group>"; };
@@ -939,6 +941,7 @@
 			isa = PBXGroup;
 			children = (
 				DA511983FBEDC6F47528DD28 /* ClipApp.swift */,
+				002CFEA32E7459B5D7AC4BAA /* ClipModel.swift */,
 				060946110A08603E44DA7EE0 /* Info.plist */,
 			);
 			path = ClickClip;
@@ -1919,6 +1922,7 @@
 			buildActionMask = 2147483647;
 			files = (
 				1B134B977C322761A9BE9F57 /* ClipApp.swift in Sources */,
+				9F990A7BA45B050C9B85AD6C /* ClipModel.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
