@@ -474,7 +474,7 @@ public final class AppEnvironment {
         lastPresencePing = Date()
         Task {
             guard let fix = await location.currentLocation(maximumAge: 120, acceptableAccuracy: 100, timeout: .seconds(6)) else { return }
-            try? await relationships.reportPresence(fix.coordinate)
+            _ = try? await relationships.reportPresence(fix.coordinate)
         }
     }
 

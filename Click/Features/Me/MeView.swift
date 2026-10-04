@@ -83,6 +83,10 @@ public struct MeView: View {
                     Link(destination: URL(string: "https://joinclick.co")!) {
                         Label("Open web dashboard", systemImage: "safari")
                     }
+                    Section {
+                        Link(destination: LegalLinks.privacy) { Label("Privacy Policy", systemImage: "lock.shield") }
+                        Link(destination: LegalLinks.terms) { Label("Terms of Service", systemImage: "doc.text") }
+                    }
                 }
             }
             ToolbarItemGroup(placement: .topBarTrailing) {

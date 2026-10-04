@@ -146,6 +146,7 @@
 		761B604CDB4F953AFB0B3E29 /* LocationProvider.swift in Sources */ = {isa = PBXBuildFile; fileRef = A8EE27D772DD98E886CD7F0C /* LocationProvider.swift */; };
 		772DB2063A845310BCE94CBA /* ClickCryptoV2.swift in Sources */ = {isa = PBXBuildFile; fileRef = 819744403B53A100BF880F1B /* ClickCryptoV2.swift */; };
 		77E16A225B4E34C27CD1EC85 /* ClickLogo.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1AFAFEA28942252B4C8C3065 /* ClickLogo.swift */; };
+		78A2C8708A20CEFB25F2D336 /* PrivacyInfo.xcprivacy in Resources */ = {isa = PBXBuildFile; fileRef = 2273E1A642FA9354689BE6D2 /* PrivacyInfo.xcprivacy */; };
 		78E23D9CF63E068FA3ADFF76 /* ClicksInboxTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 74BFF7B0D6FD295C17BDCAFD /* ClicksInboxTests.swift */; };
 		79BAB20DB57C15DD383E3950 /* TabBarTransitionFader.swift in Sources */ = {isa = PBXBuildFile; fileRef = 04976593E2AA9C9465B4BBB8 /* TabBarTransitionFader.swift */; };
 		7B084D4485DF8DDD49429AF8 /* ClickClip.app in Embed App Clips */ = {isa = PBXBuildFile; fileRef = F8AF88527EA315B8FEEC3769 /* ClickClip.app */; settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
@@ -230,6 +231,7 @@
 		C47D3FFBBB3736906CCB13AC /* AppRouteDestination.swift in Sources */ = {isa = PBXBuildFile; fileRef = FF26912F27B4E25BACF33C07 /* AppRouteDestination.swift */; };
 		C5D97BA64D2128078C803D5A /* click.caf in Resources */ = {isa = PBXBuildFile; fileRef = D6D2AECD03E66F3B3547CDBE /* click.caf */; };
 		C7E3044705CB8DDF9A10AF7D /* RevisionTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 30DD4C9A7E9B5D5321C8F98A /* RevisionTests.swift */; };
+		CAB2F04077B91E563C15380B /* LegalLinks.swift in Sources */ = {isa = PBXBuildFile; fileRef = CCBE2695461A3992DE6CB5B7 /* LegalLinks.swift */; };
 		CAFFEBFEF80D776FAF36E2D3 /* PlaceDetailModelTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 24DA1C805A0963FD0F37A19B /* PlaceDetailModelTests.swift */; };
 		CBCEC7903522CD120AA3D4CA /* ChatMediaTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 32BD46ADA2DA64954FABB048 /* ChatMediaTests.swift */; };
 		CC56BFC382A9C86263741359 /* AppRouter.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7D2D91C12835F0AF71AF14F9 /* AppRouter.swift */; };
@@ -382,6 +384,7 @@
 		20EC856E20FF0D26024AD575 /* ChatKindsTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ChatKindsTests.swift; sourceTree = "<group>"; };
 		221590AAFE8AE01E4E75711D /* SupabaseAuthService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SupabaseAuthService.swift; sourceTree = "<group>"; };
 		2229C327502C1A82ABD17D9B /* StatusPill.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = StatusPill.swift; sourceTree = "<group>"; };
+		2273E1A642FA9354689BE6D2 /* PrivacyInfo.xcprivacy */ = {isa = PBXFileReference; path = PrivacyInfo.xcprivacy; sourceTree = "<group>"; };
 		2294E2A0A5352F1EDE36ED75 /* MyPlacesView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MyPlacesView.swift; sourceTree = "<group>"; };
 		235AD70ADF109B4932E8BC15 /* APIRequest.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = APIRequest.swift; sourceTree = "<group>"; };
 		24923300FE8FCED3010533B3 /* TelemetryTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TelemetryTests.swift; sourceTree = "<group>"; };
@@ -577,6 +580,7 @@
 		C8EA116736D43E0C9432BBF5 /* FlowLayout.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FlowLayout.swift; sourceTree = "<group>"; };
 		C9FCED2592922495933A7538 /* PlaceDetailView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PlaceDetailView.swift; sourceTree = "<group>"; };
 		CAC6727608A5C61CD9DC9BCD /* ProximityRepository.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ProximityRepository.swift; sourceTree = "<group>"; };
+		CCBE2695461A3992DE6CB5B7 /* LegalLinks.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LegalLinks.swift; sourceTree = "<group>"; };
 		CEEFE47A4CBAB925D04FB0E9 /* GroupedSurface.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GroupedSurface.swift; sourceTree = "<group>"; };
 		CEFB1BA8BE902D3D92C87CCD /* ProximityCodec.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ProximityCodec.swift; sourceTree = "<group>"; };
 		CFDEEB947FE11EAC6206E3B0 /* ChatMessageSheets.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ChatMessageSheets.swift; sourceTree = "<group>"; };
@@ -912,6 +916,7 @@
 			children = (
 				2AD5FF3EB16F83E96A974A83 /* AppConfig.swift */,
 				7E029DA98E0E0F177B884F78 /* FeatureFlags.swift */,
+				CCBE2695461A3992DE6CB5B7 /* LegalLinks.swift */,
 			);
 			path = Config;
 			sourceTree = "<group>";
@@ -1063,6 +1068,7 @@
 			isa = PBXGroup;
 			children = (
 				5B25B865B17C60099FB2E33C /* Info.plist */,
+				2273E1A642FA9354689BE6D2 /* PrivacyInfo.xcprivacy */,
 				22258974525B79165A83FCB5 /* App */,
 				FDAC9137FA28BA7987722C2E /* Core */,
 				0F7A4844296E5080F5539E73 /* DesignSystem */,
@@ -1590,6 +1596,7 @@
 				80E0FD617F57A87BEB475744 /* Manrope-Medium.ttf in Resources */,
 				275EFE64B076F48A594C5D37 /* Manrope-Regular.ttf in Resources */,
 				DFCC9DF32D532A6567CFF401 /* Manrope-SemiBold.ttf in Resources */,
+				78A2C8708A20CEFB25F2D336 /* PrivacyInfo.xcprivacy in Resources */,
 				C5D97BA64D2128078C803D5A /* click.caf in Resources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
@@ -1739,6 +1746,7 @@
 				72698DEA93E808276C44668E /* KeychainSessionVault.swift in Sources */,
 				1AF62E9ECAB90265D25938A8 /* KlipyClient.swift in Sources */,
 				FAC64483BE0386233DBB0B4F /* LegacyKMPStateMigrator.swift in Sources */,
+				CAB2F04077B91E563C15380B /* LegalLinks.swift in Sources */,
 				14437A6CB4D284779CF6E680 /* ListeningNowSection.swift in Sources */,
 				0129B20D6EF5FD53C967A7A4 /* LocalStore.swift in Sources */,
 				C1328F19E4F4F96C6F0A6E4C /* LocationObservation.swift in Sources */,
@@ -2055,9 +2063,9 @@
 				INFOPLIST_KEY_NSCameraUsageDescription = "Click uses your camera to scan QR codes and capture photos.";
 				INFOPLIST_KEY_NSContactsUsageDescription = "Click hashes phone numbers and emails on this device to find people you already know. Your address book never leaves your phone.";
 				INFOPLIST_KEY_NSLocationAlwaysAndWhenInUseUsageDescription = "If you turn on Past meeting spots, Click is told when you arrive somewhere so it can remind you of a Click you met there. Your location is never stored or shown to anyone.";
-				INFOPLIST_KEY_NSLocationWhenInUseUsageDescription = "Click uses your location for tether pings, maps, and nearby connection features.";
+				INFOPLIST_KEY_NSLocationWhenInUseUsageDescription = "Click uses your location to show the map, find people and events near you, and remember where you met someone when you connect.";
 				INFOPLIST_KEY_NSMicrophoneUsageDescription = "Click uses your microphone for Tap to Connect ultrasonic sensing and voice notes.";
-				INFOPLIST_KEY_NSMotionUsageDescription = "Click uses motion context to capture encounter vibe.";
+				INFOPLIST_KEY_NSMotionUsageDescription = "Click uses motion and altitude sensors during Tap to Connect to help confirm you are with the person you are connecting with.";
 				INFOPLIST_KEY_NSNearbyInteractionUsageDescription = "Click uses Nearby Interaction during Tap to Connect to measure proximity between nearby iPhones and help confirm you are connecting with the person physically next to you.";
 				INFOPLIST_KEY_NSPhotoLibraryAddUsageDescription = "Click saves photos to your photo library.";
 				INFOPLIST_KEY_NSPhotoLibraryUsageDescription = "Click accesses your photo library to select photos for profile and chat.";
@@ -2241,9 +2249,9 @@
 				INFOPLIST_KEY_NSCameraUsageDescription = "Click uses your camera to scan QR codes and capture photos.";
 				INFOPLIST_KEY_NSContactsUsageDescription = "Click hashes phone numbers and emails on this device to find people you already know. Your address book never leaves your phone.";
 				INFOPLIST_KEY_NSLocationAlwaysAndWhenInUseUsageDescription = "If you turn on Past meeting spots, Click is told when you arrive somewhere so it can remind you of a Click you met there. Your location is never stored or shown to anyone.";
-				INFOPLIST_KEY_NSLocationWhenInUseUsageDescription = "Click uses your location for tether pings, maps, and nearby connection features.";
+				INFOPLIST_KEY_NSLocationWhenInUseUsageDescription = "Click uses your location to show the map, find people and events near you, and remember where you met someone when you connect.";
 				INFOPLIST_KEY_NSMicrophoneUsageDescription = "Click uses your microphone for Tap to Connect ultrasonic sensing and voice notes.";
-				INFOPLIST_KEY_NSMotionUsageDescription = "Click uses motion context to capture encounter vibe.";
+				INFOPLIST_KEY_NSMotionUsageDescription = "Click uses motion and altitude sensors during Tap to Connect to help confirm you are with the person you are connecting with.";
 				INFOPLIST_KEY_NSNearbyInteractionUsageDescription = "Click uses Nearby Interaction during Tap to Connect to measure proximity between nearby iPhones and help confirm you are connecting with the person physically next to you.";
 				INFOPLIST_KEY_NSPhotoLibraryAddUsageDescription = "Click saves photos to your photo library.";
 				INFOPLIST_KEY_NSPhotoLibraryUsageDescription = "Click accesses your photo library to select photos for profile and chat.";

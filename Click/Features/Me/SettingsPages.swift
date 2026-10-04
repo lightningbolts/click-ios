@@ -259,6 +259,11 @@ struct PrivacySettingsView: View {
                     Text("Blocked people")
                 }
             }
+
+            Section {
+                Link("Privacy Policy", destination: LegalLinks.privacy)
+                Link("Terms of Service", destination: LegalLinks.terms)
+            }
         }
         .navigationTitle("Privacy & data")
         .navigationBarTitleDisplayMode(.inline)

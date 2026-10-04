@@ -159,6 +159,14 @@ public struct AuthView: View {
             }
             .buttonStyle(.onboardingText)
             .disabled(isLoading)
+
+            // App Review 1.2: agreeing to terms that bar objectionable content and abusive users.
+            Text("By continuing, you agree to Click's [Terms](https://joinclick.co/terms) and [Privacy Policy](https://joinclick.co/privacy). Click has zero tolerance for objectionable content or abusive users.")
+                .font(ClickTypography.metadata)
+                .foregroundStyle(ClickColors.textTertiary)
+                .tint(ClickColors.accentForeground)
+                .multilineTextAlignment(.center)
+                .fixedSize(horizontal: false, vertical: true)
         }
         .animation(ClickMotion.subtleFade, value: mode)
         .animation(ClickMotion.subtleFade, value: errorMessage)
