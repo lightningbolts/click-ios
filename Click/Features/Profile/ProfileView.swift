@@ -456,6 +456,16 @@ public struct ProfileView: View {
             }
             .buttonStyle(.plain)
 
+            LocationNudgeCard(
+                nudge: .timelineSnap,
+                systemImage: "mappin.and.ellipse",
+                title: "Add places to your timeline",
+                message: "Some of your Clicks have no place. Turn on Location snap to save where you are each time you Click from now on.",
+                isRelevant: !isSelf && (model.encounters.value ?? []).contains { $0.isMissingPlace }
+            )
+            .padding(.horizontal, 12)
+            .padding(.bottom, 12)
+
             let items = model.timeline
             if items.isEmpty {
                 Divider().padding(.leading, 64)

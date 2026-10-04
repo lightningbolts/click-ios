@@ -53,6 +53,14 @@ struct PostConnectView: View {
                 tagging
                     .padding(.top, 28)
 
+                LocationNudgeCard(
+                    nudge: .connectionSnap,
+                    systemImage: "mappin.and.ellipse",
+                    title: "Remember where you met?",
+                    message: "Location snap saves the place each time you Click, so your timeline shows where. Only you and the people you Clicked with see it."
+                )
+                .padding(.top, 20)
+
                 if let recommendation = model.recommendation, !model.recommendationDismissed {
                     recommendationCard(recommendation)
                         .padding(.top, 20)

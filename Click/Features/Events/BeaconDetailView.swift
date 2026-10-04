@@ -117,6 +117,14 @@ struct BeaconDetailView: View {
                     if beacon.isEvent {
                         if beacon.rsvpEnabled != false, !isExpired { rsvpButton(beacon) }
                         eventActionRow(beacon)
+                        LocationNudgeCard(
+                            nudge: .businessInsights,
+                            systemImage: "chart.bar.xaxis",
+                            title: "Help this venue, anonymously",
+                            message: "Let the Clicks you make here count in the venue's anonymous stats. Click never shares who you are or who you met.",
+                            acceptTitle: "Count me in",
+                            isRelevant: engagement.value?.checkedIn == true
+                        )
                     } else {
                         beaconActions(beacon)
                     }

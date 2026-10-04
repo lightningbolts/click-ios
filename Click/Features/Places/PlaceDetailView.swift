@@ -233,6 +233,16 @@ private struct PlaceDetailContent: View {
                     .font(ClickTypography.supportingEmphasized)
                 }
             }
+            LocationNudgeCard(
+                nudge: .businessInsights,
+                systemImage: "chart.bar.xaxis",
+                title: "Help \(detail.summary.name), anonymously",
+                message: "Let your check-ins and Pulses here count in its anonymous visit stats. The Place never sees who you are.",
+                acceptTitle: "Count me in",
+                isRelevant: detail.checkIn?.active == true
+            )
+            .listRowInsets(EdgeInsets())
+            .listRowBackground(Color.clear)
             if model.showWouldReturn, let question = model.wouldReturnQuestion {
                 WouldReturnCard(question: question) { value in Task { await model.answerWouldReturn(value) } }
             }
