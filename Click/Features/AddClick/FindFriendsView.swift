@@ -8,6 +8,12 @@ struct FindFriendsView: View {
     @State private var isSearching = false
     /// Nil until a search finished: the screen offers the search instead of results.
     @State private var matches: [DiscoveredContactCard]?
+    /// Contacts on Click you're already connected with (left out of `matches`).
+    @State private var alreadyConnected = 0
+    /// Contacts on Click with a request pending either way (also left out of `matches`).
+    @State private var pending = 0
+    /// Nil until loaded; the "let friends find you" card shows while you have no number saved.
+    @State private var myPhone: String??
     @State private var requested: Set<String> = []
     @State private var knownSince: [String: PriorKnownSince] = [:]
     @State private var errorMessage: String?
@@ -16,6 +22,9 @@ struct FindFriendsView: View {
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: ClickSpacing.lg) {
+                if myPhone == .some(nil) {
+                    phoneCard
+                }
                 if let matches {
                     results(matches)
                 } else {
@@ -51,6 +60,13 @@ struct FindFriendsView: View {
             }
         }
         .animation(ClickMotion.content, value: matches)
+        .animation(ClickMotion.content, value: myPhone)
+        .task {
+            guard myPhone == nil else { return }
+            if let phone = try? await ContactDiscoveryService.shared.myPhone(client: env.api) {
+                myPhone = .some(phone)
+            }
+        }
         .animation(ClickMotion.subtleFade, value: errorMessage)
         .background(ClickColors.background.ignoresSafeArea())
         .navigationTitle("Find friends")
@@ -78,14 +94,45 @@ struct FindFriendsView: View {
         .groupedSurface()
     }
 
+    private var phoneCard: some View {
+        VStack(alignment: .leading, spacing: ClickSpacing.sm) {
+            VStack(alignment: .leading, spacing: 2) {
+                Text("Let friends find you")
+                    .font(ClickTypography.supportingEmphasized)
+                    .foregroundStyle(ClickColors.textPrimary)
+                Text("Most people save friends by phone number. Add yours so they can find you here. It's never shown to anyone.")
+                    .font(ClickTypography.supporting)
+                    .foregroundStyle(ClickColors.textSecondary)
+            }
+            // The card stays until you leave, so the number you just saved shows here.
+            MyPhoneEditor()
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(ClickSpacing.surfacePadding)
+        .groupedSurface()
+    }
+
+    private var emptyTitle: String {
+        switch (alreadyConnected, pending) {
+        case (0, 0): "None of your contacts are on Click yet"
+        case (0, _): pending == 1
+            ? "1 contact on Click, with a request waiting"
+            : "\(pending) contacts on Click, with requests waiting"
+        case (1, _): "1 contact on Click, and you're already connected"
+        default: "\(alreadyConnected) contacts on Click, and you're already connected"
+        }
+    }
+
     @ViewBuilder
     private func results(_ matches: [DiscoveredContactCard]) -> some View {
         if matches.isEmpty {
             VStack(spacing: ClickSpacing.xs) {
-                Text("None of your contacts are on Click yet")
+                Text(emptyTitle)
                     .font(ClickTypography.supportingEmphasized)
                     .foregroundStyle(ClickColors.textPrimary)
-                Text("Invite them, or connect in person with Tap or your QR code.")
+                Text(alreadyConnected + pending > 0
+                     ? "Invite others, or connect in person with Tap or your QR code."
+                     : "Invite them, or connect in person with Tap or your QR code.")
                     .font(ClickTypography.supporting)
                     .foregroundStyle(ClickColors.textSecondary)
                     .multilineTextAlignment(.center)
@@ -188,7 +235,10 @@ struct FindFriendsView: View {
             contactsDenied = false
             do {
                 let hashes = try await ContactDiscoveryService.shared.collectAndHashDeviceContacts()
-                matches = try await ContactDiscoveryService.shared.discoverMatches(hashes: hashes, client: env.api)
+                let response = try await ContactDiscoveryService.shared.discoverMatches(hashes: hashes, client: env.api)
+                alreadyConnected = response.alreadyConnected
+                pending = response.pending
+                matches = response.matches
                 AvatarView.prefetch(matches?.map(\.avatarUrl) ?? [], size: 48)
                 ClickHaptics.success()
             } catch {

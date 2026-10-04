@@ -25,6 +25,33 @@ public struct DiscoveredContactCard: Identifiable, Equatable, Sendable, Decodabl
 
 public struct DiscoverContactsResponse: Decodable, Sendable {
     public let matches: [DiscoveredContactCard]
+    /// Contacts on Click you're already connected with; they're left out of `matches`.
+    public let alreadyConnected: Int
+    /// Contacts on Click with a request pending either way; also left out of `matches`.
+    public let pending: Int
+
+    enum CodingKeys: String, CodingKey {
+        case matches
+        case alreadyConnected = "already_connected"
+        case pending
+    }
+
+    public init(matches: [DiscoveredContactCard], alreadyConnected: Int = 0, pending: Int = 0) {
+        self.matches = matches
+        self.alreadyConnected = alreadyConnected
+        self.pending = pending
+    }
+
+    public init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        matches = try container.decode([DiscoveredContactCard].self, forKey: .matches)
+        alreadyConnected = try container.decodeIfPresent(Int.self, forKey: .alreadyConnected) ?? 0
+        pending = try container.decodeIfPresent(Int.self, forKey: .pending) ?? 0
+    }
+}
+
+private struct MyPhoneResponse: Decodable, Sendable {
+    let phone: String?
 }
 
 public enum PriorKnownSince: String, CaseIterable, Identifiable, Sendable {
@@ -119,8 +146,8 @@ public final class ContactDiscoveryService: Sendable {
     }
 
     /// Matches contact hashes against Click backend users without ever uploading plaintext data.
-    public func discoverMatches(hashes: [String], client: ClickAPIClient) async throws -> [DiscoveredContactCard] {
-        guard !hashes.isEmpty else { return [] }
+    public func discoverMatches(hashes: [String], client: ClickAPIClient) async throws -> DiscoverContactsResponse {
+        guard !hashes.isEmpty else { return DiscoverContactsResponse(matches: []) }
 
         let payload: [String: Any] = [
             "hashed_contacts": hashes
@@ -134,8 +161,35 @@ public final class ContactDiscoveryService: Sendable {
             requiresAuth: true
         )
 
-        let response: DiscoverContactsResponse = try await client.execute(request)
-        return response.matches
+        return try await client.execute(request)
+    }
+
+    /// Your own number (E.164), which lets friends who have it in their contacts find you.
+    public func myPhone(client: ClickAPIClient) async throws -> String? {
+        let response: MyPhoneResponse = try await client.execute(APIRequest(path: "/api/me/phone", requiresAuth: true))
+        return response.phone
+    }
+
+    /// Saves your number and returns it normalized. Throws `.conflict(code: "phone_taken")` when
+    /// another account has it, `.validation` when it isn't a phone number.
+    public func saveMyPhone(_ phone: String, client: ClickAPIClient) async throws -> String? {
+        let body = try JSONSerialization.data(withJSONObject: ["phone": phone])
+        let response: MyPhoneResponse = try await client.execute(
+            APIRequest(path: "/api/me/phone", method: .put, body: body, requiresAuth: true)
+        )
+        return response.phone
+    }
+
+    /// "That's my number": reports the account holding a number you tried to save, for review.
+    public func reportPhoneClaim(_ phone: String, client: ClickAPIClient) async throws {
+        let body = try JSONSerialization.data(withJSONObject: ["phone": phone])
+        _ = try await client.executeRaw(
+            APIRequest(path: "/api/me/phone/report", method: .post, body: body, requiresAuth: true)
+        )
+    }
+
+    public func removeMyPhone(client: ClickAPIClient) async throws {
+        _ = try await client.executeRaw(APIRequest(path: "/api/me/phone", method: .delete, requiresAuth: true))
     }
 
     /// Sends a self-reported prior connection request for a discovered user.
