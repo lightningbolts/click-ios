@@ -78,7 +78,7 @@ struct SharedDropStoryViewer: View {
         .scaleEffect(1 - min(dragY, 400) / 2400)
         // Zooming, the viewer stays opaque and is cropped to the tile's shape instead of fading:
         // Liquid Glass (the header, caption and reactions) flickers under a changing opacity.
-        .mask { clip }
+        .clipShape(crop)
         .scaleEffect(collapsed?.scale ?? 1)
         .offset(collapsed?.offset ?? .zero)
         .opacity(presented || collapsed != nil ? 1 : 0)
@@ -349,16 +349,15 @@ struct SharedDropStoryViewer: View {
     }
 
     /// The viewer's crop: the tile's shape (in the viewer's unscaled space) while collapsed onto
-    /// it, the whole screen, safe areas included, once presented.
-    private var clip: some View {
-        let scale = collapsed?.scale
-        let full = CGSize(width: frame.width + insets.leading + insets.trailing,
-                          height: frame.height + insets.top + insets.bottom)
-        let tile = scale.flatMap { s in sources?.byID[currentID].map { CGSize(width: $0.width / s, height: $0.height / s) } }
-        return RoundedRectangle(cornerRadius: scale.map { 16 / $0 } ?? 0, style: .continuous)
-            .frame(width: tile?.width ?? full.width, height: tile?.height ?? full.height)
-            .offset(x: tile == nil ? (insets.trailing - insets.leading) / 2 : 0,
-                    y: tile == nil ? (insets.bottom - insets.top) / 2 : 0)
+    /// it, the whole screen, safe areas included, once presented. A shape whose edges animate
+    /// directly, so the crop eases between the two instead of snapping.
+    private var crop: ZoomCrop {
+        guard let scale = collapsed?.scale, let tile = sources?.byID[currentID] else {
+            return ZoomCrop(top: -insets.top, bottom: -insets.bottom,
+                            sides: -max(insets.leading, insets.trailing), radius: 0)
+        }
+        let inset = (frame.height - tile.height / scale) / 2
+        return ZoomCrop(top: inset, bottom: inset, sides: 0, radius: 16 / scale)
     }
 
     /// Zooms back into the tile (or fades), then dismisses without the system animation.
@@ -493,5 +492,27 @@ extension SharedDropsStrip.ViewerStart {
         var transaction = Transaction()
         transaction.disablesAnimations = true
         withTransaction(transaction) { viewing.wrappedValue = .init(id: id) }
+    }
+}
+
+/// A rounded rect inset from its bounds by animatable amounts (negative reaches past them).
+private struct ZoomCrop: Shape {
+    var top: CGFloat
+    var bottom: CGFloat
+    var sides: CGFloat
+    var radius: CGFloat
+
+    var animatableData: AnimatablePair<AnimatablePair<CGFloat, CGFloat>, AnimatablePair<CGFloat, CGFloat>> {
+        get { AnimatablePair(AnimatablePair(top, bottom), AnimatablePair(sides, radius)) }
+        set {
+            (top, bottom) = (newValue.first.first, newValue.first.second)
+            (sides, radius) = (newValue.second.first, newValue.second.second)
+        }
+    }
+
+    func path(in rect: CGRect) -> Path {
+        let cropped = CGRect(x: rect.minX + sides, y: rect.minY + top,
+                             width: rect.width - sides * 2, height: rect.height - top - bottom)
+        return Path(roundedRect: cropped, cornerRadius: max(radius, 0), style: .continuous)
     }
 }
