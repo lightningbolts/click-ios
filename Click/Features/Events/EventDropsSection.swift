@@ -239,12 +239,15 @@ struct EventDropsSection: View {
 /// are immutable, so one seen before paints on the first frame (cached by object, not by token).
 struct PixelatedPreview: View {
     let url: URL?
+    /// Hears the preview's shape (width over height) once its image is here.
+    var onAspect: (CGFloat) -> Void = { _ in }
     @State private var image: UIImage?
 
     private static let pixels: CGFloat = 480
 
-    init(url: URL?) {
+    init(url: URL?, onAspect: @escaping (CGFloat) -> Void = { _ in }) {
         self.url = url
+        self.onAspect = onAspect
         // A preview seen before paints on the first frame, even right after a cold start.
         self._image = State(initialValue: url.flatMap { ImagePipeline.shared.firstFrameImage(for: $0, maxPixelSize: Self.pixels, signed: true) })
     }
@@ -257,9 +260,11 @@ struct PixelatedPreview: View {
             }
             .clipped()
             .task(id: url) {
-                guard let url, image == nil else { return }
-                let loaded = await ImagePipeline.shared.image(for: url, maxPixelSize: Self.pixels, signed: true)
-                withAnimation(ClickMotion.subtleFade) { image = loaded }
+                if image == nil, let url {
+                    let loaded = await ImagePipeline.shared.image(for: url, maxPixelSize: Self.pixels, signed: true)
+                    withAnimation(ClickMotion.subtleFade) { image = loaded }
+                }
+                if let size = image?.size, size.height > 0 { onAspect(size.width / size.height) }
             }
     }
 }
