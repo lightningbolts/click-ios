@@ -123,6 +123,14 @@ struct FindFriendsView: View {
         }
     }
 
+    /// Only offers inviting when there's an invite link to share (`InviteFriendsLink`).
+    private var emptySubtitle: String {
+        guard AppConfig.shared.appStoreURL != nil else { return "Connect in person with Tap or your QR code." }
+        return alreadyConnected + pending > 0
+            ? "Invite others, or connect in person with Tap or your QR code."
+            : "Invite them, or connect in person with Tap or your QR code."
+    }
+
     @ViewBuilder
     private func results(_ matches: [DiscoveredContactCard]) -> some View {
         if matches.isEmpty {
@@ -130,12 +138,9 @@ struct FindFriendsView: View {
                 Text(emptyTitle)
                     .font(ClickTypography.supportingEmphasized)
                     .foregroundStyle(ClickColors.textPrimary)
-                Text(alreadyConnected + pending > 0
-                     ? "Invite others, or connect in person with Tap or your QR code."
-                     : "Invite them, or connect in person with Tap or your QR code.")
+                Text(emptySubtitle)
                     .font(ClickTypography.supporting)
                     .foregroundStyle(ClickColors.textSecondary)
-                    .multilineTextAlignment(.center)
                 HStack(spacing: ClickSpacing.sm) {
                     InviteFriendsLink()
                     Button("Tap to Connect") { env.router.navigate(to: .tapConnect) }
@@ -143,6 +148,7 @@ struct FindFriendsView: View {
                 }
                 .padding(.top, ClickSpacing.sm)
             }
+            .multilineTextAlignment(.center)
             .frame(maxWidth: .infinity)
             .padding(ClickSpacing.surfacePadding)
             .groupedSurface()
