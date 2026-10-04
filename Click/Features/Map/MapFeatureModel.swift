@@ -100,8 +100,8 @@ struct MapItem: Identifiable, Equatable {
                 return EventFormatting.whenAndWhere(schedule, place: beacon.locationName)
             }
             return [beacon.kind.label, beacon.locationName].compactMap { $0 }.joined(separator: " · ")
-        case .hub(let hub):
-            return hub.participantCount == 1 ? "Hub · 1 here" : "Hub · \(hub.participantCount) here"
+        case .hub:
+            return "Hub"
         case .person(let pin):
             return pin.locationName.map { "Met at \($0)" } ?? "Your Click"
         case .hangout(let hangout):
@@ -109,6 +109,72 @@ struct MapItem: Identifiable, Equatable {
                 .joined(separator: " · ")
         case .place(let place):
             return PlaceCopy.mapSubtitle(place)
+        }
+    }
+}
+
+extension MapItem {
+    /// People behind this item: going (events with RSVP), in the hub, at the place right now.
+    var peopleCount: Int? {
+        switch kind {
+        case .beacon(let beacon): beacon.isEvent && beacon.rsvpEnabled != false ? beacon.rsvpCount : nil
+        case .hub(let hub): hub.participantCount
+        case .place(let place): place.hereNowCount
+        case .person, .hangout: nil
+        }
+    }
+
+    /// "12 going" / "3 here"; nil when nobody is.
+    var peopleLabel: String? {
+        guard let count = peopleCount, count > 0 else { return nil }
+        if case .beacon = kind { return "\(count) going" }
+        return "\(count) here"
+    }
+
+    /// When it was posted (beacons and plans; other kinds have no such date).
+    var createdAt: Date? {
+        switch kind {
+        case .beacon(let beacon): beacon.createdAt
+        case .hangout(let hangout): hangout.message.createdAt
+        case .hub, .person, .place: nil
+        }
+    }
+
+    /// Momentum for "Rising": people, decayed by age (Hacker News gravity), so a new event filling
+    /// up outranks an old one with more RSVPs. Hub and place counts are "right now": no decay.
+    func risingScore(now: Date) -> Double {
+        guard let people = peopleCount, people > 0 else { return 0 }
+        let hours = createdAt.map { max(0, now.timeIntervalSince($0)) / 3600 } ?? 0
+        return Double(people) / pow(hours + 2, 1.5)
+    }
+}
+
+/// How Nearby orders the rows in each section. Relevance is the curated order: live first,
+/// events by start, places by live event and Pulse, people nearest first.
+enum NearbySort: String, CaseIterable, Identifiable {
+    case relevance, distance, rising, new, alphabetical
+
+    static let storageKey = "nearby.sort.v1"
+
+    var id: Self { self }
+
+    var label: String {
+        switch self {
+        case .relevance: "Relevance"
+        case .distance: "Distance"
+        case .rising: "Rising"
+        case .new: "New"
+        case .alphabetical: "Alphabetical"
+        }
+    }
+
+    var systemImage: String {
+        switch self {
+        case .relevance: "sparkles"
+        case .distance: "location"
+        case .rising: "chart.line.uptrend.xyaxis"
+        case .new: "clock"
+        case .alphabetical: "textformat"
         }
     }
 }
@@ -134,13 +200,18 @@ final class MapFeatureModel {
 
 
     var camera: MapCameraPosition = .automatic
-    private(set) var userCoordinate: CLLocationCoordinate2D?
+    /// Every fix, unobserved: views read `origin`, so a fix a second doesn't redraw the map and list.
+    @ObservationIgnored private(set) var userCoordinate: CLLocationCoordinate2D?
+    /// Where Nearby measures distance from: the user's location, moved only after a real move.
+    private(set) var origin: CLLocationCoordinate2D?
     private(set) var locationState: LocationState = .notDetermined
-    private(set) var discovery = ModuleState<NearbyDiscovery>()
+    private(set) var discovery = ModuleState<NearbyDiscovery>() { didSet { sourceRevision &+= 1 } }
     /// Beacons fetched individually for a focus intent (e.g. an event outside the fetched radius).
-    private(set) var focusedBeacons: [MapBeacon] = []
+    private(set) var focusedBeacons: [MapBeacon] = [] { didSet { sourceRevision &+= 1 } }
     /// Your plans with a place, from the on-device chat timelines.
-    private(set) var hangouts: [PlannedHangout] = []
+    private(set) var hangouts: [PlannedHangout] = [] { didSet { sourceRevision &+= 1 } }
+    /// Bumped when an item source changes; derived lists rebuild only when their inputs do.
+    private var sourceRevision = 0
 
     var layers: Set<MapLayer> = Set(MapLayer.allCases)
     /// Nearby Place filters (§6.6), persisted per device.
@@ -151,6 +222,10 @@ final class MapFeatureModel {
     var placesEnabled: Bool { environment?.features.isEnabled(.clickPlaces) == true }
     /// Single-layer filter chosen from Nearby chips; applies to the map too.
     var filter: MapLayer?
+    /// Nearby row order, persisted per device.
+    var sort = NearbySort(rawValue: UserDefaults.standard.string(forKey: NearbySort.storageKey) ?? "") ?? .relevance {
+        didSet { UserDefaults.standard.set(sort.rawValue, forKey: NearbySort.storageKey) }
+    }
     var selection: MapSelection?
     /// Mirrors the router's Nearby stack: the sheet is open exactly while that stack exists.
     var isNearbyPresented: Bool {
@@ -167,6 +242,49 @@ final class MapFeatureModel {
     private var lastFetchCenter: CLLocationCoordinate2D?
     private var hasCenteredOnUser = false
     private var fetchTask: Task<Void, Never>?
+    private let filteredItems = Memo<ItemsKey, [MapItem]>()
+    private let allItems = Memo<ItemsKey, [MapItem]>()
+    private let sectionsMemo = Memo<SectionsKey, [NearbySection]>()
+    private let clustersMemo = Memo<ClustersKey, [MapCluster]>()
+
+    /// Everything the item list depends on. Reading it registers each input with observation,
+    /// so a view re-renders when one changes even when the result comes from the memo.
+    private struct ItemsKey: Equatable {
+        let revision: Int
+        let pins: [ConnectionPin]
+        let deleted: Set<String>
+        let placesEnabled: Bool
+        let placeFilters: PlaceFilters
+        let layers: Set<MapLayer>
+        let filter: MapLayer?
+        /// Live and ended are judged to the minute.
+        let minute: Int
+    }
+
+    private struct SectionsKey: Equatable {
+        let items: ItemsKey
+        let sort: NearbySort
+        let originLatitude: Double?
+        let originLongitude: Double?
+    }
+
+    private struct ClustersKey: Equatable {
+        let items: ItemsKey
+        let zoom: Double
+    }
+
+    private func itemsKey(pins: [ConnectionPin], filter: MapLayer?, now: Date) -> ItemsKey {
+        ItemsKey(
+            revision: sourceRevision,
+            pins: pins,
+            deleted: environment?.router.deletedBeaconIDs ?? [],
+            placesEnabled: placesEnabled,
+            placeFilters: placeFilters,
+            layers: layers,
+            filter: filter,
+            minute: Int(now.timeIntervalSince1970 / 60)
+        )
+    }
 
     func attach(_ environment: AppEnvironment) {
         guard self.environment == nil else { return }
@@ -176,18 +294,30 @@ final class MapFeatureModel {
     // MARK: - Derived data (map and list read the same items)
 
     func items(pins: [ConnectionPin], applyingFilter: Bool = true, now: Date = .now) -> [MapItem] {
-        Self.items(
-            discovery: discovery.value,
-            focusedBeacons: focusedBeacons,
-            deleted: environment?.router.deletedBeaconIDs ?? [],
-            pins: pins,
-            hangouts: hangouts,
-            placesEnabled: placesEnabled,
-            placeFilters: placeFilters,
-            layers: layers,
-            filter: applyingFilter ? filter : nil,
-            now: now
-        )
+        let key = itemsKey(pins: pins, filter: applyingFilter ? filter : nil, now: now)
+        return (applyingFilter ? filteredItems : allItems)(key) {
+            Self.items(
+                discovery: discovery.value,
+                focusedBeacons: focusedBeacons,
+                deleted: key.deleted,
+                pins: pins,
+                hangouts: hangouts,
+                placesEnabled: key.placesEnabled,
+                placeFilters: key.placeFilters,
+                layers: key.layers,
+                filter: key.filter,
+                now: now
+            )
+        }
+    }
+
+    /// The map's pins and bubbles: clustering is quadratic, so it reruns only when the items or
+    /// the zoom change.
+    func clusters(pins: [ConnectionPin]) -> [MapCluster] {
+        let zoom = renderZoom
+        return clustersMemo(ClustersKey(items: itemsKey(pins: pins, filter: filter, now: .now), zoom: zoom)) {
+            Self.clusters(items(pins: pins), zoom: zoom)
+        }
     }
 
     /// Pure item assembly (testable without an environment). With Places on, a Place's official
@@ -224,8 +354,22 @@ final class MapFeatureModel {
     }
 
     /// Discovery list: live events first, then by layer, then "My network" (the people whose
-    /// pins the map shows), nearest first — the same items the chip counts come from.
+    /// pins the map shows) — the same items the chip counts come from. Rows follow `sort`.
     func sections(pins: [ConnectionPin], now: Date = .now) -> [NearbySection] {
+        let key = SectionsKey(
+            items: itemsKey(pins: pins, filter: filter, now: now),
+            sort: sort,
+            originLatitude: origin?.latitude,
+            originLongitude: origin?.longitude
+        )
+        return sectionsMemo(key) {
+            let sections = relevanceSections(pins: pins, now: now)
+            guard sort != .relevance else { return sections }
+            return sections.map { NearbySection(id: $0.id, title: $0.title, items: Self.sorted($0.items, by: sort, from: origin, now: now)) }
+        }
+    }
+
+    private func relevanceSections(pins: [ConnectionPin], now: Date) -> [NearbySection] {
         let visible = items(pins: pins, now: now)
         func beaconItems(_ predicate: (MapBeacon) -> Bool) -> [MapItem] {
             visible.filter { if case .beacon(let beacon) = $0.kind { return predicate(beacon) }; return false }
@@ -252,27 +396,42 @@ final class MapFeatureModel {
             sections.append(NearbySection(id: layer.rawValue, title: layer.label, items: items))
         }
         let people = visible.filter { if case .person = $0.kind { return true }; return false }
-        sections.append(NearbySection(id: "people", title: MapLayer.people.label, items: sortedByDistance(people)))
+        sections.append(NearbySection(id: "people", title: MapLayer.people.label, items: Self.sorted(people, by: .distance, from: origin, now: now)))
         return sections.filter { !$0.items.isEmpty }
     }
 
-    /// Nearest first when the user's location is known; otherwise alphabetical.
-    private func sortedByDistance(_ items: [MapItem]) -> [MapItem] {
-        guard let userCoordinate else { return items.sorted { $0.title.localizedCaseInsensitiveCompare($1.title) == .orderedAscending } }
-        let here = CLLocation(latitude: userCoordinate.latitude, longitude: userCoordinate.longitude)
-        func distance(_ item: MapItem) -> CLLocationDistance {
-            here.distance(from: CLLocation(latitude: item.coordinate.latitude, longitude: item.coordinate.longitude))
+    /// Rows in `sort` order (relevance keeps the given order). Ties go nearest first, then A–Z,
+    /// so rows don't swap places between rebuilds; without a location, distance is A–Z.
+    nonisolated static func sorted(_ items: [MapItem], by sort: NearbySort, from origin: CLLocationCoordinate2D?, now: Date = .now) -> [MapItem] {
+        guard sort != .relevance else { return items }
+        typealias Keyed = (item: MapItem, distance: Double, created: Date, rising: Double)
+        // Keys computed once per item, not once per comparison.
+        let keyed: [Keyed] = items.map { item in
+            (item, origin.map { distanceMeters($0, item.coordinate) } ?? 0, item.createdAt ?? .distantPast, item.risingScore(now: now))
         }
-        return items.sorted { distance($0) < distance($1) }
+        func alphabetical(_ a: Keyed, _ b: Keyed) -> Bool? {
+            let order = a.item.title.localizedStandardCompare(b.item.title)
+            return order == .orderedSame ? nil : order == .orderedAscending
+        }
+        func nearest(_ a: Keyed, _ b: Keyed) -> Bool {
+            a.distance != b.distance ? a.distance < b.distance : alphabetical(a, b) ?? false
+        }
+        func newest(_ a: Keyed, _ b: Keyed) -> Bool {
+            a.created != b.created ? a.created > b.created : nearest(a, b)
+        }
+        let ordered: [Keyed] = switch sort {
+        case .distance, .relevance: keyed.sorted(by: nearest)
+        case .alphabetical: keyed.sorted { alphabetical($0, $1) ?? ($0.distance < $1.distance) }
+        case .new: keyed.sorted(by: newest)
+        case .rising: keyed.sorted { $0.rising != $1.rising ? $0.rising > $1.rising : newest($0, $1) }
+        }
+        return ordered.map(\.item)
     }
 
     /// Real counts per layer for the filter chips (before the chip filter is applied).
     func layerCounts(pins: [ConnectionPin]) -> [(layer: MapLayer, count: Int)] {
-        let all = items(pins: pins, applyingFilter: false)
-        return MapLayer.allCases.compactMap { layer in
-            let count = all.filter { $0.layer == layer }.count
-            return count > 0 ? (layer, count) : nil
-        }
+        let counts = Dictionary(grouping: items(pins: pins, applyingFilter: false), by: \.layer).mapValues(\.count)
+        return MapLayer.allCases.compactMap { layer in counts[layer].map { (layer, $0) } }
     }
 
     func summary(pins: [ConnectionPin]) -> String {
@@ -342,6 +501,10 @@ final class MapFeatureModel {
         let firstFix = userCoordinate == nil
         userCoordinate = location.coordinate
         environment?.location.record(location)
+        environment?.friction.updateLocation(latitude: location.coordinate.latitude, longitude: location.coordinate.longitude)
+        if origin.map({ Self.distanceMeters($0, location.coordinate) >= Self.originStepMeters }) ?? true {
+            origin = location.coordinate
+        }
         if firstFix, !hasCenteredOnUser, selection == nil {
             hasCenteredOnUser = true
             camera = .region(MKCoordinateRegion(center: location.coordinate, latitudinalMeters: 4000, longitudinalMeters: 4000))
@@ -447,6 +610,9 @@ final class MapFeatureModel {
         }
     }
 
+    /// How far the user moves before Nearby distances and the distance order update.
+    static let originStepMeters: Double = 50
+
     /// Safety ceiling for one area (25 × 200 = 5,000 beacons).
     static let maxDiscoveryPages = 25
 
@@ -512,6 +678,18 @@ final class MapFeatureModel {
     private func startDate(_ item: MapItem) -> Date {
         if case .beacon(let beacon) = item.kind { return beacon.schedule?.start ?? .distantFuture }
         return .distantFuture
+    }
+}
+
+/// One remembered derived value, recomputed only when its key changes.
+private final class Memo<Key: Equatable, Value> {
+    private var entry: (key: Key, value: Value)?
+
+    func callAsFunction(_ key: Key, _ make: () -> Value) -> Value {
+        if let entry, entry.key == key { return entry.value }
+        let value = make()
+        entry = (key, value)
+        return value
     }
 }
 

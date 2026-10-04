@@ -35,7 +35,7 @@ public struct ClickMapView: View {
                         Button {
                             Task { await model.requestLocation() }
                         } label: {
-                            Image(systemName: model.userCoordinate == nil ? "location" : "location.fill")
+                            Image(systemName: model.origin == nil ? "location" : "location.fill")
                                 .font(.system(size: 17, weight: .semibold))
                                 .foregroundStyle(ClickColors.accentForeground)
                                 .frame(width: ClickMetrics.minimumHitTarget, height: ClickMetrics.minimumHitTarget)
@@ -118,11 +118,6 @@ public struct ClickMapView: View {
         .onChange(of: env.router.selectedTab) { _, tab in
             if tab != .map { model.isNearbyPresented = false }
         }
-        .onChange(of: model.userCoordinate?.latitude) { _, _ in
-            if let coordinate = model.userCoordinate {
-                env.friction.updateLocation(latitude: coordinate.latitude, longitude: coordinate.longitude)
-            }
-        }
         .overlay(alignment: .top) {
             TimelineView(.periodic(from: .now, by: 30)) { context in
                 if env.friction.showsGrassNudge(now: context.date) {
@@ -191,7 +186,7 @@ public struct ClickMapView: View {
     private var map: some View {
         Map(position: $model.camera, selection: mapSelection) {
             UserAnnotation()
-            ForEach(MapFeatureModel.clusters(model.items(pins: pins), zoom: model.renderZoom)) { cluster in
+            ForEach(model.clusters(pins: pins)) { cluster in
                 if cluster.items.count == 1, let item = cluster.items.first {
                     Annotation(item.title, coordinate: item.coordinate, anchor: .bottom) {
                         MapPinView(item: item, isSelected: model.selection == item.id) {
@@ -295,7 +290,7 @@ public struct ClickMapView: View {
     /// Pins stacked under the tap: more than one opens the "Which pin?" chooser instead of
     /// guessing (KMP `onMapPinTapped`).
     private func stackedChoices(for selection: MapSelection) -> [MapItem]? {
-        let drawn = MapFeatureModel.clusters(model.items(pins: pins), zoom: model.renderZoom)
+        let drawn = model.clusters(pins: pins)
             .filter { $0.items.count == 1 }
             .compactMap(\.items.first)
         guard let tapped = drawn.first(where: { $0.id == selection }) else { return nil }
