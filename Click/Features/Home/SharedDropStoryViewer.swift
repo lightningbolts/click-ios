@@ -29,11 +29,18 @@ struct SharedDropStoryViewer: View {
     @State private var presented = false
     @State private var frame: CGRect = .zero
     @State private var insets = EdgeInsets()
+    /// Each drop's shape (width over height), from its photo or, before that, its preview.
+    @State private var aspects: [String: CGFloat] = [:]
+    /// The header's and footer's heights: the photo sits in the space between them.
+    @State private var headerHeight: CGFloat = 0
+    @State private var footerHeight: CGFloat = 0
     private let sources: DropTileFrames?
 
     private static let secondsPerDrop: Double = 6
     /// Your own drop's reactor row (a face, its emoji and a name), held while reactions load.
     private static let reactorRowHeight: CGFloat = 68
+    /// The gap between the photo and the header above it or the reactions below.
+    private static let photoGap: CGFloat = 8
     /// Quicker than the system zoom, so a drop feels like it pops open.
     private static let zoom = Animation.snappy(duration: 0.26)
 
@@ -62,28 +69,12 @@ struct SharedDropStoryViewer: View {
 
     var body: some View {
         ZStack {
+            // Home dims to black behind the zooming card, so the card's growing edge never wipes
+            // across the tab bar. Plain black, no glass, so it can fade; it lifts as you drag.
             Color.black.ignoresSafeArea()
-            if let drop = current {
-                photoLayer(drop)
-                    .padding(.top, 4)
-                    .ignoresSafeArea(.keyboard)
-                VStack(spacing: 0) {
-                    header(drop)
-                    Spacer(minLength: 0)
-                    footer(drop)
-                }
-            }
+                .opacity(presented ? Double(1 - min(dragY, 240) / 240) : 0)
+            card
         }
-        .offset(y: dragY)
-        .scaleEffect(1 - min(dragY, 400) / 2400)
-        // Zooming, the viewer stays opaque and is cropped to the tile's shape instead of fading:
-        // Liquid Glass (the header, caption and reactions) flickers under a changing opacity.
-        .clipShape(crop)
-        .scaleEffect(collapsed?.scale ?? 1)
-        .offset(collapsed?.offset ?? .zero)
-        .opacity(presented || collapsed != nil ? 1 : 0)
-        .onGeometryChange(for: CGRect.self, of: { $0.frame(in: .global) }) { frame = $0 }
-        .onGeometryChange(for: EdgeInsets.self, of: { $0.safeAreaInsets }) { insets = $0 }
         .presentationBackground(.clear)
         .simultaneousGesture(dismissDrag)
         // Our own swipe-down (which also pauses) closes, zooming back into the tile.
@@ -115,6 +106,35 @@ struct SharedDropStoryViewer: View {
         }
     }
 
+    /// The viewer itself: opaque, zoomed out of and back into the tile.
+    private var card: some View {
+        ZStack {
+            Color.black.ignoresSafeArea()
+            if let drop = current {
+                photoLayer(drop)
+                    .ignoresSafeArea(.keyboard)
+                VStack(spacing: 0) {
+                    header(drop)
+                        .onGeometryChange(for: CGFloat.self, of: { $0.size.height }) { headerHeight = $0 }
+                    Spacer(minLength: 0)
+                    footer(drop)
+                        // Held while typing, so a growing reply never shrinks the photo.
+                        .onGeometryChange(for: CGFloat.self, of: { $0.size.height }) { if !replyFocused { footerHeight = $0 } }
+                }
+            }
+        }
+        .offset(y: dragY)
+        .scaleEffect(1 - min(dragY, 400) / 2400)
+        // Zooming, the viewer stays opaque and is cropped to the tile's shape instead of fading:
+        // Liquid Glass (the header, caption and reactions) flickers under a changing opacity.
+        .clipShape(crop)
+        .scaleEffect(collapsed?.scale ?? 1)
+        .offset(collapsed?.offset ?? .zero)
+        .opacity(presented || collapsed != nil ? 1 : 0)
+        .onGeometryChange(for: CGRect.self, of: { $0.frame(in: .global) }) { frame = $0 }
+        .onGeometryChange(for: EdgeInsets.self, of: { $0.safeAreaInsets }) { insets = $0 }
+    }
+
     // MARK: - Photo
 
     private func photoLayer(_ drop: SharedDrop) -> some View {
@@ -122,22 +142,26 @@ struct SharedDropStoryViewer: View {
         let shown = isShown(drop.id)
         return Color.clear
             .overlay {
-                // The preview's pixels stay underneath; the photo develops over them.
+                // The whole photo, never cropped to the screen's shape, between the header and
+                // the reactions. The preview's pixels stay underneath; the photo develops over them.
                 ZStack {
-                    PixelatedPreview(url: drop.previewURL)
+                    PixelatedPreview(url: drop.previewURL) { aspects[drop.id] = $0 }
                     if let image {
                         ClickDropDevelopingImage(image: image, isDeveloped: shown, plays: playsDevelop(drop.id))
                             .id(drop.id)
                     }
                 }
-            }
-            .clipShape(RoundedRectangle(cornerRadius: 18, style: .continuous))
-            .overlay(alignment: .bottom) {
-                if shown, let caption = drop.caption {
-                    DropCaptionPill { Text(caption) }
-                        .padding(.bottom, 120)
-                        .transition(.identity)
+                .aspectRatio(aspect(drop.id), contentMode: .fit)
+                .clipShape(RoundedRectangle(cornerRadius: 18, style: .continuous))
+                .overlay(alignment: .bottom) {
+                    if shown, let caption = drop.caption {
+                        DropCaptionPill { Text(caption) }
+                            .padding(.bottom, 14)
+                            .transition(.identity)
+                    }
                 }
+                .padding(.top, headerHeight + Self.photoGap)
+                .padding(.bottom, footerHeight + Self.photoGap)
             }
             .overlay { if !shown { developingLabel(drop) } }
             .overlay { tapZones }
@@ -340,24 +364,51 @@ struct SharedDropStoryViewer: View {
         currentID = sequence[next].id
     }
 
-    /// The scale and offset that shrink the viewer onto the current drop's tile while it's not
-    /// presented; nil (a plain fade) without a visible tile or under Reduce Motion.
-    private var collapsed: (scale: CGFloat, offset: CGSize)? {
-        guard !presented, !reduceMotion, frame.width > 0,
-              let tile = sources?.byID[currentID], tile.intersects(frame) else { return nil }
-        return (tile.width / frame.width, CGSize(width: tile.midX - frame.midX, height: tile.midY - frame.midY))
+    private func aspect(_ id: String) -> CGFloat? {
+        if let size = photo(id)?.size, size.height > 0 { return size.width / size.height }
+        return aspects[id]
     }
 
-    /// The viewer's crop: the tile's shape (in the viewer's unscaled space) while collapsed onto
-    /// it, the whole screen, safe areas included, once presented. A shape whose edges animate
-    /// directly, so the crop eases between the two instead of snapping.
+    /// Where the current photo sits on screen (global), fitted between the header and footer.
+    private var photoRect: CGRect {
+        let top = headerHeight + Self.photoGap, bottom = footerHeight + Self.photoGap
+        let area = CGRect(x: frame.minX, y: frame.minY + top, width: frame.width, height: max(frame.height - top - bottom, 1))
+        guard let aspect = aspect(currentID) else { return area }
+        let size = area.width / area.height > aspect
+            ? CGSize(width: area.height * aspect, height: area.height)
+            : CGSize(width: area.width, height: area.width / aspect)
+        return CGRect(x: area.midX - size.width / 2, y: area.midY - size.height / 2, width: size.width, height: size.height)
+    }
+
+    /// While not presented, the scale and offset that lay the photo over its tile exactly as the
+    /// tile fills it, and the tile's rect in the viewer's own (unscaled) space to crop to; nil (a
+    /// plain fade) without a visible tile or under Reduce Motion.
+    private var collapsed: (scale: CGFloat, offset: CGSize, crop: CGRect)? {
+        guard !presented, !reduceMotion, frame.width > 0,
+              let tile = sources?.byID[currentID], tile.intersects(frame) else { return nil }
+        let photo = photoRect
+        let scale = max(tile.width / photo.width, tile.height / photo.height)
+        // scaleEffect scales about the viewer's center; the offset then moves the photo's center
+        // onto the tile's.
+        let scaledMid = CGPoint(x: frame.midX + (photo.midX - frame.midX) * scale,
+                                y: frame.midY + (photo.midY - frame.midY) * scale)
+        let size = CGSize(width: tile.width / scale, height: tile.height / scale)
+        let crop = CGRect(x: photo.midX - frame.minX - size.width / 2, y: photo.midY - frame.minY - size.height / 2,
+                          width: size.width, height: size.height)
+        return (scale, CGSize(width: tile.midX - scaledMid.x, height: tile.midY - scaledMid.y), crop)
+    }
+
+    /// The viewer's crop: the tile's rect while collapsed onto it, the whole screen, safe areas
+    /// included, once presented. A shape whose edges animate directly, so the crop eases between
+    /// the two instead of snapping.
     private var crop: ZoomCrop {
-        guard let scale = collapsed?.scale, let tile = sources?.byID[currentID] else {
-            return ZoomCrop(top: -insets.top, bottom: -insets.bottom,
-                            sides: -max(insets.leading, insets.trailing), radius: 0)
+        guard let collapsed else {
+            return ZoomCrop(top: -insets.top, leading: -insets.leading, bottom: -insets.bottom,
+                            trailing: -insets.trailing, radius: 0)
         }
-        let inset = (frame.height - tile.height / scale) / 2
-        return ZoomCrop(top: inset, bottom: inset, sides: 0, radius: 16 / scale)
+        let c = collapsed.crop
+        return ZoomCrop(top: c.minY, leading: c.minX, bottom: frame.height - c.maxY,
+                        trailing: frame.width - c.maxX, radius: 16 / collapsed.scale)
     }
 
     /// Zooms back into the tile (or fades), then dismisses without the system animation.
@@ -498,21 +549,23 @@ extension SharedDropsStrip.ViewerStart {
 /// A rounded rect inset from its bounds by animatable amounts (negative reaches past them).
 private struct ZoomCrop: Shape {
     var top: CGFloat
+    var leading: CGFloat
     var bottom: CGFloat
-    var sides: CGFloat
+    var trailing: CGFloat
     var radius: CGFloat
 
-    var animatableData: AnimatablePair<AnimatablePair<CGFloat, CGFloat>, AnimatablePair<CGFloat, CGFloat>> {
-        get { AnimatablePair(AnimatablePair(top, bottom), AnimatablePair(sides, radius)) }
+    var animatableData: AnimatablePair<AnimatablePair<CGFloat, CGFloat>, AnimatablePair<AnimatablePair<CGFloat, CGFloat>, CGFloat>> {
+        get { AnimatablePair(AnimatablePair(top, leading), AnimatablePair(AnimatablePair(bottom, trailing), radius)) }
         set {
-            (top, bottom) = (newValue.first.first, newValue.first.second)
-            (sides, radius) = (newValue.second.first, newValue.second.second)
+            (top, leading) = (newValue.first.first, newValue.first.second)
+            (bottom, trailing) = (newValue.second.first.first, newValue.second.first.second)
+            radius = newValue.second.second
         }
     }
 
     func path(in rect: CGRect) -> Path {
-        let cropped = CGRect(x: rect.minX + sides, y: rect.minY + top,
-                             width: rect.width - sides * 2, height: rect.height - top - bottom)
+        let cropped = CGRect(x: rect.minX + leading, y: rect.minY + top,
+                             width: rect.width - leading - trailing, height: rect.height - top - bottom)
         return Path(roundedRect: cropped, cornerRadius: max(radius, 0), style: .continuous)
     }
 }
