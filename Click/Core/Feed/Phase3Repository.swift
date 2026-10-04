@@ -294,7 +294,7 @@ public actor Phase3Repository {
     }
 
     /// Canonical 1:1 connection pins, collapsing duplicate edges to the same peer (KMP
-    /// `visibleMapConnections`). Memory Map does not hide non-core pins.
+    /// `visibleMapConnections`).
     nonisolated static func mapPins(
         rows: [[String: Any]],
         currentUserID: String,

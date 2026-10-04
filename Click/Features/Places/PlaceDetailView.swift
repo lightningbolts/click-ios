@@ -236,8 +236,8 @@ private struct PlaceDetailContent: View {
             LocationNudgeCard(
                 nudge: .businessInsights,
                 systemImage: "chart.bar.xaxis",
-                title: "Help \(detail.summary.name), anonymously",
-                message: "Let your check-ins and Pulses here count in its anonymous visit stats. The Place never sees who you are.",
+                title: "Help \(detail.summary.name) get better for you",
+                message: "Your check-ins and Pulses join anonymous totals: busy times, energy, and whether people would come back. \(detail.summary.name) uses them to plan events and hours around when people like you actually show up, and to make it easier to meet people here. It never sees who you are.",
                 acceptTitle: "Count me in",
                 isRelevant: detail.checkIn?.active == true
             )

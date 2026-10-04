@@ -6,11 +6,11 @@ import Testing
 struct PlacesSurfacesTests {
     @Test("LocationPrivacy carries the Place visits key, written only with Places on")
     func locationPrivacyRow() throws {
-        let privacy = LocationPrivacy(connectionSnap: true, memoryMap: false, businessInsights: false, placeVisitsVisible: true)
+        let privacy = LocationPrivacy(connectionSnap: true, businessInsights: false, placeVisitsVisible: true)
         #expect(privacy.row["place_visits_visible_to_connections"] == true)
         #expect(privacy.writeRow(includingPlaceVisits: true)["place_visits_visible_to_connections"] == true)
         #expect(privacy.writeRow(includingPlaceVisits: false)["place_visits_visible_to_connections"] == nil)
-        #expect(LocationPrivacy.keys(includingPlaceVisits: false).count == 3)
+        #expect(LocationPrivacy.keys(includingPlaceVisits: false).count == 2)
         #expect(LocationPrivacy.keys(includingPlaceVisits: true).contains(.placeVisitsVisible))
         // Absent means off; older saved values still decode.
         #expect(LocationPrivacy(row: [:]).placeVisitsVisible == false)

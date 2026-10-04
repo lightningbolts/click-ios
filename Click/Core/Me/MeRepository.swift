@@ -504,20 +504,17 @@ public struct NotificationPreferences: Codable, Equatable, Sendable {
 public struct LocationPrivacy: Codable, Equatable, Sendable {
     public enum Key: String, CaseIterable, Sendable {
         case connectionSnap = "location_connection_snap_enabled"
-        case memoryMap = "location_show_on_map_enabled"
         case businessInsights = "location_include_in_insights_enabled"
         /// Click Places: connections see you under "Clicks who've been here" (never when).
         case placeVisitsVisible = "place_visits_visible_to_connections"
     }
 
     public var connectionSnap: Bool
-    public var memoryMap: Bool
     public var businessInsights: Bool
     public var placeVisitsVisible: Bool = false
 
-    public init(connectionSnap: Bool, memoryMap: Bool, businessInsights: Bool, placeVisitsVisible: Bool = false) {
+    public init(connectionSnap: Bool, businessInsights: Bool, placeVisitsVisible: Bool = false) {
         self.connectionSnap = connectionSnap
-        self.memoryMap = memoryMap
         self.businessInsights = businessInsights
         self.placeVisitsVisible = placeVisitsVisible
     }
@@ -525,7 +522,6 @@ public struct LocationPrivacy: Codable, Equatable, Sendable {
     /// Absent columns are off, matching the KMP model defaults (no accidental opt-in).
     init(row: [String: Any]) {
         connectionSnap = JSONFields.bool(row[Key.connectionSnap.rawValue]) ?? false
-        memoryMap = JSONFields.bool(row[Key.memoryMap.rawValue]) ?? false
         businessInsights = JSONFields.bool(row[Key.businessInsights.rawValue]) ?? false
         placeVisitsVisible = JSONFields.bool(row[Key.placeVisitsVisible.rawValue]) ?? false
     }
@@ -533,7 +529,6 @@ public struct LocationPrivacy: Codable, Equatable, Sendable {
     var row: [String: Bool] {
         [
             Key.connectionSnap.rawValue: connectionSnap,
-            Key.memoryMap.rawValue: memoryMap,
             Key.businessInsights.rawValue: businessInsights,
             Key.placeVisitsVisible.rawValue: placeVisitsVisible
         ]
@@ -550,7 +545,7 @@ public struct LocationPrivacy: Codable, Equatable, Sendable {
     }
 
     enum CodingKeys: String, CodingKey {
-        case connectionSnap, memoryMap, businessInsights, placeVisitsVisible
+        case connectionSnap, businessInsights, placeVisitsVisible
     }
 }
 
@@ -559,7 +554,6 @@ extension LocationPrivacy {
     public init(from decoder: Decoder) throws {
         let container = try decoder.container(keyedBy: CodingKeys.self)
         connectionSnap = try container.decode(Bool.self, forKey: .connectionSnap)
-        memoryMap = try container.decode(Bool.self, forKey: .memoryMap)
         businessInsights = try container.decode(Bool.self, forKey: .businessInsights)
         placeVisitsVisible = try container.decodeIfPresent(Bool.self, forKey: .placeVisitsVisible) ?? false
     }
