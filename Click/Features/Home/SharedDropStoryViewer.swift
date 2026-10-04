@@ -31,11 +31,16 @@ struct SharedDropStoryViewer: View {
     @State private var insets = EdgeInsets()
     /// Each drop's shape (width over height), from its photo or, before that, its preview.
     @State private var aspects: [String: CGFloat] = [:]
+    /// The header's and footer's heights: the photo sits in the space between them.
+    @State private var headerHeight: CGFloat = 0
+    @State private var footerHeight: CGFloat = 0
     private let sources: DropTileFrames?
 
     private static let secondsPerDrop: Double = 6
     /// Your own drop's reactor row (a face, its emoji and a name), held while reactions load.
     private static let reactorRowHeight: CGFloat = 68
+    /// The gap between the photo and the header above it or the reactions below.
+    private static let photoGap: CGFloat = 8
     /// Quicker than the system zoom, so a drop feels like it pops open.
     private static let zoom = Animation.snappy(duration: 0.26)
 
@@ -67,12 +72,14 @@ struct SharedDropStoryViewer: View {
             Color.black.ignoresSafeArea()
             if let drop = current {
                 photoLayer(drop)
-                    .padding(.top, 4)
                     .ignoresSafeArea(.keyboard)
                 VStack(spacing: 0) {
                     header(drop)
+                        .onGeometryChange(for: CGFloat.self, of: { $0.size.height }) { headerHeight = $0 }
                     Spacer(minLength: 0)
                     footer(drop)
+                        // Held while typing, so a growing reply never shrinks the photo.
+                        .onGeometryChange(for: CGFloat.self, of: { $0.size.height }) { if !replyFocused { footerHeight = $0 } }
                 }
             }
         }
@@ -124,8 +131,8 @@ struct SharedDropStoryViewer: View {
         let shown = isShown(drop.id)
         return Color.clear
             .overlay {
-                // The whole photo, never cropped to the screen's shape. The preview's pixels stay
-                // underneath; the photo develops over them.
+                // The whole photo, never cropped to the screen's shape, between the header and
+                // the reactions. The preview's pixels stay underneath; the photo develops over them.
                 ZStack {
                     PixelatedPreview(url: drop.previewURL) { aspects[drop.id] = $0 }
                     if let image {
@@ -135,13 +142,15 @@ struct SharedDropStoryViewer: View {
                 }
                 .aspectRatio(aspect(drop.id), contentMode: .fit)
                 .clipShape(RoundedRectangle(cornerRadius: 18, style: .continuous))
-            }
-            .overlay(alignment: .bottom) {
-                if shown, let caption = drop.caption {
-                    DropCaptionPill { Text(caption) }
-                        .padding(.bottom, 120)
-                        .transition(.identity)
+                .overlay(alignment: .bottom) {
+                    if shown, let caption = drop.caption {
+                        DropCaptionPill { Text(caption) }
+                            .padding(.bottom, 14)
+                            .transition(.identity)
+                    }
                 }
+                .padding(.top, headerHeight + Self.photoGap)
+                .padding(.bottom, footerHeight + Self.photoGap)
             }
             .overlay { if !shown { developingLabel(drop) } }
             .overlay { tapZones }
@@ -349,9 +358,10 @@ struct SharedDropStoryViewer: View {
         return aspects[id]
     }
 
-    /// Where the current photo sits on screen (global), fitted below the 4pt top padding.
+    /// Where the current photo sits on screen (global), fitted between the header and footer.
     private var photoRect: CGRect {
-        let area = CGRect(x: frame.minX, y: frame.minY + 4, width: frame.width, height: max(frame.height - 4, 1))
+        let top = headerHeight + Self.photoGap, bottom = footerHeight + Self.photoGap
+        let area = CGRect(x: frame.minX, y: frame.minY + top, width: frame.width, height: max(frame.height - top - bottom, 1))
         guard let aspect = aspect(currentID) else { return area }
         let size = area.width / area.height > aspect
             ? CGSize(width: area.height * aspect, height: area.height)
