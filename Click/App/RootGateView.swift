@@ -88,7 +88,7 @@ private struct AuthenticatedGateView: View {
                     }
                 )
             } else {
-                MainTabShellView()
+                MainTabShellView(userID: snapshot.userId)
             }
         }
         .animation(ClickMotion.subtleFade, value: coordinator.step)
@@ -110,11 +110,17 @@ private struct LaunchLoadingView: View {
 /// stack registers the same canonical route destinations.
 public struct MainTabShellView: View {
     @Environment(AppEnvironment.self) private var env
-    @State private var meTabAvatar = MeTabAvatarModel()
-    @State private var conversations = ConversationListModel()
+    @State private var meTabAvatar: MeTabAvatarModel
+    @State private var conversations: ConversationListModel
     @Environment(\.scenePhase) private var scenePhase
 
-    public init() {}
+    /// `userID`: the signed-in user, whose inbox paints from disk on the shell's first frame.
+    public init(userID: String? = nil) {
+        _conversations = State(initialValue: userID.map(ConversationListModel.restored(userID:)) ?? ConversationListModel())
+        let avatar = MeTabAvatarModel()
+        if let userID { avatar.update(avatarURL: CacheStore.loadNow(SelfProfile.self, key: "self-profile", userID: userID)?.avatarURL) }
+        _meTabAvatar = State(initialValue: avatar)
+    }
 
     public var body: some View {
         @Bindable var r = env.router

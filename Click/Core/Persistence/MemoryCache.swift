@@ -17,6 +17,14 @@ public final class MemoryCache<Key: Hashable & Sendable, Value: Sendable>: Senda
         storage.withLock { $0.removeAll() }
     }
 
+    /// Every entry, for persisting the cache.
+    public var all: [Key: Value] { storage.withLock { $0 } }
+
+    /// Adds entries without replacing ones already known (fresher, from this session).
+    public func fill(_ entries: [Key: Value]) {
+        storage.withLock { $0.merge(entries) { current, _ in current } }
+    }
+
     /// Keeps the newest `limit` entries by `date`.
     public func trim(to limit: Int, by date: (Value) -> Date) {
         storage.withLock { entries in

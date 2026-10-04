@@ -38,6 +38,12 @@ public actor CacheStore {
         return (value, .distantPast)
     }
 
+    /// The app's on-disk value, read on the caller's thread: for the few seeds that must be in
+    /// place before a screen's first frame (`load` for everything else).
+    public nonisolated static func loadNow<Value: Decodable>(_ type: Value.Type, key: String, userID: String) -> Value? {
+        LocalStore.shared.load(Value.self, key: storeKey(key), userID: userID)?.value
+    }
+
     public func save<Value: Encodable>(_ value: Value, key: String, userID: String) {
         guard let defaults else {
             LocalStore.shared.save(value, key: Self.storeKey(key), userID: userID)
@@ -60,7 +66,7 @@ public actor CacheStore {
         "cache.v1.\(key).\(userID)"
     }
 
-    private static func storeKey(_ key: String) -> String {
+    private nonisolated static func storeKey(_ key: String) -> String {
         "cache.\(key)"
     }
 }

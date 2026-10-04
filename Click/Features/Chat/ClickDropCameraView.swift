@@ -94,6 +94,9 @@ struct ClickDropCameraView: View {
                     .padding(.vertical, 7)
                     .glassCircleBackground()
                     .accessibilityAddTraits(.updatesFrequently)
+                    // Denied explains itself in the viewfinder; the pill keeps its space.
+                    .opacity(state == .denied && captured == nil ? 0 : 1)
+                    .accessibilityHidden(state == .denied && captured == nil)
                 controls
             }
             .padding(.bottom, 24)

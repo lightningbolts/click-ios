@@ -34,9 +34,14 @@ public final class MeTabAvatarModel {
             image = nil
             return
         }
+        let pixelSize = Self.diameter * 3
+        // Seen on an earlier launch: in place on the shell's first frame.
+        if let photo = ImagePipeline.shared.firstFrameImage(for: url, maxPixelSize: pixelSize) {
+            image = Self.circularTabImage(photo)
+            return
+        }
 
         loadTask = Task { [weak self] in
-            let pixelSize = Self.diameter * 3
             guard
                 let photo = await ImagePipeline.shared.image(for: url, maxPixelSize: pixelSize),
                 !Task.isCancelled,

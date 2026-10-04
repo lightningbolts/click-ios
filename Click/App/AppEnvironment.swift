@@ -41,6 +41,8 @@ public final class AppEnvironment {
     public let timelineCache = ConversationTimelineCache()
     let beaconExtras = BeaconExtrasCache()
     private(set) var sharedDropsStore = SharedDropsStore()
+    /// Home's modules, on the environment so they're restored before the shell's first frame.
+    private(set) var homeFeed = HomeFeedModel()
     /// The user's own profile, plans and saved events, shared by every screen that shows them.
     let selfData = SelfDataStore()
     /// The activity inbox behind the Home bell (loaded by the shell at launch).
@@ -269,7 +271,10 @@ public final class AppEnvironment {
         ownDeviceApproval = nil
         deferredDeviceApprovals.removeAll()
         await places.clearCache()
+        events.clear()
         sharedDropsStore = SharedDropsStore()
+        homeFeed = HomeFeedModel()
+        ConversationListModel.forgetRestored()
         pendingSends.removeAll()
         await beacons.clearCache()
         await telemetryQueue.removeAll()
@@ -287,6 +292,12 @@ public final class AppEnvironment {
         }
         let coordinator = OnboardingCoordinator(userId: userId)
         onboardingCoordinators[userId] = coordinator
+        // First sight of this user this launch, before the shell's first frame: what Home shows
+        // is read from disk now, so it opens whole rather than landing in pieces after launch.
+        selfData.restoreNow(userID: userId)
+        events.restore(userID: userId)
+        homeFeed.restore(self, userID: userId)
+        sharedDropsStore.restore(userID: userId)
         if let cached = settings.onboardingState(for: userId) {
             coordinator.adoptCachedCompletion(cached)
         }

@@ -243,12 +243,17 @@ struct PixelatedPreview: View {
 
     private static let pixels: CGFloat = 480
 
+    init(url: URL?) {
+        self.url = url
+        // A preview seen before paints on the first frame, even right after a cold start.
+        self._image = State(initialValue: url.flatMap { ImagePipeline.shared.firstFrameImage(for: $0, maxPixelSize: Self.pixels, signed: true) })
+    }
+
     var body: some View {
-        let shown = image ?? url.flatMap { ImagePipeline.shared.cachedImage(for: $0, maxPixelSize: Self.pixels, signed: true) }
         // The fill takes the proposed size; the image fills inside it and never grows the view.
         ClickColors.fillSubtle
             .overlay {
-                if let shown { Image(uiImage: shown).resizable().interpolation(.none).scaledToFill() }
+                if let image { Image(uiImage: image).resizable().interpolation(.none).scaledToFill() }
             }
             .clipped()
             .task(id: url) {

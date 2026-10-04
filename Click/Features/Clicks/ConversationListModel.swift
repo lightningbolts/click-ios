@@ -32,6 +32,33 @@ final class ConversationListModel {
         self.refreshesAutomatically = initialSnapshot == nil
     }
 
+    /// The inbox as last cached, built synchronously so the shell's first frame (Home's recent
+    /// people, the Clicks badge) is already final instead of filling in after launch. One model
+    /// per user, so a shell re-init reuses it rather than reading the disk again.
+    static func restored(userID: String) -> ConversationListModel {
+        if let last = lastRestored, last.userID == userID { return last.model }
+        let model = ConversationListModel()
+        if let cached = Phase3Repository.cachedInboxNow(userID: userID) {
+            model.snapshot = ClicksSnapshot(
+                connections: cached.connections,
+                archivedConnections: cached.archived,
+                groups: CacheStore.loadNow([CliqueItem].self, key: "groups", userID: userID) ?? cached.groups,
+                mapPins: cached.mapPins
+            )
+            model.restoredCache = cached
+        }
+        if let stored = CacheStore.loadNow([String: Date?].self, key: "mutes", userID: userID) { model.mutes = stored }
+        lastRestored = (userID, model)
+        return model
+    }
+
+    private static var lastRestored: (userID: String, model: ConversationListModel)?
+    /// Sign-out: the next account builds its own.
+    static func forgetRestored() { lastRestored = nil }
+
+    /// Set by `restored`: `load` finishes it (visuals, previews) before refreshing.
+    @ObservationIgnored private var restoredCache: ClicksSnapshot?
+
     var active: [ConnectionItem] { snapshot?.connections ?? [] }
     var archived: [ConnectionItem] { snapshot?.archived ?? [] }
     var groups: [CliqueItem] { snapshot?.cliques ?? [] }
@@ -64,7 +91,11 @@ final class ConversationListModel {
             hubs = await environment.joinedHubs.hubs(userID: userID)
             if mutes.isEmpty, let stored = await CacheStore.shared.load([String: Date?].self, key: "mutes", userID: userID) { mutes = stored }
         }
-        if snapshot == nil, let userID, let cached = await environment.phase3.cachedClicks(for: userID) {
+        if let restored = restoredCache {
+            restoredCache = nil
+            prefetchVisuals()
+            await decryptPreviews(for: restored)
+        } else if snapshot == nil, let userID, let cached = await environment.phase3.cachedClicks(for: userID) {
             let cachedGroups = await CacheStore.shared.load([CliqueItem].self, key: "groups", userID: userID)
             snapshot = ClicksSnapshot(
                 connections: cached.connections,

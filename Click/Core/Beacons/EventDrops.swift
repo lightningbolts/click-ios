@@ -149,15 +149,15 @@ extension BeaconRepository {
 
 // MARK: - Event history (spec F2)
 
-public struct PastEvent: Identifiable, Sendable, Equatable {
-    public struct Relation: Sendable, Equatable {
+public struct PastEvent: Identifiable, Sendable, Equatable, Codable {
+    public struct Relation: Sendable, Equatable, Codable {
         public let went: Bool
         public let rsvpd: Bool
         public let saved: Bool
         public let hosted: Bool
     }
 
-    public enum Recap: Sendable, Equatable {
+    public enum Recap: Sendable, Equatable, Codable {
         case developing(revealAt: Date?)
         case ready
     }

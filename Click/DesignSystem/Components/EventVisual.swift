@@ -134,7 +134,7 @@ public struct EventVisual: View {
         self.symbol = symbol
         self.cornerRadius = cornerRadius
         self._image = State(initialValue: url.flatMap {
-            ImagePipeline.shared.cachedImage(for: $0, maxPixelSize: Self.pixelSize)
+            ImagePipeline.shared.firstFrameImage(for: $0, maxPixelSize: Self.pixelSize)
         })
     }
 

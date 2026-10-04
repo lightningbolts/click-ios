@@ -1,8 +1,9 @@
 import Foundation
+import Synchronization
 
 /// The viewer's RSVP state (`GET /api/beacons/{id}/rsvp`).
-public struct RSVPState: Equatable, Sendable {
-    public enum Request: String, Sendable {
+public struct RSVPState: Equatable, Sendable, Codable {
+    public enum Request: String, Sendable, Codable {
         case pending, approved, denied, waitlisted
     }
 
@@ -12,7 +13,7 @@ public struct RSVPState: Equatable, Sendable {
 }
 
 /// Engagement state shared by every entry point (`GET /api/beacons/{id}/engagement`).
-public struct EventEngagement: Equatable, Sendable {
+public struct EventEngagement: Equatable, Sendable, Codable {
     public var bookmarked: Bool
     public var checkedIn: Bool
     public var checkInCount: Int
@@ -85,6 +86,67 @@ public actor EventEngagementRepository {
     private nonisolated let engagementCache = MemoryCache<String, EventEngagement>()
     private nonisolated let directoryCache = MemoryCache<String, EventDirectory>()
 
+    // MARK: - Persistence
+
+    /// RSVP and saved/check-in state survive a relaunch (per user), so an event opened right
+    /// after a cold start paints its RSVP button on the first frame instead of a blank one.
+    private struct Persisted: Codable {
+        var rsvp: [String: RSVPState]
+        var engagement: [String: EventEngagement]
+    }
+
+    private static let persistKey = "events.engagement"
+    /// Bounds the file: past this, only this session's entries are kept.
+    private static let persistLimit = 400
+    private nonisolated let owner = Mutex<String?>(nil)
+
+    /// Reads the signed-in user's saved states on the spot (before the shell's first frame).
+    public nonisolated func restore(userID: String) {
+        guard owner.withLock({ current in
+            defer { current = userID }
+            return current != userID
+        }) else { return }
+        rsvpCache.removeAll()
+        engagementCache.removeAll()
+        directoryCache.removeAll()
+        guard let stored = LocalStore.shared.load(Persisted.self, key: Self.persistKey, userID: userID)?.value else { return }
+        rsvpCache.fill(stored.rsvp)
+        engagementCache.fill(stored.engagement)
+    }
+
+    /// Sign-out: nothing of one account's events is shown to the next.
+    public nonisolated func clear() {
+        owner.withLock { $0 = nil }
+        rsvpCache.removeAll()
+        engagementCache.removeAll()
+        directoryCache.removeAll()
+    }
+
+    private func persist() {
+        guard let userID = owner.withLock({ $0 }) else { return }
+        var rsvp = rsvpCache.all
+        var engagement = engagementCache.all
+        if rsvp.count + engagement.count > Self.persistLimit * 2 {
+            rsvp = Dictionary(uniqueKeysWithValues: rsvp.prefix(Self.persistLimit).map { ($0.key, $0.value) })
+            engagement = Dictionary(uniqueKeysWithValues: engagement.prefix(Self.persistLimit).map { ($0.key, $0.value) })
+        }
+        LocalStore.shared.save(Persisted(rsvp: rsvp, engagement: engagement), key: Self.persistKey, userID: userID)
+    }
+
+    /// RSVP and saved state for events likely to be opened next (Home's saved events), loaded
+    /// ahead so their pages never wait on it. Only events not known yet; failures stay quiet.
+    public func warm(beaconIDs: [String]) async {
+        await withTaskGroup(of: Void.self) { group in
+            for id in Set(beaconIDs) where rsvpCache[id] == nil {
+                group.addTask {
+                    async let rsvp = try? self.rsvpState(beaconID: id)
+                    async let engagement = try? self.engagement(beaconID: id)
+                    _ = await (rsvp, engagement)
+                }
+            }
+        }
+    }
+
     public nonisolated func cachedRSVP(beaconID: String) -> RSVPState? {
         rsvpCache[beaconID]
     }
@@ -105,6 +167,7 @@ public actor EventEngagementRepository {
             count: JSONFields.int(root["rsvp_count"]) ?? JSONFields.rows(root["attendees"]).count
         )
         rsvpCache[beaconID] = state
+        persist()
         return state
     }
 
@@ -116,6 +179,7 @@ public actor EventEngagementRepository {
             let req = JSONFields.string(root["request_status"]).flatMap(RSVPState.Request.init(rawValue:))
             let prevCount = rsvpCache[beaconID]?.count ?? 0
             rsvpCache[beaconID] = RSVPState(isGoing: req == nil, request: req, count: prevCount + 1)
+            persist()
             return req
         } catch APIError.forbidden {
             throw RSVPError.notAllowed
@@ -128,6 +192,7 @@ public actor EventEngagementRepository {
         _ = try await object("/api/beacons/\(beaconID)/rsvp", .delete)
         let prevCount = rsvpCache[beaconID]?.count ?? 1
         rsvpCache[beaconID] = RSVPState(isGoing: false, request: nil, count: max(0, prevCount - 1))
+        persist()
     }
 
     public func engagement(beaconID: String) async throws -> EventEngagement {
@@ -138,6 +203,7 @@ public actor EventEngagementRepository {
             checkInCount: JSONFields.int(root["check_in_count"]) ?? 0
         )
         engagementCache[beaconID] = eng
+        persist()
         return eng
     }
 
@@ -151,6 +217,7 @@ public actor EventEngagementRepository {
         } else {
             engagementCache[beaconID] = EventEngagement(bookmarked: confirmed, checkedIn: false, checkInCount: 0)
         }
+        persist()
         return confirmed
     }
 
@@ -166,6 +233,7 @@ public actor EventEngagementRepository {
             let count = JSONFields.int(root["check_in_count"]) ?? 0
             if let existing = engagementCache[beaconID] {
                 engagementCache[beaconID] = EventEngagement(bookmarked: existing.bookmarked, checkedIn: true, checkInCount: count)
+                persist()
             }
             return count
         } catch {
@@ -177,6 +245,7 @@ public actor EventEngagementRepository {
         _ = try await object("/api/beacons/\(beaconID)/check-in", .delete)
         if let existing = engagementCache[beaconID] {
             engagementCache[beaconID] = EventEngagement(bookmarked: existing.bookmarked, checkedIn: false, checkInCount: max(0, existing.checkInCount - 1))
+            persist()
         }
     }
 

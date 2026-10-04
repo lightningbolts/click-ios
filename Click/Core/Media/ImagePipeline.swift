@@ -35,6 +35,25 @@ public actor ImagePipeline {
         memory.image(forKey: Self.key(signed ? Self.stable(url) : url, maxPixelSize))
     }
 
+    /// `cachedImage`, then the disk cache, decoded on the spot: a view's first frame after a cold
+    /// start paints a picture seen on an earlier launch instead of swapping it in a beat later.
+    /// For view initializers only (one small decode, once per launch); prefetching stays async.
+    public nonisolated func firstFrameImage(for url: URL, maxPixelSize: CGFloat, signed: Bool = false) -> UIImage? {
+        let identity = signed ? Self.stable(url) : url
+        let key = Self.key(identity, maxPixelSize)
+        if let cached = memory.image(forKey: key) { return cached }
+        let request = URLRequest(url: identity)
+        guard let response = session.configuration.urlCache?.cachedResponse(for: request),
+              let image = Self.downsample(response.data, maxPixelSize: maxPixelSize) else { return nil }
+        memory.insert(image, forKey: key)
+        // Same as a disk hit in `image(for:)`: revalidate in the background for next time.
+        if !signed {
+            let session = self.session
+            Task.detached(priority: .utility) { _ = try? await session.data(for: request) }
+        }
+        return image
+    }
+
     /// Returns the image downsampled so its longest side is at most `maxPixelSize` pixels,
     /// or `nil` if it could not be loaded or decoded.
     ///

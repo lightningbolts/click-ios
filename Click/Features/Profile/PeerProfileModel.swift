@@ -171,16 +171,23 @@ final class PeerProfileModel {
         return false
     }
 
+    /// Instant: the wave lands on tap and the request follows; only a "no" changes the notice.
     func wave() async {
-        guard let environment, let connectionID else { return }
+        guard let environment, let connectionID, !isWaving else { return }
+        isWaving = true
+        defer { isWaving = false }
+        ClickHaptics.success()
+        relationshipNotice = "You waved at \(peerFirstName) 👋"
         do {
-            let sent = try await environment.relationships.wave(connectionID: connectionID)
-            ClickHaptics.success()
-            relationshipNotice = sent ? "You waved at \(peerFirstName) 👋" : "You already waved at \(peerFirstName) today"
+            if try await environment.relationships.wave(connectionID: connectionID) == false {
+                relationshipNotice = "You already waved at \(peerFirstName) today"
+            }
         } catch {
-            relationshipNotice = error.userFacingMessage
+            if !error.isCancellation { relationshipNotice = error.userFacingMessage }
         }
     }
+
+    @ObservationIgnored private var isWaving = false
 
     func loadProfile() async {
         guard let environment, let viewerID = environment.session.currentSession?.userId else { return }

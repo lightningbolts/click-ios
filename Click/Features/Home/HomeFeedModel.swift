@@ -1,6 +1,7 @@
 import CoreLocation
 import Foundation
 import Observation
+import SwiftUI
 
 /// The single highest-priority social opportunity Home promotes (spec §20.2 item 3).
 enum HomeOpportunity: Equatable, Identifiable {
@@ -126,6 +127,8 @@ final class HomeFeedModel {
     private(set) var nudges = ModuleState<[InboxNudge]>()
     private(set) var discovery = ModuleState<NearbyDiscovery>()
     private(set) var recaps: [ActivityRecap.Window: ModuleState<ActivityRecap>] = [:]
+    /// The event-history recap card (flag-gated), cached so it's in place when Home opens.
+    private(set) var recapCard: PastEvent?
     var recapWindow: ActivityRecap.Window = .week
 
     /// Nudges resolved this session; hidden immediately even if a stale fetch returns them.
@@ -133,6 +136,8 @@ final class HomeFeedModel {
     private var environment: AppEnvironment?
     private var refreshTask: Task<Void, Never>?
     private var hasLoaded = false
+    /// Seeded by `restore` before the shell's first frame (the async seed then only warms caches).
+    private var restored = false
 
     init() {}
 
@@ -182,6 +187,38 @@ final class HomeFeedModel {
         self.environment = environment
     }
 
+    /// Every cached module, read on the spot before the shell's first frame: Home opens whole
+    /// (greeting, plans, opportunity, recap, nearby) instead of sections landing and pushing the
+    /// rest down after launch. Expects `selfData.restoreNow` first.
+    func restore(_ environment: AppEnvironment, userID: String) {
+        attach(environment)
+        restored = true
+        if let cached = environment.selfData.profile.value {
+            firstName = cached.firstName.nonEmptyTrimmed ?? Self.firstName(cached.displayName)
+        }
+        nudges.seed(CacheStore.loadNow([InboxNudge].self, key: "nudges", userID: userID))
+        for window in ActivityRecap.Window.allCases {
+            var state = ModuleState<ActivityRecap>()
+            state.seed(CacheStore.loadNow(ActivityRecap.self, key: "recap.\(window.rawValue)", userID: userID))
+            recaps[window] = state
+        }
+        if environment.location.isAuthorized {
+            discovery.seed(CacheStore.loadNow(NearbyDiscovery.self, key: "nearby", userID: userID))
+        }
+        recapCard = CacheStore.loadNow([PastEvent].self, key: Self.recapCardKey, userID: userID)?.first
+    }
+
+    private static let recapCardKey = "event-recap-card"
+
+    /// A failed read keeps the card shown; an answer (a card or none) replaces it and is cached.
+    func loadRecapCard() async {
+        guard let environment, let userID else { return }
+        let card: PastEvent?
+        do { card = try await environment.beacons.eventRecapCard() } catch { return }
+        if card != recapCard { withAnimation(ClickMotion.subtleFade) { recapCard = card } }
+        await CacheStore.shared.save([card].compactMap { $0 }, key: Self.recapCardKey, userID: userID)
+    }
+
     /// Seeds cached modules on first appearance, then refreshes. Later appearances do nothing;
     /// pull-to-refresh and foregrounding call `refresh()`.
     func loadIfNeeded() async {
@@ -191,6 +228,9 @@ final class HomeFeedModel {
         // Let the cached frame commit before network work competes for the main actor.
         await Task.yield()
         await refresh()
+        // Saved events open with their RSVP already known (their pages never wait on it).
+        let saved = upcomingSaved(excluding: nil).prefix(6).map(\.beaconID)
+        await environment.events.warm(beaconIDs: Array(saved))
     }
 
     /// Refreshes every module concurrently; concurrent callers share one pass.
@@ -302,6 +342,11 @@ final class HomeFeedModel {
     private var userID: String? { environment?.session.currentSession?.userId }
 
     private func seedFromCache(_ environment: AppEnvironment, userID: String) async {
+        if restored {
+            // Already on screen; this read also teaches the beacon cache those events.
+            if environment.location.isAuthorized { _ = await environment.beacons.cachedDiscovery(userID: userID) }
+            return
+        }
         if let cached = await environment.me.cachedSelfProfile(userID: userID) {
             firstName = cached.firstName.nonEmptyTrimmed ?? Self.firstName(cached.displayName)
         }

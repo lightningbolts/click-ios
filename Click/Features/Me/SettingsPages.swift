@@ -2,6 +2,7 @@ import SwiftUI
 
 /// The single destination for typed `SettingsRoute`s.
 struct SettingsPageView: View {
+    @Environment(AppEnvironment.self) private var env
     let page: SettingsRoute
 
     var body: some View {
@@ -10,10 +11,11 @@ struct SettingsPageView: View {
         case .privacy: PrivacySettingsView()
         case .permissions: PermissionsSettingsView()
         case .blocked: BlockedUsersView()
-        case .interests: InterestsSettingsView()
-        case .personality: PersonalitySettingsView()
+        // Profile editors open filled from the shared copy, never a loading frame first.
+        case .interests: InterestsSettingsView(seed: env.selfData.profile.value)
+        case .personality: PersonalitySettingsView(seed: env.selfData.profile.value)
         case .calendar: CalendarSettingsView()
-        case .editProfile: EditProfileView()
+        case .editProfile: EditProfileView(seed: env.selfData.profile.value)
         }
     }
 }
@@ -527,7 +529,11 @@ struct PermissionsSettingsView: View {
 struct InterestsSettingsView: View {
     @Environment(AppEnvironment.self) private var env
     @Environment(\.dismiss) private var dismiss
-    @State private var profile = ModuleState<SelfProfile>()
+    @State private var profile: ModuleState<SelfProfile>
+
+    init(seed: SelfProfile?) {
+        _profile = State(initialValue: ModuleState(value: seed))
+    }
 
     var body: some View {
         Group {
@@ -565,7 +571,11 @@ struct InterestsSettingsView: View {
 struct PersonalitySettingsView: View {
     @Environment(AppEnvironment.self) private var env
     @Environment(\.dismiss) private var dismiss
-    @State private var profile = ModuleState<SelfProfile>()
+    @State private var profile: ModuleState<SelfProfile>
+
+    init(seed: SelfProfile?) {
+        _profile = State(initialValue: ModuleState(value: seed))
+    }
 
     var body: some View {
         Group {
@@ -667,14 +677,22 @@ struct CalendarSettingsView: View {
 struct EditProfileView: View {
     @Environment(AppEnvironment.self) private var env
     @Environment(\.dismiss) private var dismiss
-    @State private var profile = ModuleState<SelfProfile>()
-    @State private var firstName = ""
-    @State private var lastName = ""
-    @State private var bio = ""
+    @State private var profile: ModuleState<SelfProfile>
+    @State private var firstName: String
+    @State private var lastName: String
+    @State private var bio: String
     @State private var isSaving = false
     @State private var removingPhoto = false
     @State private var confirmRemovePhoto = false
     @State private var errorMessage: String?
+
+    /// `seed`: the shared copy, so the fields are filled on the first frame.
+    init(seed: SelfProfile?) {
+        _profile = State(initialValue: ModuleState(value: seed))
+        _firstName = State(initialValue: seed?.firstName ?? "")
+        _lastName = State(initialValue: seed?.lastName ?? "")
+        _bio = State(initialValue: seed?.bio ?? "")
+    }
 
     var body: some View {
         Form {
@@ -731,12 +749,13 @@ struct EditProfileView: View {
     }
 
     private func load() async {
+        let shown = profile.value
         await SelfProfileLoader.load(into: $profile, env: env)
-        if let value = profile.value {
-            firstName = value.firstName
-            lastName = value.lastName
-            bio = value.bio ?? ""
-        }
+        guard let value = profile.value else { return }
+        // Server truth replaces only the fields still as they were shown, never what's being typed.
+        if firstName == (shown?.firstName ?? "") { firstName = value.firstName }
+        if lastName == (shown?.lastName ?? "") { lastName = value.lastName }
+        if bio == (shown?.bio ?? "") { bio = value.bio ?? "" }
     }
 
     private func removePhoto() async {
