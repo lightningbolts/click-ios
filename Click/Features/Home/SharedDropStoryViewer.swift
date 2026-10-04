@@ -28,6 +28,7 @@ struct SharedDropStoryViewer: View {
     /// False while zoomed into the source tile: before the open, and while closing.
     @State private var presented = false
     @State private var frame: CGRect = .zero
+    @State private var insets = EdgeInsets()
     private let sources: DropTileFrames?
 
     private static let secondsPerDrop: Double = 6
@@ -75,15 +76,23 @@ struct SharedDropStoryViewer: View {
         }
         .offset(y: dragY)
         .scaleEffect(1 - min(dragY, 400) / 2400)
+        // Zooming, the viewer stays opaque and is cropped to the tile's shape instead of fading:
+        // Liquid Glass (the header, caption and reactions) flickers under a changing opacity.
+        .mask { clip }
         .scaleEffect(collapsed?.scale ?? 1)
         .offset(collapsed?.offset ?? .zero)
-        .opacity(presented ? 1 : 0)
+        .opacity(presented || collapsed != nil ? 1 : 0)
         .onGeometryChange(for: CGRect.self, of: { $0.frame(in: .global) }) { frame = $0 }
+        .onGeometryChange(for: EdgeInsets.self, of: { $0.safeAreaInsets }) { insets = $0 }
         .presentationBackground(.clear)
         .simultaneousGesture(dismissDrag)
         // Our own swipe-down (which also pauses) closes, zooming back into the tile.
         .interactiveDismissDisabled()
         .task {
+            // Zoom once the viewer has been laid out over its tile, so it never fades in.
+            for _ in 0..<20 where frame == .zero {
+                try? await Task.sleep(for: .milliseconds(10))
+            }
             await Task.yield()
             withAnimation(Self.zoom) { presented = true }
         }
@@ -125,7 +134,9 @@ struct SharedDropStoryViewer: View {
             .clipShape(RoundedRectangle(cornerRadius: 18, style: .continuous))
             .overlay(alignment: .bottom) {
                 if shown, let caption = drop.caption {
-                    DropCaptionPill { Text(caption) }.padding(.bottom, 120)
+                    DropCaptionPill { Text(caption) }
+                        .padding(.bottom, 120)
+                        .transition(.identity)
                 }
             }
             .overlay { if !shown { developingLabel(drop) } }
@@ -143,7 +154,8 @@ struct SharedDropStoryViewer: View {
             .padding(.horizontal, 14)
             .padding(.vertical, 9)
             .glassCircleBackground()
-            .transition(.opacity)
+            // Glass flickers under a fade, so the label comes and goes at once.
+            .transition(.identity)
     }
 
     /// A quick tap on the left third goes back, anywhere else forward; holding pauses.
@@ -334,6 +346,19 @@ struct SharedDropStoryViewer: View {
         guard !presented, !reduceMotion, frame.width > 0,
               let tile = sources?.byID[currentID], tile.intersects(frame) else { return nil }
         return (tile.width / frame.width, CGSize(width: tile.midX - frame.midX, height: tile.midY - frame.midY))
+    }
+
+    /// The viewer's crop: the tile's shape (in the viewer's unscaled space) while collapsed onto
+    /// it, the whole screen, safe areas included, once presented.
+    private var clip: some View {
+        let scale = collapsed?.scale
+        let full = CGSize(width: frame.width + insets.leading + insets.trailing,
+                          height: frame.height + insets.top + insets.bottom)
+        let tile = scale.flatMap { s in sources?.byID[currentID].map { CGSize(width: $0.width / s, height: $0.height / s) } }
+        return RoundedRectangle(cornerRadius: scale.map { 16 / $0 } ?? 0, style: .continuous)
+            .frame(width: tile?.width ?? full.width, height: tile?.height ?? full.height)
+            .offset(x: tile == nil ? (insets.trailing - insets.leading) / 2 : 0,
+                    y: tile == nil ? (insets.bottom - insets.top) / 2 : 0)
     }
 
     /// Zooms back into the tile (or fades), then dismisses without the system animation.
