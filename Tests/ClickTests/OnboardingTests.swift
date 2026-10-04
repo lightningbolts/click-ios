@@ -141,6 +141,17 @@ struct OnboardingTests {
         #expect(ContactDiscoveryService.normalizeEmail("invalid-email") == nil)
     }
 
+    @Test("Discover decodes the already-connected count and tolerates servers without it")
+    func discoverResponseDecoding() throws {
+        let current = Data(#"{"matches":[{"id":"u1","name":"Bee","avatar_url":null,"tags":[]}],"already_connected":3}"#.utf8)
+        let decoded = try JSONDecoder().decode(DiscoverContactsResponse.self, from: current)
+        #expect(decoded.matches.map(\.id) == ["u1"])
+        #expect(decoded.alreadyConnected == 3)
+
+        let older = Data(#"{"matches":[]}"#.utf8)
+        #expect(try JSONDecoder().decode(DiscoverContactsResponse.self, from: older).alreadyConnected == 0)
+    }
+
     @Test("SHA-256 produces standard lowercase hex digests")
     func sha256HexCalculation() {
         let emptyHash = ContactDiscoveryService.sha256Hex("")

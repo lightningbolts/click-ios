@@ -244,6 +244,14 @@ struct PrivacySettingsView: View {
             }
 
             Section {
+                MyPhoneEditor()
+            } header: {
+                Text("Find me by phone")
+            } footer: {
+                Text("Friends who have your number in their contacts can find you in Find friends. Your number is never shown to anyone.")
+            }
+
+            Section {
                 NavigationLink(value: AppRoute.settings(.permissions)) {
                     Text("Permissions")
                 }
