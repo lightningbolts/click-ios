@@ -28,9 +28,9 @@ public struct AvatarView: View {
         self.initials = initials
         self.size = size
         self.presence = presence
-        // Seed from the memory cache so recycled rows never flash the fallback.
+        // Seed from memory (or disk after a cold start) so rows never flash the fallback.
         self._image = State(initialValue: url.flatMap {
-            ImagePipeline.shared.cachedImage(for: $0, maxPixelSize: Self.pixelSize(for: size))
+            ImagePipeline.shared.firstFrameImage(for: $0, maxPixelSize: Self.pixelSize(for: size))
         })
     }
 

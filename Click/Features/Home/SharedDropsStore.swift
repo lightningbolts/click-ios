@@ -40,11 +40,34 @@ final class SharedDropsStore {
 
     // MARK: - Loading
 
+    /// The tiles on screen when Home opens: their photos are decoded before its first frame.
+    private static let firstScreenTiles = 4
+
+    /// Paints the last strip from disk synchronously, before the shell's first frame: Home opens
+    /// with the strip exactly as it was, instead of tiles, previews and photos landing in turns
+    /// after launch. Photos past the first screen follow off-main (out of view).
+    func restore(userID: String) {
+        guard drops.value == nil, let cached = CacheStore.loadNow([SharedDrop].self, key: Self.cacheKey, userID: userID) else { return }
+        let list = cached.map { var drop = $0; drop.originalURL = nil; return drop }
+        for drop in list.prefix(Self.firstScreenTiles) where drop.state() == .developed {
+            originals[drop.id] = SharedDropPhotoCache.load(drop.id, userID: userID, maxPixels: Self.tilePixels)
+        }
+        drops.seed(list)
+        restoredSeed = cached
+    }
+
+    /// Set by `restore`: `load` seeds reactions and the remaining photos from it.
+    private var restoredSeed: [SharedDrop]?
+
     /// Paints the last strip (and its developed photos) from disk at once, then refreshes.
     /// One request: the server inlines originals and reactions for drops already developed.
     func load(env: AppEnvironment) async {
         let userID = env.session.currentSession?.userId
-        if drops.value == nil, let userID, let cached = await CacheStore.shared.load([SharedDrop].self, key: Self.cacheKey, userID: userID) {
+        if let restored = restoredSeed, let userID {
+            restoredSeed = nil
+            seedReactions(restored, env: env)
+            await paintFromDisk(restored, userID: userID)
+        } else if drops.value == nil, let userID, let cached = await CacheStore.shared.load([SharedDrop].self, key: Self.cacheKey, userID: userID) {
             drops.seed(cached.map { var drop = $0; drop.originalURL = nil; return drop })
             seedReactions(cached, env: env)
             await paintFromDisk(cached, userID: userID)

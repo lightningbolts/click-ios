@@ -619,11 +619,13 @@ struct BeaconDetailView: View {
     /// Seeds the beacon and, for an event, its RSVP, saved state and people from memory
     /// (discovery, chat cards, earlier opens), synchronously so the first frame has them.
     private func seedFromCache() {
+        // RSVP state persists across launches (only events have one), so it seeds even when the
+        // beacon itself still has to load.
+        seedEngagement()
         guard beacon.value == nil, let cached = env.beacons.cachedBeacon(id: beaconID) else { return }
         beacon.seed(cached.beacon)
         isExpired = cached.isExpired
         env.beaconExtras.prefetch(cached.beacon, env: env)
-        if cached.beacon.isEvent { seedEngagement() }
     }
 
     private func seedEngagement() {

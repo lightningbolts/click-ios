@@ -13,12 +13,11 @@ public struct HomeView: View {
     @Environment(ConversationListModel.self) private var conversations
     @Environment(\.scenePhase) private var scenePhase
     @State private var backgroundedAt: Date?
-    @State private var model = HomeFeedModel()
+    private var model: HomeFeedModel { env.homeFeed }
     @State private var isEditingAvailability = false
     @State private var reconnectTick = 0
     @State private var showsCompactTitle = false
     @State private var reconnectNudge: ReconnectNearbyNudge?
-    @State private var recapCard: PastEvent?
 
     public init() {}
 
@@ -50,21 +49,20 @@ public struct HomeView: View {
                 if env.features.isEnabled(.sharedDrops) { SharedDropsStrip() }
                 HomeSetupCard()
                 recentPeopleSection(promoted: opportunity)
-                if let recapCard { HomeEventRecapCard(card: recapCard) }
+                if env.features.isEnabled(.eventHistory), let recapCard = model.recapCard { HomeEventRecapCard(card: recapCard) }
                 recapSection
                 savedSection(promotedID: promotedEventID(opportunity))
                 nearbySection
                 insightsSection
             }
             .padding(.horizontal, ClickSpacing.screenGutter)
-            .padding(.top, 4)
             .padding(.bottom, 32)
             // Only the card appearing or leaving animates; swapping one opportunity for another
             // updates in place instead of replaying every section's entrance.
             .animation(ClickMotion.subtleFade, value: opportunity == nil)
         }
         .background(ClickColors.background.ignoresSafeArea())
-        .clickToast($model.actionNotice)
+        .clickToast(Bindable(model).actionNotice)
         .refreshable {
             async let feed: Void = model.refresh()
             async let inbox: Void = conversations.refresh()
@@ -113,7 +111,7 @@ public struct HomeView: View {
         }
         // Flag-gated cards load here (a view that starts empty would never run its own task).
         .task(id: [env.features.isEnabled(.reconnectNearby), env.features.isEnabled(.eventHistory)]) {
-            if env.features.isEnabled(.eventHistory) { recapCard = try? await env.beacons.eventRecapCard() }
+            if env.features.isEnabled(.eventHistory) { await model.loadRecapCard() }
             if env.features.isEnabled(.reconnectNearby) {
                 let nudge = await ReconnectNearbyCard.load(env)
                 withAnimation(ClickMotion.subtleFade) { reconnectNudge = nudge }
@@ -159,7 +157,7 @@ public struct HomeView: View {
             }
             .padding(.top, 8)
         }
-        .padding(.horizontal, 4)
+        // Flush with the gutter, like the native large title and search field on Clicks.
     }
 
     // MARK: - 2. Availability

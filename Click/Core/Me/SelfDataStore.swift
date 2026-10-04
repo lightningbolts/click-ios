@@ -43,6 +43,23 @@ final class SelfDataStore {
     /// Paints cached values (disk) once per signed-in user.
     func seedIfNeeded() async {
         guard let environment, let userID, seededUserID != userID else { return }
+        reset(for: userID)
+        profile.seed(await environment.me.cachedSelfProfile(userID: userID))
+        intents.seed(await environment.me.cachedIntents(userID: userID))
+        savedEvents.seed(await environment.beacons.cachedBookmarks(userID: userID))
+    }
+
+    /// `seedIfNeeded`, read on the spot: called before the shell's first frame, so Home, Me and
+    /// the editors open with the cached profile, plans and saved events already in place.
+    func restoreNow(userID: String) {
+        guard seededUserID != userID else { return }
+        reset(for: userID)
+        profile.seed(CacheStore.loadNow(SelfProfile.self, key: "self-profile", userID: userID))
+        intents.seed(CacheStore.loadNow([AvailabilityIntentPost].self, key: "intents", userID: userID))
+        savedEvents.seed(CacheStore.loadNow([SavedEvent].self, key: "bookmarks", userID: userID))
+    }
+
+    private func reset(for userID: String) {
         seededUserID = userID
         profile = ModuleState()
         intents = ModuleState()
@@ -52,9 +69,6 @@ final class SelfDataStore {
         history = [:]
         historyPageGeneration = [:]
         fetchedAt = [:]
-        profile.seed(await environment.me.cachedSelfProfile(userID: userID))
-        intents.seed(await environment.me.cachedIntents(userID: userID))
-        savedEvents.seed(await environment.beacons.cachedBookmarks(userID: userID))
     }
 
     /// Refreshes whatever is stale (or everything with `force`); concurrent callers share work.

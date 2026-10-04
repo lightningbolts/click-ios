@@ -21,6 +21,11 @@ public actor Phase3Repository {
         self.supabaseAnonKey = supabaseAnonKey
     }
 
+    /// The app's cached inbox, read on the caller's thread for the shell's first frame.
+    public nonisolated static func cachedInboxNow(userID: String) -> ClicksSnapshot? {
+        LocalStore.shared.load(ClicksSnapshot.self, key: "inbox.snapshot", userID: userID)?.value
+    }
+
     public func cachedClicks(for userID: String) -> ClicksSnapshot? {
         guard defaults === UserDefaults.standard else {
             return cached(ClicksSnapshot.self, key: "phase3.clicks.\(userID)")

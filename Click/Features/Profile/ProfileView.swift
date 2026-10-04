@@ -246,14 +246,7 @@ public struct ProfileView: View {
                 if model.connectionID != nil {
                     // A wave is a light "thinking of you": a notification and a Home card, not a
                     // chat message.
-                    actionTile("Wave", systemImage: "hand.wave", busy: isWorking) {
-                        Task {
-                            isWorking = true
-                            await model.wave()
-                            isWorking = false
-                        }
-                    }
-                    .disabled(isWorking)
+                    actionTile("Wave", systemImage: "hand.wave") { Task { await model.wave() } }
                     if let item = inboxItem {
                         actionTile("Core", systemImage: item.isCore ? "star.fill" : "star", tint: item.isCore ? ClickColors.accentForeground : nil) {
                             Task { await conversations.setCore(item, isCore: !item.isCore) }
@@ -270,12 +263,9 @@ public struct ProfileView: View {
                     .foregroundStyle(ClickColors.textTertiary)
             }
         }
+        // The same Click Drop camera as chat (looks, develop subtitle), not the system camera.
         .fullScreenCover(isPresented: $takingDrop) {
-            CameraCapture { image in
-                takingDrop = false
-                if let image { Task { await sendClickDrop(image) } }
-            }
-            .ignoresSafeArea()
+            ClickDropCameraView { draft in Task { await sendClickDrop(draft) } }
         }
     }
 
@@ -296,19 +286,16 @@ public struct ProfileView: View {
     }
 
     /// Click Drop from the profile: sent into the direct chat, revealed 24 h later.
-    private func sendClickDrop(_ image: UIImage) async {
-        guard let conversation = directConversation, let userID = env.session.currentSession?.userId,
-              let data = image.jpegData(compressionQuality: 0.9), var draft = await MediaDraftBuilder.image(from: data) else { return }
+    private func sendClickDrop(_ captured: MediaDraft) async {
+        guard let conversation = directConversation else { return }
+        var draft = captured
         draft.isClickDrop = true
+        draft.encounterID = env.clickDropSession?.encounterID(for: conversation.connectionID)
         draft.gatesOriginal = env.features.isEnabled(.dropsDevelop)
-        do {
-            _ = try await env.chat.sendMedia(conversation: conversation, currentUserID: userID, currentUserName: "You",
-                                             draft: draft, replyToID: nil, clientMessageID: UUID().uuidString.lowercased())
-            notice = "Click Drop sent. It develops in 24 hours."
-            ClickHaptics.success()
-        } catch {
-            notice = "Couldn't send the Click Drop. \(error.userFacingMessage)"
-        }
+        // Through the chat's own model, as from the composer: the drop is in the chat at once,
+        // and a failed send waits there with Retry instead of being lost.
+        notice = "Click Drop sent. It develops in 24 hours."
+        await env.conversationModel(for: conversation).sendMedia(draft)
     }
 
     // MARK: - Common ground
