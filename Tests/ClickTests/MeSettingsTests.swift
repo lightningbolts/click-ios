@@ -69,7 +69,7 @@ struct MeSettingsTests {
         }
         await #expect(throws: APIError.self) {
             _ = try await repository().setLocationPrivacy(
-                LocationPrivacy(connectionSnap: true, memoryMap: false, businessInsights: false),
+                LocationPrivacy(connectionSnap: true, businessInsights: false),
                 userID: "u1"
             )
         }
@@ -77,9 +77,8 @@ struct MeSettingsTests {
 
     @Test("Location privacy columns default off (no accidental opt-in)")
     func locationDefaultsOff() async throws {
-        MeMockURLProtocol.handler = { _ in (200, #"[{"location_show_on_map_enabled":true}]"#) }
+        MeMockURLProtocol.handler = { _ in (200, #"[{"location_include_in_insights_enabled":null}]"#) }
         let privacy = try await repository().locationPrivacy(userID: "u1")
-        #expect(privacy.memoryMap)
         #expect(!privacy.connectionSnap)
         #expect(!privacy.businessInsights)
     }

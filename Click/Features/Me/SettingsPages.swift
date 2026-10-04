@@ -145,7 +145,6 @@ struct PrivacySettingsView: View {
             Section {
                 if let value = privacy.value {
                     toggle("Location snap", "Save where you are when you Click with someone.", \.connectionSnap, value)
-                    toggle("Memory Map", "Use your Click locations for your personal map and Remember Me.", \.memoryMap, value)
                     toggle(
                         "Business insights",
                         env.features.isEnabled(.clickPlaces)

@@ -589,3 +589,11 @@ public struct PublicProfile: Equatable, Sendable {
     public let auraColors: [String]
     public var initials: String { Phase3Repository.initials(from: displayName) }
 }
+
+extension Encounter {
+    /// Nothing says where it happened (Location snap was off, or no fix).
+    var isMissingPlace: Bool {
+        [place, venue, locationName, displayLocation, neighbourhood, city, eventTitle]
+            .allSatisfy { ($0 ?? "").trimmingCharacters(in: .whitespaces).isEmpty }
+    }
+}
