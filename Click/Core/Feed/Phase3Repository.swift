@@ -223,7 +223,7 @@ public actor Phase3Repository {
         return result
     }
 
-    /// Pending connections must be greeted within 48 hours before the server's gentle archive.
+    /// Pending connections nobody has written in yet are archived by the server after 48 hours.
     nonisolated static let sayHiWindow: TimeInterval = 48 * 60 * 60
 
     /// Maps dashboard rows plus enrichments into inbox items, newest activity first.
@@ -261,7 +261,10 @@ public actor Phase3Repository {
                 created
             ].compactMap { $0 }.max()
 
+            // Like the server's auto-archive: the 48-hour window only applies while nobody has
+            // written. (`has_begun` is set by Android when a chat opens, never by iOS.)
             let hasBegun = bool(row["has_begun"]) ?? false
+                || timestamp(row["last_message_at"]) != nil || preview?.lastMessageAt != nil
             let status = string(row["status"]) ?? "pending"
             let deadline = created.map { $0.addingTimeInterval(sayHiWindow) }
             let sayHiDeadline = (!archived && !hasBegun && status == "pending" && (deadline ?? .distantPast) > now)
