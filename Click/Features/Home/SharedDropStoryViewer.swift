@@ -143,7 +143,8 @@ struct SharedDropStoryViewer: View {
         return out
     }
     private var current: SharedDrop? { store.drop(currentID) }
-    private func photo(_ id: String) -> UIImage? { full[id] ?? store.originals[id] }
+    /// Any copy on hand: the full-size one, else the strip tile's or the archive grid's.
+    private func photo(_ id: String) -> UIImage? { full[id] ?? store.originals[id] ?? store.thumbs[id] }
     /// A photo already on hand (and not just developed) shows from the first frame, so nothing
     /// swaps in while the viewer is still zooming open.
     private func isShown(_ id: String) -> Bool {
@@ -172,6 +173,13 @@ struct SharedDropStoryViewer: View {
                 try? await Task.sleep(for: .milliseconds(10))
             }
             await Task.yield()
+            // A developed photo that's on disk but not in memory decodes in a few frames: wait for
+            // it, so the viewer opens on the photo instead of unveiling it out of the pixels.
+            if !isShown(currentID), let drop = current, drop.state() == .developed,
+               let userID = env.session.currentSession?.userId, SharedDropPhotoCache.exists(drop.id, userID: userID),
+               let image = await store.fullImage(for: drop, env: env) {
+                full[drop.id] = image
+            }
             captionHidden = false
             withAnimation(Self.zoom) { presented = true }
             withAnimation(Self.crossFadeIn) { cardOpacity = 1 }
