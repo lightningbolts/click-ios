@@ -60,6 +60,8 @@ final class TapConnectModel {
     private var warmTask: Task<Void, Never>?
     /// Aggregate sensor quality of the latest tap, attached to its outcome telemetry.
     private var captureQuality: [String: TelemetryValue]?
+    /// The tap's barometric altitude when the altimeter's absolute fix arrives after the tap.
+    private var altitudeFollowUp: EncounterAltitudeFollowUp?
     private var environment: AppEnvironment?
     private var runTask: Task<Void, Never>?
     private var pendingID: String?
@@ -132,6 +134,7 @@ final class TapConnectModel {
         reviewTask = nil
         stopSensors()
         stopCapture()
+        dropAltitudeFollowUp()
         pendingID = nil
         phase = .idle
         resetFactors()
@@ -190,6 +193,7 @@ final class TapConnectModel {
                     return
                 }
                 track(.failed, reason: "confirm_selection_failed")
+                dropAltitudeFollowUp()
                 phase = .failed("Couldn't save this tap. \(error.userFacingMessage)")
             }
         }
@@ -201,6 +205,7 @@ final class TapConnectModel {
         track(.hostSelectionAbandoned, candidateCount: review.candidates.count, selectedCount: 0, reason: "removed_everyone")
         reviewTask?.cancel()
         reviewTask = nil
+        dropAltitudeFollowUp()
         if let pendingID { saveExclusions(Set(review.candidates.map(\.id)), pendingID: pendingID) }
         pendingID = nil
         phase = .idle
@@ -334,6 +339,8 @@ final class TapConnectModel {
                 location: located
             )
         }
+        dropAltitudeFollowUp()
+        altitudeFollowUp = EncounterAltitudeFollowUp.begin(from: capture, snapshot: observed, api: environment.api)
         stopCapture()
         evidence.sensor = await sensor
         evidence.sensor.barometer = observed.altitude
@@ -370,10 +377,12 @@ final class TapConnectModel {
             await handle(try await environment.proximity.bind(evidence))
         } catch let error where error.isOffline {
             await environment.proximity.enqueue(evidence, userID: userID)
+            dropAltitudeFollowUp()
             track(.offlineQueued)
             phase = .savedOffline
         } catch {
             track(.failed, reason: Self.telemetryReason(error))
+            dropAltitudeFollowUp()
             phase = .failed("Tap to Connect failed. \(error.userFacingMessage)")
             ClickHaptics.error()
         }
@@ -383,10 +392,12 @@ final class TapConnectModel {
         switch result {
         case .matched(let match):
             if match.peers.isEmpty {
+                dropAltitudeFollowUp()
                 track(.failed, reason: "no_peers")
                 phase = .failed("No nearby tap detected. Try again closer together.")
                 ClickHaptics.error()
             } else if match.rateLimited {
+                dropAltitudeFollowUp()
                 track(.reconnectRateLimited, peerCount: match.peers.count, isGroup: match.isGroup, isReconnect: true)
                 phase = .failed("You recently crossed paths with this person! Wait a bit before logging another memory.")
                 ClickHaptics.warning()
@@ -408,6 +419,7 @@ final class TapConnectModel {
             self.pendingID = pendingID
             await recover(pendingID: pendingID)
         case .ignored:
+            dropAltitudeFollowUp()
             track(.failed, reason: "ignored_empty_payload")
             phase = .failed("No nearby tap detected. Try again closer together.")
         }
@@ -427,11 +439,16 @@ final class TapConnectModel {
             return
         }
         track(.recoveryTimeout)
+        dropAltitudeFollowUp()
         phase = .waitingForPeer(exhausted: true)
         runTask = nil
     }
 
     private func finish(with match: ProximityMatch) async {
+        if !match.rateLimited {
+            altitudeFollowUp?.confirm(connectionIDs: [match.connectionID].compactMap { $0 } + match.peers.compactMap(\.connectionID))
+        }
+        altitudeFollowUp = nil
         pendingID = nil
         reviewTask?.cancel()
         reviewTask = nil
@@ -531,6 +548,12 @@ final class TapConnectModel {
     private func stopSensors() {
         ble.stop()
         ultrasonic.stop()
+    }
+
+    /// Ends a follow-up whose tap logged nothing (a confirmed one keeps going on its own).
+    private func dropAltitudeFollowUp() {
+        altitudeFollowUp?.cancel()
+        altitudeFollowUp = nil
     }
 
     /// High-accuracy location and the altimeter never outlive the capture they serve.

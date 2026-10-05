@@ -203,6 +203,18 @@ struct ConnectionSensorObservationTests {
         #expect(barometer.samples.count == ConnectionSensorObservation.Barometer.maximumSamples)
         #expect(barometer.pressureKpa == 100.81)
         #expect(barometer.samples.contains { $0.pressureKpa == 100.81 })
+        #expect(barometer.startedTMs == nil)
+    }
+
+    @Test("Barometer records when the altimeter started, relative to the moment")
+    func barometerStart() throws {
+        let relative = [RelativeAltitudeSample(relativeAltitudeMeters: 0, pressureKPa: 101.788, observedAt: t0.addingTimeInterval(-1.9))]
+        let reading = AltitudeStabilizer.stabilized(absolute: [], relative: relative, around: t0, until: t0)
+        let barometer = try #require(ConnectionSensorObservation.Barometer(
+            reading, absolute: [], relative: relative, moment: t0, startedAt: t0.addingTimeInterval(-2)
+        ))
+        #expect(barometer.startedTMs == -2000)
+        #expect(barometer.absoluteAltitudeM == nil)
     }
 
     // MARK: Payload
@@ -255,6 +267,18 @@ struct ConnectionSensorObservationTests {
         #expect(first["t_ms"] is Int)
         #expect(first["attitude_quaternion"] as? [Double] == [0, 0, 0, 1])
         #expect(payload["uwb"] == nil)
+    }
+
+    @Test("The altitude follow-up names the moment exactly as the payload stores it")
+    func followUpMomentMatchesPayload() throws {
+        let snapshot = snapshot(location: true)
+        let payload = try #require(ConnectionSensorObservation(method: "qr", snapshot: snapshot, includeLocation: true, device: nil).payload)
+        let reading = AltitudeObservation(
+            absoluteAltitudeMeters: 20, accuracyMeters: 3, precisionMeters: 0.5,
+            relativeAltitudeMeters: nil, pressureKPa: nil, observedAt: snapshot.moment
+        )
+        let body = try #require(EncounterAltitudeFollowUp.body(reading, moment: snapshot.moment, connectionIDs: ["c"]))
+        #expect(body["connection_moment"] as? String == payload["connection_moment"] as? String)
     }
 
     @Test("Location-derived values are left out when Location snap is off")

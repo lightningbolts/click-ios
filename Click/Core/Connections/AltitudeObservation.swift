@@ -17,13 +17,16 @@ public struct AltitudeObservation: Codable, Equatable, Sendable {
 
     let observedAt: Date
 
-    /// Request-body keys, equal to the `connection_encounters` column names.
+    /// Request-body keys, equal to the `connection_encounters` column names. Pressure and the
+    /// relative change are sent even before the altimeter's first absolute fix (which can take
+    /// several seconds); accuracy and precision only ever describe the absolute altitude.
     var columns: [String: Any] {
         var out: [String: Any] = [:]
-        guard let absoluteAltitudeMeters else { return out }
-        out["exact_barometric_elevation_m"] = LocationObservation.rounded(absoluteAltitudeMeters, places: 1)
-        if let accuracyMeters { out["barometric_accuracy_m"] = LocationObservation.rounded(accuracyMeters, places: 2) }
-        if let precisionMeters { out["barometric_precision_m"] = LocationObservation.rounded(precisionMeters, places: 2) }
+        if let absoluteAltitudeMeters {
+            out["exact_barometric_elevation_m"] = LocationObservation.rounded(absoluteAltitudeMeters, places: 1)
+            if let accuracyMeters { out["barometric_accuracy_m"] = LocationObservation.rounded(accuracyMeters, places: 2) }
+            if let precisionMeters { out["barometric_precision_m"] = LocationObservation.rounded(precisionMeters, places: 2) }
+        }
         if let relativeAltitudeMeters { out["barometric_relative_altitude_m"] = LocationObservation.rounded(relativeAltitudeMeters, places: 2) }
         if let pressureKPa { out["barometric_pressure_kpa"] = LocationObservation.rounded(pressureKPa, places: 3) }
         return out
@@ -90,6 +93,51 @@ enum AltitudeStabilizer {
             relativeAltitudeMeters: pressure?.relativeAltitudeMeters,
             pressureKPa: pressure?.pressureKPa,
             observedAt: anchor
+        )
+    }
+}
+
+extension AltitudeStabilizer {
+    /// The follow-up waits at most this long after the moment for the first absolute fix.
+    static let followUpWindow: TimeInterval = 20
+    /// A relative reading stands for the height until the next one; older than this, it is stale.
+    static let relativeStaleness: TimeInterval = 5
+    /// Without a height correction, only a fix this close to the moment is used.
+    static let uncorrectedFollowUpLimit: TimeInterval = 5
+
+    /// The absolute altitude at `moment` from fixes that arrived after it. The fix is chosen as
+    /// in `stabilized`; any height change between the moment and that fix, measured by the same
+    /// phone's relative altimeter, is removed so walking up stairs afterwards does not count.
+    /// Nil when there is no usable fix, or no correction for a fix long after the moment.
+    static func followUp(
+        absolute: [AbsoluteAltitudeSample],
+        relative: [RelativeAltitudeSample],
+        moment: Date,
+        until latest: Date
+    ) -> AltitudeObservation? {
+        guard let reading = stabilized(absolute: absolute, relative: [], around: moment, until: latest),
+              let altitude = reading.absoluteAltitudeMeters
+        else { return nil }
+        let valid = relative.filter { $0.relativeAltitudeMeters.isFinite }
+        let heightAt = { (date: Date) -> Double? in
+            valid.filter { $0.observedAt <= date && date.timeIntervalSince($0.observedAt) <= relativeStaleness }
+                .max { $0.observedAt < $1.observedAt }?
+                .relativeAltitudeMeters
+        }
+        var corrected = altitude
+        if let atFix = heightAt(reading.observedAt), let atMoment = heightAt(moment) {
+            corrected -= atFix - atMoment
+        } else if abs(reading.observedAt.timeIntervalSince(moment)) > uncorrectedFollowUpLimit {
+            return nil
+        }
+        guard corrected.isFinite else { return nil }
+        return AltitudeObservation(
+            absoluteAltitudeMeters: corrected,
+            accuracyMeters: reading.accuracyMeters,
+            precisionMeters: reading.precisionMeters,
+            relativeAltitudeMeters: nil,
+            pressureKPa: nil,
+            observedAt: reading.observedAt
         )
     }
 }

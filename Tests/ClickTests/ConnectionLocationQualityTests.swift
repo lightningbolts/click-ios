@@ -221,6 +221,19 @@ struct AltitudeStabilizerTests {
         #expect(columns["barometric_pressure_kpa"] as? Double == 100.82)
     }
 
+    @Test("Pressure is sent before the altimeter's first absolute fix")
+    func pressureWithoutAbsolute() throws {
+        let relative = [RelativeAltitudeSample(relativeAltitudeMeters: 0, pressureKPa: 101.788, observedAt: t0.addingTimeInterval(-1.9))]
+        let observation = try #require(
+            AltitudeStabilizer.stabilized(absolute: [], relative: relative, around: t0, until: t0)
+        )
+        let columns = observation.columns
+        #expect(columns["exact_barometric_elevation_m"] == nil)
+        #expect(columns["barometric_accuracy_m"] == nil)
+        #expect(columns["barometric_pressure_kpa"] as? Double == 101.788)
+        #expect(columns["barometric_relative_altitude_m"] as? Double == 0)
+    }
+
     @Test("Invalid and out-of-window samples are rejected")
     func rejectsInvalid() {
         let samples = [sample(.nan, at: 0), sample(50, accuracy: -1, at: 0), sample(50, at: -20)]
