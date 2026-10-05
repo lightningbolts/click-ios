@@ -38,6 +38,11 @@ struct SharedDropStoryViewer: View {
     @State private var reporting = false
     /// False while zoomed into the source tile: before the open, and while closing.
     @State private var presented = false
+    /// The card cross-fading with its tile while it's tile-sized: in as the zoom starts, out as it
+    /// lands, so the tile's own glass (name, avatar, stack count) fades instead of popping.
+    @State private var cardOpacity: Double = 0
+    /// The caption's glass pill sits out the cross-fade (glass flickers under a changing opacity).
+    @State private var captionHidden = true
     @State private var frame: CGRect = .zero
     @State private var insets = EdgeInsets()
     /// Each drop's shape (width over height), from its photo or, before that, its preview.
@@ -68,9 +73,12 @@ struct SharedDropStoryViewer: View {
     /// The gap between the photo and the header above it or the reactions below.
     private static let photoGap: CGFloat = 8
     /// Quicker than the system zoom, so a drop feels like it pops open.
-    private static let zoom = Animation.snappy(duration: 0.26)
+    private static let zoomDuration = 0.26
+    private static let zoom = Animation.snappy(duration: zoomDuration)
     /// The cube finishing a turn (or springing back): quick, no overshoot.
     private static let cubeAnimation = Animation.snappy(duration: 0.32)
+    /// The card and its tile trading places at either end of the zoom.
+    private static let crossFade = Animation.easeInOut(duration: 0.1)
 
     /// Present with animations disabled: the viewer runs its own zoom out of `sources`' tile
     /// (or a fade without one, or under Reduce Motion).
@@ -162,10 +170,13 @@ struct SharedDropStoryViewer: View {
                 try? await Task.sleep(for: .milliseconds(10))
             }
             await Task.yield()
+            captionHidden = false
             withAnimation(Self.zoom) { presented = true }
+            withAnimation(Self.crossFade) { cardOpacity = 1 }
         }
         .environment(\.colorScheme, .dark)
-        .statusBarHidden()
+        // Follows the zoom, so the status bar fades back as the card shrinks, not after.
+        .statusBarHidden(presented)
         .clickToast($toast, edge: .top)
         .task(id: currentID) { await open(currentID) }
         .onAppear { if playlist == .people, peopleOrder == nil { peopleOrder = store.groups.map(\.userID) } }
@@ -203,7 +214,7 @@ struct SharedDropStoryViewer: View {
         .clipShape(crop)
         .scaleEffect(collapsed?.scale ?? 1)
         .offset(collapsed?.offset ?? .zero)
-        .opacity(presented || collapsed != nil ? 1 : 0)
+        .opacity(presented || collapsed != nil ? cardOpacity : 0)
         .onGeometryChange(for: CGRect.self, of: { $0.frame(in: .global) }) { frame = $0 }
         .onGeometryChange(for: EdgeInsets.self, of: { $0.safeAreaInsets }) { insets = $0 }
     }
@@ -284,7 +295,7 @@ struct SharedDropStoryViewer: View {
                 .aspectRatio(aspect(drop.id), contentMode: .fit)
                 .clipShape(RoundedRectangle(cornerRadius: 18, style: .continuous))
                 .overlay(alignment: .bottom) {
-                    if shown, let caption = drop.caption {
+                    if shown, !captionHidden, let caption = drop.caption {
                         DropCaptionPill { Text(caption) }
                             .padding(.bottom, 14)
                             .transition(.identity)
@@ -660,10 +671,17 @@ struct SharedDropStoryViewer: View {
             presented = false
             dragY = 0
             cube.x = 0
-        } completion: {
-            var transaction = Transaction()
-            transaction.disablesAnimations = true
-            withTransaction(transaction) { dismiss() }
+        }
+        // As the card settles onto the tile it fades out over it, ending just after the zoom;
+        // only then is the viewer dismissed, with nothing left to swap.
+        Task {
+            try? await Task.sleep(for: .seconds(Self.zoomDuration - 0.06))
+            captionHidden = true
+            withAnimation(Self.crossFade) { cardOpacity = 0 } completion: {
+                var transaction = Transaction()
+                transaction.disablesAnimations = true
+                withTransaction(transaction) { dismiss() }
+            }
         }
     }
 
