@@ -357,6 +357,9 @@ extension ConnectionSensorObservation {
             "motion_available": .bool(motion != nil),
             "heading_available": .bool(heading != nil),
             "uwb_available": .bool(device?.capabilities.uwb ?? false),
+            "activity_available": .bool(activity != nil),
+            "pedometer_available": .bool(pedometer != nil),
+            "connection_method": .string(method),
             "location_accuracy_bucket": .string(location.map { ConnectionLocationQuality.tier($0.horizontalAccuracyM) } ?? "none")
         ]
         if let location {
@@ -495,13 +498,20 @@ enum MotionContextSampler {
     static let activityLookback: TimeInterval = 120
     static let pedometerWindow: TimeInterval = 60
 
-    @MainActor
+    /// Nonisolated with `@Sendable` handlers on purpose: Core Motion calls the pedometer handler
+    /// on its own serial queue (`CMPedometerUpdateQueue`). A handler written in main-actor code
+    /// inherits main-actor isolation under Swift 6, and its runtime isolation check traps the
+    /// app the moment the result arrives (the 1.1.0 (481) QR / Tap to Connect crash).
     static func activity(at moment: Date) async -> ConnectionSensorObservation.Activity? {
         guard CMMotionActivityManager.isActivityAvailable(),
               CMMotionActivityManager.authorizationStatus() == .authorized else { return nil }
         let manager = CMMotionActivityManager()
+        let queue = OperationQueue()
+        queue.maxConcurrentOperationCount = 1
         let result: ConnectionSensorObservation.Activity? = await firstResult { deliver in
-            manager.queryActivityStarting(from: moment.addingTimeInterval(-activityLookback), to: moment, to: .main) { activities, _ in
+            manager.queryActivityStarting(
+                from: moment.addingTimeInterval(-activityLookback), to: moment, to: queue
+            ) { @Sendable activities, _ in
                 deliver(activities?.last.map(Self.activityObservation))
             }
         }
@@ -509,12 +519,11 @@ enum MotionContextSampler {
         return result
     }
 
-    @MainActor
     static func pedometer(at moment: Date) async -> ConnectionSensorObservation.Pedometer? {
         guard CMPedometer.isStepCountingAvailable(), CMPedometer.authorizationStatus() == .authorized else { return nil }
         let pedometer = CMPedometer()
         let result: ConnectionSensorObservation.Pedometer? = await firstResult { deliver in
-            pedometer.queryPedometerData(from: moment.addingTimeInterval(-pedometerWindow), to: moment) { data, _ in
+            pedometer.queryPedometerData(from: moment.addingTimeInterval(-pedometerWindow), to: moment) { @Sendable data, _ in
                 deliver(data.map(Self.pedometerObservation))
             }
         }
@@ -551,7 +560,6 @@ enum MotionContextSampler {
     }
 
     /// The first value `body` delivers, or nil after `timeout`.
-    @MainActor
     private static func firstResult<T: Sendable>(_ body: (@escaping @Sendable (T?) -> Void) -> Void) async -> T? {
         await withCheckedContinuation { continuation in
             let once = Once(continuation)

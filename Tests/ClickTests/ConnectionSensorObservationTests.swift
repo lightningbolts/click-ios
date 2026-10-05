@@ -287,6 +287,9 @@ struct ConnectionSensorObservationTests {
         #expect(quality["ble_rssi_median_dbm"] == .double(-56))
         #expect(quality["ble_discovery_ms"] == .int(400))
         #expect(quality["motion_available"] == .bool(true))
+        #expect(quality["connection_method"] == .string("tap"))
+        #expect(quality["activity_available"] == .bool(false))
+        #expect(quality["pedometer_available"] == .bool(false))
         for forbidden in ["lat", "lon", "latitude", "longitude", "token"] {
             #expect(quality[forbidden] == nil)
         }

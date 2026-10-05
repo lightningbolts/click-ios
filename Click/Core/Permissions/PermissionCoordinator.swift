@@ -116,20 +116,25 @@ public final class PermissionCoordinator: NSObject, @preconcurrency CLLocationMa
 
     public func statusAsync(for type: PermissionType) async -> PermissionStatus {
         guard type == .notifications else { return status(for: type) }
-        return await withCheckedContinuation { continuation in
-            UNUserNotificationCenter.current().getNotificationSettings { settings in
-                let resolved: PermissionStatus
-                switch settings.authorizationStatus {
-                case .authorized, .provisional, .ephemeral:
-                    resolved = .authorized
-                case .denied:
-                    resolved = .denied
-                case .notDetermined:
-                    resolved = .notDetermined
-                @unknown default:
-                    resolved = .denied
-                }
-                continuation.resume(returning: resolved)
+        switch await Self.notificationAuthorizationStatus() {
+        case .authorized, .provisional, .ephemeral:
+            return .authorized
+        case .denied:
+            return .denied
+        case .notDetermined:
+            return .notDetermined
+        @unknown default:
+            return .denied
+        }
+    }
+
+    /// The completion handler runs on a background queue, so it must not inherit this class's
+    /// main-actor isolation (Swift 6 traps at runtime). Only the Sendable status crosses back;
+    /// `UNNotificationSettings` itself is not Sendable on the Xcode 16 SDK.
+    private nonisolated static func notificationAuthorizationStatus() async -> UNAuthorizationStatus {
+        await withCheckedContinuation { continuation in
+            UNUserNotificationCenter.current().getNotificationSettings { @Sendable settings in
+                continuation.resume(returning: settings.authorizationStatus)
             }
         }
     }

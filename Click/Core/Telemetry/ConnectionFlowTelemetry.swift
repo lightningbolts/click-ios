@@ -17,6 +17,10 @@ public struct ConnectionFlowTelemetry: Sendable {
         case recoveryIncomplete = "proximity_recovery_incomplete"
         case cliqueBlocked = "verified_clique_from_proximity_blocked"
         case atEventSkipped = "proximity_at_event_skipped"
+        /// QR scans and Click links (`capture_quality.connection_method` = "qr" / "link").
+        case qrStarted = "qr_connect_started"
+        case qrFailed = "qr_connect_failed"
+        case qrRateLimited = "qr_connect_reconnect_rate_limited"
         // Sampled.
         case matched = "proximity_handshake_matched"
         case pending = "proximity_handshake_pending"
@@ -26,11 +30,13 @@ public struct ConnectionFlowTelemetry: Sendable {
         case recoverySuccess = "proximity_recovery_poll_success"
         case cliqueCreated = "verified_clique_from_proximity_created"
         case atEventAttached = "proximity_at_event_attached"
+        case qrSucceeded = "qr_connect_succeeded"
 
         public var isAlwaysSent: Bool {
             switch self {
             case .started, .awaitingSelection, .failed, .hostSelectionAbandoned, .reconnectRateLimited,
-                 .recoveryTimeout, .recoveryIncomplete, .cliqueBlocked, .atEventSkipped:
+                 .recoveryTimeout, .recoveryIncomplete, .cliqueBlocked, .atEventSkipped,
+                 .qrStarted, .qrFailed, .qrRateLimited:
                 true
             default:
                 false

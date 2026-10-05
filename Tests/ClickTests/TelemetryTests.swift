@@ -18,6 +18,12 @@ struct TelemetryTests {
         #expect(never.payload(.hostSelectionAbandoned) != nil)
         #expect(never.payload(.matched) == nil)
         #expect(always.payload(.matched) != nil)
+        // QR / Click link funnel: entry and outcomes other than success are never sampled away.
+        #expect(never.payload(.qrStarted) != nil)
+        #expect(never.payload(.qrFailed) != nil)
+        #expect(never.payload(.qrRateLimited) != nil)
+        #expect(never.payload(.qrSucceeded) == nil)
+        #expect(always.payload(.qrSucceeded)?["event"] == .string("qr_connect_succeeded"))
     }
 
     @Test("Payloads never carry user IDs or coordinates")

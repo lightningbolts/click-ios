@@ -383,7 +383,7 @@ final class TapConnectModel {
     ]
 
     /// A short machine code for a failure (never a server message or an identifier).
-    static func telemetryReason(_ error: Error) -> String {
+    nonisolated static func telemetryReason(_ error: Error) -> String {
         switch error as? APIError {
         case .timeout?: "timeout"
         case .rateLimited?: "rate_limited"
