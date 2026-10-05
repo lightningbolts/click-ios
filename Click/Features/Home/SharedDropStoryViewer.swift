@@ -10,7 +10,7 @@ enum StoryPlaylist: Hashable {
 
 /// Shared Click Drops, Instagram-story style: zooms out of the tapped tile, then one drop after
 /// another with progress segments for the current person; past their last drop it carries on to
-/// the next person. Tap the sides to move, swipe sideways to skip a person, hold to pause, swipe down to close. A ready drop develops right
+/// the next person. Tap the sides to move, swipe sideways to turn (a cube, like Instagram) to the next or previous person, hold to pause, swipe down to close. A ready drop develops right
 /// here, unveiling from its pixels. Replies and reactions go to your chat with the poster and
 /// carry the drop with them; your own drops show who reacted instead.
 struct SharedDropStoryViewer: View {
@@ -24,7 +24,9 @@ struct SharedDropStoryViewer: View {
     @State private var holding = false
     @State private var pressStart: Date?
     @State private var reply = ""
-    @FocusState private var replyFocused: Bool
+    /// The reply field being typed in, by drop (only the current page's field can take focus).
+    @FocusState private var focusedReply: String?
+    private var replyFocused: Bool { focusedReply != nil }
     /// Full-size photos for this viewing (tiles keep small copies).
     @State private var full: [String: UIImage] = [:]
     @State private var unveiled: Set<String> = []
@@ -40,9 +42,20 @@ struct SharedDropStoryViewer: View {
     @State private var insets = EdgeInsets()
     /// Each drop's shape (width over height), from its photo or, before that, its preview.
     @State private var aspects: [String: CGFloat] = [:]
-    /// The header's and footer's heights: the photo sits in the space between them.
-    @State private var headerHeight: CGFloat = 0
-    @State private var footerHeight: CGFloat = 0
+    /// The header's and each kind of footer's height (see `footerKind`): the photo sits in the
+    /// space between them, and the next person's page lays out the same before it's measured.
+    @State private var chromeHeights: [String: CGFloat] = [:]
+    /// The sideways turn between people, Instagram's cube: the drag (or turn) offset, observed only
+    /// by the two faces so a drag doesn't re-render the viewer.
+    @State private var cube = CubeTurn()
+    /// The person's page on the cube's other face while dragging or turning: which way, and the
+    /// drop it opens on (nil past the first or last person).
+    @State private var cubeSide: CubeSide?
+    /// Finishing a turn or springing back: gestures and the timer wait for it.
+    @State private var cubeSettling = false
+    @State private var dragAxis: Axis?
+    /// The progress bar on the incoming face: its current segment sits empty.
+    @State private var idleClock = StoryClock()
     /// The people in the order they were when the viewer opened, so watching (which can move a
     /// tile) never changes what comes next.
     @State private var peopleOrder: [String]?
@@ -56,6 +69,8 @@ struct SharedDropStoryViewer: View {
     private static let photoGap: CGFloat = 8
     /// Quicker than the system zoom, so a drop feels like it pops open.
     private static let zoom = Animation.snappy(duration: 0.26)
+    /// The cube finishing a turn (or springing back): quick, no overshoot.
+    private static let cubeAnimation = Animation.snappy(duration: 0.32)
 
     /// Present with animations disabled: the viewer runs its own zoom out of `sources`' tile
     /// (or a fade without one, or under Reduce Motion).
@@ -126,7 +141,7 @@ struct SharedDropStoryViewer: View {
         !reduceMotion && (playing.contains(id) || store.freshlyDeveloped.contains(id))
     }
     private var isPaused: Bool {
-        holding || replyFocused || confirmDelete || reporting || !isShown(currentID)
+        holding || replyFocused || confirmDelete || reporting || cubeSide != nil || !isShown(currentID)
     }
 
     var body: some View {
@@ -173,16 +188,11 @@ struct SharedDropStoryViewer: View {
     private var card: some View {
         ZStack {
             Color.black.ignoresSafeArea()
-            if let drop = current {
-                photoLayer(drop)
-                    .ignoresSafeArea(.keyboard)
-                VStack(spacing: 0) {
-                    header(drop)
-                        .onGeometryChange(for: CGFloat.self, of: { $0.size.height }) { headerHeight = $0 }
-                    Spacer(minLength: 0)
-                    footer(drop)
-                        // Held while typing, so a growing reply never shrinks the photo.
-                        .onGeometryChange(for: CGFloat.self, of: { $0.size.height }) { if !replyFocused { footerHeight = $0 } }
+            // Keyed by drop, so the incoming face becomes the current page as is when a turn lands:
+            // nothing reloads, re-lays out or fades.
+            ForEach(faces, id: \.drop.id) { face in
+                CubeFace(cube: cube, base: face.base, width: frame.width) {
+                    page(face.drop, live: face.drop.id == currentID)
                 }
             }
         }
@@ -198,9 +208,50 @@ struct SharedDropStoryViewer: View {
         .onGeometryChange(for: EdgeInsets.self, of: { $0.safeAreaInsets }) { insets = $0 }
     }
 
+    /// The current page, and the next (or previous) person's on the cube's other face.
+    private var faces: [(drop: SharedDrop, base: CGFloat)] {
+        guard let drop = current else { return [] }
+        guard let side = cubeSide, let id = side.id, id != currentID, let other = store.drop(id) else { return [(drop, 0)] }
+        return [(other, CGFloat(side.step)), (drop, 0)]
+    }
+
+    /// One drop's page: the photo between its header and reactions. Only the current page takes
+    /// touches and measures; the incoming one is a still copy.
+    private func page(_ drop: SharedDrop, live: Bool) -> some View {
+        ZStack {
+            photoLayer(drop, live: live)
+                .ignoresSafeArea(.keyboard)
+            VStack(spacing: 0) {
+                header(drop, live: live)
+                    .onGeometryChange(for: CGFloat.self, of: { $0.size.height }) { measured("header", $0, live: live) }
+                Spacer(minLength: 0)
+                footer(drop, live: live)
+                    // Held while typing, so a growing reply never shrinks the photo.
+                    .onGeometryChange(for: CGFloat.self, of: { $0.size.height }) { if !replyFocused { measured(footerKind(drop), $0, live: live) } }
+            }
+        }
+        .background(Color.black.ignoresSafeArea())
+        .allowsHitTesting(live)
+        .accessibilityHidden(!live)
+    }
+
+    private func footerKind(_ drop: SharedDrop) -> String {
+        drop.isMine ? "mine" : drop.connectionID != nil ? "reply" : "plain"
+    }
+
+    private func measured(_ key: String, _ height: CGFloat, live: Bool) {
+        guard live || chromeHeights[key] == nil, chromeHeights[key] != height else { return }
+        chromeHeights[key] = height
+    }
+
+    private var headerHeight: CGFloat { chromeHeights["header"] ?? 0 }
+    private func footerHeight(_ drop: SharedDrop?) -> CGFloat {
+        drop.flatMap { chromeHeights[footerKind($0)] } ?? 0
+    }
+
     // MARK: - Photo
 
-    private func photoLayer(_ drop: SharedDrop) -> some View {
+    private func photoLayer(_ drop: SharedDrop, live: Bool) -> some View {
         let image = photo(drop.id)
         let shown = isShown(drop.id)
         return Color.clear
@@ -224,10 +275,10 @@ struct SharedDropStoryViewer: View {
                     }
                 }
                 .padding(.top, headerHeight + Self.photoGap)
-                .padding(.bottom, footerHeight + Self.photoGap)
+                .padding(.bottom, footerHeight(drop) + Self.photoGap)
             }
             .overlay { if !shown { developingLabel(drop) } }
-            .overlay { tapZones }
+            .overlay { if live { tapZones } }
             .accessibilityElement(children: .ignore)
             .accessibilityLabel(drop.isMine ? "Your drop" : "Drop from \(drop.userName)")
             .accessibilityAction(named: "Next") { advance(1) }
@@ -246,38 +297,41 @@ struct SharedDropStoryViewer: View {
             .transition(.identity)
     }
 
-    /// A quick tap on the left third goes back, anywhere else forward; holding pauses.
+    /// A quick tap on the left third goes back, anywhere else forward; holding pauses; dragging
+    /// sideways turns the cube to the next (or previous) person. Measured on screen, not in the
+    /// page, since the page itself turns under the finger.
     private var tapZones: some View {
-        GeometryReader { proxy in
-            Color.clear
-                .contentShape(Rectangle())
-                .gesture(
-                    DragGesture(minimumDistance: 0)
-                        .onChanged { _ in
-                            if pressStart == nil { pressStart = .now; holding = true }
+        Color.clear
+            .contentShape(Rectangle())
+            .gesture(
+                DragGesture(minimumDistance: 0, coordinateSpace: .global)
+                    .onChanged { value in
+                        if pressStart == nil { pressStart = .now; holding = true }
+                        guard presented, !replyFocused, !cubeSettling else { return }
+                        let dx = value.translation.width, dy = value.translation.height
+                        if dragAxis == nil, max(abs(dx), abs(dy)) > 10 {
+                            dragAxis = abs(dx) > abs(dy) ? .horizontal : .vertical
                         }
-                        .onEnded { value in
-                            holding = false
-                            let quick = Date().timeIntervalSince(pressStart ?? .now) < 0.25
-                            pressStart = nil
-                            // A sideways swipe skips to the next (or back to the previous) person.
-                            let dx = value.translation.width, dy = value.translation.height
-                            if !replyFocused, abs(dx) > 50, abs(dx) > abs(dy) * 1.5 {
-                                return jumpChapter(dx < 0 ? 1 : -1)
-                            }
-                            guard quick, abs(value.translation.width) < 16, abs(value.translation.height) < 16 else { return }
-                            if replyFocused { replyFocused = false; return }
-                            advance(value.location.x < proxy.size.width / 3 ? -1 : 1)
-                        }
-                )
-        }
+                        if dragAxis == .horizontal { dragCube(dx) }
+                    }
+                    .onEnded { value in
+                        holding = false
+                        let quick = Date().timeIntervalSince(pressStart ?? .now) < 0.25
+                        pressStart = nil
+                        defer { dragAxis = nil }
+                        if dragAxis == .horizontal { return releaseCube(value) }
+                        guard quick, abs(value.translation.width) < 16, abs(value.translation.height) < 16 else { return }
+                        if replyFocused { focusedReply = nil; return }
+                        advance(value.location.x - frame.minX < frame.width / 3 ? -1 : 1)
+                    }
+            )
     }
 
     // MARK: - Chrome
 
-    private func header(_ drop: SharedDrop) -> some View {
+    private func header(_ drop: SharedDrop, live: Bool) -> some View {
         VStack(spacing: 10) {
-            StoryProgressBar(ids: sequence.map(\.id), currentID: currentID, clock: clock)
+            StoryProgressBar(ids: chapter(chapterKey(drop)).map(\.id), currentID: drop.id, clock: live ? clock : idleClock)
             HStack(spacing: 10) {
                 AvatarView(imageURL: drop.avatarURL, seed: drop.userID, initials: Phase3Repository.initials(from: drop.userName), size: 34)
                 VStack(alignment: .leading, spacing: 1) {
@@ -324,7 +378,7 @@ struct SharedDropStoryViewer: View {
     /// photo develops (Liquid Glass flickers under a changing opacity), and your own drop's
     /// reactor row keeps its height while it loads, so nothing at the bottom moves. They only
     /// fade while you type a reply, so they never sit over the keyboard.
-    private func footer(_ drop: SharedDrop) -> some View {
+    private func footer(_ drop: SharedDrop, live: Bool) -> some View {
         let reactable = isShown(drop.id) && !replyFocused
         return VStack(spacing: 14) {
             ReactionBar(target: .sharedDrop, id: drop.id, isOwner: drop.isMine) { emoji in
@@ -337,20 +391,21 @@ struct SharedDropStoryViewer: View {
             .accessibilityHidden(!reactable)
             .animation(ClickMotion.subtleFade, value: replyFocused)
             if !drop.isMine, drop.connectionID != nil {
-                replyField(drop)
+                replyField(drop, live: live)
             }
         }
         .padding(.horizontal, 14)
         .padding(.bottom, 10)
     }
 
-    private func replyField(_ drop: SharedDrop) -> some View {
-        let trimmed = reply.trimmingCharacters(in: .whitespacesAndNewlines)
+    /// The incoming face's field is the same view with no text, so nothing changes as it lands.
+    private func replyField(_ drop: SharedDrop, live: Bool) -> some View {
+        let trimmed = live ? reply.trimmingCharacters(in: .whitespacesAndNewlines) : ""
         let first = drop.userName.split(separator: " ").first.map(String.init) ?? drop.userName
         return HStack(spacing: 10) {
-            TextField("Reply to \(first)…", text: $reply, axis: .vertical)
+            TextField("Reply to \(first)…", text: live ? $reply : .constant(""), axis: .vertical)
                 .lineLimit(1...4)
-                .focused($replyFocused)
+                .focused($focusedReply, equals: drop.id)
                 .submitLabel(.send)
                 .onSubmit { sendReply(drop) }
                 .font(ClickTypography.body)
@@ -405,11 +460,9 @@ struct SharedDropStoryViewer: View {
     /// The next two developed drops (into the next person's, past this person's last) are decoded
     /// before they're shown; near the end of what the archive has loaded, its next page follows.
     private func prefetchNext(after id: String) {
-        for next in upcoming(after: id, count: Self.prefetchCount) where next.state() == .developed && full[next.id] == nil {
-            Task {
-                if let image = await store.fullImage(for: next, env: env), keepsFull(next.id) { full[next.id] = image }
-            }
-        }
+        for next in upcoming(after: id, count: Self.prefetchCount) { loadFull(next.id) }
+        // The previous person's too, for turning back.
+        if let back = chapterNeighbor(-1) { loadFull(back) }
         if playlist == .archive, let index = store.archiveViewable.firstIndex(where: { $0.id == id }),
            index >= store.archiveViewable.count - 5 {
             Task { await store.loadMoreArchive(env: env) }
@@ -418,10 +471,18 @@ struct SharedDropStoryViewer: View {
 
     private static let prefetchCount = 2
 
+    private func loadFull(_ id: String) {
+        guard full[id] == nil, let drop = store.drop(id), drop.state() == .developed else { return }
+        Task {
+            if let image = await store.fullImage(for: drop, env: env), keepsFull(id) { full[id] = image }
+        }
+    }
+
     /// Full-size photos stay only for the current drop, the one before it and the next few:
     /// each is several megabytes decoded.
     private func keepsFull(_ id: String) -> Bool {
-        id == currentID || id == previousID || upcoming(after: currentID, count: Self.prefetchCount).contains { $0.id == id }
+        id == currentID || id == previousID || id == cubeSide?.id || id == chapterNeighbor(-1)
+            || upcoming(after: currentID, count: Self.prefetchCount).contains { $0.id == id }
     }
 
     @State private var previousID: String?
@@ -438,6 +499,7 @@ struct SharedDropStoryViewer: View {
 
     /// Through this chapter, then on into the next (or back into the previous) one.
     private func advance(_ step: Int) {
+        guard !cubeSettling else { return }
         let ids = sequence.map(\.id)
         guard let index = ids.firstIndex(of: currentID) else { return close() }
         let next = index + step
@@ -448,18 +510,75 @@ struct SharedDropStoryViewer: View {
     /// The next person's story (or the previous one's); past the last, the viewer closes, and
     /// before the first, the current drop starts over.
     private func jumpChapter(_ step: Int) {
-        let keys = chapterKeys
-        guard let drop = current, let at = keys.firstIndex(of: chapterKey(drop)) else { return close() }
-        var index = at + step
-        while keys.indices.contains(index) {
-            if let start = chapterStart(keys[index]) { return go(to: start) }
-            index += step
-        }
+        guard let drop = current, chapterKeys.contains(chapterKey(drop)) else { return close() }
+        guard !cubeSettling else { return }
+        if let start = chapterNeighbor(step) { return turnCube(to: start, step: step) }
         if step > 0 { close() } else { clock.progress = 0 }
     }
 
+    /// Where the next (or previous) person's story opens, skipping anyone with nothing to show.
+    private func chapterNeighbor(_ step: Int) -> String? {
+        let keys = chapterKeys
+        guard let drop = current, let at = keys.firstIndex(of: chapterKey(drop)) else { return nil }
+        var index = at + step
+        while keys.indices.contains(index) {
+            if let start = chapterStart(keys[index]) { return start }
+            index += step
+        }
+        return nil
+    }
+
+    // MARK: - Cube
+
+    /// Follows the finger. The other face is whoever's on that side; past the first or last
+    /// person there's none, and the page only gives a little.
+    private func dragCube(_ dx: CGFloat) {
+        let step = dx < 0 ? 1 : -1
+        if cubeSide?.step != step {
+            let id = chapterNeighbor(step)
+            cubeSide = CubeSide(step: step, id: id)
+            if let id { loadFull(id) }
+        }
+        cube.x = cubeSide?.id == nil ? dx / 4 : dx
+    }
+
+    /// Past a third of the way (or flicked), the turn finishes; otherwise it springs back. Past
+    /// the last person, a full swipe closes the viewer instead.
+    private func releaseCube(_ value: DragGesture.Value) {
+        guard let side = cubeSide else { return }
+        let width = max(frame.width, 1)
+        let toward = CGFloat(-side.step)
+        let far = value.translation.width * toward > width / 3 || value.predictedEndTranslation.width * toward > width * 0.6
+        if far, let id = side.id { return turnCube(to: id, step: side.step) }
+        if far, side.step > 0 { return close() }
+        cubeSettling = true
+        withAnimation(Self.cubeAnimation) { cube.x = 0 } completion: {
+            cubeSide = nil
+            cubeSettling = false
+        }
+    }
+
+    /// Turns to `id`'s face, then makes it the current page in one still frame: the face is
+    /// already exactly where the page sits.
+    private func turnCube(to id: String, step: Int) {
+        guard presented, !reduceMotion, frame.width > 0 else { return go(to: id) }
+        cubeSettling = true
+        if cubeSide?.id != id { cubeSide = CubeSide(step: step, id: id) }
+        withAnimation(Self.cubeAnimation) { cube.x = CGFloat(-step) * frame.width } completion: {
+            var transaction = Transaction()
+            transaction.disablesAnimations = true
+            withTransaction(transaction) {
+                go(to: id)
+                cube.x = 0
+                cubeSide = nil
+                cubeSettling = false
+            }
+        }
+    }
+
     private func go(to id: String) {
-        guard id != currentID else { clock.progress = 0; return }
+        clock.progress = 0
+        guard id != currentID else { return }
         ClickHaptics.selection()
         // A drop seen again shows developed; it doesn't play its develop twice.
         playing.removeAll()
@@ -475,7 +594,7 @@ struct SharedDropStoryViewer: View {
 
     /// Where the current photo sits on screen (global), fitted between the header and footer.
     private var photoRect: CGRect {
-        let top = headerHeight + Self.photoGap, bottom = footerHeight + Self.photoGap
+        let top = headerHeight + Self.photoGap, bottom = footerHeight(current) + Self.photoGap
         let area = CGRect(x: frame.minX, y: frame.minY + top, width: frame.width, height: max(frame.height - top - bottom, 1))
         guard let aspect = aspect(currentID) else { return area }
         let size = area.width / area.height > aspect
@@ -519,11 +638,12 @@ struct SharedDropStoryViewer: View {
     /// Zooms back into the tile (or fades), then dismisses without the system animation.
     private func close() {
         guard presented else { return }
-        replyFocused = false
+        focusedReply = nil
         holding = true
         withAnimation(Self.zoom) {
             presented = false
             dragY = 0
+            cube.x = 0
         } completion: {
             var transaction = Transaction()
             transaction.disablesAnimations = true
@@ -534,12 +654,14 @@ struct SharedDropStoryViewer: View {
     private var dismissDrag: some Gesture {
         DragGesture(minimumDistance: 20)
             .onChanged { value in
-                guard !replyFocused, value.translation.height > 0, abs(value.translation.height) > abs(value.translation.width) else { return }
+                guard !replyFocused, dragAxis != .horizontal, cubeSide == nil, value.translation.height > 0,
+                      abs(value.translation.height) > abs(value.translation.width) else { return }
                 dragY = value.translation.height
                 holding = true
             }
             .onEnded { value in
                 holding = false
+                guard dragY > 0 else { return }
                 if value.translation.height > 140 || value.predictedEndTranslation.height > 400 {
                     close()
                 } else {
@@ -554,7 +676,7 @@ struct SharedDropStoryViewer: View {
         let text = reply.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !text.isEmpty else { return }
         reply = ""
-        replyFocused = false
+        focusedReply = nil
         send(text, about: drop, reaction: false)
     }
 
@@ -589,6 +711,65 @@ struct SharedDropStoryViewer: View {
         } catch {
             if !error.isCancellation { toast = "Couldn't send the report. \(error.userFacingMessage)" }
         }
+    }
+}
+
+/// The cube's sideways offset, in points: 0 at rest, a page's width when turned all the way.
+@Observable
+@MainActor
+final class CubeTurn {
+    var x: CGFloat = 0
+}
+
+/// The cube's other face: which way (1 the next person, -1 the previous) and the drop it opens on.
+private struct CubeSide: Equatable {
+    let step: Int
+    let id: String?
+}
+
+/// One face of the cube. Only this reads the offset, so dragging redraws the faces' transforms
+/// and nothing inside them.
+private struct CubeFace<Content: View>: View {
+    let cube: CubeTurn
+    /// Where this face sits at rest: 0 in front, 1 to the right, -1 to the left.
+    let base: CGFloat
+    let width: CGFloat
+    let content: Content
+
+    init(cube: CubeTurn, base: CGFloat, width: CGFloat, @ViewBuilder content: () -> Content) {
+        self.cube = cube
+        self.base = base
+        self.width = width
+        self.content = content()
+    }
+
+    var body: some View {
+        content.modifier(CubeEffect(position: width > 0 ? base + cube.x / width : base, width: width))
+    }
+}
+
+/// A face at `position` (-1 to 1) slides by that many widths and swings on the edge it shares with
+/// its neighbour, darkening as it turns away, like Instagram's stories between people.
+private struct CubeEffect: ViewModifier, Animatable {
+    var position: CGFloat
+    let width: CGFloat
+
+    nonisolated var animatableData: CGFloat {
+        get { position }
+        set { position = newValue }
+    }
+
+    func body(content: Content) -> some View {
+        let p = min(max(position, -1), 1)
+        content
+            .overlay {
+                Color.black.opacity(Double(abs(p)) * 0.5)
+                    .ignoresSafeArea()
+                    .allowsHitTesting(false)
+            }
+            .rotation3DEffect(.degrees(Double(p) * 90), axis: (x: 0, y: 1, z: 0),
+                              anchor: p < 0 ? .trailing : .leading, perspective: 0.6)
+            .offset(x: p * width)
     }
 }
 
