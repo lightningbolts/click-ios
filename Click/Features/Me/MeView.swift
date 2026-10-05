@@ -22,6 +22,7 @@ public struct MeView: View {
     @State private var isConfirmingSignOut = false
     @State private var isConfirmingDelete = false
     @State private var isSigningOut = false
+    @State private var isDeletingAccount = false
     @State private var showsCompactTitle = false
     /// Upcoming plans from every chat, from the on-device timelines.
     @State private var hangouts: [ChatMessageItem] = []
@@ -122,10 +123,11 @@ public struct MeView: View {
             Button("Sign out", role: .destructive) { signOut() }
         }
         .confirmation("Delete your Click account?", isPresented: $isConfirmingDelete, keep: "Keep Account",
-                      message: "Deleting your account permanently removes your profile, connections, and messages. For your security, you'll confirm deletion on joinclick.co while signed in there.") {
-            Button("Continue on joinclick.co", role: .destructive) { openAccountDeletion() }
+                      message: "This permanently removes your profile, connections, and messages. It can't be undone."
+                        + (isAppleAccount ? " You'll confirm with Apple, and Click is removed from your Apple ID." : "")) {
+            Button("Delete Account", role: .destructive) { deleteAccount() }
         }
-        .alert("Couldn't save", isPresented: Binding(get: { alertMessage != nil }, set: { if !$0 { alertMessage = nil } })) {
+        .alert("Something went wrong", isPresented: Binding(get: { alertMessage != nil }, set: { if !$0 { alertMessage = nil } })) {
             Button("OK", role: .cancel) {}
         } message: {
             Text(alertMessage ?? "")
@@ -373,9 +375,12 @@ public struct MeView: View {
             Button(role: .destructive) {
                 isConfirmingDelete = true
             } label: {
-                SettingsRowLabel(title: "Delete account", systemImage: "trash", tint: ClickColors.destructive) { EmptyView() }
+                SettingsRowLabel(title: "Delete account", systemImage: "trash", tint: ClickColors.destructive) {
+                    if isDeletingAccount { ProgressView() }
+                }
             }
             .buttonStyle(.plain)
+            .disabled(isDeletingAccount || isSigningOut)
         }
     }
 
@@ -473,13 +478,36 @@ public struct MeView: View {
         }
     }
 
-    /// Account deletion is completed on the web: `DELETE /api/user/delete` authenticates with
-    /// web cookies, not the native bearer token (spec §65.14), so the app never calls it.
-    private func openAccountDeletion() {
-        guard var components = URLComponents(url: AppConfig.shared.apiBaseURL, resolvingAgainstBaseURL: false) else { return }
-        components.path = "/"
-        components.queryItems = [URLQueryItem(name: "tab", value: "settings")]
-        if let url = components.url { openURL(url) }
+    private var isAppleAccount: Bool {
+        env.session.currentSession.map { AppleReauthorization.isAppleAccount(jwt: $0.jwt) } ?? false
+    }
+
+    /// Deletes the account in-app (App Store 5.1.1(v)), then clears this device's session and data.
+    /// Apple accounts sign in with Apple once more so the server can revoke their Apple tokens.
+    private func deleteAccount() {
+        ClickHaptics.impact(.heavy)
+        isDeletingAccount = true
+        Task {
+            defer { isDeletingAccount = false }
+            var appleCode: String?
+            if isAppleAccount {
+                do {
+                    appleCode = try await AppleReauthorization.authorizationCode()
+                } catch is CancellationError {
+                    return
+                } catch {
+                    // Revocation is best effort, like on the server: Apple being unavailable
+                    // (or Click already removed from the Apple ID) must not block deletion.
+                    appleCode = nil
+                }
+            }
+            do {
+                try await env.me.deleteAccount(appleAuthorizationCode: appleCode)
+                await env.session.signOut()
+            } catch {
+                alertMessage = "Your account wasn't deleted. \(error.userFacingMessage)"
+            }
+        }
     }
 }
 

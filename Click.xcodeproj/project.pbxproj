@@ -206,6 +206,7 @@
 		AA9C50C670473C88ABF9872D /* ProfileRepository.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8068ACDFD74FF07B357A4039 /* ProfileRepository.swift */; };
 		ABA2B9996384B740238496CC /* PendingSendStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = 75F3B6683C059DAF391328A6 /* PendingSendStore.swift */; };
 		AD564C7175B656013446DF7B /* BLEProximityService.swift in Sources */ = {isa = PBXBuildFile; fileRef = C6233093B7CC58508DF4534E /* BLEProximityService.swift */; };
+		ADF7D6626B4C829D0A8125A9 /* AppleReauthorization.swift in Sources */ = {isa = PBXBuildFile; fileRef = B1E136AE79CFBA6B2C5476B8 /* AppleReauthorization.swift */; };
 		ADFB16FA877CFBED2013DF5F /* TelemetryTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 24923300FE8FCED3010533B3 /* TelemetryTests.swift */; };
 		B12D7E2CA0F7D433B947DA57 /* Spacing.swift in Sources */ = {isa = PBXBuildFile; fileRef = DE44FFADBC4622D64A3A704E /* Spacing.swift */; };
 		B157719AA85CC74638A6B2F4 /* Typography.swift in Sources */ = {isa = PBXBuildFile; fileRef = 115558E16D558D82B19CEDFD /* Typography.swift */; };
@@ -555,6 +556,7 @@
 		AFFF0C420D046C1E8CDC3E89 /* DebugLaunch.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DebugLaunch.swift; sourceTree = "<group>"; };
 		B016BAE6D25749FE30CC6AEB /* OnboardingRepository.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OnboardingRepository.swift; sourceTree = "<group>"; };
 		B169348FED7593E9310571E7 /* ChatGif.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ChatGif.swift; sourceTree = "<group>"; };
+		B1E136AE79CFBA6B2C5476B8 /* AppleReauthorization.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppleReauthorization.swift; sourceTree = "<group>"; };
 		B22B0A3012F4CC56A01188C7 /* ChatMediaViews.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ChatMediaViews.swift; sourceTree = "<group>"; };
 		B2CF3C0CEF71E64672F79F3E /* ConversationListModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ConversationListModel.swift; sourceTree = "<group>"; };
 		B39C832A9686736D37D9EB13 /* NotificationService.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = NotificationService.entitlements; sourceTree = "<group>"; };
@@ -1359,6 +1361,7 @@
 		F64F09F5FC4B40C90C936EF0 /* Auth */ = {
 			isa = PBXGroup;
 			children = (
+				B1E136AE79CFBA6B2C5476B8 /* AppleReauthorization.swift */,
 				5DA2D2CEE9D761201C9D0652 /* GoogleSignIn.swift */,
 				9F622E14222722E2ACC13BEF /* KeychainSessionVault.swift */,
 				E6948B635825154782DB64D8 /* LegacyKMPStateMigrator.swift */,
@@ -1643,6 +1646,7 @@
 				09303B5DAA631E6B94E780FD /* AppEnvironment.swift in Sources */,
 				C47D3FFBBB3736906CCB13AC /* AppRouteDestination.swift in Sources */,
 				CC56BFC382A9C86263741359 /* AppRouter.swift in Sources */,
+				ADF7D6626B4C829D0A8125A9 /* AppleReauthorization.swift in Sources */,
 				DA964C45F465551076944CB1 /* AudioSessionController.swift in Sources */,
 				14A9ABE1E8C63C81429603EB /* AuthView.swift in Sources */,
 				EAB0A536ADBA85D7DCDE9DCE /* AvailabilitySheet.swift in Sources */,

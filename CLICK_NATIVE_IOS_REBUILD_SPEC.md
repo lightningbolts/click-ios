@@ -4150,12 +4150,8 @@ Then execute full logout sequence from §17.
 
 The current KMP Settings UI does not expose this, but `click-web` already has `DELETE /api/user/delete`, and the native app supports account creation. The production native app must provide an easy-to-find way in Settings to initiate full account deletion.
 
-Important backend compatibility issue discovered during verification:
-- the existing `/api/user/delete` route authenticates through **web cookies** (`createServerClient` + `cookies()`), not the native Bearer-JWT route helper;
-- therefore the Swift app must **not** assume it can call the current route with `Authorization: Bearer`;
-- before release, either:
-  1. make the deletion endpoint safely accept the standard native authenticated route contract, or
-  2. provide a direct account-deletion webpage and open that exact page from Settings.
+Resolved: `/api/user/delete` authenticates through `getSupabaseFromRouteRequest` (Bearer first, then the web cookie session), so Settings → Delete account calls it in-app and then signs out locally. No web hand-off.
+Apple accounts (`app_metadata.providers` contains `apple`) sign in with Apple once more first (`AppleReauthorization`); the fresh authorization code is sent as `apple_authorization_code` and the server exchanges and revokes it before deleting. Revocation is best effort: cancelling the Apple sheet stops deletion, any other Apple failure still deletes.
 
 Deletion flow:
 - explain permanence/data implications;

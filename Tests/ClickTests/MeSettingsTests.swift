@@ -61,6 +61,56 @@ struct MeSettingsTests {
         #expect(saved[.hubMessages] == true)
     }
 
+    @Test("Delete account is an authenticated in-app DELETE, and a server failure is an error")
+    func deleteAccount() async throws {
+        MeMockURLProtocol.handler = { request in
+            #expect(request.url?.path == "/api/user/delete")
+            #expect(request.httpMethod == "DELETE")
+            #expect(request.value(forHTTPHeaderField: "Authorization") == "Bearer token")
+            return (200, #"{"message":"User deleted successfully"}"#)
+        }
+        try await repository().deleteAccount()
+
+        MeMockURLProtocol.handler = { _ in (401, #"{"error":"Unauthorized"}"#) }
+        await #expect(throws: APIError.self) {
+            try await repository().deleteAccount()
+        }
+    }
+
+    @Test("An Apple authorization code rides along in the delete body for revocation")
+    func deleteAccountSendsAppleCode() async throws {
+        MeMockURLProtocol.handler = { request in
+            let body = request.httpBodyStream.map { stream -> Data in
+                stream.open(); defer { stream.close() }
+                var data = Data(); var buffer = [UInt8](repeating: 0, count: 1024)
+                while stream.hasBytesAvailable {
+                    let n = stream.read(&buffer, maxLength: buffer.count)
+                    if n <= 0 { break }
+                    data.append(buffer, count: n)
+                }
+                return data
+            } ?? request.httpBody ?? Data()
+            let json = try? JSONSerialization.jsonObject(with: body) as? [String: String]
+            #expect(json == ["apple_authorization_code": "apple-code"])
+            return (200, "{}")
+        }
+        try await repository().deleteAccount(appleAuthorizationCode: "apple-code")
+    }
+
+    @Test("Apple accounts are recognized from the access token's providers")
+    func appleAccountFromJWT() {
+        func jwt(_ claims: [String: Any]) -> String {
+            let payload = try! JSONSerialization.data(withJSONObject: claims).base64EncodedString()
+                .replacingOccurrences(of: "+", with: "-").replacingOccurrences(of: "/", with: "_")
+                .replacingOccurrences(of: "=", with: "")
+            return "header.\(payload).signature"
+        }
+        #expect(AppleReauthorization.isAppleAccount(jwt: jwt(["app_metadata": ["provider": "email", "providers": ["email", "apple"]]])))
+        #expect(AppleReauthorization.isAppleAccount(jwt: jwt(["app_metadata": ["provider": "apple"]])))
+        #expect(!AppleReauthorization.isAppleAccount(jwt: jwt(["app_metadata": ["providers": ["google"]]])))
+        #expect(!AppleReauthorization.isAppleAccount(jwt: "not-a-jwt"))
+    }
+
     @Test("A location-privacy write that affects no rows is a failure")
     func zeroRowWriteFails() async {
         MeMockURLProtocol.handler = { request in

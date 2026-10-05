@@ -325,6 +325,16 @@ public actor MeRepository {
         return value
     }
 
+    /// Permanently deletes the signed-in account (`DELETE /api/user/delete`, spec §65.14).
+    /// `appleAuthorizationCode`, from Sign in with Apple just now, lets the server revoke the
+    /// account's Apple tokens first. The caller signs out locally afterwards.
+    public func deleteAccount(appleAuthorizationCode: String? = nil) async throws {
+        let body = try appleAuthorizationCode.map {
+            try JSONSerialization.data(withJSONObject: ["apple_authorization_code": $0])
+        }
+        _ = try await api.executeRaw(APIRequest(path: "/api/user/delete", method: .delete, body: body))
+    }
+
     // MARK: - Notification preferences
 
     /// Reads `notification_preferences` under RLS, as the KMP client does (there is no GET route).
