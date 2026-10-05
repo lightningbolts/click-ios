@@ -76,6 +76,24 @@ struct TelemetryTests {
         await queue.flush()
         #expect(await queue.count == 1)
     }
+
+    @Test("Clearing the queue mid-flush (sign-out) doesn't trap")
+    func removeAllDuringFlush() async {
+        let (queue, _, _) = freshQueue()
+        await queue.enqueue(TelemetryEnvelope(path: "/a", payload: ["event": .string("one")], createdAt: .now))
+        let (started, didStart) = AsyncStream<Void>.makeStream()
+        let (release, doRelease) = AsyncStream<Void>.makeStream()
+        await queue.setSender { _ in
+            didStart.yield()
+            for await _ in release { break }
+        }
+        let flush = Task { await queue.flush() }
+        for await _ in started { break }
+        await queue.removeAll()
+        doRelease.yield()
+        await flush.value
+        #expect(await queue.count == 0)
+    }
 }
 
 private actor SentLog {

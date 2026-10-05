@@ -100,13 +100,13 @@ public actor TelemetryQueue {
         while sent < Self.maxPerFlush, let next = pending.first {
             do {
                 try await sender(next)
-                pending.removeFirst()
+                drop(next)
                 sent += 1
             } catch let error as APIError {
                 // 4xx other than rate limiting will never succeed: drop it. Transient: stop.
                 switch error {
                 case .validation, .forbidden, .notFound, .decoding:
-                    pending.removeFirst()
+                    drop(next)
                 default:
                     persist()
                     return
@@ -117,6 +117,13 @@ public actor TelemetryQueue {
             }
         }
         persist()
+    }
+
+    /// Removes a sent envelope by value. `removeAll()` (sign-out) or `enqueue`'s trim can run
+    /// while `flush` is suspended in `sender`, so the queue may no longer start with it, or may be
+    /// empty; `removeFirst()` there would trap.
+    private func drop(_ envelope: TelemetryEnvelope) {
+        if let index = pending.firstIndex(of: envelope) { pending.remove(at: index) }
     }
 
     public func removeAll() {
