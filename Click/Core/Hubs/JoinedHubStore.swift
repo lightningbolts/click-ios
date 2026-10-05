@@ -10,6 +10,9 @@ public struct JoinedHub: Codable, Equatable, Identifiable, Sendable {
     public var eventBeaconID: String?
     public var joinedAt: Date
     public var lastMessage: String?
+    /// The encrypted body behind a `lastMessage` of "Encrypted message", decrypted for display
+    /// with keys on this device. Only ciphertext is stored.
+    public var lastMessageWire: String?
     public var lastSenderName: String?
     public var lastActivityAt: Date?
     /// Hub owner, when known (enables Delete in the inbox for the owner).
@@ -36,6 +39,7 @@ public actor JoinedHubStore {
             var merged = hub
             merged.joinedAt = all[index].joinedAt
             merged.lastMessage = hub.lastMessage ?? all[index].lastMessage
+            merged.lastMessageWire = hub.lastMessage != nil ? hub.lastMessageWire : all[index].lastMessageWire
             merged.lastSenderName = hub.lastSenderName ?? all[index].lastSenderName
             merged.lastActivityAt = hub.lastActivityAt ?? all[index].lastActivityAt
             all[index] = merged

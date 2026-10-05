@@ -40,6 +40,26 @@ struct GroupsHubsSettingsTests {
         UserDefaults().removePersistentDomain(forName: suite)
     }
 
+    @Test("A hub's encrypted preview keeps its ciphertext until a newer message replaces it")
+    func hubPreviewWire() async {
+        let store = JoinedHubStore(cache: CacheStore(defaults: UserDefaults(suiteName: "JoinedHubs.\(UUID().uuidString)")!))
+        var hub = JoinedHub(hubID: "h1", name: "Dev Sprint", joinedAt: .now)
+        hub.lastMessage = "Encrypted message"
+        hub.lastMessageWire = "e2e2:abc"
+        await store.replaceAll([hub], userID: "u")
+
+        // Opening the hub remembers it without a message: the preview and its ciphertext stay.
+        await store.upsert(JoinedHub(hubID: "h1", name: "Dev Sprint", joinedAt: .now), userID: "u")
+        #expect(await store.hubs(userID: "u").first?.lastMessageWire == "e2e2:abc")
+
+        // A plaintext message replaces both.
+        var plain = JoinedHub(hubID: "h1", name: "Dev Sprint", joinedAt: .now)
+        plain.lastMessage = "hello"
+        await store.upsert(plain, userID: "u")
+        #expect(await store.hubs(userID: "u").first?.lastMessage == "hello")
+        #expect(await store.hubs(userID: "u").first?.lastMessageWire == nil)
+    }
+
     @Test("Hub category labels")
     func hubCategoryLabel() {
         #expect(HubInfoView.label("music") == "Music")

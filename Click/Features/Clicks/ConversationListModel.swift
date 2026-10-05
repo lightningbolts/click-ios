@@ -89,6 +89,7 @@ final class ConversationListModel {
         guard refreshesAutomatically, let environment else { return }
         if let userID {
             hubs = await environment.joinedHubs.hubs(userID: userID)
+            await decryptHubPreviews(environment, userID: userID)
             if mutes.isEmpty, let stored = await CacheStore.shared.load([String: Date?].self, key: "mutes", userID: userID) { mutes = stored }
         }
         if let restored = restoredCache {
@@ -324,6 +325,7 @@ final class ConversationListModel {
         // stored preview until they rise into the top 10.
         guard hubPreviewsVisible else {
             hubs = current
+            await decryptHubPreviews(environment, userID: userID)
             prefetchVisuals()
             return
         }
@@ -338,8 +340,9 @@ final class ConversationListModel {
                 var next = hub
                 switch result {
                 case .gone?: continue
-                case .message(let text, let sender, let date)?:
+                case .message(let text, let wire, let sender, let date)?:
                     next.lastMessage = text
+                    next.lastMessageWire = wire
                     next.lastSenderName = sender
                     next.lastActivityAt = date
                 case .empty?, nil: break
@@ -349,6 +352,7 @@ final class ConversationListModel {
         }
         await environment.joinedHubs.replaceAll(updated, userID: userID)
         hubs = updated
+        await decryptHubPreviews(environment, userID: userID)
         prefetchVisuals()
     }
 
@@ -357,6 +361,30 @@ final class ConversationListModel {
         guard let environment, let userID else { return }
         await environment.joinedHubs.upsert(hub, userID: userID)
         hubs = await environment.joinedHubs.hubs(userID: userID)
+        // Opening the hub cached its keys: its preview can be read now.
+        await decryptHubPreviews(environment, userID: userID)
+    }
+
+    /// Hub previews decrypted with keys on this device, by hub ID. Memory only, like `previewTexts`.
+    private(set) var hubPreviewTexts: [String: String] = [:]
+
+    /// Keys in memory first (derived v1, or a v2 session cached by opening the hub), then this
+    /// device's stored copy of the message. Never fetches keys.
+    private func decryptHubPreviews(_ environment: AppEnvironment, userID: String) async {
+        var texts: [String: String] = [:]
+        var missing: [String: (conversation: String, wire: String)] = [:]
+        for hub in hubs {
+            guard let wire = hub.lastMessageWire else { continue }
+            if let text = await environment.chat.hubPreviewText(wire, hubID: hub.hubID) {
+                texts[hub.hubID] = text
+            } else {
+                missing[hub.hubID] = (hub.hubID, wire)
+            }
+        }
+        if !missing.isEmpty {
+            texts.merge(await LocalStore.shared.plaintext(ofLatest: missing, userID: userID)) { current, _ in current }
+        }
+        hubPreviewTexts = texts
     }
 
     /// Called after leaving/deleting a hub or when the server denies access.

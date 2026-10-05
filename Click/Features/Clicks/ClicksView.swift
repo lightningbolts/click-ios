@@ -270,7 +270,7 @@ public struct ClicksView: View {
                         )
                     }
                 case .hub(let hub):
-                    HubInboxRow(hub: hub, isMuted: model.isMuted([hub.hubID])) {
+                    HubInboxRow(hub: hub, decryptedText: model.hubPreviewTexts[hub.hubID], isMuted: model.isMuted([hub.hubID])) {
                         ClickHaptics.selection()
                         env.router.navigate(to: .hub(hubID: hub.hubID))
                     }
@@ -592,6 +592,7 @@ private enum GroupsTabRow: Identifiable {
 
 struct HubInboxRow: View {
     let hub: JoinedHub
+    var decryptedText: String?
     var isMuted = false
     let onOpen: () -> Void
 
@@ -630,7 +631,9 @@ struct HubInboxRow: View {
     }
 
     private var preview: String {
-        guard let message = hub.lastMessage else { return hub.isEvent ? "Event chat" : "Community hub" }
+        guard let message = decryptedText.map(InboxFormatting.textPreview) ?? hub.lastMessage else {
+            return hub.isEvent ? "Event chat" : "Community hub"
+        }
         return hub.lastSenderName.map { "\($0.split(separator: " ").first.map(String.init) ?? $0): \(message)" } ?? message
     }
 }
