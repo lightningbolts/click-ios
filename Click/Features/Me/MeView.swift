@@ -123,7 +123,8 @@ public struct MeView: View {
             Button("Sign out", role: .destructive) { signOut() }
         }
         .confirmation("Delete your Click account?", isPresented: $isConfirmingDelete, keep: "Keep Account",
-                      message: "This permanently removes your profile, connections, and messages. It can't be undone.") {
+                      message: "This permanently removes your profile, connections, and messages. It can't be undone."
+                        + (isAppleAccount ? " You'll confirm with Apple, and Click is removed from your Apple ID." : "")) {
             Button("Delete Account", role: .destructive) { deleteAccount() }
         }
         .alert("Something went wrong", isPresented: Binding(get: { alertMessage != nil }, set: { if !$0 { alertMessage = nil } })) {
@@ -477,14 +478,31 @@ public struct MeView: View {
         }
     }
 
+    private var isAppleAccount: Bool {
+        env.session.currentSession.map { AppleReauthorization.isAppleAccount(jwt: $0.jwt) } ?? false
+    }
+
     /// Deletes the account in-app (App Store 5.1.1(v)), then clears this device's session and data.
+    /// Apple accounts sign in with Apple once more so the server can revoke their Apple tokens.
     private func deleteAccount() {
         ClickHaptics.impact(.heavy)
         isDeletingAccount = true
         Task {
             defer { isDeletingAccount = false }
+            var appleCode: String?
+            if isAppleAccount {
+                do {
+                    appleCode = try await AppleReauthorization.authorizationCode()
+                } catch is CancellationError {
+                    return
+                } catch {
+                    // Revocation is best effort, like on the server: Apple being unavailable
+                    // (or Click already removed from the Apple ID) must not block deletion.
+                    appleCode = nil
+                }
+            }
             do {
-                try await env.me.deleteAccount()
+                try await env.me.deleteAccount(appleAuthorizationCode: appleCode)
                 await env.session.signOut()
             } catch {
                 alertMessage = "Your account wasn't deleted. \(error.userFacingMessage)"

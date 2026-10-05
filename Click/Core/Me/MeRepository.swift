@@ -326,9 +326,13 @@ public actor MeRepository {
     }
 
     /// Permanently deletes the signed-in account (`DELETE /api/user/delete`, spec §65.14).
-    /// The caller signs out locally afterwards; the server has already revoked the user.
-    public func deleteAccount() async throws {
-        _ = try await api.executeRaw(APIRequest(path: "/api/user/delete", method: .delete))
+    /// `appleAuthorizationCode`, from Sign in with Apple just now, lets the server revoke the
+    /// account's Apple tokens first. The caller signs out locally afterwards.
+    public func deleteAccount(appleAuthorizationCode: String? = nil) async throws {
+        let body = try appleAuthorizationCode.map {
+            try JSONSerialization.data(withJSONObject: ["apple_authorization_code": $0])
+        }
+        _ = try await api.executeRaw(APIRequest(path: "/api/user/delete", method: .delete, body: body))
     }
 
     // MARK: - Notification preferences
