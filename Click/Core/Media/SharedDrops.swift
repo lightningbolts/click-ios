@@ -79,8 +79,12 @@ struct SharedDropGroup: Identifiable, Equatable {
     /// newest drop, a countdown, while nothing can be opened yet).
     var cover: SharedDrop { start ?? newest }
 
-    /// Yours first, then everyone else by their newest drop. Recency only (not seen-first), so
-    /// tiles never reshuffle under you after watching.
+    /// Has a developed drop you haven't watched yet (the tile's ready ring).
+    var hasUnwatched: Bool { drops.contains { $0.state() == .ready } }
+
+    /// Yours first, then people with drops you haven't watched, then everyone else, each by their
+    /// newest drop. The viewer snapshots this order when it opens, so watching never reshuffles
+    /// what plays next.
     static func group(_ list: [SharedDrop]) -> [SharedDropGroup] {
         var order: [String] = []
         var byUser: [String: [SharedDrop]] = [:]
@@ -90,7 +94,8 @@ struct SharedDropGroup: Identifiable, Equatable {
             byUser[drop.userID, default: []].append(drop)
         }
         let groups = order.map { SharedDropGroup(userID: $0, drops: byUser[$0]!.reversed()) }
-        return groups.filter(\.isMine) + groups.filter { !$0.isMine }
+        let others = groups.filter { !$0.isMine }
+        return groups.filter(\.isMine) + others.filter(\.hasUnwatched) + others.filter { !$0.hasUnwatched }
     }
 }
 

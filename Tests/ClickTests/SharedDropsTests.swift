@@ -61,7 +61,7 @@ struct SharedDropsTests {
         #expect(drops[0].audience == nil)
     }
 
-    @Test("The strip groups by person: yours first, then by newest drop; a story starts at the first unseen")
+    @Test("The strip groups by person: yours first, then unwatched, then by newest drop; a story starts at the first unseen")
     func groupsByPerson() async throws {
         let past = "2000-01-01T00:00:00Z", seen = "\"2000-01-02T00:00:00Z\""
         func row(_ id: String, _ user: String, mine: Bool = false, developed: String = "null", reveal: String = past) -> String {
@@ -74,15 +74,17 @@ struct SharedDropsTests {
             row("me1", "me", mine: true, reveal: "2999-01-01T00:00:00Z"),
             row("m2", "maya"),
             row("m1", "maya", developed: seen),
-            row("j1", "jo", developed: seen)
+            row("j1", "jo", developed: seen),
+            row("k1", "kai")
         ]
         SharedDropsMockURLProtocol.handler = { _ in (200, #"{"drops":[\#(rows.joined(separator: ","))]}"#) }
         let groups = SharedDropGroup.group(try await service().sharedDrops())
-        #expect(groups.map(\.userID) == ["me", "maya", "jo"])
+        // Unwatched people (maya, kai) come before jo, even though jo posted after kai.
+        #expect(groups.map(\.userID) == ["me", "maya", "kai", "jo"])
         #expect(groups[1].drops.map(\.id) == ["m1", "m2", "m3"])
         #expect(groups[1].start?.id == "m2")
         #expect(groups[1].cover.id == "m2")
-        #expect(groups[2].start?.id == "j1")
+        #expect(groups[3].start?.id == "j1")
         #expect(groups[0].start == nil)
         #expect(groups[0].cover.id == "me1")
     }

@@ -150,7 +150,7 @@ struct SharedDropsStrip: View {
         let drop = group.cover
         let state = drop.state()
         let developing = store.developing.contains(drop.id)
-        let ready = group.drops.contains { $0.state() == .ready }
+        let ready = group.hasUnwatched
         return Button {
             if let start = group.start { ViewerStart.open(start.id, in: $viewing) }
         } label: {
