@@ -256,11 +256,7 @@ public struct ChatView: View {
                     .padding(.top, 8)
                     .transition(.move(edge: .top).combined(with: .opacity))
             } else if let connection = sayHiConnection {
-                SayHiPanel(
-                    deadline: connection.sayHiDeadline,
-                    context: ([connection.encounterLocation] + connection.mutualTags).joined(separator: " "),
-                    seed: connection.connectionID
-                ) { prompt in
+                SayHiPanel(connection: connection) { prompt in
                     Task { await model.sendText(prompt) }
                 }
                 .padding(.horizontal, 12)

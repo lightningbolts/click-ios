@@ -258,12 +258,13 @@ struct UnreadDivider: View {
 }
 
 /// New-Click panel: the 48-hour "say hi" warning (server deadline, never a local expiry) plus
-/// icebreakers that send as ordinary messages (spec §42–43).
+/// openers drawn from what the two share, sent as ordinary messages (spec §42–43).
 struct SayHiPanel: View {
-    let deadline: Date?
-    let context: String?
-    let seed: String
+    @Environment(AppEnvironment.self) private var env
+    let connection: ConnectionItem
     let onSend: (String) -> Void
+    /// Nil while the shared interests and encounters load, so the openers never swap under a finger.
+    @State private var context: IcebreakerContext?
     @State private var shuffle = 0
     @State private var cooldownUntil: Date?
     @State private var dismissed = false
@@ -272,7 +273,7 @@ struct SayHiPanel: View {
         if !dismissed {
             VStack(alignment: .leading, spacing: 10) {
                 HStack(alignment: .firstTextBaseline) {
-                    if let deadline, let remaining = InboxFormatting.sayHiRemaining(until: deadline) {
+                    if let deadline = connection.sayHiDeadline, let remaining = InboxFormatting.sayHiRemaining(until: deadline) {
                         Label("Say hi · \(remaining) before this Click moves to Archived", systemImage: "hourglass")
                             .font(ClickTypography.metadataEmphasized)
                             .foregroundStyle(ClickColors.warning)
@@ -289,42 +290,67 @@ struct SayHiPanel: View {
                     .foregroundStyle(ClickColors.textSecondary)
                     .accessibilityLabel("Hide icebreakers")
                 }
+                if context == nil {
+                    ForEach(0..<3, id: \.self) { _ in
+                        promptLabel("Hey! Good to meet you.").redacted(reason: .placeholder)
+                    }
+                    .accessibilityHidden(true)
+                }
                 ForEach(prompts, id: \.self) { prompt in
                     Button {
                         ClickHaptics.impact(.light)
                         cooldownUntil = .now.addingTimeInterval(Icebreakers.cooldown)
                         onSend(prompt)
                     } label: {
-                        Text(prompt)
-                            .font(ClickTypography.supporting)
-                            .foregroundStyle(ClickColors.textPrimary)
-                            .multilineTextAlignment(.leading)
-                            .frame(maxWidth: .infinity, alignment: .leading)
-                            .padding(.horizontal, 12)
-                            .padding(.vertical, 8)
-                            .background(ClickColors.fillSubtle, in: RoundedRectangle(cornerRadius: 12, style: .continuous))
+                        promptLabel(prompt)
                     }
                     .buttonStyle(.plain)
                     .accessibilityHint("Sends this message")
                 }
-                TimelineView(.periodic(from: .now, by: 1)) { context in
-                    let wait = cooldownUntil.map { Int($0.timeIntervalSince(context.date).rounded(.up)) } ?? 0
+                TimelineView(.periodic(from: .now, by: 1)) { timeline in
+                    let wait = cooldownUntil.map { Int($0.timeIntervalSince(timeline.date).rounded(.up)) } ?? 0
                     Button(wait > 0 ? "New ideas in \(wait)s" : "New ideas", systemImage: "arrow.triangle.2.circlepath") {
                         shuffle += 1
                         cooldownUntil = .now.addingTimeInterval(Icebreakers.cooldown)
                     }
                     .font(ClickTypography.supportingEmphasized)
-                    .disabled(wait > 0)
+                    .disabled(wait > 0 || context == nil)
                 }
             }
             .padding(14)
             .background(ClickColors.surfaceElevated, in: RoundedRectangle(cornerRadius: ClickRadius.compact, style: .continuous))
             .transition(.opacity)
+            .task(id: connection.connectionID) { await loadContext() }
         }
     }
 
+    private func promptLabel(_ text: String) -> some View {
+        Text(text)
+            .font(ClickTypography.supporting)
+            .foregroundStyle(ClickColors.textPrimary)
+            .multilineTextAlignment(.leading)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .padding(.horizontal, 12)
+            .padding(.vertical, 8)
+            .background(ClickColors.fillSubtle, in: RoundedRectangle(cornerRadius: 12, style: .continuous))
+    }
+
     private var prompts: [String] {
-        Icebreakers.prompts(context: context, seed: "\(seed)#\(shuffle)")
+        guard let context else { return [] }
+        // An unnamed peer ("Click user") just gets "Hey!".
+        let firstName = connection.displayName == "Click user" ? nil : connection.displayName.split(separator: " ").first.map(String.init)
+        return Icebreakers.prompts(for: context, firstName: firstName, seed: connection.connectionID, page: shuffle)
+    }
+
+    /// Shared interests and how they met; whatever doesn't load just leaves its openers out.
+    private func loadContext() async {
+        guard context == nil else { return }
+        guard let viewerID = env.session.currentSession?.userId else { return context = IcebreakerContext() }
+        async let profile = try? env.profiles.profile(userID: connection.userID, connectionID: connection.connectionID, viewerID: viewerID)
+        async let encounters = try? env.profiles.encounters(connectionID: connection.connectionID, viewerID: viewerID)
+        let loaded = IcebreakerContext(sharedInterests: await profile?.sharedInterests ?? [], encounters: await encounters ?? [])
+        guard !Task.isCancelled else { return }
+        withAnimation(ClickMotion.subtleFade) { context = loaded }
     }
 }
 
