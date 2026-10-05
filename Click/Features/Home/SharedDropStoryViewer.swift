@@ -15,7 +15,7 @@ enum StoryPlaylist: Hashable {
 /// carry the drop with them; your own drops show who reacted instead.
 struct SharedDropStoryViewer: View {
     @Environment(AppEnvironment.self) private var env
-    @Environment(\.dismiss) private var dismiss
+    @Environment(\.closeDropViewer) private var dismiss
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     @State private var currentID: String
@@ -72,12 +72,16 @@ struct SharedDropStoryViewer: View {
     private static let reactorRowHeight: CGFloat = 68
     /// The gap between the photo and the header above it or the reactions below.
     private static let photoGap: CGFloat = 8
-    /// Quicker than the system zoom, so a drop feels like it pops open.
-    private static let zoomDuration = 0.26
-    private static let zoom = Animation.snappy(duration: zoomDuration)
+    /// Quicker than the system zoom, so a drop feels like it pops open. A curve rather than a
+    /// spring, so it lands on time: by `zoomSettled` it's within a few points of the tile, and
+    /// the card can fade over it without ghosting.
+    private static let zoom = Animation.timingCurve(0.25, 0.8, 0.25, 1, duration: 0.2)
+    private static let zoomSettled = 0.14
     /// The cube finishing a turn (or springing back): quick, no overshoot.
     private static let cubeAnimation = Animation.snappy(duration: 0.32)
-    /// The card and its tile trading places at either end of the zoom.
+    /// The card and its tile trading places at either end of the zoom: quick on the way out of
+    /// the tile, before the card has grown enough to show the screen through it.
+    private static let crossFadeIn = Animation.easeOut(duration: 0.06)
     private static let crossFade = Animation.easeInOut(duration: 0.1)
 
     /// Present with animations disabled: the viewer runs its own zoom out of `sources`' tile
@@ -160,10 +164,8 @@ struct SharedDropStoryViewer: View {
                 .opacity(presented ? Double(1 - min(dragY, 240) / 240) : 0)
             card
         }
-        .presentationBackground(.clear)
-        .simultaneousGesture(dismissDrag)
         // Our own swipe-down (which also pauses) closes, zooming back into the tile.
-        .interactiveDismissDisabled()
+        .simultaneousGesture(dismissDrag)
         .task {
             // Zoom once the viewer has been laid out over its tile, so it never fades in.
             for _ in 0..<20 where frame == .zero {
@@ -172,7 +174,7 @@ struct SharedDropStoryViewer: View {
             await Task.yield()
             captionHidden = false
             withAnimation(Self.zoom) { presented = true }
-            withAnimation(Self.crossFade) { cardOpacity = 1 }
+            withAnimation(Self.crossFadeIn) { cardOpacity = 1 }
         }
         .environment(\.colorScheme, .dark)
         // Follows the zoom, so the status bar fades back as the card shrinks, not after.
@@ -662,7 +664,7 @@ struct SharedDropStoryViewer: View {
                         trailing: frame.width - c.maxX, radius: 16 / collapsed.scale)
     }
 
-    /// Zooms back into the tile (or fades), then dismisses without the system animation.
+    /// Zooms back into the tile (or fades), then takes the viewer's window away.
     private func close() {
         guard presented else { return }
         focusedReply = nil
@@ -672,16 +674,12 @@ struct SharedDropStoryViewer: View {
             dragY = 0
             cube.x = 0
         }
-        // As the card settles onto the tile it fades out over it, ending just after the zoom;
-        // only then is the viewer dismissed, with nothing left to swap.
+        // Landing on the tile, the card fades out over it; only then does the viewer go, with
+        // nothing left to swap.
         Task {
-            try? await Task.sleep(for: .seconds(Self.zoomDuration - 0.06))
+            try? await Task.sleep(for: .seconds(Self.zoomSettled))
             captionHidden = true
-            withAnimation(Self.crossFade) { cardOpacity = 0 } completion: {
-                var transaction = Transaction()
-                transaction.disablesAnimations = true
-                withTransaction(transaction) { dismiss() }
-            }
+            withAnimation(Self.crossFade) { cardOpacity = 0 } completion: { dismiss() }
         }
     }
 
@@ -851,18 +849,73 @@ extension View {
         onGeometryChange(for: CGRect.self, of: { $0.frame(in: .global) }) { frames.byID[id] = $0 }
     }
 
-    /// Presents the drop viewer without the system's animation; it runs its own quicker zoom.
+    /// Presents the drop viewer, which runs its own zoom, in a window over this one.
     func dropViewer(_ viewing: Binding<SharedDropsStrip.ViewerStart?>, sources: DropTileFrames) -> some View {
-        fullScreenCover(item: viewing) { start in SharedDropStoryViewer(startID: start.id, playlist: start.playlist, sources: sources) }
+        modifier(DropViewerPresentation(viewing: viewing, sources: sources))
     }
 }
 
 extension SharedDropsStrip.ViewerStart {
-    /// Opens a drop with the presentation itself unanimated (the viewer animates its own way in).
     static func open(_ id: String, playlist: StoryPlaylist = .people, in viewing: Binding<SharedDropsStrip.ViewerStart?>) {
-        var transaction = Transaction()
-        transaction.disablesAnimations = true
-        withTransaction(transaction) { viewing.wrappedValue = .init(id: id, playlist: playlist) }
+        viewing.wrappedValue = .init(id: id, playlist: playlist)
+    }
+}
+
+extension EnvironmentValues {
+    /// Takes the drop viewer's window away (the viewer has already zoomed back into its tile).
+    @Entry var closeDropViewer: () -> Void = {}
+}
+
+/// Shows the viewer in its own window rather than a full-screen cover: covering a screen takes it
+/// out of the hierarchy, and putting it back on close re-renders its glass and reloads its photos,
+/// a flash right as the viewer lands on its tile. Underneath a window, the screen never changes.
+private struct DropViewerPresentation: ViewModifier {
+    @Environment(AppEnvironment.self) private var env
+    @Binding var viewing: SharedDropsStrip.ViewerStart?
+    let sources: DropTileFrames
+    @State private var overlay = DropViewerWindow()
+
+    func body(content: Content) -> some View {
+        content
+            .onChange(of: viewing?.id) { _, id in
+                guard id != nil, let start = viewing else { return overlay.hide() }
+                overlay.show(
+                    SharedDropStoryViewer(startID: start.id, playlist: start.playlist, sources: sources)
+                        .environment(env)
+                        .environment(\.closeDropViewer) { viewing = nil }
+                )
+            }
+            .onDisappear { overlay.hide() }
+    }
+}
+
+@MainActor
+private final class DropViewerWindow {
+    private var window: UIWindow?
+    private weak var previousKey: UIWindow?
+
+    func show(_ view: some View) {
+        hide()
+        let scenes = UIApplication.shared.connectedScenes.compactMap { $0 as? UIWindowScene }
+        guard let scene = scenes.first(where: { $0.activationState == .foregroundActive }) ?? scenes.first else { return }
+        let host = UIHostingController(rootView: view)
+        host.view.backgroundColor = .clear
+        let window = UIWindow(windowScene: scene)
+        window.backgroundColor = .clear
+        window.windowLevel = .normal + 1
+        previousKey = scene.keyWindow
+        // The status bar keeps the screen's style as it fades back in on close.
+        window.overrideUserInterfaceStyle = previousKey?.traitCollection.userInterfaceStyle ?? .unspecified
+        window.rootViewController = host
+        window.makeKeyAndVisible()
+        self.window = window
+    }
+
+    func hide() {
+        guard let window else { return }
+        window.isHidden = true
+        self.window = nil
+        previousKey?.makeKey()
     }
 }
 
