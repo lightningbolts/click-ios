@@ -17,13 +17,16 @@ public struct AltitudeObservation: Codable, Equatable, Sendable {
 
     let observedAt: Date
 
-    /// Request-body keys, equal to the `connection_encounters` column names.
+    /// Request-body keys, equal to the `connection_encounters` column names. Pressure and the
+    /// relative change are sent even before the altimeter's first absolute fix (which can take
+    /// several seconds); accuracy and precision only ever describe the absolute altitude.
     var columns: [String: Any] {
         var out: [String: Any] = [:]
-        guard let absoluteAltitudeMeters else { return out }
-        out["exact_barometric_elevation_m"] = LocationObservation.rounded(absoluteAltitudeMeters, places: 1)
-        if let accuracyMeters { out["barometric_accuracy_m"] = LocationObservation.rounded(accuracyMeters, places: 2) }
-        if let precisionMeters { out["barometric_precision_m"] = LocationObservation.rounded(precisionMeters, places: 2) }
+        if let absoluteAltitudeMeters {
+            out["exact_barometric_elevation_m"] = LocationObservation.rounded(absoluteAltitudeMeters, places: 1)
+            if let accuracyMeters { out["barometric_accuracy_m"] = LocationObservation.rounded(accuracyMeters, places: 2) }
+            if let precisionMeters { out["barometric_precision_m"] = LocationObservation.rounded(precisionMeters, places: 2) }
+        }
         if let relativeAltitudeMeters { out["barometric_relative_altitude_m"] = LocationObservation.rounded(relativeAltitudeMeters, places: 2) }
         if let pressureKPa { out["barometric_pressure_kpa"] = LocationObservation.rounded(pressureKPa, places: 3) }
         return out
