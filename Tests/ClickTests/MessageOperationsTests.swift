@@ -132,14 +132,56 @@ struct MessageOperationsTests {
         #expect(ConversationModel.typingLabel(names: [], count: 2) == "Someone is typing…")
     }
 
-    @Test("Icebreakers: context prompts first, stable per seed, always the requested count")
-    func icebreakers() {
-        let gym = Icebreakers.prompts(context: "Met at the IMA gym", seed: "conn-1")
-        #expect(gym.count == 3)
-        #expect(gym.contains("Do you work out regularly? What's your gym routine like?"))
-        #expect(gym == Icebreakers.prompts(context: "Met at the IMA gym", seed: "conn-1"))
-        #expect(Icebreakers.prompts(context: nil, seed: "x").count == 3)
-        #expect(Set(Icebreakers.prompts(context: nil, seed: "x")).count == 3)
+    @Test("Icebreakers lead with what the two share, then a hello, and hold still per seed and page")
+    func icebreakersFromContext() {
+        let context = IcebreakerContext(sharedInterests: ["Fiction", "Community"], eventTitle: "Dev Sprint", tags: ["cafe"])
+        let first = Icebreakers.prompts(for: context, firstName: "Maya", seed: "conn-1")
+        #expect(first.count == 3)
+        #expect(first[0].contains("Dev Sprint"))
+        #expect(["Read anything good lately?", "Saw fiction on your profile too. Anything you'd recommend?"].contains(first[1]))
+        #expect(first[2].hasPrefix("Hey Maya!"))
+        #expect(first == Icebreakers.prompts(for: context, firstName: "Maya", seed: "conn-1"))
+        // "New ideas" moves on to the rest: the café, the other interest, then general lines.
+        let next = Icebreakers.prompts(for: context, firstName: "Maya", seed: "conn-1", page: 1)
+        #expect(next.count == 3 && Set(next).isDisjoint(with: first))
+        #expect(next.contains { $0.contains("community") })
+    }
+
+    @Test("Icebreakers with nothing to go on are a hello and low-key questions, never a pitch")
+    func icebreakersFallback() {
+        let prompts = Icebreakers.prompts(for: IcebreakerContext(), seed: "x")
+        #expect(prompts.count == 3 && Set(prompts).count == 3)
+        #expect(prompts.contains { $0.hasPrefix("Hey!") })
+        for page in 0..<6 {
+            for line in Icebreakers.prompts(for: IcebreakerContext(), seed: "x", page: page) {
+                #expect(!line.lowercased().contains("grab coffee") && !line.lowercased().contains("lottery"))
+            }
+        }
+    }
+
+    @Test("Icebreakers keep one line per interest category, and capitals only where they belong")
+    func icebreakerInterests() {
+        let context = IcebreakerContext(sharedInterests: ["Piano", "Guitar", "AI/ML", "Spanish"])
+        let all = (0..<4).flatMap { Icebreakers.prompts(for: context, seed: "s", page: $0) }
+        #expect(!all.contains { $0.contains("guitar") })
+        #expect(all.contains { $0.contains("AI/ML") } || all.contains("Working on anything fun right now?"))
+        #expect(all.contains("Saw Spanish on your profile too. Learning it, or already fluent?"))
+    }
+
+    @Test("Icebreaker context comes from the latest encounter and any event among them")
+    func icebreakerContextFromEncounters() throws {
+        let older = try #require(Encounter.decode(["id": "e1", "encountered_at": "2026-10-01T18:00:00Z",
+                                                   "context_tags": ["gym"]]))
+        var latest = try #require(Encounter.decode(["id": "e2", "encountered_at": "2026-10-04T18:00:00Z",
+                                                    "context_tags": ["cafe"]]))
+        latest.venue = "Cafe Allegro"
+        var withEvent = older
+        withEvent.eventTitle = "Dawg Daze"
+        let context = IcebreakerContext(sharedInterests: ["Hiking"], encounters: [withEvent, latest])
+        #expect(context.tags == ["cafe"])
+        #expect(context.venue == "Cafe Allegro")
+        #expect(context.eventTitle == "Dawg Daze")
+        #expect(context.encounterCount == 2)
     }
 
     @Test("A search focus matches the conversation by any of its IDs")
