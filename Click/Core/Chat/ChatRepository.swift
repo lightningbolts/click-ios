@@ -1654,6 +1654,17 @@ public actor ChatRepository: ChatRepositoryProtocol {
         return ClickCryptoV1.isAnyV1WireContent(content) ? nil : content
     }
 
+    /// Hub preview from keys already on this device: the derived v1 hub keys, or a v2 session
+    /// cached since the hub was last opened. Never fetches keys.
+    public func hubPreviewText(_ content: String, hubID: String) -> String? {
+        if ClickCryptoV2.isEncrypted(content) {
+            return cachedV2Preview(content, cacheKey: V2Scope.hub(hubID).cacheKey)
+        }
+        guard ClickCryptoV1.isEncrypted(content) else { return content }
+        let decrypted = ClickCryptoV1.decryptContent(content, keys: ClickCryptoV1.deriveKeysForHub(hubID: hubID))
+        return ClickCryptoV1.isEncrypted(decrypted) ? nil : decrypted
+    }
+
     private func cachedV2Preview(_ content: String, cacheKey: String) -> String? {
         guard
             let session = v2SessionCache[cacheKey],

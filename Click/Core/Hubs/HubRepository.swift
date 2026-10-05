@@ -157,14 +157,15 @@ public actor HubRepository {
     }
 
     public enum LatestResult: Sendable {
-        case message(text: String, senderName: String?, date: Date?)
+        /// `wire` is the still-encrypted body when `text` is only the "Encrypted message" label.
+        case message(text: String, wire: String?, senderName: String?, date: Date?)
         case empty
         /// The server says the hub is gone or no longer accessible to this user.
         case gone
     }
 
-    /// Newest hub message for the Groups list. v2 bodies are not decrypted here (no key
-    /// fetch while listing), so they read as "Encrypted message".
+    /// Newest hub message for the Groups list. Encrypted bodies are not decrypted here; the
+    /// list decrypts them with keys already on the device (`wire`).
     public func latest(hubID: String) async -> LatestResult? {
         do {
             let (data, _) = try await api.executeRaw(APIRequest(
@@ -176,17 +177,21 @@ public actor HubRepository {
             let body = JSONFields.string(row["body"]) ?? ""
             let type = JSONFields.string(row["message_type"]) ?? "text"
             let text: String
+            var wire: String?
             switch type {
             case "image": text = "Photo"
             case "audio": text = "Voice note"
             case "file": text = "File"
-            default: text = ClickCryptoV2.isEncrypted(body) || ClickCryptoV1.isAnyV1WireContent(body) ? "Encrypted message" : body
+            default:
+                let encrypted = ClickCryptoV2.isEncrypted(body) || ClickCryptoV1.isAnyV1WireContent(body)
+                text = encrypted ? "Encrypted message" : body
+                wire = encrypted ? body : nil
             }
             var sender: String?
             if let userID = JSONFields.string(row["user_id"]) {
                 sender = await identities.resolve([userID])[userID]?.name
             }
-            return .message(text: text, senderName: sender, date: JSONFields.date(row["created_at"]))
+            return .message(text: text, wire: wire, senderName: sender, date: JSONFields.date(row["created_at"]))
         } catch {
             switch error as? APIError {
             case .forbidden, .notFound, .server(410, _, _): return .gone
