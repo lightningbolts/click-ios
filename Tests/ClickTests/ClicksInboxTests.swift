@@ -98,13 +98,16 @@ struct ClicksInboxTests {
         #expect(items[1].unreadCount == 0)
     }
 
-    @Test("Only unstarted pending connections inside 48 hours get a say-hi deadline")
+    @Test("Only pending connections nobody has written in, inside 48 hours, get a say-hi deadline")
     func sayHiDeadline() {
         let rows = [
             row("fresh", peer: "a", createdAgo: 12 * 3600, hasBegun: false, status: "pending"),
             row("started", peer: "b", createdAgo: 12 * 3600, hasBegun: true, status: "pending"),
             row("lapsed", peer: "c", createdAgo: 50 * 3600, hasBegun: false, status: "pending"),
-            row("kept", peer: "d", createdAgo: 12 * 3600, hasBegun: false, status: "kept")
+            row("kept", peer: "d", createdAgo: 12 * 3600, hasBegun: false, status: "kept"),
+            // Messages exchanged on iOS never set has_begun; the server stops the clock anyway.
+            row("messaged", peer: "e", createdAgo: 12 * 3600, hasBegun: false, status: "pending")
+                .merging(["last_message_at": (now.timeIntervalSince1970 - 3600) * 1000]) { $1 }
         ]
         let items = Phase3Repository.inboxItems(
             rows: rows, currentUserID: me, identities: [:], previews: [:],
@@ -116,6 +119,7 @@ struct ClicksInboxTests {
         #expect(deadlines["started"]! == nil)
         #expect(deadlines["lapsed"]! == nil)
         #expect(deadlines["kept"]! == nil)
+        #expect(deadlines["messaged"]! == nil)
 
         let archived = Phase3Repository.inboxItems(
             rows: [rows[0]], currentUserID: me, identities: [:], previews: [:],
