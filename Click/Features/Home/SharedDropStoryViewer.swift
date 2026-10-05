@@ -211,8 +211,24 @@ struct SharedDropStoryViewer: View {
     /// The current page, and the next (or previous) person's on the cube's other face.
     private var faces: [(drop: SharedDrop, base: CGFloat)] {
         guard let drop = current else { return [] }
-        guard let side = cubeSide, let id = side.id, id != currentID, let other = store.drop(id) else { return [(drop, 0)] }
-        return [(other, CGFloat(side.step)), (drop, 0)]
+        var out: [(drop: SharedDrop, base: CGFloat)] = []
+        for (step, id) in sideFaces {
+            if id != currentID, let other = store.drop(id) { out.append((other, CGFloat(step))) }
+        }
+        return out + [(drop, 0)]
+    }
+
+    /// The faces beside the current one. Mid-turn, the one being turned to; otherwise, at either
+    /// end of a person's story, whoever a tap or the timer would turn to, mounted edge-on out of
+    /// sight so the turn animates a face that already exists (one inserted mid-animation would
+    /// just appear at its end).
+    private var sideFaces: [(step: Int, id: String)] {
+        if let side = cubeSide { return side.id.map { [(side.step, $0)] } ?? [] }
+        let ids = sequence.map(\.id)
+        var out: [(step: Int, id: String)] = []
+        if ids.first == currentID, let id = chapterNeighbor(-1) { out.append((-1, id)) }
+        if ids.last == currentID, let id = chapterNeighbor(1) { out.append((1, id)) }
+        return out
     }
 
     /// One drop's page: the photo between its header and reactions. Only the current page takes
