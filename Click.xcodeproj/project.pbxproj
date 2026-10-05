@@ -280,6 +280,7 @@
 		F39B3114B360B4DD6482DC0D /* SharedDropsTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8B1BF42ACBAB43B75CA46FAA /* SharedDropsTests.swift */; };
 		F40693A394C8979FA916E3CF /* ActivityRepository.swift in Sources */ = {isa = PBXBuildFile; fileRef = E6FC996ED70FA22CDF4A385B /* ActivityRepository.swift */; };
 		F4BFF2C0FAE7DFA0D349242D /* Reactions.swift in Sources */ = {isa = PBXBuildFile; fileRef = A370FAA8EB600405590D0486 /* Reactions.swift */; };
+		F4F833A6BCE4368C555D89B3 /* SharedDropsArchiveView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0DE85342B483F399509606F2 /* SharedDropsArchiveView.swift */; };
 		F52ACBD891E2FDA84ECE47D4 /* MapBeacon.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6E33EE76109A805205DBD78A /* MapBeacon.swift */; };
 		F5B70576BAD8160C65F3BB64 /* ChatGif.swift in Sources */ = {isa = PBXBuildFile; fileRef = B169348FED7593E9310571E7 /* ChatGif.swift */; };
 		F5CD94E53ACA1B9A2E559942 /* MessageOperationsTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1F74BDA9B286768CEF719A6F /* MessageOperationsTests.swift */; };
@@ -368,6 +369,7 @@
 		09B254B0F4FB61FBD50BB520 /* HubInfoView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HubInfoView.swift; sourceTree = "<group>"; };
 		09BDA2C2A494538273494E1E /* SettingsStoreTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SettingsStoreTests.swift; sourceTree = "<group>"; };
 		0CB53FCD182FE4C3E78DE171 /* HistoryView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HistoryView.swift; sourceTree = "<group>"; };
+		0DE85342B483F399509606F2 /* SharedDropsArchiveView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SharedDropsArchiveView.swift; sourceTree = "<group>"; };
 		0E4638F7F8E159D459EAAE28 /* EventDropsSection.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = EventDropsSection.swift; sourceTree = "<group>"; };
 		0F37F164483F60E35B52EF4F /* PostConnectView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PostConnectView.swift; sourceTree = "<group>"; };
 		10E9A0CD071D57AC06E1754F /* EdgeFade.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = EdgeFade.swift; sourceTree = "<group>"; };
@@ -1173,6 +1175,7 @@
 				BAA8AABF1E9390772FBCEEDC /* HomeSetupCard.swift */,
 				005D701DA8A071928D68AB22 /* HomeView.swift */,
 				FFFD67D7FE88321EBB61258B /* ReconnectNearbyCard.swift */,
+				0DE85342B483F399509606F2 /* SharedDropsArchiveView.swift */,
 				810B160677E4536C5BB95224 /* SharedDropsStore.swift */,
 				F98A417595AD773FE33925C7 /* SharedDropsStrip.swift */,
 				9584942EE84728242F0C07A2 /* SharedDropStoryViewer.swift */,
@@ -1828,6 +1831,7 @@
 				54C1D4956598CBFA3DB13C4A /* SharedContentModel.swift in Sources */,
 				B196E3631357A58F2BF15DE2 /* SharedDropStoryViewer.swift in Sources */,
 				D81EFED226695873F3428C83 /* SharedDrops.swift in Sources */,
+				F4F833A6BCE4368C555D89B3 /* SharedDropsArchiveView.swift in Sources */,
 				E7A904E27A45714177BBA1DB /* SharedDropsStore.swift in Sources */,
 				A08898F5B6D91DED2768116E /* SharedDropsStrip.swift in Sources */,
 				125A0ECF1618D0BEABC3CB90 /* SharedEpochKeyStore.swift in Sources */,

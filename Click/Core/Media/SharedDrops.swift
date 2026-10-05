@@ -57,6 +57,54 @@ public struct SharedDrop: Identifiable, Sendable, Equatable, Codable {
     }
 }
 
+/// One person's drops on the Home strip, Instagram-style: a single tile that opens the viewer on
+/// their drops in order, then carries on to the next person.
+struct SharedDropGroup: Identifiable, Equatable {
+    let userID: String
+    /// Oldest first: the order the story plays them.
+    let drops: [SharedDrop]
+
+    var id: String { userID }
+    var isMine: Bool { drops.first?.isMine ?? false }
+    var newest: SharedDrop { drops[drops.count - 1] }
+    var viewable: [SharedDrop] { drops.filter { !$0.state().isPending } }
+
+    /// Where the story starts: the first drop still to develop (unseen), else the first one.
+    var start: SharedDrop? {
+        let viewable = viewable
+        return viewable.first { $0.state() == .ready } ?? viewable.first
+    }
+
+    /// The tile's face: the drop the story opens on, so the tile zooms straight into it (the
+    /// newest drop, a countdown, while nothing can be opened yet).
+    var cover: SharedDrop { start ?? newest }
+
+    /// Has a developed drop you haven't watched yet (the tile's ready ring).
+    var hasUnwatched: Bool { drops.contains { $0.state() == .ready } }
+
+    /// Yours first, then people with drops you haven't watched, then everyone else, each by their
+    /// newest drop. The viewer snapshots this order when it opens, so watching never reshuffles
+    /// what plays next.
+    static func group(_ list: [SharedDrop]) -> [SharedDropGroup] {
+        var order: [String] = []
+        var byUser: [String: [SharedDrop]] = [:]
+        // The strip is newest first, so a person's first appearance is their newest drop.
+        for drop in list {
+            if byUser[drop.userID] == nil { order.append(drop.userID) }
+            byUser[drop.userID, default: []].append(drop)
+        }
+        let groups = order.map { SharedDropGroup(userID: $0, drops: byUser[$0]!.reversed()) }
+        let others = groups.filter { !$0.isMine }
+        return groups.filter(\.isMine) + others.filter(\.hasUnwatched) + others.filter { !$0.hasUnwatched }
+    }
+}
+
+/// A page of the drop archive and where the next one starts (nil at the end).
+struct SharedDropArchivePage: Equatable, Sendable, Codable {
+    var drops: [SharedDrop]
+    var nextBefore: String?
+}
+
 public enum SharedDropPostError: Error, Equatable, LocalizedError {
     case capReached, invalidPhoto
 
@@ -70,7 +118,7 @@ public enum SharedDropPostError: Error, Equatable, LocalizedError {
 
 /// Developed shared-drop originals kept on disk per user (the bytes as downloaded), so the strip
 /// and the viewer paint at once on every later open and launch instead of downloading again.
-/// Pruned to the drops still in the strip.
+/// Pruned to the drops on screen plus the most recent others (the archive's first screens).
 enum SharedDropPhotoCache {
     private static func directory(_ userID: String) -> URL {
         FileManager.default.urls(for: .cachesDirectory, in: .userDomainMask)[0]
@@ -87,16 +135,28 @@ enum SharedDropPhotoCache {
         return ClickDropService.thumbnail(data, maxPixels: maxPixels)
     }
 
+    static func exists(_ dropID: String, userID: String) -> Bool {
+        FileManager.default.fileExists(atPath: file(dropID, userID: userID).path)
+    }
+
     static func save(_ data: Data, dropID: String, userID: String) {
         try? FileManager.default.createDirectory(at: directory(userID), withIntermediateDirectories: true)
         try? data.write(to: file(dropID, userID: userID), options: [.atomic, .completeFileProtectionUntilFirstUserAuthentication])
     }
 
+    /// Files kept beyond `dropIDs`, newest first: enough for the archive to open and scroll
+    /// without downloading again, bounded so the cache never grows without end.
+    static let keepRecent = 240
+
     static func prune(keeping dropIDs: Set<String>, userID: String) {
         let dir = directory(userID)
-        for file in (try? FileManager.default.contentsOfDirectory(atPath: dir.path)) ?? []
-        where !dropIDs.contains((file as NSString).deletingPathExtension) {
-            try? FileManager.default.removeItem(at: dir.appendingPathComponent(file))
+        let files = (try? FileManager.default.contentsOfDirectory(at: dir, includingPropertiesForKeys: [.contentModificationDateKey])) ?? []
+        let others = files
+            .filter { !dropIDs.contains($0.deletingPathExtension().lastPathComponent) }
+            .map { ($0, (try? $0.resourceValues(forKeys: [.contentModificationDateKey]).contentModificationDate) ?? .distantPast) }
+            .sorted { $0.1 > $1.1 }
+        for (file, _) in others.dropFirst(keepRecent) {
+            try? FileManager.default.removeItem(at: file)
         }
         // Thumbnails from the first version of this cache.
         try? FileManager.default.removeItem(at: dir.deletingLastPathComponent().deletingLastPathComponent().appendingPathComponent("shared-drops"))
@@ -108,6 +168,18 @@ extension ClickDropService {
     public func sharedDrops() async throws -> [SharedDrop] {
         let (data, _) = try await api.executeRaw(APIRequest(path: "/api/me/shared-drops"))
         return JSONFields.rows(try JSONFields.object(data)["drops"]).compactMap(SharedDrop.parse)
+    }
+
+    /// One page of every drop you can see (Home's "View all"), newest first.
+    func sharedDropArchive(before: String?, limit: Int = 30) async throws -> SharedDropArchivePage {
+        var query = [URLQueryItem(name: "limit", value: String(limit))]
+        if let before { query.append(URLQueryItem(name: "before", value: before)) }
+        let (data, _) = try await api.executeRaw(APIRequest(path: "/api/me/shared-drops/archive", queryItems: query))
+        let object = try JSONFields.object(data)
+        return SharedDropArchivePage(
+            drops: JSONFields.rows(object["drops"]).compactMap(SharedDrop.parse),
+            nextBefore: JSONFields.string(object["next_before"])
+        )
     }
 
     /// Shares one drop; retrying with the same `clientDropID` returns the drop already made.

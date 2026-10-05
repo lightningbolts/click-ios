@@ -60,6 +60,8 @@ struct AppRouteDestination: View {
                 HistoryView()
             case .activity:
                 ActivityView()
+            case .dropsArchive:
+                SharedDropsArchiveView()
             case .settings(let page):
                 SettingsPageView(page: page)
             case .conversation(let chatID, let messageID):

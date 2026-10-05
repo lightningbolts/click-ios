@@ -122,6 +122,8 @@ public enum AppRoute: Hashable, Sendable {
     case history
     /// Every alert you got, newest first, with friend requests to answer (the Home bell).
     case activity
+    /// Every shared Click Drop you can see, older ones included (Home's "View all").
+    case dropsArchive
     case settings(SettingsRoute)
     case connectionInvocation(ConnectionInvocation)
     /// A conversation known only by its chat ID (search hits, `click://chat/{id}`), resolved
@@ -140,7 +142,7 @@ public enum AppRoute: Hashable, Sendable {
             .addClick
         case .savedEvents, .settings, .history, .myPlaces:
             .settings
-        case .activity:
+        case .activity, .dropsArchive:
             .home
         }
     }
