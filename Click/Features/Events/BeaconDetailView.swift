@@ -881,9 +881,16 @@ struct EventDirectoryView: View {
         people.sorted { (score($0), $1.name) > (score($1), $0.name) }
     }
 
+    /// Everyone but you (sorted and sectioned); you're pinned above them.
     private var everyone: [DirectoryAttendee] {
         (directory.value?.attendees ?? []).filter { $0.relationship != .self }
     }
+
+    private var me: DirectoryAttendee? {
+        directory.value?.attendees.first { $0.relationship == .self }
+    }
+
+    private var hasEnded: Bool { directory.value?.hasEnded ?? false }
 
     var body: some View {
         ScrollViewReader { proxy in
@@ -893,12 +900,21 @@ struct EventDirectoryView: View {
                     .listRowInsets(EdgeInsets())
                     .id("top")
 
-                if directory.value != nil {
-                    if everyone.isEmpty {
-                        Text("No one else has RSVP'd yet.").foregroundStyle(ClickColors.textSecondary)
+                if let current = directory.value {
+                    if current.attendees.isEmpty {
+                        Text(hasEnded ? "No one RSVP'd to this one." : "No one has RSVP'd yet.").foregroundStyle(ClickColors.textSecondary)
                     } else {
-                        ForEach(sections, id: \.title) { section in
-                            Section(section.title) { rows(section.people) }
+                        if let me {
+                            Section { rows([me]) }
+                        }
+                        if everyone.isEmpty {
+                            Text(hasEnded ? "No one else RSVP'd." : "No one else has RSVP'd yet.")
+                                .foregroundStyle(ClickColors.textSecondary)
+                                .listRowBackground(ClickColors.surfaceElevated)
+                        } else {
+                            ForEach(sections, id: \.title) { section in
+                                Section(section.title) { rows(section.people) }
+                            }
                         }
                     }
                 } else if let error = directory.errorMessage {
@@ -920,13 +936,14 @@ struct EventDirectoryView: View {
         // The system bar, like the event before it and the profiles after it: the bar never
         // toggles mid-stack, so nothing shifts as screens push.
         .safeAreaInset(edge: .top, spacing: 0) { header }
-        .navigationTitle("People here")
+        .navigationTitle(title)
         .navigationBarTitleDisplayMode(.inline)
         .toolbar {
             ToolbarItem(placement: .principal) {
                 VStack(spacing: 0) {
-                    Text("People here").font(ClickTypography.bodyEmphasized)
-                    Text(directory.value == nil ? " " : "\(everyone.count) going")
+                    Text(title).font(ClickTypography.bodyEmphasized)
+                    // Everyone, you included: the same count as the event's "N going".
+                    Text(directory.value.map { "\($0.attendees.count) \(hasEnded ? "went" : "going")" } ?? " ")
                         .font(ClickTypography.caption)
                         .foregroundStyle(ClickColors.textSecondary)
                         .contentTransition(.numericText())
@@ -939,6 +956,8 @@ struct EventDirectoryView: View {
         }
         .task { await load() }
     }
+
+    private var title: String { hasEnded ? "Who was there" : "People here" }
 
     /// Sort control, pinned above the list.
     private var header: some View {
@@ -973,7 +992,19 @@ struct EventDirectoryView: View {
 
     private func rows(_ people: [DirectoryAttendee]) -> some View {
         ForEach(people) { person in
-            NavigationLink(value: AppRoute.userProfile(userID: person.userID, connectionID: nil)) {
+            Group {
+                // Your own row is a marker, not a door to your own profile.
+                if person.relationship == .self {
+                    row(person)
+                } else {
+                    NavigationLink(value: AppRoute.userProfile(userID: person.userID, connectionID: nil)) { row(person) }
+                }
+            }
+            .listRowBackground(ClickColors.surfaceElevated)
+        }
+    }
+
+    private func row(_ person: DirectoryAttendee) -> some View {
                 HStack(spacing: 12) {
                     AvatarView(imageURL: person.avatarURL, seed: person.userID, initials: person.initials, size: 48)
                     VStack(alignment: .leading, spacing: 3) {
@@ -993,7 +1024,7 @@ struct EventDirectoryView: View {
                                     .fixedSize()
                             }
                         }
-                        ForEach(Self.details(person), id: \.self) { line in
+                        ForEach(Self.details(person, ended: hasEnded), id: \.self) { line in
                             Text(line)
                                 .font(ClickTypography.supporting)
                                 .foregroundStyle(ClickColors.textSecondary)
@@ -1003,13 +1034,11 @@ struct EventDirectoryView: View {
                     Spacer(minLength: 0)
                 }
                 .padding(.vertical, 4)
-            }
-            .listRowBackground(ClickColors.surfaceElevated)
-        }
     }
 
     nonisolated static func badge(_ person: DirectoryAttendee) -> String? {
         switch person.relationship {
+        case .self: "You"
         case .connection: "Your Click"
         case .mutual: "Mutual"
         default: nil
@@ -1017,7 +1046,7 @@ struct EventDirectoryView: View {
     }
 
     /// Everything the server shared, most useful first: mutual friends, shared interests, RSVP time.
-    nonisolated static func details(_ person: DirectoryAttendee) -> [String] {
+    nonisolated static func details(_ person: DirectoryAttendee, ended: Bool = false) -> [String] {
         var lines: [String] = []
         if person.mutualCount > 0 {
             let names = person.mutualNames.prefix(2).joined(separator: ", ")
@@ -1029,7 +1058,11 @@ struct EventDirectoryView: View {
                          + (person.sharedInterests.count > 3 ? " +\(person.sharedInterests.count - 3)" : ""))
         }
         if lines.isEmpty {
-            lines.append(person.signedUpAt.map { "Going · RSVP'd \($0.formatted(.relative(presentation: .named)))" } ?? "Going")
+            if ended {
+                lines.append(person.signedUpAt.map { "RSVP'd \($0.formatted(.dateTime.month(.abbreviated).day()))" } ?? "Went")
+            } else {
+                lines.append(person.signedUpAt.map { "Going · RSVP'd \($0.formatted(.relative(presentation: .named)))" } ?? "Going")
+            }
         }
         return lines
     }

@@ -33,7 +33,7 @@ struct EventDropsSection: View {
         .fullScreenCover(isPresented: $showingCamera) {
             ClickDropCameraView(
                 endsAt: state.value?.closesAt,
-                subtitle: developsCaption(state.value?.revealAt),
+                subtitle: EventDropsState.developsCaption(state.value?.revealAt),
                 showsLooks: false
             ) { draft in
                 let upload = PendingUpload(jpeg: draft.data)
@@ -143,18 +143,13 @@ struct EventDropsSection: View {
         case .before:
             return "Check in when it starts to add photos. They develop together the next morning."
         case .open:
-            return developsCaption(current.revealAt) + (current.canPost ? "" : ". Check in to add yours.")
+            return EventDropsState.developsCaption(current.revealAt) + (current.canPost ? "" : ". Check in to add yours.")
         case .developing:
-            return developsCaption(current.revealAt)
+            return EventDropsState.developsCaption(current.revealAt)
         case .revealed:
             if current.access == .absentee { return "A few moments from the people who were there." }
             return current.drops.isEmpty ? "No drops from this one." : "Everyone's drops, developed."
         }
-    }
-
-    private func developsCaption(_ revealAt: Date?) -> String {
-        guard let revealAt else { return "Develops tomorrow morning" }
-        return "Develops \(revealAt.formatted(.relative(presentation: .named))) · \(revealAt.formatted(date: .omitted, time: .shortened))"
     }
 
     private func thumbnail(_ drop: EventDrop) -> some View {
@@ -185,7 +180,7 @@ struct EventDropsSection: View {
     private func load() async {
         state.begin()
         do {
-            state.succeed(try await env.beaconExtras.load(BeaconExtrasCache.eventDrops(beacon.id)) { try await env.beacons.eventDrops(beaconID: beacon.id) })
+            state.succeed(try await env.beaconExtras.loadEventDrops(beacon.id, env: env))
         } catch {
             if !error.isCancellation { state.fail(error.userFacingMessage) }
         }

@@ -232,7 +232,7 @@ struct ClickDropCameraView: View {
         guard let captured else { return }
         let look = filter
         let rendered = await Task.detached(priority: .userInitiated) {
-            look.render(jpeg: captured, maxDimension: ClickDropFilter.previewMaxDimension).flatMap(UIImage.init(data:))
+            look.renderImage(jpeg: captured, maxDimension: ClickDropFilter.previewMaxDimension)
         }.value
         if look == filter { preview = rendered }
     }

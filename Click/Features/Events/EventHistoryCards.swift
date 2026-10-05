@@ -19,10 +19,14 @@ struct HomeEventRecapCard: View {
                                 .font(ClickTypography.bodyEmphasized)
                                 .foregroundStyle(ClickColors.textPrimary)
                                 .lineLimit(1)
-                            Text(caption(card))
-                                .font(ClickTypography.supporting)
-                                .foregroundStyle(ClickColors.textSecondary)
-                                .lineLimit(2)
+                            // Redrawn at the reveal and at midnight, so "today"/"tomorrow" and
+                            // "ready" are never stale on a Home left open.
+                            TimelineView(.explicit(Self.redraws(card.recap))) { context in
+                                Text(Self.caption(card.recap, now: context.date))
+                                    .font(ClickTypography.supporting)
+                                    .foregroundStyle(ClickColors.textSecondary)
+                                    .lineLimit(2)
+                            }
                         }
                         Spacer(minLength: 0)
                         Image(systemName: "chevron.right").foregroundStyle(ClickColors.textTertiary)
@@ -32,15 +36,29 @@ struct HomeEventRecapCard: View {
                 }
                 .buttonStyle(.plain)
                 .transition(.opacity)
+                // Once it's ready, the recap's drops load here so opening it paints at once.
+                .task(id: card.recap?.isReady()) { await prefetch() }
     }
 
-    private func caption(_ card: PastEvent) -> String {
-        switch card.recap {
-        case .ready?: "Your recap is ready."
-        case .developing(let reveal)?:
-            reveal.map { "Everyone's drops develop \($0.formatted(.relative(presentation: .named)))." } ?? "Everyone's drops are developing."
-        case nil: "See who was there."
-        }
+    nonisolated static func caption(_ recap: PastEvent.Recap?, now: Date = .now) -> String {
+        guard let recap else { return "See who was there." }
+        if recap.isReady(at: now) { return "Your recap is ready." }
+        guard case .developing(let reveal?) = recap else { return "Everyone's drops are developing." }
+        return "Everyone's drops develop \(EventDropsState.revealPhrase(reveal, now: now))."
+    }
+
+    private static func redraws(_ recap: PastEvent.Recap?) -> [Date] {
+        guard case .developing(let reveal?) = recap else { return [] }
+        let now = Date.now
+        let midnight = Calendar.current.startOfDay(for: now).addingTimeInterval(86_400)
+        return [midnight, reveal].filter { $0 > now }.sorted()
+    }
+
+    private func prefetch() async {
+        guard card.recap?.isReady() == true else { return }
+        let cached: EventDropsState? = env.beaconExtras.cached(BeaconExtrasCache.eventDrops(card.beaconID))
+        guard cached?.phase != .revealed else { return }
+        _ = try? await env.beaconExtras.loadEventDrops(card.beaconID, env: env)
     }
 }
 
@@ -83,7 +101,7 @@ struct PastEventRow: View {
                     Button {
                         env.router.navigate(to: .eventRecap(beaconID: event.beaconID))
                     } label: {
-                        Label(recap == .ready ? "Recap" : "Developing", systemImage: recap == .ready ? "sparkles" : "hourglass")
+                        Label(recap.isReady() ? "Recap" : "Developing", systemImage: recap.isReady() ? "sparkles" : "hourglass")
                             .font(ClickTypography.metadataEmphasized)
                     }
                     .buttonStyle(.bordered)

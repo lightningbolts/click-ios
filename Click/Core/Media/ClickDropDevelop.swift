@@ -113,22 +113,21 @@ public struct ClickDropService: Sendable {
 
 /// Pixelation shared by the sender (the gated drop's preview) and every drop bubble.
 public enum ClickDropPixelation {
-    private final class SharedContext: @unchecked Sendable {
-        let value = CIContext()
-    }
-
-    private nonisolated static let context = SharedContext()
-
     /// Blocks per longest side for the pending/ready look (same as the original KMP drop).
     public nonisolated static let blocksPerSide: CGFloat = 12
 
     public nonisolated static func pixelated(_ image: UIImage, blocksPerSide: CGFloat = blocksPerSide) -> UIImage? {
         guard let input = CIImage(image: image) else { return nil }
+        let block = max(input.extent.width, input.extent.height) / blocksPerSide
         let filter = CIFilter(name: "CIPixellate")
-        filter?.setValue(input, forKey: kCIInputImageKey)
-        filter?.setValue(max(image.size.width, image.size.height) / blocksPerSide, forKey: kCIInputScaleKey)
+        // Clamped and with the grid starting at the corner: CIPixellate's default grid (centered
+        // at 150,150) left a partial edge block sampling outside the photo, which came out
+        // transparent and flattened to a white strip in the JPEG.
+        filter?.setValue(input.clampedToExtent(), forKey: kCIInputImageKey)
+        filter?.setValue(CIVector(x: input.extent.minX + block / 2, y: input.extent.minY + block / 2), forKey: kCIInputCenterKey)
+        filter?.setValue(block, forKey: kCIInputScaleKey)
         guard let output = filter?.outputImage?.cropped(to: input.extent),
-              let cg = context.value.createCGImage(output, from: input.extent) else { return nil }
+              let cg = ClickCIContext.shared.createCGImage(output, from: input.extent) else { return nil }
         return UIImage(cgImage: cg, scale: image.scale, orientation: image.imageOrientation)
     }
 

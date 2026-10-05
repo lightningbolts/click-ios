@@ -48,12 +48,13 @@ struct EventDropsTests {
             "state": "revealed", "reveal_at": "2026-10-03T17:00:00Z", "event_title": "Launch", "access": "absentee",
             "can_post": false, "remaining": 0, "show_to_absentees": true,
             "drops": [["id": "d1", "user": ["id": "u1", "name": "Maya"], "is_mine": false, "filter_seed": 7,
-                       "preview_url": "https://signed.example/p"]]
+                       "preview_url": "https://signed.example/p", "original_url": "https://signed.example/o"]]
         ])
         #expect(state.phase == .revealed)
         #expect(state.access == .absentee)
         #expect(state.drops.first?.userName == "Maya")
         #expect(state.drops.first?.previewURL == URL(string: "https://signed.example/p"))
+        #expect(state.drops.first?.originalURL == URL(string: "https://signed.example/o"))
         #expect(EventDropsState.parse([:]).access == .none)
     }
 
@@ -109,6 +110,51 @@ struct EventDropsTests {
         #expect(page.items[0].recap == .ready)
         #expect(page.items[1].peerName == "Maya")
         #expect(page.nextCursor == nil)
+    }
+
+    @Test("Reveal times read as a day and a clock time, never a frozen relative phrase")
+    func revealPhrase() throws {
+        let calendar = Calendar.current
+        let now = try #require(calendar.date(from: DateComponents(year: 2026, month: 10, day: 5, hour: 8)))
+        func at(days: Int, hour: Int = 10) throws -> Date {
+            try #require(calendar.date(byAdding: DateComponents(day: days, hour: hour - 8), to: now))
+        }
+        let time = try at(days: 0).formatted(date: .omitted, time: .shortened)
+        #expect(EventDropsState.revealPhrase(try at(days: 0), now: now) == "today at \(time)")
+        #expect(EventDropsState.revealPhrase(try at(days: 1), now: now) == "tomorrow at \(time)")
+        let weekday = try at(days: 3).formatted(.dateTime.weekday(.wide))
+        #expect(EventDropsState.revealPhrase(try at(days: 3), now: now) == "\(weekday) at \(time)")
+        let date = try at(days: 9).formatted(.dateTime.month(.abbreviated).day())
+        #expect(EventDropsState.revealPhrase(try at(days: 9), now: now) == "\(date) at \(time)")
+        #expect(EventDropsState.developsCaption(nil) == "Develops tomorrow morning")
+    }
+
+    @Test("A recap cached before its reveal reads ready once the reveal passes")
+    func recapReadiness() {
+        let reveal = Date(timeIntervalSince1970: 1_000_000)
+        #expect(PastEvent.Recap.ready.isReady())
+        #expect(!PastEvent.Recap.developing(revealAt: reveal).isReady(at: reveal.addingTimeInterval(-1)))
+        #expect(PastEvent.Recap.developing(revealAt: reveal).isReady(at: reveal))
+        #expect(!PastEvent.Recap.developing(revealAt: nil).isReady())
+        #expect(HomeEventRecapCard.caption(.developing(revealAt: reveal), now: reveal) == "Your recap is ready.")
+        #expect(HomeEventRecapCard.caption(.developing(revealAt: nil)) == "Everyone's drops are developing.")
+        #expect(HomeEventRecapCard.caption(nil) == "See who was there.")
+    }
+
+    @Test("Each drop carries this viewer's develop time")
+    func parsesDevelopedAt() {
+        let state = EventDropsState.parse([
+            "state": "revealed",
+            "drops": [["id": "d1", "user": ["id": "u1", "name": "Maya"], "filter_seed": 1, "developed_at": "2026-10-05T17:01:00Z"],
+                      ["id": "d2", "user": ["id": "u2", "name": "Sam"], "filter_seed": 2, "developed_at": NSNull()]]
+        ])
+        #expect(state.drops.map { $0.developedAt != nil } == [true, false])
+    }
+
+    @Test("A drop's look renders straight to an image")
+    func rendersLook() throws {
+        let image = try #require(ClickDropFilter.recapLook(seed: 1).renderImage(jpeg: photo, maxDimension: 400))
+        #expect(max(image.size.width, image.size.height) <= 400)
     }
 
     @Test("The recap push opens the recap")

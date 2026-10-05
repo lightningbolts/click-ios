@@ -1,6 +1,18 @@
 import CoreImage
 import Foundation
 import ImageIO
+import UIKit
+
+/// One Core Image context for every drop render: making a context costs far more than a render,
+/// and a context is safe to share across threads.
+enum ClickCIContext {
+    private final class Box: @unchecked Sendable {
+        let value = CIContext()
+    }
+
+    private nonisolated static let box = Box()
+    nonisolated static var shared: CIContext { box.value }
+}
 
 /// The ten Click Drop "roll" looks, with the exact Core Image chain KMP uses on iOS
 /// (`iosApp/SharedNative/ClickDisposableRollFilter.m`, names from `DisposableRollFilters.kt`).
@@ -51,17 +63,28 @@ enum ClickDropFilter: Int, CaseIterable, Identifiable, Sendable {
     }
 
     /// Oriented, downscaled, filtered JPEG (quality 0.88 like KMP). Nil when the data isn't an image.
-    nonisolated func render(jpeg: Data, maxDimension: CGFloat, context: CIContext = CIContext()) -> Data? {
+    nonisolated func render(jpeg: Data, maxDimension: CGFloat) -> Data? {
+        guard let output = filtered(jpeg, maxDimension: maxDimension) else { return nil }
+        return ClickCIContext.shared.jpegRepresentation(of: output, colorSpace: CGColorSpaceCreateDeviceRGB(),
+                                                        options: [kCGImageDestinationLossyCompressionQuality as CIImageRepresentationOption: 0.88])
+    }
+
+    /// The same look straight to an image for the screen (no JPEG round trip).
+    nonisolated func renderImage(jpeg: Data, maxDimension: CGFloat) -> UIImage? {
+        guard let output = filtered(jpeg, maxDimension: maxDimension),
+              let cg = ClickCIContext.shared.createCGImage(output, from: output.extent) else { return nil }
+        return UIImage(cgImage: cg)
+    }
+
+    private nonisolated func filtered(_ jpeg: Data, maxDimension: CGFloat) -> CIImage? {
         guard var image = CIImage(data: jpeg, options: [.applyOrientationProperty: true]) else { return nil }
         let longest = max(image.extent.width, image.extent.height)
         if longest > maxDimension {
             let scale = maxDimension / longest
             image = image.transformed(by: CGAffineTransform(scaleX: scale, y: scale))
         }
-        var output = apply(to: image).cropped(to: image.extent)
-        output = output.transformed(by: CGAffineTransform(translationX: -output.extent.origin.x, y: -output.extent.origin.y))
-        return context.jpegRepresentation(of: output, colorSpace: CGColorSpaceCreateDeviceRGB(),
-                                          options: [kCGImageDestinationLossyCompressionQuality as CIImageRepresentationOption: 0.88])
+        let output = apply(to: image).cropped(to: image.extent)
+        return output.transformed(by: CGAffineTransform(translationX: -output.extent.origin.x, y: -output.extent.origin.y))
     }
 
     private nonisolated static func temperature(_ input: CIImage, target: CGFloat) -> CIImage {

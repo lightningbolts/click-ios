@@ -116,10 +116,10 @@ public enum SharedDropPostError: Error, Equatable, LocalizedError {
     }
 }
 
-/// Developed shared-drop originals kept on disk per user (the bytes as downloaded), so the strip
-/// and the viewer paint at once on every later open and launch instead of downloading again.
-/// Pruned to the drops on screen plus the most recent others (the archive's first screens).
-enum SharedDropPhotoCache {
+/// Developed drop originals (shared and event drops) kept on disk per user (the bytes as
+/// downloaded), so the strip, the viewer and a recap paint at once on every later open and launch
+/// instead of downloading again. Pruned to the drops on screen plus the most recent others.
+enum DropPhotoCache {
     private static func directory(_ userID: String) -> URL {
         FileManager.default.urls(for: .cachesDirectory, in: .userDomainMask)[0]
             .appendingPathComponent("shared-drops-v2/\(userID)", isDirectory: true)
@@ -131,8 +131,13 @@ enum SharedDropPhotoCache {
 
     /// Decoded at most `maxPixels` on its longest side (720 for tiles, more for the viewer).
     static func load(_ dropID: String, userID: String, maxPixels: CGFloat) -> UIImage? {
-        guard let data = try? Data(contentsOf: file(dropID, userID: userID)) else { return nil }
+        guard let data = data(dropID, userID: userID) else { return nil }
         return ClickDropService.thumbnail(data, maxPixels: maxPixels)
+    }
+
+    /// The bytes as downloaded (for a caller that renders its own copies).
+    static func data(_ dropID: String, userID: String) -> Data? {
+        try? Data(contentsOf: file(dropID, userID: userID))
     }
 
     static func exists(_ dropID: String, userID: String) -> Bool {

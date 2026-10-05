@@ -40,6 +40,8 @@ public struct DirectoryAttendee: Identifiable, Equatable, Sendable {
 public struct EventDirectory: Equatable, Sendable {
     public let attendees: [DirectoryAttendee]
     public let mutualsUnlocked: Bool
+    /// The event is over: the people read as who was there.
+    public var hasEnded = false
 }
 
 /// Server-reported check-in outcomes (spec §56.4). The server owns the geofence.
@@ -266,7 +268,8 @@ public actor EventEngagementRepository {
                 signedUpAt: JSONFields.date(row["signed_up_at"])
             )
         }
-        let dir = EventDirectory(attendees: attendees, mutualsUnlocked: JSONFields.bool(root["mutuals_section_unlocked"]) ?? false)
+        let dir = EventDirectory(attendees: attendees, mutualsUnlocked: JSONFields.bool(root["mutuals_section_unlocked"]) ?? false,
+                                 hasEnded: JSONFields.bool(root["event_ended"]) ?? false)
         directoryCache[beaconID] = dir
         return dir
     }

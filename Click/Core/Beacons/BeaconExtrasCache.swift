@@ -67,6 +67,11 @@ final class BeaconExtrasCache {
         return typed
     }
 
+    /// An event's drops for this viewer: one load shared by its page, its recap and Home's card.
+    func loadEventDrops(_ beaconID: String, env: AppEnvironment) async throws -> EventDropsState {
+        try await load(Self.eventDrops(beaconID)) { try await env.beacons.eventDrops(beaconID: beaconID) }
+    }
+
     /// Starts loading whatever this beacon's page will show, unless it's already cached or loading.
     func prefetch(_ beacon: MapBeacon, env: AppEnvironment) {
         let id = beacon.id

@@ -176,7 +176,7 @@ struct SharedDropStoryViewer: View {
             // A developed photo that's on disk but not in memory decodes in a few frames: wait for
             // it, so the viewer opens on the photo instead of unveiling it out of the pixels.
             if !isShown(currentID), let drop = current, drop.state() == .developed,
-               let userID = env.session.currentSession?.userId, SharedDropPhotoCache.exists(drop.id, userID: userID),
+               let userID = env.session.currentSession?.userId, DropPhotoCache.exists(drop.id, userID: userID),
                let image = await store.fullImage(for: drop, env: env) {
                 full[drop.id] = image
             }

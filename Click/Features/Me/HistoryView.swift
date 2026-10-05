@@ -134,14 +134,14 @@ private struct HistoryRow: View {
                     Button {
                         env.router.navigate(to: .eventRecap(beaconID: item.id))
                     } label: {
-                        Image(systemName: item.recap == .ready ? "sparkles" : "hourglass")
+                        Image(systemName: item.recap?.isReady() == true ? "sparkles" : "hourglass")
                             .font(.system(size: 15, weight: .semibold))
                             .frame(width: 34, height: 34)
                             .background(ClickColors.fillSubtle, in: Circle())
                     }
                     .buttonStyle(.plain)
                     .foregroundStyle(ClickColors.accentForeground)
-                    .accessibilityLabel(item.recap == .ready ? "Open recap" : "Recap developing")
+                    .accessibilityLabel(item.recap?.isReady() == true ? "Open recap" : "Recap developing")
                 }
             }
         }

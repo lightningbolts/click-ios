@@ -181,6 +181,35 @@ struct ClickDropDevelopTests {
         #expect(max(image.size.width, image.size.height) <= 480)
         #expect(preview.count < photo.count)
     }
+
+    @Test("Pixelation fills the frame to its edges, with no pale strip")
+    func pixelationReachesEdges() throws {
+        let format = UIGraphicsImageRendererFormat()
+        format.scale = 1
+        format.opaque = true
+        // Sides that don't divide into the blocks, as most photos' don't.
+        let size = CGSize(width: 333, height: 480)
+        let photo = UIGraphicsImageRenderer(size: size, format: format).image { context in
+            UIColor.black.setFill()
+            context.fill(CGRect(origin: .zero, size: size))
+        }
+        let pixelated = try #require(ClickDropPixelation.pixelated(photo))
+        let cg = try #require(pixelated.cgImage)
+        #expect(cg.width == 333 && cg.height == 480)
+        // Drawn over white, as a JPEG's missing pixels come out: any gap at an edge shows pale.
+        let rendered = UIGraphicsImageRenderer(size: size, format: format).image { context in
+            UIColor.white.setFill()
+            context.fill(CGRect(origin: .zero, size: size))
+            UIImage(cgImage: cg).draw(in: CGRect(origin: .zero, size: size))
+        }
+        let bytes = try #require(rendered.cgImage?.dataProvider?.data as Data?)
+        let row = try #require(rendered.cgImage?.bytesPerRow)
+        // Every edge pixel stays dark: corners and the middle of each side.
+        for (x, y) in [(0, 0), (332, 0), (0, 479), (332, 479), (166, 0), (166, 479), (0, 240), (332, 240)] {
+            let i = y * row + x * 4
+            #expect(bytes[i] < 40 && bytes[i + 1] < 40 && bytes[i + 2] < 40, "pixel \(x),\(y)")
+        }
+    }
 }
 
 private extension URLRequest {
