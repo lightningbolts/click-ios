@@ -216,6 +216,9 @@ struct SharedDropStoryViewer: View {
         .clipShape(crop)
         .scaleEffect(collapsed?.scale ?? 1)
         .offset(collapsed?.offset ?? .zero)
+        // Flattened first, so the card fades onto the tile as one picture: faded layer by layer,
+        // the pixelated preview under the photo shows through and the tile flashes dark and blocky.
+        .compositingGroup()
         .opacity(presented || collapsed != nil ? cardOpacity : 0)
         .onGeometryChange(for: CGRect.self, of: { $0.frame(in: .global) }) { frame = $0 }
         .onGeometryChange(for: EdgeInsets.self, of: { $0.safeAreaInsets }) { insets = $0 }
@@ -885,7 +888,8 @@ private struct DropViewerPresentation: ViewModifier {
                         .environment(\.closeDropViewer) { viewing = nil }
                 )
             }
-            .onDisappear { overlay.hide() }
+            // Navigating away takes the viewer with it, and the same tile opens it again.
+            .onDisappear { overlay.hide(); viewing = nil }
     }
 }
 
