@@ -47,6 +47,8 @@ public final class AppEnvironment {
     let selfData = SelfDataStore()
     /// The activity inbox behind the Home bell (loaded by the shell at launch).
     let activity = ActivityStore()
+    /// Live-update hints that keep Home, Map and Clicks current (started by the shell).
+    let live = LiveUpdates()
     /// Free/busy from this iPhone's calendars, for plans and events (read-only, on-device).
     let calendar = CalendarAvailability()
     public let network: NetworkMonitor
@@ -254,6 +256,7 @@ public final class AppEnvironment {
         }
         selfData.attach(self)
         activity.attach(self)
+        live.attach(self)
         session.onPostAuthResolved = { [weak self] in
             self?.handlePostAuthResolved()
         }
@@ -262,6 +265,7 @@ public final class AppEnvironment {
 
     /// Everything user-scoped that lives outside the Keychain and settings store.
     public func clearSessionCaches() async {
+        live.stop()
         await identities.removeAll()
         timelineCache.clear()
         beaconExtras.removeAll()

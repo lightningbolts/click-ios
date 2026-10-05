@@ -257,6 +257,40 @@ final class HomeFeedModel {
 
     /// Clicks whose live availability overlaps the viewer's (empty until the viewer shares one).
     private(set) var overlappingPeerIDs: Set<String> = []
+    /// Bumped when a Click's availability changes (live update): Home re-asks for overlaps.
+    private(set) var overlapsRevision = 0
+
+    // MARK: - Live updates
+
+    /// Someone's "I'm down for…" changed: yours (another device) or a Click's.
+    func availabilityChanged() async {
+        overlapsRevision += 1
+        await loadIntents()
+    }
+
+    func reloadNudges() async {
+        await loadNudges()
+    }
+
+    @ObservationIgnored private var discoveryTask: Task<Void, Never>?
+    @ObservationIgnored private var discoveryRerun = false
+
+    /// Beacons changed: refetches discovery when the change is near where it was read. A change
+    /// arriving mid-read queues one more read rather than cancelling (a cancelled read would fail).
+    func beaconsChanged(_ change: BeaconChange) {
+        guard discovery.value != nil, change.affects(environment?.location.lastFix?.coordinate) else { return }
+        guard discoveryTask == nil else {
+            discoveryRerun = true
+            return
+        }
+        discoveryTask = Task {
+            repeat {
+                discoveryRerun = false
+                await loadDiscovery()
+            } while discoveryRerun
+            discoveryTask = nil
+        }
+    }
 
     func loadOverlaps(peerIDs: [String]) async {
         guard let environment, !(intents.value ?? []).isEmpty else {

@@ -83,7 +83,6 @@ final class SharedDropsStore {
     private var restoredSeed: [SharedDrop]?
 
     /// Paints the last strip (and its developed photos) from disk at once, then refreshes.
-    /// One request: the server inlines originals and reactions for drops already developed.
     func load(env: AppEnvironment) async {
         let userID = env.session.currentSession?.userId
         if let restored = restoredSeed, let userID {
@@ -96,7 +95,37 @@ final class SharedDropsStore {
             await paintFromDisk(cached, userID: userID)
         }
         // Scrolling back into view reuses what's shown; only a stale strip refetches.
-        if let fetchedAt, Date().timeIntervalSince(fetchedAt) < SelfDataStore.freshFor { return }
+        await refresh(env: env, force: false)
+    }
+
+    @ObservationIgnored private var inFlight: Task<Void, Never>?
+    /// A forced refresh asked for mid-read (a live update): read once more, so nothing is missed.
+    @ObservationIgnored private var rerun = false
+
+    /// Refetches the strip, then the archive's first page, unless fresh (or `force`d: pull to
+    /// refresh, a live update). Concurrent callers share one read.
+    func refresh(env: AppEnvironment, force: Bool = true) async {
+        if let inFlight {
+            if force { rerun = true }
+            return await inFlight.value
+        }
+        if !force, let fetchedAt, Date().timeIntervalSince(fetchedAt) < SelfDataStore.freshFor { return }
+        let task = Task {
+            var forceArchive = force
+            repeat {
+                rerun = false
+                await fetch(env: env, forceArchive: forceArchive)
+                forceArchive = true
+            } while rerun
+        }
+        inFlight = task
+        await task.value
+        inFlight = nil
+    }
+
+    /// One request: the server inlines originals and reactions for drops already developed.
+    private func fetch(env: AppEnvironment, forceArchive: Bool) async {
+        let userID = env.session.currentSession?.userId
         drops.begin()
         do {
             let loaded = try await env.drops.sharedDrops()
@@ -120,7 +149,7 @@ final class SharedDropsStore {
             if !error.isCancellation { drops.fail(error.userFacingMessage) }
         }
         // The archive's first page loads behind the strip, so "View all" opens already filled.
-        await loadArchive(env: env)
+        await loadArchive(env: env, force: forceArchive)
     }
 
     // MARK: - Archive

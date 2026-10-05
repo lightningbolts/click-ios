@@ -11,8 +11,6 @@ import SwiftUI
 public struct HomeView: View {
     @Environment(AppEnvironment.self) private var env
     @Environment(ConversationListModel.self) private var conversations
-    @Environment(\.scenePhase) private var scenePhase
-    @State private var backgroundedAt: Date?
     private var model: HomeFeedModel { env.homeFeed }
     @State private var isEditingAvailability = false
     @State private var reconnectTick = 0
@@ -63,11 +61,7 @@ public struct HomeView: View {
         }
         .background(ClickColors.background.ignoresSafeArea())
         .clickToast(Bindable(model).actionNotice)
-        .refreshable {
-            async let feed: Void = model.refresh()
-            async let inbox: Void = conversations.refresh()
-            _ = await (feed, inbox)
-        }
+        .refreshable { await refreshAll() }
         .onScrollGeometryChange(for: Bool.self) { geometry in
             geometry.contentOffset.y + geometry.contentInsets.top > 48
         } action: { _, scrolledPastGreeting in
@@ -97,7 +91,7 @@ public struct HomeView: View {
                         EventHistoryMenuItem()
                     }
                     Button("Refresh", systemImage: "arrow.clockwise") {
-                        Task { await model.refresh() }
+                        Task { await refreshAll() }
                     }
                 }
             }
@@ -117,23 +111,28 @@ public struct HomeView: View {
                 withAnimation(ClickMotion.subtleFade) { reconnectNudge = nudge }
             }
         }
-        // Re-asks when the viewer's plans or their Clicks change.
-        .task(id: [model.intents.value?.map(\.id).joined() ?? "", String(conversations.active.count)]) {
+        // Re-asks when the viewer's plans, their Clicks, or a Click's availability change.
+        .task(id: [model.intents.value?.map(\.id).joined() ?? "", String(conversations.active.count), String(model.overlapsRevision)]) {
             await model.loadOverlaps(peerIDs: conversations.active.map(\.userID).filter { !$0.isEmpty })
-        }
-        // Returning after a while refreshes quietly (cached modules stay on screen).
-        .onChange(of: scenePhase) { _, phase in
-            if phase == .background { backgroundedAt = .now }
-            if phase == .active, let since = backgroundedAt, Date().timeIntervalSince(since) > 60 {
-                backgroundedAt = nil
-                Task { await model.refresh() }
-            }
         }
         .sheet(isPresented: $isEditingAvailability) {
             AvailabilitySheet {
                 Task { await model.reloadIntents() }
             }
         }
+    }
+
+    /// Every module on Home, at once (pull to refresh and the menu's Refresh).
+    private func refreshAll() async {
+        async let feed: Void = model.refresh()
+        async let inbox: Void = conversations.refresh()
+        async let drops: Void = refreshDrops()
+        _ = await (feed, inbox, drops)
+    }
+
+    private func refreshDrops() async {
+        guard env.features.isEnabled(.sharedDrops) else { return }
+        await env.sharedDropsStore.refresh(env: env)
     }
 
     // MARK: - 1. Greeting + search
