@@ -46,6 +46,15 @@ public struct RealtimeMessagePayload: @unchecked Sendable {
     }
 }
 
+/// A "something changed" hint from a live-update topic (`changed` broadcasts sent by the server's
+/// triggers). It carries no content: the owner refetches through the API.
+public struct LiveHint: Sendable, Equatable {
+    public let kind: String
+    /// A beacon hint's ~10 km cell; nil for other kinds.
+    public let latitude: Double?
+    public let longitude: Double?
+}
+
 /// Which table a conversation's changes stream from.
 public enum RealtimeStream: Sendable {
     /// `messages` filtered by `chat_id` (direct chats).
@@ -58,9 +67,17 @@ public enum RealtimeStream: Sendable {
     case inbox
     /// `group_members` changes the viewer can see (joins, leaves, removals), RLS-scoped.
     case groupMembers
+    /// The viewer's private live-update topic (`user:<id>`): hints for Home, Map and Clicks.
+    case live
+    /// The shared private `beacons` topic: hints for public beacons, by ~10 km cell.
+    case beacons
+
+    /// Broadcast-only private channels, authorized by RLS on `realtime.messages`.
+    var isLiveTopic: Bool { self == .live || self == .beacons }
 }
 
-/// Realtime coordinator for one channel (a chat, a hub, the inbox, or group membership).
+/// Realtime coordinator for one channel (a chat, a hub, the inbox, group membership, or a
+/// live-update topic).
 ///
 /// The manager keeps transport state independent from ConversationModel so a token/socket failure
 /// never mutates the timeline itself. It understands both current Supabase postgres-change /
@@ -91,6 +108,8 @@ public final class ChatRealtimeManager {
     public var onTypingChanged: (@Sendable (Set<String>) -> Void)?
     /// Any row change on a non-message stream (`groupMembers`).
     public var onRowChanged: (@Sendable () -> Void)?
+    /// A hint on a live-update topic (`live`, `beacons`).
+    public var onLiveHint: (@MainActor (LiveHint) -> Void)?
     /// Called after a reconnect re-joins the channel: events may have been missed while the
     /// socket was down, so owners run a delta sync.
     public var onRejoined: (@MainActor () -> Void)?
@@ -267,13 +286,13 @@ public final class ChatRealtimeManager {
     }
 
     private func joinChannel(context: ConnectionContext, task: URLSessionWebSocketTask) {
-        var payload: [String: Any] = [
-            "config": [
-                "broadcast": ["ack": false, "self": false],
-                "presence": ["key": ""],
-                "postgres_changes": changeFilters(for: context)
-            ]
+        var config: [String: Any] = [
+            "broadcast": ["ack": false, "self": false],
+            "presence": ["key": ""],
+            "postgres_changes": changeFilters(for: context)
         ]
+        if context.stream.isLiveTopic { config["private"] = true }
+        var payload: [String: Any] = ["config": config]
         if let token = context.authToken, !token.isEmpty {
             payload["access_token"] = token
         }
@@ -309,6 +328,8 @@ public final class ChatRealtimeManager {
         case .hub: "realtime:hub:\(context.chatID)"
         case .inbox: "realtime:inbox:\(context.chatID)"
         case .groupMembers: "realtime:group-members:\(context.chatID)"
+        case .live: "realtime:user:\(context.chatID)"
+        case .beacons: "realtime:beacons"
         }
     }
 
@@ -327,6 +348,8 @@ public final class ChatRealtimeManager {
             [["event": "INSERT", "schema": "public", "table": "messages"]]
         case .groupMembers:
             [["event": "*", "schema": "public", "table": "group_members"]]
+        case .live, .beacons:
+            []
         }
     }
 
@@ -431,6 +454,12 @@ public final class ChatRealtimeManager {
             guard let outer = json["payload"] as? [String: Any] else { return }
             let broadcastEvent = outer["event"] as? String
             let inner = (outer["payload"] as? [String: Any]) ?? outer
+            if context?.stream.isLiveTopic == true {
+                if broadcastEvent == "changed", let kind = inner["kind"] as? String {
+                    onLiveHint?(LiveHint(kind: kind, latitude: JSONFields.double(inner["lat"]), longitude: JSONFields.double(inner["lng"])))
+                }
+                return
+            }
             if broadcastEvent == "typing" || inner["event"] as? String == "typing" {
                 let payload = (inner["payload"] as? [String: Any]) ?? inner
                 handleTypingPayload(payload)

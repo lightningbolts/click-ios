@@ -127,6 +127,9 @@ public struct ClickMapView: View {
                 }
             }
         }
+        .onChange(of: env.live.beaconChange) { _, change in
+            if let change { model.beaconsChanged(change) }
+        }
         .onChange(of: env.router.mapFocus) { _, _ in
             Task { await consumeFocus() }
         }

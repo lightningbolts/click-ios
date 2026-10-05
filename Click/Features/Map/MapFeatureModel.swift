@@ -572,6 +572,12 @@ final class MapFeatureModel {
         refresh(around: center)
     }
 
+    /// Beacons changed (live update): refetches the area on screen when the change is near it.
+    func beaconsChanged(_ change: BeaconChange) {
+        guard let center = lastFetchCenter, change.affects(center) else { return }
+        refresh(around: center)
+    }
+
     func refresh() {
         Task { await loadHangouts() }
         if let center = userCoordinate ?? lastFetchCenter {
