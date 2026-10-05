@@ -70,7 +70,7 @@ final class SharedDropsStore {
         guard drops.value == nil, let cached = CacheStore.loadNow([SharedDrop].self, key: Self.cacheKey, userID: userID) else { return }
         let list = cached.map { var drop = $0; drop.originalURL = nil; return drop }
         for group in SharedDropGroup.group(list).prefix(Self.firstScreenTiles) where group.cover.state() == .developed {
-            originals[group.cover.id] = SharedDropPhotoCache.load(group.cover.id, userID: userID, maxPixels: Self.tilePixels)
+            originals[group.cover.id] = DropPhotoCache.load(group.cover.id, userID: userID, maxPixels: Self.tilePixels)
         }
         drops.seed(list)
         restoredSeed = cached
@@ -105,14 +105,14 @@ final class SharedDropsStore {
             seedReactions(loaded, env: env)
             if let userID {
                 let keep = Set(loaded.map(\.id)).union((archive.value?.drops ?? []).map(\.id))
-                await Task.detached(priority: .utility) { SharedDropPhotoCache.prune(keeping: keep, userID: userID) }.value
+                await Task.detached(priority: .utility) { DropPhotoCache.prune(keeping: keep, userID: userID) }.value
                 await paintFromDisk(loaded, userID: userID)
             }
             // Developed elsewhere (another device) or never cached: download every inline original
             // to disk now, so each story plays from disk without waiting.
             await withTaskGroup(of: Void.self) { group in
                 for drop in loaded where drop.state() == .developed {
-                    guard let url = drop.originalURL, let userID, !SharedDropPhotoCache.exists(drop.id, userID: userID) else { continue }
+                    guard let url = drop.originalURL, let userID, !DropPhotoCache.exists(drop.id, userID: userID) else { continue }
                     group.addTask { _ = await self.fetchOriginal(url, dropID: drop.id, userID: userID) }
                 }
             }
@@ -213,13 +213,13 @@ final class SharedDropsStore {
                 let id = drop.id, url = drop.originalURL
                 group.addTask {
                     if let image = await Task.detached(priority: .userInitiated, operation: {
-                        SharedDropPhotoCache.load(id, userID: userID, maxPixels: Self.gridPixels)
+                        DropPhotoCache.load(id, userID: userID, maxPixels: Self.gridPixels)
                     }).value {
                         return (id, image)
                     }
                     guard let url, let data = try? await ClickDropService.loadOriginalData(url) else { return (id, nil) }
                     return (id, await Task.detached(priority: .userInitiated) {
-                        SharedDropPhotoCache.save(data, dropID: id, userID: userID)
+                        DropPhotoCache.save(data, dropID: id, userID: userID)
                         return ClickDropService.thumbnail(data, maxPixels: Self.gridPixels)
                     }.value)
                 }
@@ -246,7 +246,7 @@ final class SharedDropsStore {
         for drop in list where covers.contains(drop.id) && drop.state() == .developed && originals[drop.id] == nil {
             let id = drop.id
             if let image = await Task.detached(priority: .userInitiated, operation: {
-                SharedDropPhotoCache.load(id, userID: userID, maxPixels: Self.tilePixels)
+                DropPhotoCache.load(id, userID: userID, maxPixels: Self.tilePixels)
             }).value {
                 originals[id] = image
             }
@@ -267,7 +267,7 @@ final class SharedDropsStore {
         guard let data = try? await ClickDropService.loadOriginalData(url) else { return false }
         let keepsTile = userID == nil || coverIDs.contains(dropID)
         let image = await Task.detached(priority: .userInitiated) {
-            if let userID { SharedDropPhotoCache.save(data, dropID: dropID, userID: userID) }
+            if let userID { DropPhotoCache.save(data, dropID: dropID, userID: userID) }
             return keepsTile ? ClickDropService.thumbnail(data, maxPixels: Self.tilePixels) : nil
         }.value
         if let image { originals[dropID] = image }
@@ -279,7 +279,7 @@ final class SharedDropsStore {
         let userID = env.session.currentSession?.userId
         let id = drop.id
         if let userID, let image = await Task.detached(priority: .userInitiated, operation: {
-            SharedDropPhotoCache.load(id, userID: userID, maxPixels: Self.viewerPixels)
+            DropPhotoCache.load(id, userID: userID, maxPixels: Self.viewerPixels)
         }).value {
             return image
         }
@@ -291,7 +291,7 @@ final class SharedDropsStore {
         }
         guard let url, await fetchOriginal(url, dropID: id, userID: userID), let userID else { return originals[id] }
         return await Task.detached(priority: .userInitiated) {
-            SharedDropPhotoCache.load(id, userID: userID, maxPixels: Self.viewerPixels)
+            DropPhotoCache.load(id, userID: userID, maxPixels: Self.viewerPixels)
         }.value
     }
 
@@ -338,7 +338,7 @@ final class SharedDropsStore {
                 for result in results where result.status == .developed && thumbs[result.ref.id] == nil {
                     let id = result.ref.id
                     if let image = await Task.detached(priority: .userInitiated, operation: {
-                        SharedDropPhotoCache.load(id, userID: userID, maxPixels: Self.gridPixels)
+                        DropPhotoCache.load(id, userID: userID, maxPixels: Self.gridPixels)
                     }).value { rememberThumb(image, for: id) }
                 }
             }

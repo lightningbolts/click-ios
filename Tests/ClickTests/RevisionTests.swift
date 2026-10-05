@@ -151,6 +151,10 @@ struct Round3Tests {
                                                    attendee("c", interests: 0, mutuals: 1)])
         #expect(ranked.map(\.userID) == ["b", "a", "c"])
         #expect(EventDirectoryView.details(attendee("d", interests: 2, mutuals: 1)).count == 2)
+        // You're listed (pinned, badged); after the event, the people read in the past tense.
+        #expect(EventDirectoryView.badge(attendee("me", interests: 0, mutuals: 0, rel: .self)) == "You")
+        #expect(EventDirectoryView.details(attendee("e", interests: 0, mutuals: 0)) == ["Going"])
+        #expect(EventDirectoryView.details(attendee("e", interests: 0, mutuals: 0), ended: true) == ["Went"])
     }
 
     @Test("Shared beacon metadata mirrors KMP and parses back into a card")

@@ -3,6 +3,7 @@ import UIKit
 
 /// One event Click Drop as the server shows it to this viewer (spec F1). `previewURL` is always the
 /// pixelated rendition; the original only comes from `/api/drops/develop` after the reveal.
+/// `developedAt` is when this viewer developed it (nil until they tap it).
 public struct EventDrop: Identifiable, Sendable, Equatable {
     public let id: String
     public let userID: String
@@ -15,6 +16,7 @@ public struct EventDrop: Identifiable, Sendable, Equatable {
     public let width: Int?
     public let height: Int?
     public let previewURL: URL?
+    public var developedAt: Date?
 
     var look: ClickDropFilter { .recapLook(seed: filterSeed) }
 
@@ -32,7 +34,8 @@ public struct EventDrop: Identifiable, Sendable, Equatable {
             filterSeed: JSONFields.int(row["filter_seed"]) ?? 0,
             width: JSONFields.int(row["width"]),
             height: JSONFields.int(row["height"]),
-            previewURL: JSONFields.string(row["preview_url"]).flatMap(URL.init(string:))
+            previewURL: JSONFields.string(row["preview_url"]).flatMap(URL.init(string:)),
+            developedAt: JSONFields.date(row["developed_at"])
         )
     }
 }
@@ -52,9 +55,27 @@ public struct EventDropsState: Sendable, Equatable {
     public let canPost: Bool
     public let remaining: Int
     public let showToAbsentees: Bool
-    public let drops: [EventDrop]
+    public var drops: [EventDrop]
 
     public var myDrops: [EventDrop] { drops.filter(\.isMine) }
+
+    /// When drops develop, as a day and clock time ("tomorrow at 10:00 AM"). Never relative
+    /// ("in 7 hours"): that's frozen at whenever the screen drew it.
+    public static func revealPhrase(_ revealAt: Date, now: Date = .now, calendar: Calendar = .current) -> String {
+        let time = revealAt.formatted(date: .omitted, time: .shortened)
+        let days = calendar.dateComponents([.day], from: calendar.startOfDay(for: now), to: calendar.startOfDay(for: revealAt)).day ?? 0
+        switch days {
+        case 0: return "today at \(time)"
+        case 1: return "tomorrow at \(time)"
+        case 2..<7: return "\(revealAt.formatted(.dateTime.weekday(.wide))) at \(time)"
+        default: return "\(revealAt.formatted(.dateTime.month(.abbreviated).day())) at \(time)"
+        }
+    }
+
+    /// "Develops tomorrow at 10:00 AM" (the event page and the camera).
+    public static func developsCaption(_ revealAt: Date?, now: Date = .now) -> String {
+        revealAt.map { "Develops \(revealPhrase($0, now: now))" } ?? "Develops tomorrow morning"
+    }
 
     static func parse(_ root: [String: Any]) -> EventDropsState {
         EventDropsState(
@@ -160,6 +181,14 @@ public struct PastEvent: Identifiable, Sendable, Equatable, Codable {
     public enum Recap: Sendable, Equatable, Codable {
         case developing(revealAt: Date?)
         case ready
+
+        /// Ready once the reveal passes, even when this copy was loaded (or cached) before it.
+        public func isReady(at now: Date = .now) -> Bool {
+            switch self {
+            case .ready: true
+            case .developing(let revealAt): revealAt.map { $0 <= now } ?? false
+            }
+        }
     }
 
     public var id: String { beaconID }

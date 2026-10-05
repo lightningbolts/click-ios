@@ -113,12 +113,6 @@ public struct ClickDropService: Sendable {
 
 /// Pixelation shared by the sender (the gated drop's preview) and every drop bubble.
 public enum ClickDropPixelation {
-    private final class SharedContext: @unchecked Sendable {
-        let value = CIContext()
-    }
-
-    private nonisolated static let context = SharedContext()
-
     /// Blocks per longest side for the pending/ready look (same as the original KMP drop).
     public nonisolated static let blocksPerSide: CGFloat = 12
 
@@ -128,7 +122,7 @@ public enum ClickDropPixelation {
         filter?.setValue(input, forKey: kCIInputImageKey)
         filter?.setValue(max(image.size.width, image.size.height) / blocksPerSide, forKey: kCIInputScaleKey)
         guard let output = filter?.outputImage?.cropped(to: input.extent),
-              let cg = context.value.createCGImage(output, from: input.extent) else { return nil }
+              let cg = ClickCIContext.shared.createCGImage(output, from: input.extent) else { return nil }
         return UIImage(cgImage: cg, scale: image.scale, orientation: image.imageOrientation)
     }
 

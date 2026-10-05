@@ -86,7 +86,7 @@ struct DropReplyHeader: View {
         guard let userID = env.session.currentSession?.userId else { return }
         let pixels = Self.size.height * 3
         if let cached = await Task.detached(priority: .userInitiated, operation: {
-            SharedDropPhotoCache.load(id, userID: userID, maxPixels: pixels)
+            DropPhotoCache.load(id, userID: userID, maxPixels: pixels)
         }).value {
             image = cached
             return
@@ -97,7 +97,7 @@ struct DropReplyHeader: View {
             return
         }
         let decoded = await Task.detached(priority: .userInitiated) {
-            SharedDropPhotoCache.save(data, dropID: id, userID: userID)
+            DropPhotoCache.save(data, dropID: id, userID: userID)
             return ClickDropService.thumbnail(data, maxPixels: pixels)
         }.value
         withAnimation(ClickMotion.subtleFade) { image = decoded }
