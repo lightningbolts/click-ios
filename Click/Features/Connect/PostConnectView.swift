@@ -47,9 +47,6 @@ struct PostConnectView: View {
                         .padding(.top, 16)
                 }
 
-                encounterDetails
-                    .padding(.top, 20)
-
                 if let souvenir {
                     souvenir
                         .padding(.top, 22)
@@ -65,6 +62,9 @@ struct PostConnectView: View {
 
                 tagging
                     .padding(.top, 28)
+
+                encounterDetails
+                    .padding(.top, 24)
 
                 LocationNudgeCard(
                     nudge: .connectionSnap,
@@ -191,7 +191,7 @@ struct PostConnectView: View {
     private var avatars: some View {
         let peers = Array(model.match.peers.prefix(4))
         let selfID = env.session.currentSession?.userId ?? "me"
-        return HStack(spacing: model.isGroup ? -22 : (joined ? -18 : 40)) {
+        return HStack(spacing: model.isGroup ? -10 : (joined ? -18 : 40)) {
             AvatarView(imageURL: nil, seed: selfID, initials: "You", size: model.isGroup ? 72 : 96)
                 .overlay(Circle().stroke(ClickColors.background, lineWidth: 4))
                 .offset(x: joined || reduceMotion ? 0 : -30)

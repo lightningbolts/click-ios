@@ -146,7 +146,7 @@ struct TapConnectView: View {
         case .sensing: "Searching…"
         case .submitting: "Checking your tap…"
         case .waitingForPeer: "Tap saved"
-        case .choosingPeople, .confirmingPeople: "Who's in this tap?"
+        case .choosingPeople, .confirmingPeople: "Who's in this Click?"
         case .connected(let match): match.isNewConnection ? "You're connected" : "Encounter saved"
         case .savedOffline: "Saved offline"
         case .failed: "Couldn't connect"
@@ -279,10 +279,12 @@ struct TapConnectView: View {
     }
 }
 
-/// Everyone this tap found, in one row, before anything is saved. Each person has a remove
-/// button; removed people stay in the row (dimmed) so a mistaken tap is one tap to undo.
+/// Everyone this tap found, before anything is saved: who you're connecting with, each with a
+/// Remove button, and anyone removed in their own section with Add back. Same row anatomy as
+/// Find Friends; same bottom bar as the post-connect screen.
 private struct PeopleReviewView: View {
     @Environment(AppEnvironment.self) private var env
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
     let review: TapConnectModel.PeopleReview
     let isConfirming: Bool
     let verification: ConnectionVerification?
@@ -291,154 +293,197 @@ private struct PeopleReviewView: View {
     let onSkip: () -> Void
     let onCancel: () -> Void
 
-    private var selected: [ProximityPeer] { review.selected }
+    private static let avatarSize: CGFloat = 48
+    private static let dividerInset: CGFloat = ClickSpacing.surfacePadding + avatarSize + 12
+
+    private var included: [ProximityPeer] { review.selected }
     private var removed: [ProximityPeer] { review.candidates.filter { review.removed.contains($0.id) } }
 
     var body: some View {
-        VStack(spacing: 0) {
-            ScrollView {
-                VStack(alignment: .leading, spacing: 0) {
-                    Text("Who's in this tap?")
-                        .font(ClickTypography.largeTitle)
-                        .foregroundStyle(ClickColors.textPrimary)
-                        .accessibilityAddTraits(.isHeader)
-                    Text(subtitle)
+        ScrollView {
+            VStack(spacing: 0) {
+                header
+                    .padding(.top, 20)
+
+                section(
+                    included.isEmpty ? "Connecting with" : "Connecting with · \(included.count)",
+                    people: included, isRemoved: false
+                ) {
+                    Text("Everyone's removed. Add someone back, or skip this Click.")
                         .font(ClickTypography.supporting)
                         .foregroundStyle(ClickColors.textSecondary)
-                        .padding(.top, 6)
-                        .fixedSize(horizontal: false, vertical: true)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .padding(ClickSpacing.surfacePadding)
+                }
+                .padding(.top, 28)
 
-                    peopleRow
-                        .padding(.top, 22)
+                if !removed.isEmpty {
+                    section("Not connecting", people: removed, isRemoved: true) { EmptyView() }
+                        .padding(.top, 24)
+                        .transition(.opacity.combined(with: .move(edge: .bottom)))
+                }
 
-                    VStack(alignment: .leading, spacing: 6) {
-                        Label(countLine, systemImage: "person.2")
-                        if let verification, !verification.signals.isEmpty || verification.locationAccuracyMeters != nil {
-                            Label("Verified nearby · \(verification.summary)", systemImage: "checkmark.shield")
-                        }
-                        if !removed.isEmpty {
-                            Label("Removed: \(names(removed)). They won't be connected with you.", systemImage: "person.badge.minus")
-                        }
-                    }
+                Text(footnote)
                     .font(ClickTypography.metadata)
                     .foregroundStyle(ClickColors.textTertiary)
-                    .padding(.top, 18)
-                    .animation(ClickMotion.subtleFade, value: review.removed)
-                }
-                .padding(.horizontal, ClickSpacing.screenGutter)
-                .padding(.top, 28)
-                .frame(maxWidth: .infinity, alignment: .leading)
-            }
-
-            VStack(spacing: 10) {
-                Button {
-                    selected.isEmpty ? onSkip() : onConfirm()
-                } label: {
-                    HStack(spacing: 8) {
-                        if isConfirming { ProgressView().tint(ClickColors.primaryActionForeground) }
-                        Text(primaryTitle)
-                    }
-                    .frame(maxWidth: .infinity)
-                }
-                .buttonStyle(.clickPrimary)
-                .disabled(isConfirming)
-                Button("Cancel", action: onCancel)
-                    .buttonStyle(.clickSecondary)
+                    .multilineTextAlignment(.center)
+                    .padding(.top, 16)
+                    .padding(.horizontal, 12)
             }
             .padding(.horizontal, ClickSpacing.screenGutter)
-            .padding(.bottom, 16)
+            .padding(.bottom, 24)
+            .animation(reduceMotion ? ClickMotion.subtleFade : ClickMotion.content, value: review.removed)
+        }
+        .scrollBounceBehavior(.basedOnSize)
+        .safeAreaInset(edge: .bottom) { actions }
+    }
+
+    // MARK: Header
+
+    private var header: some View {
+        VStack(spacing: 0) {
+            emblem
+            Text("Who's in this Click?")
+                .font(ClickTypography.identityTitle)
+                .foregroundStyle(ClickColors.textPrimary)
+                .multilineTextAlignment(.center)
+                .padding(.top, 16)
+                .accessibilityAddTraits(.isHeader)
+            Text(subtitle)
+                .font(ClickTypography.supporting)
+                .foregroundStyle(ClickColors.textSecondary)
+                .multilineTextAlignment(.center)
+                .padding(.top, 6)
+                .padding(.horizontal, 12)
+                .fixedSize(horizontal: false, vertical: true)
+            if let verification, !verification.summary.isEmpty {
+                Label(verification.summary, systemImage: "checkmark.shield.fill")
+                    .font(ClickTypography.metadataEmphasized)
+                    .foregroundStyle(ClickColors.accentForeground)
+                    .padding(.horizontal, 10)
+                    .frame(minHeight: 26)
+                    .background(ClickColors.selectionTint, in: Capsule())
+                    .padding(.top, 12)
+                    .accessibilityLabel("Verified nearby: \(verification.summary)")
+            }
+        }
+        .frame(maxWidth: .infinity)
+    }
+
+    /// The tap flow's emblem, smaller: the people themselves are in the rows below.
+    private var emblem: some View {
+        Image(systemName: "person.3.fill")
+            .font(.system(size: 26, weight: .semibold))
+            .foregroundStyle(ClickColors.primaryActionForeground)
+            .frame(width: 64, height: 64)
+            .background(ClickColors.primaryActionFill, in: Circle())
+            .accessibilityHidden(true)
+    }
+
+    // MARK: Rows
+
+    private func section<Empty: View>(
+        _ title: String, people: [ProximityPeer], isRemoved: Bool, @ViewBuilder empty: () -> Empty
+    ) -> some View {
+        VStack(alignment: .leading, spacing: 10) {
+            Text(title)
+                .font(ClickTypography.supportingEmphasized)
+                .foregroundStyle(ClickColors.textSecondary)
+                .padding(.horizontal, 4)
+                .accessibilityAddTraits(.isHeader)
+                .contentTransition(.numericText())
+            VStack(spacing: 0) {
+                if people.isEmpty {
+                    empty()
+                }
+                ForEach(Array(people.enumerated()), id: \.element.id) { index, peer in
+                    if index > 0 { HomeDivider(inset: Self.dividerInset) }
+                    row(peer, isRemoved: isRemoved)
+                }
+            }
+            .groupedSurface()
         }
     }
 
-    private var peopleRow: some View {
-        ScrollView(.horizontal, showsIndicators: false) {
-            HStack(alignment: .top, spacing: 14) {
-                let selfID = env.session.currentSession?.userId ?? "me"
-                VStack(spacing: 6) {
-                    AvatarView(imageURL: nil, seed: selfID, initials: "You", size: 64)
-                    Text("You")
-                        .font(ClickTypography.metadata)
-                        .foregroundStyle(ClickColors.textSecondary)
-                }
-                .frame(width: 76)
-                .accessibilityElement(children: .combine)
-                ForEach(review.candidates) { peer in
-                    PersonChip(peer: peer, isRemoved: review.removed.contains(peer.id), isEnabled: !isConfirming) {
-                        withAnimation(ClickMotion.content) { onToggle(peer) }
-                    }
+    private func row(_ peer: ProximityPeer, isRemoved: Bool) -> some View {
+        HStack(spacing: 12) {
+            AvatarView(imageURL: peer.avatarURL, seed: peer.id, initials: peer.initials, size: Self.avatarSize)
+                .opacity(isRemoved ? 0.45 : 1)
+            VStack(alignment: .leading, spacing: 2) {
+                Text(peer.name)
+                    .font(ClickTypography.bodyEmphasized)
+                    .foregroundStyle(isRemoved ? ClickColors.textSecondary : ClickColors.textPrimary)
+                    .lineLimit(1)
+                Text(status(peer, isRemoved: isRemoved))
+                    .font(ClickTypography.metadata)
+                    .foregroundStyle(ClickColors.textSecondary)
+                    .lineLimit(1)
+            }
+            Spacer(minLength: 8)
+            Button(isRemoved ? "Add back" : "Remove") { onToggle(peer) }
+                .font(ClickTypography.supportingEmphasized)
+                .foregroundStyle(isRemoved ? ClickColors.accentForeground : ClickColors.textPrimary)
+                .padding(.horizontal, 14)
+                .frame(minHeight: 32)
+                .background(isRemoved ? ClickColors.selectionTint : ClickColors.fillSubtle, in: Capsule())
+                .frame(minHeight: ClickMetrics.minimumHitTarget)
+                .contentShape(Rectangle())
+                .buttonStyle(.plain)
+                .disabled(isConfirming)
+                .accessibilityLabel(isRemoved ? "Add \(peer.name) back" : "Remove \(peer.name)")
+        }
+        .padding(.horizontal, ClickSpacing.surfacePadding)
+        .padding(.vertical, 10)
+        .frame(minHeight: ClickMetrics.rowMinHeight)
+    }
+
+    private func status(_ peer: ProximityPeer, isRemoved: Bool) -> String {
+        if isRemoved { return "Won't be connected with you" }
+        return peer.isNewConnection == false ? "Already connected" : "New connection"
+    }
+
+    // MARK: Actions
+
+    private var actions: some View {
+        VStack(spacing: 10) {
+            Button {
+                included.isEmpty ? onSkip() : onConfirm()
+            } label: {
+                HStack(spacing: 8) {
+                    if isConfirming { ProgressView() }
+                    Text(primaryTitle)
                 }
             }
-            .padding(.vertical, 6)
+            .buttonStyle(.clickPrimary)
+            .disabled(isConfirming)
+            Button("Cancel", action: onCancel)
+                .font(ClickTypography.supportingEmphasized)
+                .padding(.top, 2)
         }
-        .scrollClipDisabled()
+        .padding(.horizontal, ClickSpacing.screenGutter)
+        .padding(.vertical, 12)
+        .background(.bar)
     }
+
+    // MARK: Copy
 
     private var subtitle: String {
         if review.existingConnectionID != nil {
-            return "You're already a group. Remove anyone who isn't here, then save this encounter."
+            return "You're already a group. Remove anyone who isn't here, then save this Click."
         }
-        return "Tap × to remove anyone you don't want to connect with. Nothing is saved until you confirm."
+        return "Remove anyone you don't want to connect with."
     }
 
-    private var countLine: String {
-        selected.isEmpty ? "Just you. Add someone back or skip this tap."
-            : selected.count == 1 ? "You and \(names(selected))" : "You + \(selected.count) people"
+    private var footnote: String {
+        "Nothing is saved until you confirm. You can add tags on the next screen."
     }
 
     private var primaryTitle: String {
         if isConfirming { return review.isExistingGroup ? "Saving…" : "Connecting…" }
-        if selected.isEmpty { return "Skip this tap" }
-        if review.isExistingGroup { return "Save encounter" }
-        return selected.count == 1 ? "Connect with \(names(selected))" : "Connect with \(selected.count) people"
-    }
-
-    private func names(_ peers: [ProximityPeer]) -> String {
-        ListFormatter.localizedString(byJoining: peers.map { HomeFeedModel.firstName($0.name) ?? $0.name })
-    }
-}
-
-private struct PersonChip: View {
-    let peer: ProximityPeer
-    let isRemoved: Bool
-    let isEnabled: Bool
-    let onToggle: () -> Void
-
-    var body: some View {
-        Button(action: onToggle) {
-            VStack(spacing: 6) {
-                AvatarView(imageURL: peer.avatarURL, seed: peer.id, initials: peer.initials, size: 64)
-                    .saturation(isRemoved ? 0 : 1)
-                    .opacity(isRemoved ? 0.35 : 1)
-                    .overlay(alignment: .topTrailing) {
-                        Image(systemName: isRemoved ? "arrow.uturn.backward.circle.fill" : "xmark.circle.fill")
-                            .font(.system(size: 22))
-                            .symbolRenderingMode(.palette)
-                            .foregroundStyle(
-                                ClickColors.background,
-                                isRemoved ? ClickColors.accentForeground : ClickColors.textSecondary
-                            )
-                            .background(Circle().fill(ClickColors.background).padding(1))
-                            .offset(x: 4, y: -4)
-                    }
-                Text(HomeFeedModel.firstName(peer.name) ?? peer.name)
-                    .font(ClickTypography.metadata)
-                    .foregroundStyle(isRemoved ? ClickColors.textTertiary : ClickColors.textPrimary)
-                    .strikethrough(isRemoved)
-                    .lineLimit(1)
-                Text(isRemoved ? "Add back" : " ")
-                    .font(.caption2)
-                    .foregroundStyle(ClickColors.accentForeground)
-            }
-            .frame(width: 76)
-            .contentShape(Rectangle())
-        }
-        .buttonStyle(.plain)
-        .disabled(!isEnabled)
-        .accessibilityElement(children: .ignore)
-        .accessibilityLabel(peer.name)
-        .accessibilityValue(isRemoved ? "Removed" : "Included")
-        .accessibilityHint(isRemoved ? "Adds them back to this tap" : "Removes them from this tap")
-        .accessibilityAddTraits(.isButton)
+        if included.isEmpty { return "Skip this Click" }
+        if review.isExistingGroup { return "Save this Click" }
+        if included.count == 1 { return "Connect with \(HomeFeedModel.firstName(included[0].name) ?? included[0].name)" }
+        return "Connect with \(included.count) people"
     }
 }
 
@@ -507,7 +552,7 @@ private struct PulseRings: View {
 struct TapReviewPreviewHost: View {
     @State private var review = TapConnectModel.PeopleReview(candidates: [
         ProximityPeer(id: "p1", name: "Maya Chen", avatarURL: nil, connectionID: nil, isNewConnection: true),
-        ProximityPeer(id: "p2", name: "Jordan Lee", avatarURL: nil, connectionID: nil, isNewConnection: true),
+        ProximityPeer(id: "p2", name: "Jordan Lee", avatarURL: nil, connectionID: nil, isNewConnection: false),
         ProximityPeer(id: "p3", name: "Sam Ortiz", avatarURL: nil, connectionID: nil, isNewConnection: true),
         ProximityPeer(id: "p4", name: "Priya Patel", avatarURL: nil, connectionID: nil, isNewConnection: true),
         ProximityPeer(id: "p5", name: "Alex Kim", avatarURL: nil, connectionID: nil, isNewConnection: true)
@@ -524,6 +569,30 @@ struct TapReviewPreviewHost: View {
                 onConfirm: {}, onSkip: {}, onCancel: {}
             )
             .background(ClickColors.background.ignoresSafeArea())
+            .navigationTitle("Tap to Connect")
+            .navigationBarTitleDisplayMode(.inline)
+        }
+    }
+}
+
+/// `-preview-tap-connected`: the group result (tags + encounter details) with sample people.
+struct TapConnectedPreviewHost: View {
+    var body: some View {
+        NavigationStack {
+            PostConnectView(
+                model: PostConnectModel(
+                    match: ProximityMatch(
+                        connectionID: "g1", isNewConnection: true, isGroup: true,
+                        peers: ["Maya Chen", "Jordan Lee", "Sam Ortiz"].enumerated().map {
+                            ProximityPeer(id: "p\($0.offset)", name: $0.element, avatarURL: nil, connectionID: "g1", isNewConnection: true)
+                        },
+                        groupMemberIDs: [], encounterLogged: true
+                    ),
+                    method: .tap,
+                    verification: ConnectionVerification(signals: ["Bluetooth", "Sound", "Location"], locationAccuracyMeters: 6)
+                ),
+                onSayHi: { _ in }, onViewProfile: { _ in }, onOpenGroups: {}, onOpenEvent: { _ in }, onDone: {}
+            )
             .navigationTitle("Tap to Connect")
             .navigationBarTitleDisplayMode(.inline)
         }

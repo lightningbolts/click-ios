@@ -23,6 +23,10 @@ public struct RootGateView: View {
                 #if DEBUG
                 TapReviewPreviewHost()
                 #endif
+            } else if DebugLaunch.has("-preview-tap-connected") {
+                #if DEBUG
+                TapConnectedPreviewHost()
+                #endif
             } else if DebugLaunch.has("-preview-onboarding-welcome") {
                 onboardingPreview(step: 0) { WelcomeView(firstName: "Alex") {} }
             } else if DebugLaunch.has("-preview-onboarding-interests") {

@@ -176,7 +176,7 @@ final class PostConnectModel {
     func save(_ env: AppEnvironment) async {
         let tags = ContextTagPicker.resolved(selected: selectedTags, custom: customTag)
         guard let userID = env.session.currentSession?.userId else { return }
-        let connectionIDs = match.isGroup ? match.peers.compactMap(\.connectionID) : [match.connectionID].compactMap { $0 }
+        let connectionIDs = taggableConnectionIDs
         guard !connectionIDs.isEmpty else {
             saveState = .failed("This connection isn't ready for tags yet.")
             return
@@ -203,13 +203,21 @@ final class PostConnectModel {
     func recordSensorContext(_ env: AppEnvironment) async {
         guard env.settings.ambientNoiseOptIn,
               let userID = env.session.currentSession?.userId else { return }
-        let connectionIDs = match.isGroup ? match.peers.compactMap(\.connectionID) : [match.connectionID].compactMap { $0 }
+        let connectionIDs = taggableConnectionIDs
         guard !connectionIDs.isEmpty else { return }
         let sensor = await EncounterSensorSampler.sample(settings: env.settings)
         guard !sensor.isEmpty else { return }
         for connectionID in connectionIDs {
             try? await env.encounterContext.saveContext(connectionID: connectionID, tags: [], sensor: sensor, reportingUserID: userID)
         }
+    }
+
+    /// Where this Click's tags and sensor context go: the group itself plus each person's own
+    /// connection (a group confirm returns the group id for everyone, so de-duplicate).
+    private var taggableConnectionIDs: [String] {
+        var seen = Set<String>()
+        let ids = isGroup ? [match.connectionID] + match.peers.map(\.connectionID) : [match.connectionID ?? primaryPeer?.connectionID]
+        return ids.compactMap { $0 }.filter { seen.insert($0).inserted }
     }
 
     /// What this tap added (new spot, level, streak, milestone), once history has loaded.
