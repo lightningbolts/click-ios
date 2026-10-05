@@ -698,7 +698,7 @@ private enum ClickConnectionRedeemer {
         capture: ConnectionCaptureSession,
         connectionMoment: Date,
         wait: ConnectionLocationQuality.Wait
-    ) async -> (fields: [String: Any], fix: LocationObservation?) {
+    ) async -> (fields: [String: Any], fix: LocationObservation?, quality: [String: TelemetryValue]) {
         async let allowed = env.shouldCaptureConnectionLocation(userID: userID)
         async let sensor = EncounterSensorSampler.sample(settings: env.settings, includeNoise: false, includeHardware: true)
         let captureLocation = await allowed
@@ -720,18 +720,74 @@ private enum ClickConnectionRedeemer {
         )
         sensorObservation.logDiagnostics()
         if let payload = sensorObservation.payload { fields["sensor_observation"] = payload }
-        guard captureLocation, let fix = observed.location else { return (fields, nil) }
+        let quality = sensorObservation.captureQuality
+        guard captureLocation, let fix = observed.location else { return (fields, nil, quality) }
         fields.merge(fix.qualityColumns) { current, _ in current }
-        return (fields, fix)
+        return (fields, fix, quality)
     }
 
     /// - Parameter capture: the scanner's warm session; nil (a Click link) captures cold here.
+    ///
+    /// Reports the `qr_connect_*` funnel (spec §71.2) for scans and Click links alike, tagged
+    /// with `connection_method` and the anonymous capture-quality aggregates.
     @MainActor
     static func redeem(
         _ invocation: ConnectionInvocation,
         environment env: AppEnvironment,
         capture: ConnectionCaptureSession? = nil,
         connectionMoment: Date = .now
+    ) async throws -> Result {
+        let method = capture?.method ?? "link"
+        let telemetry = env.connectionTelemetry
+        var quality: [String: TelemetryValue] = ["connection_method": .string(method)]
+        let track = { (event: ConnectionFlowTelemetry.Event, reason: String?, isReconnect: Bool?) in
+            let snapshot = quality
+            Task { await telemetry.track(event, isReconnect: isReconnect, reason: reason, captureQuality: snapshot) }
+        }
+        track(.qrStarted, nil, nil)
+        do {
+            let result = try await perform(invocation, environment: env, capture: capture,
+                                           connectionMoment: connectionMoment) { captured in
+                quality.merge(captured) { current, _ in current }
+            }
+            if result.isNew || result.encounterLogged {
+                track(.qrSucceeded, nil, !result.isNew)
+            } else {
+                track(.qrRateLimited, nil, true)
+            }
+            return result
+        } catch {
+            track(.qrFailed, Self.telemetryReason(error), nil)
+            throw error
+        }
+    }
+
+    /// A short machine code for a failed redeem (never a server message or an identifier).
+    nonisolated static func telemetryReason(_ error: Error) -> String {
+        switch error as? APIError {
+        case .validation(_, let body)?:
+            let code = body
+                .flatMap { $0.data(using: .utf8) }
+                .flatMap { try? JSONSerialization.jsonObject(with: $0) as? [String: Any] }
+                .flatMap { $0["error"] as? String }
+            switch code {
+            case "proximity_failed", "expired", "already_used", "not_found": return code!
+            case "Cannot connect with yourself": return "self_connect"
+            default: return "validation"
+            }
+        case .forbidden?: return "proximity_failed"
+        case .notFound?: return "not_found"
+        default: return TapConnectModel.telemetryReason(error)
+        }
+    }
+
+    @MainActor
+    private static func perform(
+        _ invocation: ConnectionInvocation,
+        environment env: AppEnvironment,
+        capture: ConnectionCaptureSession?,
+        connectionMoment: Date,
+        onCaptured: ([String: TelemetryValue]) -> Void
     ) async throws -> Result {
         guard let currentUserID = env.session.currentSession?.userId else {
             throw APIError.unauthorized
@@ -743,6 +799,7 @@ private enum ClickConnectionRedeemer {
             wait: capture == nil ? .cold : .inFlow
         )
         if capture == nil { session.stop() }
+        onCaptured(captured.quality)
         var redeemBody = captured.fields
         if let token = invocation.token, !token.isEmpty {
             redeemBody["token"] = token

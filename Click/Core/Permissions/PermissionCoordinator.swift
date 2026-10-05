@@ -116,21 +116,17 @@ public final class PermissionCoordinator: NSObject, @preconcurrency CLLocationMa
 
     public func statusAsync(for type: PermissionType) async -> PermissionStatus {
         guard type == .notifications else { return status(for: type) }
-        return await withCheckedContinuation { continuation in
-            UNUserNotificationCenter.current().getNotificationSettings { settings in
-                let resolved: PermissionStatus
-                switch settings.authorizationStatus {
-                case .authorized, .provisional, .ephemeral:
-                    resolved = .authorized
-                case .denied:
-                    resolved = .denied
-                case .notDetermined:
-                    resolved = .notDetermined
-                @unknown default:
-                    resolved = .denied
-                }
-                continuation.resume(returning: resolved)
-            }
+        // The async API: the completion-handler form calls back on a background queue, which
+        // traps under this class's main-actor isolation (Swift 6 runtime check).
+        switch await UNUserNotificationCenter.current().notificationSettings().authorizationStatus {
+        case .authorized, .provisional, .ephemeral:
+            return .authorized
+        case .denied:
+            return .denied
+        case .notDetermined:
+            return .notDetermined
+        @unknown default:
+            return .denied
         }
     }
 
