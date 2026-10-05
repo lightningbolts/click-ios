@@ -48,12 +48,13 @@ struct EventDropsTests {
             "state": "revealed", "reveal_at": "2026-10-03T17:00:00Z", "event_title": "Launch", "access": "absentee",
             "can_post": false, "remaining": 0, "show_to_absentees": true,
             "drops": [["id": "d1", "user": ["id": "u1", "name": "Maya"], "is_mine": false, "filter_seed": 7,
-                       "preview_url": "https://signed.example/p"]]
+                       "preview_url": "https://signed.example/p", "original_url": "https://signed.example/o"]]
         ])
         #expect(state.phase == .revealed)
         #expect(state.access == .absentee)
         #expect(state.drops.first?.userName == "Maya")
         #expect(state.drops.first?.previewURL == URL(string: "https://signed.example/p"))
+        #expect(state.drops.first?.originalURL == URL(string: "https://signed.example/o"))
         #expect(EventDropsState.parse([:]).access == .none)
     }
 

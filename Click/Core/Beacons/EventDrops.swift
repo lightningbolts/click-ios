@@ -2,7 +2,8 @@ import Foundation
 import UIKit
 
 /// One event Click Drop as the server shows it to this viewer (spec F1). `previewURL` is always the
-/// pixelated rendition; the original only comes from `/api/drops/develop` after the reveal.
+/// pixelated rendition. After the reveal, `originalURL` is the signed original (fetched ahead so a
+/// tap shows it at once; the tap records the develop through `/api/drops/develop`), and
 /// `developedAt` is when this viewer developed it (nil until they tap it).
 public struct EventDrop: Identifiable, Sendable, Equatable {
     public let id: String
@@ -16,6 +17,7 @@ public struct EventDrop: Identifiable, Sendable, Equatable {
     public let width: Int?
     public let height: Int?
     public let previewURL: URL?
+    public let originalURL: URL?
     public var developedAt: Date?
 
     var look: ClickDropFilter { .recapLook(seed: filterSeed) }
@@ -35,6 +37,7 @@ public struct EventDrop: Identifiable, Sendable, Equatable {
             width: JSONFields.int(row["width"]),
             height: JSONFields.int(row["height"]),
             previewURL: JSONFields.string(row["preview_url"]).flatMap(URL.init(string:)),
+            originalURL: JSONFields.string(row["original_url"]).flatMap(URL.init(string:)),
             developedAt: JSONFields.date(row["developed_at"])
         )
     }

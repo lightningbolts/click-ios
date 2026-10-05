@@ -13,8 +13,14 @@ struct EventRecapView: View {
 
     @State private var state = ModuleState<EventDropsState>()
     @State private var photos: [String: RecapPhoto] = [:]
-    /// Drops being developed or fetched right now (each once at a time).
-    @State private var loading: Set<String> = []
+    /// Photos fetched ahead for drops not developed yet: a tap shows them at once.
+    @State private var prepared: [String: Loaded] = [:]
+    /// Each drop's photo load while it's running (one at a time, shared).
+    @State private var inflight: [String: Task<Loaded?, Never>] = [:]
+    /// Tapped, photo still on its way: it develops the moment it arrives.
+    @State private var revealOnArrival: Set<String> = []
+    /// Drops whose photos this device kept (it keeps them only once developed).
+    @State private var onDisk: Set<String> = []
     @State private var failed: Set<String> = []
     /// Developed on this screen just now: each resolves out of its pixels once.
     @State private var freshlyDeveloped: Set<String> = []
@@ -26,7 +32,13 @@ struct EventRecapView: View {
     @State private var notice: String?
     @State private var reportedOpen = false
 
-    struct RecapPhoto: Equatable {
+    struct Loaded: Sendable {
+        let photo: RecapPhoto
+        /// The original's bytes, kept on disk once developed.
+        let data: Data
+    }
+
+    struct RecapPhoto: Equatable, Sendable {
         let natural: UIImage
         let look: UIImage
 
@@ -41,7 +53,7 @@ struct EventRecapView: View {
     }
 
     private static let secondsPerDrop: Double = 4
-    /// Developed drops ahead of the current one that are fetched before they show.
+    /// Drops ahead of the current one whose photos are fetched before they show.
     private static let prefetchAhead = 2
 
     private var cacheKey: String { BeaconExtrasCache.eventDrops(beaconID) }
@@ -82,7 +94,10 @@ struct EventRecapView: View {
             }
         }
         // Opened from the event or Home's card, the drops are usually here already: paint them now.
-        .onAppear { state.seed(env.beaconExtras.cached(cacheKey)) }
+        .onAppear {
+            state.seed(env.beaconExtras.cached(cacheKey))
+            noteDisk(state.value?.drops ?? [])
+        }
         .task { await load() }
         .confirmation("Delete your drop?", isPresented: Binding(get: { confirmDelete != nil }, set: { if !$0 { confirmDelete = nil } }),
                       keep: "Keep It") {
@@ -151,8 +166,10 @@ struct EventRecapView: View {
             }
         }
         .padding(16)
-        // Developed drops just ahead are on hand before they show.
-        .task(id: "\(position)-\(drops.map(\.id))") { await fetchDeveloped(Array(drops[position...].prefix(Self.prefetchAhead + 1))) }
+        // The photos just ahead are in hand before they show (refetched when the signed URLs change).
+        .task(id: "\(position)-\(drops.map { $0.id + ($0.originalURL?.absoluteString ?? "") }.hashValue)") {
+            await prepare(Array(drops[position...].prefix(Self.prefetchAhead + 1)))
+        }
         // A developed drop shows for a few seconds, then the next one; an undeveloped one waits for its tap.
         .task(id: "\(position)-\(isPaused)-\(photos[drop.id] != nil)") {
             guard photos[drop.id] != nil else { return }
@@ -186,7 +203,7 @@ struct EventRecapView: View {
 
     /// What a tap on an undeveloped drop does, on glass over its pixels.
     private func status(_ drop: EventDrop) -> some View {
-        let label: (String, String) = if loading.contains(drop.id) || (isDeveloped(drop) && !failed.contains(drop.id)) {
+        let label: (String, String) = if revealOnArrival.contains(drop.id) || (isDeveloped(drop) && !failed.contains(drop.id)) {
             ("Developing…", "sparkles")
         } else if failed.contains(drop.id) {
             ("Couldn't develop. Tap to retry.", "arrow.clockwise")
@@ -253,7 +270,7 @@ struct EventRecapView: View {
         if isDeveloped(drop), !failed.contains(drop.id) {
             step(1, count: count)
         } else {
-            Task { await develop(drop) }
+            develop(drop)
         }
     }
 
@@ -275,14 +292,11 @@ struct EventRecapView: View {
 
     // MARK: - Loading
 
-    private func isDeveloped(_ drop: EventDrop) -> Bool {
-        drop.developedAt != nil || photos[drop.id] != nil
-    }
-
     private func load() async {
         state.begin()
         do {
             let loaded = try await env.beaconExtras.loadEventDrops(beaconID, env: env)
+            noteDisk(loaded.drops)
             state.succeed(loaded)
             index = min(index, max(0, loaded.drops.count - 1))
             if loaded.phase == .revealed, !loaded.drops.isEmpty, !reportedOpen {
@@ -294,76 +308,143 @@ struct EventRecapView: View {
         }
     }
 
-    /// The tap: develops one drop for this viewer, then it resolves out of its pixels.
-    private func develop(_ drop: EventDrop) async {
-        guard !loading.contains(drop.id) else { return }
-        failed.remove(drop.id)
-        if await fetch([drop], fresh: true) {
-            ClickHaptics.impact(.medium)
-        }
+    // MARK: - Photos
+
+    /// Developed: the server says so, or this device kept its photo (kept only once developed), so
+    /// a tap is remembered across launches even before the server hears of it.
+    private func isDeveloped(_ drop: EventDrop) -> Bool {
+        drop.developedAt != nil || photos[drop.id] != nil || onDisk.contains(drop.id)
     }
 
-    /// Drops developed before (here or on another device) that aren't on screen yet: from disk
-    /// when they're there, otherwise fetched again (developing again is idempotent).
-    private func fetchDeveloped(_ drops: [EventDrop]) async {
-        let wanted = drops.filter { $0.developedAt != nil && photos[$0.id] == nil && !loading.contains($0.id) && !failed.contains($0.id) }
+    private func noteDisk(_ drops: [EventDrop]) {
+        guard let userID else { return }
+        onDisk.formUnion(drops.map(\.id).filter { !onDisk.contains($0) && DropPhotoCache.exists($0, userID: userID) })
+    }
+
+    /// Photos for the current drop and the next few, before they're needed: developed ones show as
+    /// they arrive; undeveloped ones wait in hand, so their tap shows them at once.
+    private func prepare(_ drops: [EventDrop]) async {
+        let wanted = drops.filter { photos[$0.id] == nil && prepared[$0.id] == nil && inflight[$0.id] == nil && !revealOnArrival.contains($0.id) }
         guard !wanted.isEmpty else { return }
-        _ = await fetch(wanted, fresh: false)
+        // Without a signed original (an older server), a developed drop's comes from developing it
+        // again (idempotent). An undeveloped drop is never developed without its tap.
+        let unsigned = wanted.filter { $0.originalURL == nil && !onDisk.contains($0.id) && isDeveloped($0) }
+        let issued = unsigned.isEmpty ? [:] : await developURLs(unsigned)
+        let loads = wanted.compactMap { drop in photo(for: drop, url: drop.originalURL ?? issued[drop.id]).map { (drop, $0) } }
+        var missed: [EventDrop] = []
+        for (drop, load) in loads {
+            let loaded = await load.value
+            inflight[drop.id] = nil
+            if let loaded { arrive(drop, loaded) } else if isDeveloped(drop) { missed.append(drop) }
+        }
+        // A developed drop whose signed original lapsed (they last ten minutes): once more, freshly signed.
+        guard !missed.isEmpty else { return }
+        let fresh = await developURLs(missed)
+        for drop in missed {
+            let loaded = await photo(for: drop, url: fresh[drop.id])?.value
+            inflight[drop.id] = nil
+            if let loaded { arrive(drop, loaded) } else { failed.insert(drop.id) }
+        }
     }
 
-    /// Gets each drop's photo: the original's bytes from disk, or a develop-issued URL, then its
-    /// look rendered off the main actor. Returns whether every drop arrived.
-    private func fetch(_ drops: [EventDrop], fresh: Bool) async -> Bool {
-        guard let userID else { return false }
-        let ids = drops.map(\.id)
-        loading.formUnion(ids)
-        defer { loading.subtract(ids) }
-
-        // Fresh taps always go to the server: that's what records the develop.
-        let onDisk: Set<String> = fresh ? [] : Set(ids.filter { DropPhotoCache.exists($0, userID: userID) })
-        var urls: [String: URL] = [:]
-        let remote = drops.filter { !onDisk.contains($0.id) }
-        if !remote.isEmpty {
-            do {
-                let results = try await env.drops.develop(remote.map { ClickDropRef(kind: .event, id: $0.id) })
-                for result in results where result.status == .developed {
-                    if let url = result.originalURL { urls[result.ref.id] = url }
-                    if fresh { markDeveloped(result.ref.id, at: result.developedAt ?? .now) }
-                }
-            } catch {
-                if !error.isCancellation { failed.formUnion(remote.map(\.id)) }
-                return false
-            }
+    /// A photo fetched ahead. A tapped drop is revealed by its tap instead.
+    private func arrive(_ drop: EventDrop, _ loaded: Loaded) {
+        guard photos[drop.id] == nil, !revealOnArrival.contains(drop.id) else { return }
+        if isDeveloped(drop) {
+            withAnimation(ClickMotion.subtleFade) { photos[drop.id] = loaded.photo }
+            keep(loaded.data, for: drop.id)
+        } else {
+            prepared[drop.id] = loaded
         }
+    }
 
-        var arrived = 0
-        await withTaskGroup(of: (String, RecapPhoto?).self) { group in
-            for drop in drops {
-                let id = drop.id, look = drop.look, url = urls[id], cached = onDisk.contains(id)
-                guard cached || url != nil else { continue }
-                group.addTask {
-                    let data: Data?
-                    if cached {
-                        data = DropPhotoCache.data(id, userID: userID)
-                    } else if let url, let downloaded = try? await ClickDropService.loadOriginalData(url) {
-                        DropPhotoCache.save(downloaded, dropID: id, userID: userID)
-                        data = downloaded
-                    } else {
-                        data = nil
-                    }
-                    return (id, data.flatMap { RecapPhoto.make($0, look: look) })
-                }
-            }
-            for await (id, photo) in group {
-                guard let photo else { continue }
-                arrived += 1
-                if fresh { freshlyDeveloped.insert(id) }
-                withAnimation(fresh ? nil : ClickMotion.subtleFade) { photos[id] = photo }
-            }
+    /// The tap. The photo is usually in hand and develops at once while the server records the
+    /// develop alongside; otherwise it develops the moment it arrives.
+    private func develop(_ drop: EventDrop) {
+        failed.remove(drop.id)
+        if let loaded = prepared[drop.id] {
+            reveal(drop, loaded)
+            Task { _ = await record(drop) }
+            return
         }
-        let missing = ids.filter { photos[$0] == nil }
-        failed.formUnion(missing)
-        return arrived == drops.count
+        guard !revealOnArrival.contains(drop.id) else { return }
+        revealOnArrival.insert(drop.id)
+        Task {
+            async let recorded = record(drop)
+            // Already on its way, or from the recap's signed original.
+            var loaded = await photo(for: drop, url: drop.originalURL)?.value
+            inflight[drop.id] = nil
+            if let loaded {
+                reveal(drop, loaded)
+                _ = await recorded
+                return
+            }
+            // No original in hand, or it lapsed: the develop's own, freshly signed.
+            if let url = await recorded {
+                loaded = await photo(for: drop, url: url)?.value
+                inflight[drop.id] = nil
+            }
+            if let loaded { reveal(drop, loaded) } else { revealOnArrival.remove(drop.id); failed.insert(drop.id) }
+        }
+    }
+
+    /// The photo resolves out of its pixels, once.
+    private func reveal(_ drop: EventDrop, _ loaded: Loaded) {
+        revealOnArrival.remove(drop.id)
+        prepared[drop.id] = nil
+        freshlyDeveloped.insert(drop.id)
+        photos[drop.id] = loaded.photo
+        keep(loaded.data, for: drop.id)
+        ClickHaptics.impact(.medium)
+    }
+
+    /// The server's half of the tap: records this viewer's develop and returns a freshly signed original.
+    private func record(_ drop: EventDrop) async -> URL? {
+        guard let result = try? await env.drops.develop([ClickDropRef(kind: .event, id: drop.id)]).first(where: { $0.ref.id == drop.id }),
+              result.status == .developed else { return nil }
+        markDeveloped(drop.id, at: result.developedAt ?? .now)
+        return result.originalURL
+    }
+
+    /// Freshly signed originals for drops this viewer already developed.
+    private func developURLs(_ drops: [EventDrop]) async -> [String: URL] {
+        guard let results = try? await env.drops.develop(drops.map { ClickDropRef(kind: .event, id: $0.id) }) else { return [:] }
+        return Dictionary(results.compactMap { r in r.originalURL.map { (r.ref.id, $0) } }, uniquingKeysWith: { a, _ in a })
+    }
+
+    /// One load per drop at a time (from disk when it's there, else `url`), shared by whoever
+    /// needs it; nil when there's nowhere to load it from.
+    private func photo(for drop: EventDrop, url: URL?) -> Task<Loaded?, Never>? {
+        if let running = inflight[drop.id] { return running }
+        guard let userID else { return nil }
+        let fromDisk = onDisk.contains(drop.id)
+        guard fromDisk || url != nil else { return nil }
+        let id = drop.id, look = drop.look
+        let task = Task.detached(priority: .userInitiated) {
+            await Self.loadPhoto(id: id, look: look, url: url, userID: userID, fromDisk: fromDisk)
+        }
+        inflight[drop.id] = task
+        return task
+    }
+
+    private nonisolated static func loadPhoto(id: String, look: ClickDropFilter, url: URL?, userID: String, fromDisk: Bool) async -> Loaded? {
+        let data: Data?
+        if fromDisk, let saved = DropPhotoCache.data(id, userID: userID) {
+            data = saved
+        } else if let url {
+            data = try? await ClickDropService.loadOriginalData(url)
+        } else {
+            data = nil
+        }
+        guard let data, let photo = RecapPhoto.make(data, look: look) else { return nil }
+        return Loaded(photo: photo, data: data)
+    }
+
+    /// Developed photos stay on this device: every later open (and launch) shows them at once.
+    private func keep(_ data: Data, for id: String) {
+        guard let userID, !onDisk.contains(id) else { return }
+        onDisk.insert(id)
+        Task.detached(priority: .utility) { DropPhotoCache.save(data, dropID: id, userID: userID) }
     }
 
     /// Records a develop on the drops everyone shares, so the event page and the next open agree.
