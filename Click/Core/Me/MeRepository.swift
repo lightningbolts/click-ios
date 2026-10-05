@@ -325,6 +325,12 @@ public actor MeRepository {
         return value
     }
 
+    /// Permanently deletes the signed-in account (`DELETE /api/user/delete`, spec §65.14).
+    /// The caller signs out locally afterwards; the server has already revoked the user.
+    public func deleteAccount() async throws {
+        _ = try await api.executeRaw(APIRequest(path: "/api/user/delete", method: .delete))
+    }
+
     // MARK: - Notification preferences
 
     /// Reads `notification_preferences` under RLS, as the KMP client does (there is no GET route).

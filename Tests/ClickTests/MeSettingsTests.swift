@@ -61,6 +61,22 @@ struct MeSettingsTests {
         #expect(saved[.hubMessages] == true)
     }
 
+    @Test("Delete account is an authenticated in-app DELETE, and a server failure is an error")
+    func deleteAccount() async throws {
+        MeMockURLProtocol.handler = { request in
+            #expect(request.url?.path == "/api/user/delete")
+            #expect(request.httpMethod == "DELETE")
+            #expect(request.value(forHTTPHeaderField: "Authorization") == "Bearer token")
+            return (200, #"{"message":"User deleted successfully"}"#)
+        }
+        try await repository().deleteAccount()
+
+        MeMockURLProtocol.handler = { _ in (401, #"{"error":"Unauthorized"}"#) }
+        await #expect(throws: APIError.self) {
+            try await repository().deleteAccount()
+        }
+    }
+
     @Test("A location-privacy write that affects no rows is a failure")
     func zeroRowWriteFails() async {
         MeMockURLProtocol.handler = { request in
