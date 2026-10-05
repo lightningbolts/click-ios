@@ -702,7 +702,10 @@ private enum ClickConnectionRedeemer {
         capture: ConnectionCaptureSession,
         connectionMoment: Date,
         wait: ConnectionLocationQuality.Wait
-    ) async -> (fields: [String: Any], fix: LocationObservation?, quality: [String: TelemetryValue]) {
+    ) async -> (
+        fields: [String: Any], fix: LocationObservation?, quality: [String: TelemetryValue],
+        altitudeFollowUp: EncounterAltitudeFollowUp?
+    ) {
         async let allowed = env.shouldCaptureConnectionLocation(userID: userID)
         async let sensor = EncounterSensorSampler.sample(settings: env.settings, includeNoise: false, includeHardware: true)
         let captureLocation = await allowed
@@ -710,6 +713,8 @@ private enum ClickConnectionRedeemer {
         let observed = await capture.snapshot(at: connectionMoment, wait: wait)
         var context = await sensor
         context.barometer = observed.altitude
+        // A scan usually beats the altimeter's first absolute fix; the height follows shortly.
+        let followUp = EncounterAltitudeFollowUp.begin(from: capture, snapshot: observed, api: env.api)
         var fields = context.columns
         fields["timezone_offset_minutes"] = TimeZone.current.secondsFromGMT() / 60
         // This phone's own raw readings of the scan, aligned on the recognition moment.
@@ -725,9 +730,9 @@ private enum ClickConnectionRedeemer {
         sensorObservation.logDiagnostics()
         if let payload = sensorObservation.payload { fields["sensor_observation"] = payload }
         let quality = sensorObservation.captureQuality
-        guard captureLocation, let fix = observed.location else { return (fields, nil, quality) }
+        guard captureLocation, let fix = observed.location else { return (fields, nil, quality, followUp) }
         fields.merge(fix.qualityColumns) { current, _ in current }
-        return (fields, fix, quality)
+        return (fields, fix, quality, followUp)
     }
 
     /// - Parameter capture: the scanner's warm session; nil (a Click link) captures cold here.
@@ -804,8 +809,33 @@ private enum ClickConnectionRedeemer {
         )
         if capture == nil { session.stop() }
         onCaptured(captured.quality)
+        let followUp = captured.altitudeFollowUp
+        do {
+            let result = try await submit(invocation, environment: env, currentUserID: currentUserID,
+                                          captured: (captured.fields, captured.fix), usedCapture: capture != nil)
+            if result.encounterLogged, let connectionID = result.connectionID {
+                followUp?.confirm(connectionIDs: [connectionID])
+            } else {
+                followUp?.cancel()
+            }
+            return result
+        } catch {
+            followUp?.cancel()
+            throw error
+        }
+    }
+
+    /// Redeems the code (and creates the connection when it is new) with the captured context.
+    @MainActor
+    private static func submit(
+        _ invocation: ConnectionInvocation,
+        environment env: AppEnvironment,
+        currentUserID: String,
+        captured: (fields: [String: Any], fix: LocationObservation?),
+        usedCapture: Bool
+    ) async throws -> Result {
         let verification = ConnectionVerification(
-            signals: [capture == nil ? "Click link" : "QR code", captured.fix == nil ? nil : "Location"].compactMap { $0 },
+            signals: [usedCapture ? "QR code" : "Click link", captured.fix == nil ? nil : "Location"].compactMap { $0 },
             locationAccuracyMeters: captured.fix?.horizontalAccuracyMeters
         )
         var redeemBody = captured.fields

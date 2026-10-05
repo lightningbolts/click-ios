@@ -269,6 +269,18 @@ struct ConnectionSensorObservationTests {
         #expect(payload["uwb"] == nil)
     }
 
+    @Test("The altitude follow-up names the moment exactly as the payload stores it")
+    func followUpMomentMatchesPayload() throws {
+        let snapshot = snapshot(location: true)
+        let payload = try #require(ConnectionSensorObservation(method: "qr", snapshot: snapshot, includeLocation: true, device: nil).payload)
+        let reading = AltitudeObservation(
+            absoluteAltitudeMeters: 20, accuracyMeters: 3, precisionMeters: 0.5,
+            relativeAltitudeMeters: nil, pressureKPa: nil, observedAt: snapshot.moment
+        )
+        let body = try #require(EncounterAltitudeFollowUp.body(reading, moment: snapshot.moment, connectionIDs: ["c"]))
+        #expect(body["connection_moment"] as? String == payload["connection_moment"] as? String)
+    }
+
     @Test("Location-derived values are left out when Location snap is off")
     func locationGate() {
         let observation = ConnectionSensorObservation(method: "tap", snapshot: snapshot(location: true), includeLocation: false, device: nil)

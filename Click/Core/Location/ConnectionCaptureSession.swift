@@ -7,6 +7,8 @@ import Foundation
 /// altimeter and a 25 Hz device-motion stream, keeps small in-memory buffers of this phone's
 /// own readings, and at the connection moment hands back everything around that instant.
 /// Nothing outlives the flow: `stop()` (and the idle cap) end every sensor and drop the buffers.
+/// The one exception is an altimeter explicitly handed off to `EncounterAltitudeFollowUp`,
+/// which stops it within seconds.
 ///
 /// Never prompts. Callers start location only after Location snap and When-In-Use permission
 /// were resolved, and the altimeter only when barometric context is opted in. Device motion
@@ -48,10 +50,10 @@ final class ConnectionCaptureSession: NSObject, CLLocationManagerDelegate {
     private var bestProgression: [Double] = []
     private var latestHeading: HeadingSample?
 
-    private var altimeter: CMAltimeter?
-    private var altitudeStartedAt: Date?
-    private var absoluteSamples: [AbsoluteAltitudeSample] = []
-    private var relativeSamples: [RelativeAltitudeSample] = []
+    private var altimeter: AltimeterFeed?
+    private var altitudeStartedAt: Date? { altimeter?.startedAt }
+    private var absoluteSamples: [AbsoluteAltitudeSample] { altimeter?.absoluteSamples ?? [] }
+    private var relativeSamples: [RelativeAltitudeSample] { altimeter?.relativeSamples ?? [] }
 
     private var motionManager: CMMotionManager?
     private var motionSamples: [MotionSample] = []
@@ -97,12 +99,8 @@ final class ConnectionCaptureSession: NSObject, CLLocationManagerDelegate {
         updatesSeen = 0
         bestProgression = []
         latestHeading = nil
-        altimeter?.stopAbsoluteAltitudeUpdates()
-        altimeter?.stopRelativeAltitudeUpdates()
+        altimeter?.stop()
         altimeter = nil
-        altitudeStartedAt = nil
-        absoluteSamples = []
-        relativeSamples = []
         motionManager?.stopDeviceMotionUpdates()
         motionManager = nil
         motionSamples = []
@@ -220,46 +218,16 @@ final class ConnectionCaptureSession: NSObject, CLLocationManagerDelegate {
     // MARK: - Altimeter
 
     private func startAltimeter() {
-        let absolute = CMAltimeter.isAbsoluteAltitudeAvailable()
-        let relative = CMAltimeter.isRelativeAltitudeAvailable()
-        let status = CMAltimeter.authorizationStatus()
-        guard absolute || relative, status != .denied, status != .restricted else { return }
-        let altimeter = CMAltimeter()
-        self.altimeter = altimeter
-        altitudeStartedAt = .now
-        if absolute {
-            altimeter.startAbsoluteAltitudeUpdates(to: .main) { [weak self] data, _ in
-                guard let data else { return }
-                let sample = AbsoluteAltitudeSample(
-                    altitudeMeters: data.altitude,
-                    accuracyMeters: data.accuracy,
-                    precisionMeters: data.precision,
-                    observedAt: SensorClock.date(atUptime: data.timestamp)
-                )
-                MainActor.assumeIsolated { self?.append(sample) }
-            }
-        }
-        if relative {
-            altimeter.startRelativeAltitudeUpdates(to: .main) { [weak self] data, _ in
-                guard let data else { return }
-                let sample = RelativeAltitudeSample(
-                    relativeAltitudeMeters: data.relativeAltitude.doubleValue,
-                    pressureKPa: data.pressure.doubleValue,
-                    observedAt: SensorClock.date(atUptime: data.timestamp)
-                )
-                MainActor.assumeIsolated { self?.append(sample) }
-            }
-        }
+        altimeter = AltimeterFeed(capacity: Quality.bufferCapacity)
     }
 
-    private func append(_ sample: AbsoluteAltitudeSample) {
-        absoluteSamples.append(sample)
-        if absoluteSamples.count > Quality.bufferCapacity { absoluteSamples.removeFirst() }
-    }
-
-    private func append(_ sample: RelativeAltitudeSample) {
-        relativeSamples.append(sample)
-        if relativeSamples.count > Quality.bufferCapacity { relativeSamples.removeFirst() }
+    /// Hands the running altimeter to the caller when it can still deliver the absolute fix
+    /// this capture missed. The capture forgets it (its `stop()` no longer ends it), so the
+    /// caller must stop it. Nil when there is nothing to hand off.
+    func handOffAltimeterAwaitingAbsoluteFix() -> AltimeterFeed? {
+        guard let feed = altimeter, feed.isRunning, feed.providesAbsoluteAltitude else { return nil }
+        altimeter = nil
+        return feed
     }
 
     // MARK: - Device motion
