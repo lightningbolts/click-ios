@@ -433,7 +433,8 @@ final class ConversationListModel {
     func memberConnections(_ group: CliqueItem) -> [String: String] {
         let byUser = Dictionary((active + archived).filter { !$0.connectionID.isEmpty }.map { ($0.userID, $0.connectionID) },
                                 uniquingKeysWith: { first, _ in first })
-        return Dictionary(uniqueKeysWithValues: group.members.compactMap { member in byUser[member.userID].map { (member.userID, $0) } })
+        return Dictionary(group.members.compactMap { member in byUser[member.userID].map { (member.userID, $0) } },
+                          uniquingKeysWith: { first, _ in first })
     }
 
     /// Spec §34.3: server and badge agree; the row shows unread until it is opened.

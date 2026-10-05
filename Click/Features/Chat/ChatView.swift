@@ -376,19 +376,39 @@ public struct ChatView: View {
 
     /// Rows for the timeline: the history loader, day headers, the "New messages" divider, messages, typing.
     private var timelineRows: [ChatTimelineRow] {
-        var rows: [ChatTimelineRow] = model.isLoadingOlder && model.hasMoreHistory && timeline.isAtTop ? [.historyLoader] : []
-        rows.reserveCapacity(model.items.count + 8)
+        Self.timelineRows(
+            items: model.items,
+            firstUnreadID: model.firstUnreadID,
+            showsLoader: model.isLoadingOlder && model.hasMoreHistory && timeline.isAtTop,
+            showsTyping: model.isPeerTyping
+        )
+    }
+
+    /// Every row is unique: a diffable snapshot with a repeated identifier throws, so a day that
+    /// recurs (a message stamped out of order) or a repeated message never adds a second row.
+    static func timelineRows(
+        items: [ChatMessageItem],
+        firstUnreadID: String?,
+        showsLoader: Bool,
+        showsTyping: Bool
+    ) -> [ChatTimelineRow] {
+        var rows: [ChatTimelineRow] = showsLoader ? [.historyLoader] : []
+        rows.reserveCapacity(items.count + 8)
+        var seen = Set(rows)
+        func append(_ row: ChatTimelineRow) {
+            if seen.insert(row).inserted { rows.append(row) }
+        }
         var previousDay: Date?
-        for item in model.items {
+        for item in items {
             let day = Calendar.current.startOfDay(for: item.createdAt)
             if day != previousDay {
-                rows.append(.dateHeader(day))
+                append(.dateHeader(day))
                 previousDay = day
             }
-            if item.id == model.firstUnreadID { rows.append(.unreadDivider) }
-            rows.append(.message(item.stableID))
+            if item.id == firstUnreadID { append(.unreadDivider) }
+            append(.message(item.stableID))
         }
-        if model.isPeerTyping { rows.append(.typing) }
+        if showsTyping { append(.typing) }
         return rows
     }
 

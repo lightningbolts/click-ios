@@ -9,6 +9,25 @@ struct LocalStoreTests {
                         createdAt: Date().addingTimeInterval(-minutesAgo * 60), deliveryStatus: .read, isOutgoing: false)
     }
 
+    @Test("Timeline rows stay unique for out-of-order days and repeated messages")
+    @MainActor
+    func timelineRowsUnique() {
+        let today = Date()
+        let yesterday = today.addingTimeInterval(-86_400)
+        func item(_ id: String, _ date: Date) -> ChatMessageItem {
+            ChatMessageItem(id: id, chatID: "c1", senderID: "peer", senderName: "Maya", content: id,
+                            createdAt: date, deliveryStatus: .read, isOutgoing: false)
+        }
+        let rows = ChatView.timelineRows(
+            items: [item("a", yesterday), item("b", today), item("c", yesterday), item("b", today)],
+            firstUnreadID: "b", showsLoader: true, showsTyping: true
+        )
+        #expect(rows.count == Set(rows).count)
+        #expect(rows.filter { if case .dateHeader = $0 { true } else { false } }.count == 2)
+        #expect(rows.filter { $0 == .message("b") }.count == 1)
+        #expect(rows.filter { $0 == .unreadDivider }.count == 1)
+    }
+
     @Test("Messages round-trip newest-last, page backwards, and are searchable")
     func messagesRoundTrip() async {
         let user = "test-\(UUID().uuidString)"

@@ -109,8 +109,11 @@ final class AudioPlaybackService: NSObject, AVAudioPlayerDelegate {
         }
     }
 
+    /// AVAudioPlayer doesn't document its delegate thread, so hop rather than assume main.
     nonisolated func audioPlayerDidFinishPlaying(_ player: AVAudioPlayer, successfully flag: Bool) {
-        MainActor.assumeIsolated {
+        let finished = ObjectIdentifier(player)
+        Task { @MainActor in
+            guard let current = self.player, ObjectIdentifier(current) == finished else { return }
             self.isPlaying = false
             self.currentTime = 0
             self.ticker?.invalidate()

@@ -1430,13 +1430,14 @@ public actor ChatRepository: ChatRepositoryProtocol {
                   let userID = JSONFields.string(row["user_id"]) else { continue }
             byMessage[messageID, default: [:]][type, default: []].append(userID)
         }
-        return Dictionary(uniqueKeysWithValues: messageIDs.map { id in
+        // Callers may pass an ID twice (an optimistic copy and its echo); never trap on it.
+        return Dictionary(messageIDs.map { id in
             let summaries = (byMessage[id] ?? [:]).map { type, users in
                 ReactionSummary(reactionType: type, count: users.count, userReacted: users.contains(currentUserID), userIDs: users)
             }
             .sorted { $0.reactionType < $1.reactionType }
             return (id, summaries)
-        })
+        }, uniquingKeysWith: { first, _ in first })
     }
 
     /// Marks the latest peer message unread (spec §34.3; `PATCH /api/chat/messages/unread`),
