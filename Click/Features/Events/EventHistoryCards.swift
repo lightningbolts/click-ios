@@ -40,7 +40,7 @@ struct HomeEventRecapCard: View {
                 .task(id: card.recap?.isReady()) { await prefetch() }
     }
 
-    static func caption(_ recap: PastEvent.Recap?, now: Date = .now) -> String {
+    nonisolated static func caption(_ recap: PastEvent.Recap?, now: Date = .now) -> String {
         guard let recap else { return "See who was there." }
         if recap.isReady(at: now) { return "Your recap is ready." }
         guard case .developing(let reveal?) = recap else { return "Everyone's drops are developing." }
