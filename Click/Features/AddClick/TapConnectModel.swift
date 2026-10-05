@@ -16,11 +16,22 @@ final class TapConnectModel {
         case submitting
         /// Stored server-side; polling for the other person's tap.
         case waitingForPeer(exhausted: Bool)
-        case choosingPeople(candidates: [ProximityPeer], selected: Set<String>)
-        case confirmingPeople
+        /// A 3+ person tap: everyone in it, in a row, until this person confirms or removes.
+        case choosingPeople(PeopleReview)
+        case confirmingPeople(PeopleReview)
         case connected(ProximityMatch)
         case savedOffline
         case failed(String)
+    }
+
+    struct PeopleReview: Equatable {
+        var candidates: [ProximityPeer]
+        var removed: Set<String> = []
+        /// This exact group already exists, so confirming saves an encounter.
+        var existingConnectionID: String?
+
+        var selected: [ProximityPeer] { candidates.filter { !removed.contains($0.id) } }
+        var isExistingGroup: Bool { existingConnectionID != nil && removed.isEmpty }
     }
 
     enum PermissionIssue: Equatable {
@@ -53,6 +64,15 @@ final class TapConnectModel {
     private var runTask: Task<Void, Never>?
     private var pendingID: String?
     private var lastStart: Date?
+    /// Polls the stored tap while people are reviewed, so another phone's confirm moves this
+    /// one straight to the result (and a late joiner appears in the row).
+    private var reviewTask: Task<Void, Never>?
+    /// Serial chain of removal saves; the latest set always lands last.
+    private var exclusionsTask: Task<Void, Never>?
+    /// What confirmed the connection on this phone, for the result's details.
+    private(set) var verification: ConnectionVerification?
+    /// Set when another phone confirmed first and still included someone this person removed.
+    private(set) var resultNotice: String?
 
     /// Mirrors the KMP listen window and GATT grace.
     private static let listenWindow: Duration = .seconds(5)
@@ -101,11 +121,15 @@ final class TapConnectModel {
     }
 
     func cancel() {
-        if case .choosingPeople(let candidates, let selected) = phase {
-            track(.hostSelectionAbandoned, candidateCount: candidates.count, selectedCount: selected.count, reason: "dismissed")
+        if case .choosingPeople(let review) = phase {
+            track(.hostSelectionAbandoned, candidateCount: review.candidates.count, selectedCount: review.selected.count, reason: "dismissed")
+            // Leaving the review means not joining: nobody else's confirm adds this person.
+            if let pendingID { saveExclusions(Set(review.candidates.map(\.id)), pendingID: pendingID) }
         }
         runTask?.cancel()
         runTask = nil
+        reviewTask?.cancel()
+        reviewTask = nil
         stopSensors()
         stopCapture()
         pendingID = nil
@@ -132,35 +156,100 @@ final class TapConnectModel {
         runTask = Task { await recover(pendingID: pendingID) }
     }
 
-    func toggleSelection(_ peer: ProximityPeer) {
-        guard case .choosingPeople(let candidates, var selected) = phase else { return }
-        if selected.contains(peer.id) {
-            selected.remove(peer.id)
-        } else if selected.count < ProximityRepository.maxSelectedPeers {
-            selected.insert(peer.id)
+    /// Removes someone from this tap, or adds them back. Saved right away so whichever phone
+    /// confirms leaves them out.
+    func toggleRemoval(_ peer: ProximityPeer) {
+        guard case .choosingPeople(var review) = phase else { return }
+        if review.removed.contains(peer.id) {
+            review.removed.remove(peer.id)
+        } else {
+            review.removed.insert(peer.id)
         }
         ClickHaptics.selection()
-        phase = .choosingPeople(candidates: candidates, selected: selected)
+        phase = .choosingPeople(review)
+        if let pendingID { saveExclusions(review.removed, pendingID: pendingID) }
     }
 
     func confirmSelection() {
-        guard case .choosingPeople(_, let selected) = phase, !selected.isEmpty,
+        guard case .choosingPeople(let review) = phase, !review.selected.isEmpty,
               let pendingID, let environment else { return }
-        phase = .confirmingPeople
+        reviewTask?.cancel()
+        reviewTask = nil
+        phase = .confirmingPeople(review)
+        let memberIDs = review.selected.map(\.id)
         runTask = Task {
             do {
-                let match = try await environment.proximity.confirmSelection(pendingID: pendingID, memberIDs: Array(selected))
-                track(.hostSelectionConfirmed, selectedCount: selected.count)
-                if match.isGroup { track(.cliqueCreated, peerCount: match.peers.count, isGroup: true) }
+                let match = try await environment.proximity.confirmSelection(pendingID: pendingID, memberIDs: memberIDs)
+                track(.hostSelectionConfirmed, candidateCount: review.candidates.count, selectedCount: memberIDs.count)
+                if match.isGroup, match.isNewConnection { track(.cliqueCreated, peerCount: match.peers.count, isGroup: true) }
                 await finish(with: match)
             } catch {
                 // Another phone in the same tap may have confirmed first; its match includes us.
                 if case .matched(let match)? = try? await environment.proximity.recover(pendingID: pendingID) {
-                    await finish(with: match)
+                    finishAfterOtherConfirmed(match, removed: review.removed)
                     return
                 }
                 track(.failed, reason: "confirm_selection_failed")
-                phase = .failed("Couldn't create the group. \(error.userFacingMessage)")
+                phase = .failed("Couldn't save this tap. \(error.userFacingMessage)")
+            }
+        }
+    }
+
+    /// Everyone was removed: nothing is created for this person.
+    func skipTap() {
+        guard case .choosingPeople(let review) = phase else { return }
+        track(.hostSelectionAbandoned, candidateCount: review.candidates.count, selectedCount: 0, reason: "removed_everyone")
+        reviewTask?.cancel()
+        reviewTask = nil
+        if let pendingID { saveExclusions(Set(review.candidates.map(\.id)), pendingID: pendingID) }
+        pendingID = nil
+        phase = .idle
+        resetFactors()
+    }
+
+    private func saveExclusions(_ excluded: Set<String>, pendingID: String) {
+        guard let proximity = environment?.proximity else { return }
+        let previous = exclusionsTask
+        exclusionsTask = Task {
+            await previous?.value
+            try? await proximity.saveExclusions(pendingID: pendingID, excludedIDs: excluded)
+        }
+    }
+
+    private func finishAfterOtherConfirmed(_ match: ProximityMatch, removed: Set<String>) {
+        let stillIn = match.peers.filter { removed.contains($0.id) }
+        if !stillIn.isEmpty {
+            let names = ListFormatter.localizedString(byJoining: stillIn.map { HomeFeedModel.firstName($0.name) ?? $0.name })
+            resultNotice = "Another phone confirmed this group first, so \(names) is still in it. You can leave the group from its settings."
+        }
+        Task { await finish(with: match) }
+    }
+
+    /// While people are reviewed: another phone's confirm finishes this one too, and someone
+    /// who tapped a moment later joins the row.
+    private func watchReview(pendingID: String) async {
+        guard let environment else { return }
+        let deadline = ContinuousClock.now + Self.groupWatchWindow
+        while ContinuousClock.now < deadline {
+            try? await Task.sleep(for: Self.recoveryInterval)
+            guard !Task.isCancelled, case .choosingPeople(var review) = phase else { return }
+            switch try? await environment.proximity.recover(pendingID: pendingID) {
+            case .matched(let match)?:
+                guard !Task.isCancelled, case .choosingPeople(let current) = phase else { return }
+                finishAfterOtherConfirmed(match, removed: current.removed)
+                return
+            case .awaitingSelection(_, let candidates, let existing)?:
+                guard !Task.isCancelled, case .choosingPeople(let current) = phase else { return }
+                review = current
+                let known = Set(review.candidates.map(\.id))
+                let added = candidates.filter { !known.contains($0.id) }
+                guard !added.isEmpty else { continue }
+                review.candidates = Array((review.candidates + added).prefix(ProximityRepository.maxSelectedPeers))
+                review.existingConnectionID = existing
+                ClickHaptics.selection()
+                phase = .choosingPeople(review)
+            default:
+                continue
             }
         }
     }
@@ -171,6 +260,8 @@ final class TapConnectModel {
         guard let environment, let userID = environment.session.currentSession?.userId else { return }
         resetFactors()
         pendingID = nil
+        verification = nil
+        resultNotice = nil
         phase = .preparing
 
         // The Simulator has no BLE radio or ultrasonic path; it sends the server's mock evidence,
@@ -264,6 +355,14 @@ final class TapConnectModel {
         if captureLocation {
             location = evidence.latitude == nil ? .none : .found
         }
+        verification = ConnectionVerification(
+            signals: simulator ? ["Simulator"] : [
+                bluetooth == .found ? "Bluetooth" : nil,
+                sound == .found ? "Sound" : nil,
+                location == .found ? "Location" : nil
+            ].compactMap { $0 },
+            locationAccuracyMeters: evidence.location?.horizontalAccuracyMeters
+        )
         guard !Task.isCancelled else { return }
 
         phase = .submitting
@@ -296,12 +395,14 @@ final class TapConnectModel {
                 if match.isReconnect { track(.reconnectSaved, peerCount: match.peers.count, isGroup: match.isGroup, isReconnect: true) }
                 await finish(with: match)
             }
-        case .awaitingSelection(let pendingID, let candidates):
+        case .awaitingSelection(let pendingID, let candidates, let existingConnectionID):
             track(.awaitingSelection, candidateCount: candidates.count)
             self.pendingID = pendingID
             let people = Array(candidates.prefix(ProximityRepository.maxSelectedPeers))
             ClickHaptics.impact(.heavy)
-            phase = .choosingPeople(candidates: people, selected: Set(people.map(\.id)))
+            phase = .choosingPeople(PeopleReview(candidates: people, existingConnectionID: existingConnectionID))
+            reviewTask?.cancel()
+            reviewTask = Task { await watchReview(pendingID: pendingID) }
         case .pending(let pendingID):
             track(.pending)
             self.pendingID = pendingID
@@ -332,6 +433,8 @@ final class TapConnectModel {
 
     private func finish(with match: ProximityMatch) async {
         pendingID = nil
+        reviewTask?.cancel()
+        reviewTask = nil
         ClickHaptics.impact(.heavy)
         ClickHaptics.success()
         phase = .connected(match)

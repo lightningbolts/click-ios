@@ -37,6 +37,19 @@ struct PostConnectView: View {
                     .contentTransition(.opacity)
                     .animation(ClickMotion.subtleFade, value: model.subtitle)
 
+                if let notice = model.notice {
+                    Label(notice, systemImage: "info.circle")
+                        .font(ClickTypography.metadata)
+                        .foregroundStyle(ClickColors.textSecondary)
+                        .padding(12)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .background(ClickColors.surface, in: RoundedRectangle(cornerRadius: 14, style: .continuous))
+                        .padding(.top, 16)
+                }
+
+                encounterDetails
+                    .padding(.top, 20)
+
                 if let souvenir {
                     souvenir
                         .padding(.top, 22)
@@ -91,6 +104,65 @@ struct PostConnectView: View {
         .animation(ClickMotion.content, value: model.recommendation)
         .animation(ClickMotion.reveal, value: model.encounters.count)
         .sheet(item: $sharingSouvenir) { ActivityShareSheet(items: [$0.image]).presentationDetents([.medium, .large]) }
+    }
+
+    // MARK: - Encounter details
+
+    /// When, where, who and how this Click was verified, from this phone and the saved encounter.
+    private var encounterDetails: some View {
+        VStack(spacing: 0) {
+            detailRow("clock", "When", model.connectedAt.formatted(date: .abbreviated, time: .shortened))
+            Divider().padding(.leading, 48)
+            detailRow("mappin.and.ellipse", "Where", whereText, pending: model.detailsPlace == nil && model.isLoadingDetails)
+            if model.isGroup {
+                Divider().padding(.leading, 48)
+                detailRow("person.3", "With", ListFormatter.localizedString(byJoining: model.match.peers.map {
+                    HomeFeedModel.firstName($0.name) ?? $0.name
+                }))
+            }
+            if let event = model.latestEncounter?.eventTitle {
+                Divider().padding(.leading, 48)
+                detailRow("calendar", "Event", event)
+            }
+            if let weather = model.detailsWeather {
+                Divider().padding(.leading, 48)
+                detailRow("cloud.sun", "Weather", weather)
+            }
+            Divider().padding(.leading, 48)
+            detailRow("checkmark.shield", "Verified by", model.verificationLine)
+        }
+        .groupedSurface()
+        .animation(ClickMotion.subtleFade, value: model.latestEncounter)
+    }
+
+    private var whereText: String {
+        if let place = model.detailsPlace { return place }
+        if model.isLoadingDetails { return "Finding the place…" }
+        if model.latestEncounter?.latitude != nil || model.verification?.locationAccuracyMeters != nil {
+            return "Place name unavailable"
+        }
+        return "Not recorded"
+    }
+
+    private func detailRow(_ symbol: String, _ label: String, _ value: String, pending: Bool = false) -> some View {
+        HStack(alignment: .firstTextBaseline, spacing: 12) {
+            Image(systemName: symbol)
+                .foregroundStyle(ClickColors.textSecondary)
+                .frame(width: 24)
+                .accessibilityHidden(true)
+            Text(label)
+                .foregroundStyle(ClickColors.textSecondary)
+            Spacer(minLength: 12)
+            Text(value)
+                .foregroundStyle(pending ? ClickColors.textTertiary : ClickColors.textPrimary)
+                .multilineTextAlignment(.trailing)
+                .redacted(reason: pending ? .placeholder : [])
+                .contentTransition(.opacity)
+        }
+        .font(ClickTypography.supporting)
+        .padding(.horizontal, 14)
+        .padding(.vertical, 12)
+        .accessibilityElement(children: .combine)
     }
 
     // MARK: - Souvenir

@@ -17,12 +17,22 @@ final class PostConnectModel {
     let match: ProximityMatch
     let method: Method
     let suggestions: [ContextTag]
+    /// What confirmed this connection on this phone (signals and location accuracy).
+    let verification: ConnectionVerification?
+    /// A one-off explanation shown above the details (e.g. another phone confirmed first).
+    let notice: String?
+    /// When this phone saw the connection.
+    let connectedAt: Date
 
     private(set) var encounterCount: Int?
     /// This pair's encounters (newest first), for the souvenir.
     private(set) var encounters: [Encounter] = []
     private(set) var isExtendedHangout = false
     private(set) var placeName: String?
+    /// This tap's encounter (this viewer's row merged with the others), once loaded.
+    private(set) var latestEncounter: Encounter?
+    /// Details are still loading (place names arrive a moment after the encounter is saved).
+    private(set) var isLoadingDetails = true
     private(set) var recommendation: EventRecommendation?
     private(set) var saveState: SaveState = .idle
     private(set) var recommendationDismissed = false
@@ -32,9 +42,19 @@ final class PostConnectModel {
     var selectedTags: [String] = []
     var customTag = ""
 
-    init(match: ProximityMatch, method: Method, now: Date = .now, calendar: Calendar = .current) {
+    init(
+        match: ProximityMatch,
+        method: Method,
+        verification: ConnectionVerification? = nil,
+        notice: String? = nil,
+        now: Date = .now,
+        calendar: Calendar = .current
+    ) {
         self.match = match
         self.method = method
+        self.verification = verification
+        self.notice = notice
+        self.connectedAt = now
         self.suggestions = ContextTagTaxonomy.suggest(locationName: nil, hour: calendar.component(.hour, from: now))
     }
 
@@ -83,28 +103,74 @@ final class PostConnectModel {
         return formatter.string(from: NSNumber(value: value)) ?? "\(value)"
     }
 
+    /// The place for the details card: venue or first label component, else area.
+    var detailsPlace: String? {
+        placeName ?? latestEncounter.flatMap { encounter in
+            [encounter.neighbourhood, encounter.city].compactMap { $0 }.first
+        }
+    }
+
+    /// "12°C · Clear", when the server attached weather.
+    var detailsWeather: String? {
+        guard let encounter = latestEncounter else { return nil }
+        let parts = [
+            encounter.temperatureCelsius.map {
+                Measurement(value: $0, unit: UnitTemperature.celsius)
+                    .formatted(.measurement(width: .narrow, numberFormatStyle: .number.precision(.fractionLength(0))))
+            },
+            encounter.weatherCondition
+        ].compactMap { $0 }
+        return parts.isEmpty ? nil : parts.joined(separator: " · ")
+    }
+
+    var verificationLine: String {
+        let summary = verification?.summary ?? ""
+        switch method {
+        case .tap: return summary.isEmpty ? "Tap to Connect" : summary
+        case .qr: return summary.isEmpty ? "QR code" : summary
+        }
+    }
+
     /// Encounter history and an event suggestion, loaded in parallel after the reveal. Both are
-    /// enrichments: a failure just leaves them out.
-    func load(_ env: AppEnvironment) async {
-        guard let connectionID = match.connectionID, !isGroup else { return }
-        async let history = try? env.profiles.encounters(connectionID: connectionID, viewerID: env.session.currentSession?.userId)
-        async let suggestion = try? env.encounterContext.eventRecommendation(
+    /// enrichments: a failure just leaves them out. The place name is added by the server a
+    /// moment after the encounter is saved, so a missing one is fetched once more.
+    func load(_ env: AppEnvironment, placeRetryDelay: Duration = .milliseconds(2500)) async {
+        defer { isLoadingDetails = false }
+        guard let connectionID = match.connectionID ?? primaryPeer?.connectionID else { return }
+        let viewerID = env.session.currentSession?.userId
+        async let history = try? env.profiles.encounters(connectionID: connectionID, viewerID: viewerID)
+        async let suggestion = eventSuggestion(env, connectionID: connectionID)
+        if let encounters = await history { apply(encounters) }
+        recommendation = await suggestion
+
+        guard placeName == nil, latestEncounter?.latitude != nil || latestEncounter == nil else { return }
+        try? await Task.sleep(for: placeRetryDelay)
+        guard !Task.isCancelled,
+              let encounters = try? await env.profiles.encounters(connectionID: connectionID, viewerID: viewerID) else { return }
+        apply(encounters)
+    }
+
+    /// One-to-one only: a group has no single peer to go with.
+    private func eventSuggestion(_ env: AppEnvironment, connectionID: String) async -> EventRecommendation? {
+        guard !isGroup else { return nil }
+        return try? await env.encounterContext.eventRecommendation(
             connectionID: connectionID,
             latitude: env.location.lastFix?.coordinate.latitude,
             longitude: env.location.lastFix?.coordinate.longitude
         )
-        if let encounters = await history {
-            self.encounters = encounters
-            encounterCount = encounters.count
-            if let latest = encounters.first {
-                placeName = latest.placeName
-                // The server debounces a same-place, same-12-hour reconnect into the previous
-                // row and tags it "Extended Hangout"; a row older than this tap means that.
-                isExtendedHangout = match.isReconnect
-                    && latest.contextTags.contains(where: ContextTagTaxonomy.isExtendedHangout)
-            }
-        }
-        recommendation = await suggestion ?? nil
+    }
+
+    private func apply(_ encounters: [Encounter]) {
+        self.encounters = encounters
+        encounterCount = encounters.count
+        guard let latest = encounters.first else { return }
+        // Only this tap's row: an older row means the server merged into it (Extended Hangout).
+        latestEncounter = latest
+        placeName = latest.placeName
+        // The server debounces a same-place, same-12-hour reconnect into the previous
+        // row and tags it "Extended Hangout"; a row older than this tap means that.
+        isExtendedHangout = !isGroup && match.isReconnect
+            && latest.contextTags.contains(where: ContextTagTaxonomy.isExtendedHangout)
     }
 
     func save(_ env: AppEnvironment) async {
