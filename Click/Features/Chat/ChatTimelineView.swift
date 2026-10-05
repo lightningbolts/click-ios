@@ -434,6 +434,18 @@ final class TimelineCollectionView: UICollectionView {
 
     override func layoutSubviews() {
         super.layoutSubviews()
+        anchorShortContentToBottom()
         onLayout?()
+    }
+
+    /// A chat shorter than the screen sits just above the composer (like Messages), not at the
+    /// top where the say-hi panel and other banners would cover it. The gap is a top inset, so
+    /// the bottom offset and paging math are unchanged.
+    private func anchorShortContentToBottom() {
+        let visible = bounds.height - (adjustedContentInset.top - contentInset.top) - adjustedContentInset.bottom
+        let filler = max(0, visible - contentSize.height).rounded(.down)
+        if abs(filler - contentInset.top) > 0.5 {
+            contentInset.top = filler
+        }
     }
 }
