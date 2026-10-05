@@ -19,6 +19,14 @@ public struct RootGateView: View {
                 }
             } else if DebugLaunch.has("-preview-clicks") {
                 ClicksPreviewHost()
+            } else if DebugLaunch.has("-preview-tap-review") {
+                #if DEBUG
+                TapReviewPreviewHost()
+                #endif
+            } else if DebugLaunch.has("-preview-tap-connected") {
+                #if DEBUG
+                TapConnectedPreviewHost()
+                #endif
             } else if DebugLaunch.has("-preview-onboarding-welcome") {
                 onboardingPreview(step: 0) { WelcomeView(firstName: "Alex") {} }
             } else if DebugLaunch.has("-preview-onboarding-interests") {

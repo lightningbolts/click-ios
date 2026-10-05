@@ -88,11 +88,34 @@ public struct ProximityMatch: Equatable, Sendable {
     public var isReconnect: Bool { !isNewConnection }
 }
 
+/// What confirmed a connection on this phone, shown on the result ("Bluetooth · Sound").
+public struct ConnectionVerification: Equatable, Sendable {
+    public var signals: [String]
+    /// This phone's own location accuracy at the connection moment, when Location snap is on.
+    public var locationAccuracyMeters: Double?
+
+    public init(signals: [String], locationAccuracyMeters: Double? = nil) {
+        self.signals = signals
+        self.locationAccuracyMeters = locationAccuracyMeters
+    }
+
+    /// "Bluetooth · Sound · Location ±8 m"
+    public var summary: String {
+        var parts = signals
+        if let accuracy = locationAccuracyMeters {
+            let location = "Location ±\(Int(max(1, accuracy.rounded()))) m"
+            if let index = parts.firstIndex(of: "Location") { parts[index] = location } else { parts.append(location) }
+        }
+        return parts.joined(separator: " · ")
+    }
+}
+
 public enum ProximityBindResult: Equatable, Sendable {
     /// Server matched peers and created/updated the connection.
     case matched(ProximityMatch)
-    /// First-time 3+ tap: the host must choose people before anything is created.
-    case awaitingSelection(pendingID: String, candidates: [ProximityPeer])
+    /// A 3+ person tap: people review (and can remove) members before anything is written.
+    /// `existingConnectionID` is set when this exact group already exists.
+    case awaitingSelection(pendingID: String, candidates: [ProximityPeer], existingConnectionID: String? = nil)
     /// Stored server-side; the peer's tap may still arrive.
     case pending(pendingID: String)
     /// The server ignored an empty/invalid tap.
@@ -158,6 +181,16 @@ public actor ProximityRepository {
         return match
     }
 
+    /// `POST /api/connections/proximity/selection`: who this person removed while reviewing a
+    /// group tap, so the group leaves them out whichever phone confirms it.
+    public func saveExclusions(pendingID: String, excludedIDs: Set<String>) async throws {
+        let body = try JSONSerialization.data(withJSONObject: [
+            "pending_handshake_id": pendingID,
+            "excluded_member_ids": excludedIDs.sorted()
+        ])
+        _ = try await api.executeRaw(APIRequest(path: "/api/connections/proximity/selection", method: .post, body: body))
+    }
+
     // MARK: - Offline queue (spec §69.4)
 
     private struct QueuedHandshake: Codable {
@@ -206,7 +239,10 @@ public actor ProximityRepository {
         }
         let peers = JSONFields.rows(root["matches"]).compactMap(ProximityPeer.decode)
         if JSONFields.bool(root["awaiting_selection"]) == true, let pendingID = JSONFields.string(root["pending_handshake_id"]) {
-            return .awaitingSelection(pendingID: pendingID, candidates: peers)
+            return .awaitingSelection(
+                pendingID: pendingID, candidates: peers,
+                existingConnectionID: JSONFields.string(root["existing_connection_id"])
+            )
         }
         if status == 202 {
             guard let pendingID = JSONFields.string(root["pending_handshake_id"]) else { throw APIError.decoding }

@@ -422,6 +422,7 @@ struct ScanClickCodeView: View {
     @Environment(ConversationListModel.self) private var conversations
     @State private var permission: PermissionStatus = .notDetermined
     @State private var revealed: ProximityMatch?
+    @State private var revealedVerification: ConnectionVerification?
     @State private var scannedValue: String?
     @State private var isProcessing = false
     @State private var statusText: String?
@@ -482,7 +483,7 @@ struct ScanClickCodeView: View {
         }
         .fullScreenCover(item: Binding(get: { revealed.map(RevealItem.init) }, set: { if $0 == nil { finishReveal() } })) { item in
             PostConnectView(
-                model: PostConnectModel(match: item.match, method: .qr),
+                model: PostConnectModel(match: item.match, method: .qr, verification: revealedVerification),
                 onSayHi: { peer in
                     revealed = nil
                     env.router.addClickPath.removeAll()
@@ -592,6 +593,7 @@ struct ScanClickCodeView: View {
             ClickHaptics.impact(.heavy)
             ClickHaptics.notification(.success)
             // Same reveal and tagging as Tap to Connect (spec §22, §26–§28).
+            revealedVerification = result.verification
             revealed = ProximityMatch(
                 connectionID: result.connectionID,
                 isNewConnection: result.isNew,
@@ -682,6 +684,8 @@ private enum ClickConnectionRedeemer {
         var encounterLogged = true
         var encounterID: String?
         var collaborationEndsAt: Date?
+        /// How this phone confirmed the connection (code + its own location accuracy).
+        var verification: ConnectionVerification?
     }
 
     /// Encounter context captured at the connection moment, as the body keys `/api/qr` and
@@ -800,6 +804,10 @@ private enum ClickConnectionRedeemer {
         )
         if capture == nil { session.stop() }
         onCaptured(captured.quality)
+        let verification = ConnectionVerification(
+            signals: [capture == nil ? "Click link" : "QR code", captured.fix == nil ? nil : "Location"].compactMap { $0 },
+            locationAccuracyMeters: captured.fix?.horizontalAccuracyMeters
+        )
         var redeemBody = captured.fields
         if let token = invocation.token, !token.isEmpty {
             redeemBody["token"] = token
@@ -857,7 +865,8 @@ private enum ClickConnectionRedeemer {
                 isNew: true,
                 encounterLogged: JSONFields.bool(createdRoot["encounter_logged"]) ?? true,
                 encounterID: JSONFields.string(createdRoot["encounter_id"]),
-                collaborationEndsAt: JSONFields.date(createdRoot["collaboration_ttl"])
+                collaborationEndsAt: JSONFields.date(createdRoot["collaboration_ttl"]),
+                verification: verification
             )
         }
 
@@ -868,7 +877,8 @@ private enum ClickConnectionRedeemer {
             isNew: false,
             encounterLogged: JSONFields.bool(root["encounter_logged"]) ?? true,
             encounterID: JSONFields.string(root["encounter_id"]),
-            collaborationEndsAt: JSONFields.date(root["collaboration_ttl"])
+            collaborationEndsAt: JSONFields.date(root["collaboration_ttl"]),
+            verification: verification
         )
     }
 }

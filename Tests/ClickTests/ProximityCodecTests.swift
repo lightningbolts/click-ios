@@ -102,6 +102,25 @@ struct ProximityResultTests {
         ]))
     }
 
+    @Test("A group tap for an existing group still asks for review, carrying the group")
+    func awaitingSelectionExistingGroup() throws {
+        let result = try parse(#"{"awaiting_selection":true,"pending_handshake_id":"p2","existing_connection_id":"g9","matches":[{"id":"a","name":"A"},{"id":"b","name":"B"}]}"#)
+        guard case .awaitingSelection(let pendingID, let candidates, let existing) = result else {
+            Issue.record("expected review"); return
+        }
+        #expect(pendingID == "p2")
+        #expect(candidates.count == 2)
+        #expect(existing == "g9")
+    }
+
+    @Test("Verification summary folds location accuracy into the Location signal")
+    func verificationSummary() {
+        #expect(ConnectionVerification(signals: ["Bluetooth", "Sound", "Location"], locationAccuracyMeters: 7.6).summary
+            == "Bluetooth · Sound · Location ±8 m")
+        #expect(ConnectionVerification(signals: ["QR code"], locationAccuracyMeters: 0.2).summary == "QR code · Location ±1 m")
+        #expect(ConnectionVerification(signals: ["Bluetooth"]).summary == "Bluetooth")
+    }
+
     @Test("202 is pending (stored server-side), not success")
     func pending() throws {
         #expect(try parse(#"{"success":true,"status":"pending_match","pending_handshake_id":"p9","matches":[]}"#, status: 202) == .pending(pendingID: "p9"))
