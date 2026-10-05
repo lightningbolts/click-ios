@@ -203,6 +203,18 @@ struct ConnectionSensorObservationTests {
         #expect(barometer.samples.count == ConnectionSensorObservation.Barometer.maximumSamples)
         #expect(barometer.pressureKpa == 100.81)
         #expect(barometer.samples.contains { $0.pressureKpa == 100.81 })
+        #expect(barometer.startedTMs == nil)
+    }
+
+    @Test("Barometer records when the altimeter started, relative to the moment")
+    func barometerStart() throws {
+        let relative = [RelativeAltitudeSample(relativeAltitudeMeters: 0, pressureKPa: 101.788, observedAt: t0.addingTimeInterval(-1.9))]
+        let reading = AltitudeStabilizer.stabilized(absolute: [], relative: relative, around: t0, until: t0)
+        let barometer = try #require(ConnectionSensorObservation.Barometer(
+            reading, absolute: [], relative: relative, moment: t0, startedAt: t0.addingTimeInterval(-2)
+        ))
+        #expect(barometer.startedTMs == -2000)
+        #expect(barometer.absoluteAltitudeM == nil)
     }
 
     // MARK: Payload

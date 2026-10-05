@@ -150,6 +150,9 @@ public struct ConnectionSensorObservation: Codable, Equatable, Sendable {
         var relativeAltitudeM: Double?
         var observedAt: Date
         var samplesCollected: Int
+        /// When the altimeter started, relative to the moment (ms). With the first absolute
+        /// sample's `t_ms` it measures how long the absolute fix took.
+        var startedTMs: Int?
         /// The individual short-window readings nearest the moment.
         var samples: [Sample]
 
@@ -165,7 +168,8 @@ public struct ConnectionSensorObservation: Codable, Equatable, Sendable {
             _ reading: AltitudeObservation?,
             absolute: [AbsoluteAltitudeSample],
             relative: [RelativeAltitudeSample],
-            moment: Date
+            moment: Date,
+            startedAt: Date? = nil
         ) {
             guard let reading else { return nil }
             pressureKpa = reading.pressureKPa.map { LocationObservation.rounded($0, places: 3) }
@@ -176,6 +180,7 @@ public struct ConnectionSensorObservation: Codable, Equatable, Sendable {
             observedAt = reading.observedAt
             samplesCollected = absolute.count + relative.count
             let t = { (date: Date) in SensorClock.milliseconds(date.timeIntervalSince(moment)) }
+            startedTMs = startedAt.map(t)
             let merged: [Sample] = absolute.filter { $0.altitudeMeters.isFinite && $0.accuracyMeters.isFinite }.map {
                 Sample(tMs: t($0.observedAt), altitudeM: LocationObservation.rounded($0.altitudeMeters, places: 2),
                        accuracyM: LocationObservation.rounded($0.accuracyMeters, places: 2))
@@ -305,7 +310,8 @@ extension ConnectionSensorObservation {
                 }
                 : nil,
             barometer: Barometer(snapshot.altitude, absolute: snapshot.absoluteAltitudeSamples,
-                                 relative: snapshot.relativeAltitudeSamples, moment: moment),
+                                 relative: snapshot.relativeAltitudeSamples, moment: moment,
+                                 startedAt: snapshot.altitudeStartedAt),
             motion: MotionObservation.window(snapshot.motionSamples, momentUptime: snapshot.momentUptime),
             heading: Heading(includeLocation ? snapshot.heading : nil, motion: snapshot.motionSamples,
                              momentUptime: snapshot.momentUptime),

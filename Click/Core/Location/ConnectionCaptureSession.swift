@@ -25,6 +25,8 @@ final class ConnectionCaptureSession: NSObject, CLLocationManagerDelegate {
         var locationFixes: [LocationObservation] = []
         var locationUpdates = 0
         var altitude: AltitudeObservation?
+        /// When the altimeter started, so the time to its first absolute fix can be measured.
+        var altitudeStartedAt: Date?
         var absoluteAltitudeSamples: [AbsoluteAltitudeSample] = []
         var relativeAltitudeSamples: [RelativeAltitudeSample] = []
         var motionSamples: [MotionSample] = []
@@ -140,6 +142,7 @@ final class ConnectionCaptureSession: NSObject, CLLocationManagerDelegate {
             altitude: AltitudeStabilizer.stabilized(
                 absolute: absoluteSamples, relative: relativeSamples, around: moment, until: end
             ),
+            altitudeStartedAt: altitudeStartedAt,
             absoluteAltitudeSamples: absoluteSamples.filter { $0.observedAt >= earliest && $0.observedAt <= end },
             relativeAltitudeSamples: relativeSamples.filter { $0.observedAt >= earliest && $0.observedAt <= end },
             motionSamples: motionSamples,
