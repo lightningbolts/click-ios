@@ -74,6 +74,19 @@ extension LocationObservation {
         )
     }
 
+    /// The same fix (its accuracy, time and altitude) at another position.
+    func moved(to latitude: Double, longitude: Double) -> LocationObservation {
+        LocationObservation(
+            latitude: latitude, longitude: longitude,
+            horizontalAccuracyMeters: horizontalAccuracyMeters, verticalAccuracyMeters: verticalAccuracyMeters,
+            altitudeMeters: altitudeMeters, ellipsoidalAltitudeMeters: ellipsoidalAltitudeMeters,
+            observedAt: observedAt, floorLevel: floorLevel, isFullAccuracy: isFullAccuracy,
+            isSimulatedBySoftware: isSimulatedBySoftware, isProducedByAccessory: isProducedByAccessory,
+            speedMetersPerSecond: speedMetersPerSecond, speedAccuracyMetersPerSecond: speedAccuracyMetersPerSecond,
+            courseDegrees: courseDegrees, courseAccuracyDegrees: courseAccuracyDegrees
+        )
+    }
+
     /// Core Location marks invalid accuracies with negative values.
     private static func nonNegative(_ value: Double) -> Double? {
         value.isFinite && value >= 0 ? value : nil

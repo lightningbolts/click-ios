@@ -150,7 +150,7 @@ public struct ChatView: View {
                 }
             }
             .sheet(isPresented: $sharingBeacon) {
-                BeaconSharePicker { beacon in Task { await model.sendBeacon(beacon) } }
+                BeaconSharePicker { beacons in Task { await model.sendBeacons(beacons) } }
             }
             .onDisappear {
                 if env.activeChatID == model.identity.chatID {

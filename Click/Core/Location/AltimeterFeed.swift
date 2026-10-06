@@ -3,7 +3,7 @@ import Foundation
 
 /// One running altimeter and the readings it has delivered. A connection capture owns it while
 /// the flow is visible; when the connection completes before the first absolute fix, the
-/// capture hands it to `EncounterAltitudeFollowUp`, which keeps it alive for a few more seconds
+/// capture hands it to `EncounterFollowUp`, which keeps it alive for a few more seconds
 /// and then stops it. Exactly one owner stops it.
 @MainActor
 final class AltimeterFeed {

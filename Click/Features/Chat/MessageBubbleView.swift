@@ -599,10 +599,11 @@ public struct MessageBubbleView: View {
 }
 
 /// A shared event/beacon as a card (prototype "Sunset Run Club"), not as "Beacon: …" text.
-private struct BeaconMessageCard: View {
+struct BeaconMessageCard: View {
     @Environment(AppEnvironment.self) private var env: AppEnvironment?
     let beacon: SharedBeacon
-    let time: String
+    /// Nil before it's sent (the share preview).
+    let time: String?
     let isOutgoing: Bool
     let onOpen: () -> Void
 
@@ -628,10 +629,12 @@ private struct BeaconMessageCard: View {
                             .font(ClickTypography.supportingEmphasized)
                             .foregroundStyle(ClickColors.accentForeground)
                         Spacer()
-                        Text(time)
-                            .font(ClickTypography.caption)
-                            .foregroundStyle(ClickColors.textSecondary)
-                            .monospacedDigit()
+                        if let time {
+                            Text(time)
+                                .font(ClickTypography.caption)
+                                .foregroundStyle(ClickColors.textSecondary)
+                                .monospacedDigit()
+                        }
                     }
                     .padding(.top, 4)
                 }
@@ -718,19 +721,22 @@ private struct UploadStateOverlay: View {
         }
     }
 
+    /// One ring for both stages: while encrypting, a short arc circles the track; once bytes
+    /// move, it gives way to the arc that fills with the upload.
     private var ring: some View {
         ZStack {
-            Circle().stroke(.white.opacity(0.3), lineWidth: 3)
             if let fraction {
+                Circle().stroke(.white.opacity(0.3), lineWidth: 3)
                 Circle()
                     .trim(from: 0, to: max(0.03, fraction))
                     .stroke(.white, style: StrokeStyle(lineWidth: 3, lineCap: .round))
                     .rotationEffect(.degrees(-90))
                     .animation(.linear(duration: 0.15), value: fraction)
             } else {
-                ProgressView().tint(.white)
+                ArcSpinner()
             }
         }
+        .animation(ClickMotion.subtleFade, value: fraction == nil)
         .frame(width: 36, height: 36)
         .accessibilityElement()
         .accessibilityLabel(fraction.map { "Uploading, \(Int($0 * 100)) percent" } ?? "Encrypting")

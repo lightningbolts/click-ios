@@ -81,3 +81,17 @@ private struct GroupedRowLabelStyle: LabelStyle {
         }
     }
 }
+
+extension View {
+    /// One row's slice of a lazily built grouped card: rounded only at the card's ends. A
+    /// translucent fill, so it reads the same over a sheet's glass as over its solid height.
+    func groupedRowSlice(isFirst: Bool, isLast: Bool) -> some View {
+        background(ClickColors.fillSubtle, in: UnevenRoundedRectangle(
+            topLeadingRadius: isFirst ? ClickRadius.surface : 0,
+            bottomLeadingRadius: isLast ? ClickRadius.surface : 0,
+            bottomTrailingRadius: isLast ? ClickRadius.surface : 0,
+            topTrailingRadius: isFirst ? ClickRadius.surface : 0,
+            style: .continuous
+        ))
+    }
+}

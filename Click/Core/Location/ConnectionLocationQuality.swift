@@ -139,6 +139,58 @@ enum ConnectionLocationQuality {
         )
     }
 
+    // MARK: Refinement after the moment
+
+    /// After a connection the phones usually stay where they met while the result is read, and
+    /// GPS keeps converging for tens of seconds. Fixes from that time, while the phone stays
+    /// put, describe the same spot, so a short follow-up can tighten the moment's fix without
+    /// making anyone wait.
+    static let refinementWindow: TimeInterval = 20
+    /// A refinement must shrink the radius to at most this share of the moment's.
+    static let refinementGain = 0.8
+    /// Linear acceleration (g, RMS over a second) above which the phone is being walked with,
+    /// once it lasts `movingSeconds` in a row (lifting the phone once does not count).
+    static let stationaryAccelerationRMS = 0.12
+    static let movingSeconds = 3
+    /// A fix reporting this speed (m/s) or more was taken on the move.
+    static let stationarySpeed: Double = 0.8
+
+    /// A tighter fix for the moment from `later` fixes (taken after it, while still), or nil
+    /// unless clearly better. The position is the inverse-variance mean of the fixes agreeing
+    /// with the best one; the radius is that best fix's own, as reported by Core Location (never
+    /// a statistically shrunk one, since consecutive fixes share most of their error). A result
+    /// that disagrees with the moment's fix means the phone moved, and is dropped.
+    static func refined(_ original: LocationObservation, later: [LocationObservation], moment: Date) -> LocationObservation? {
+        let still = later.filter {
+            isUseful($0) && $0.isFullAccuracy == original.isFullAccuracy && $0.observedAt > moment
+                && ($0.speedMetersPerSecond ?? 0) < stationarySpeed
+        }
+        guard let best = still.min(by: { $0.horizontalAccuracyMeters < $1.horizontalAccuracyMeters }),
+              best.horizontalAccuracyMeters <= original.horizontalAccuracyMeters * refinementGain else { return nil }
+        let agreeing = still.filter {
+            meters(from: $0, to: best) <= $0.horizontalAccuracyMeters + best.horizontalAccuracyMeters
+        }
+        var sumW = 0.0, sumLat = 0.0, sumLon = 0.0
+        for fix in agreeing {
+            let radius = max(1, fix.horizontalAccuracyMeters)
+            let w = 1 / (radius * radius)
+            sumW += w
+            sumLat += w * fix.latitude
+            sumLon += w * fix.longitude
+        }
+        let result = best.moved(to: sumLat / sumW, longitude: sumLon / sumW)
+        guard meters(from: result, to: original) <= original.horizontalAccuracyMeters + best.horizontalAccuracyMeters else { return nil }
+        return result
+    }
+
+    /// Ground distance (m) between two nearby fixes (equirectangular; exact enough within km).
+    static func meters(from a: LocationObservation, to b: LocationObservation) -> Double {
+        let metersPerDegree = 111_320.0
+        let x = (b.longitude - a.longitude) * metersPerDegree * cos(a.latitude * .pi / 180)
+        let y = (b.latitude - a.latitude) * metersPerDegree
+        return (x * x + y * y).squareRoot()
+    }
+
     /// True once the minimum window has passed and `best` is at least `settleAccuracy`.
     static func isSettled(_ best: LocationObservation?, moment: Date, startedAt: Date, now: Date, wait: Wait) -> Bool {
         guard let best, now.timeIntervalSince(startedAt) >= minimumCaptureDuration else { return false }

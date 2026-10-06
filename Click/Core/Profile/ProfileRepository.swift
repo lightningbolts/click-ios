@@ -49,6 +49,8 @@ public struct Encounter: Codable, Equatable, Identifiable, Sendable {
     public var elevation: String?
     /// Named place from reverse geocoding ("Gas Works Park"), preferred over street addresses.
     public var venue: String? = nil
+    /// Its OpenStreetMap type ("cafe", "university"), for tag suggestions.
+    public var placeType: String? = nil
     public var temperatureCelsius: Double? = nil
     public var weatherCondition: String? = nil
     public var relativeAltitudeMeters: Double? = nil
@@ -70,6 +72,13 @@ public struct Encounter: Codable, Equatable, Identifiable, Sendable {
     /// `gps_lat` / `gps_lon` (the profile's encounter map).
     public var latitude: Double? = nil
     public var longitude: Double? = nil
+    /// The phone's barometer at the moment (`barometric_pressure_kpa`, station pressure).
+    public var stationPressureKPa: Double? = nil
+    /// The weather's sea-level pressure there (`weather_snapshot.pressureMslHpa`).
+    public var seaLevelPressureHpa: Double? = nil
+    /// Core Location altitude (m AMSL) and its reported vertical accuracy.
+    public var gpsAltitudeMeters: Double? = nil
+    public var gpsVerticalAccuracyMeters: Double? = nil
     /// `reporting_user_id`: each participant's device records its own row for the same tap.
     public var reportingUserID: String? = nil
     /// Other participants' rows for this same moment, folded in by `merged(_:viewerID:)`.
@@ -118,13 +127,41 @@ public struct Encounter: Codable, Equatable, Identifiable, Sendable {
             if self[keyPath: key] == nil { self[keyPath: key] = other[keyPath: key] }
         }
         take(\.place); take(\.eventTitle); take(\.eventBeaconID); take(\.noiseLevel); take(\.elevation)
-        take(\.venue); take(\.temperatureCelsius); take(\.weatherCondition); take(\.relativeAltitudeMeters)
+        take(\.venue); take(\.placeType); take(\.temperatureCelsius); take(\.weatherCondition); take(\.relativeAltitudeMeters)
         take(\.neighbourhood); take(\.city); take(\.noiseDecibels); take(\.barometricElevationMeters)
         take(\.lux); take(\.motionVariance); take(\.windKph); take(\.windDirectionDegrees)
         take(\.locationName); take(\.displayLocation); take(\.compassAzimuth); take(\.batteryLevel)
         take(\.vibeCapture); take(\.latitude); take(\.longitude)
+        if stationPressureKPa == nil {
+            // The pressure only means something against its own sea-level reference.
+            stationPressureKPa = other.stationPressureKPa
+            seaLevelPressureHpa = other.seaLevelPressureHpa
+        }
+        if gpsAltitudeMeters == nil {
+            gpsAltitudeMeters = other.gpsAltitudeMeters
+            gpsVerticalAccuracyMeters = other.gpsVerticalAccuracyMeters
+        }
         if contextTags.isEmpty { contextTags = other.contextTags }
         mergedIDs = (mergedIDs ?? []) + [other.id]
+    }
+
+    /// Most GPS vertical error at which its altitude is still worth showing.
+    static let gpsAltitudeMaxError: Double = 10
+
+    /// Height above sea level from the best reading this phone made: its absolute barometric
+    /// fix; else its pressure against the weather's sea-level pressure (that fix often arrives
+    /// only after a quick tap is over); else GPS, when its vertical accuracy is good.
+    public var altitudeMeters: Double? {
+        if let barometricElevationMeters, barometricElevationMeters.isFinite { return barometricElevationMeters }
+        if let station = stationPressureKPa, let seaLevel = seaLevelPressureHpa, station > 0, seaLevel > 0 {
+            let height = 44_330 * (1 - pow(station * 10 / seaLevel, 1 / 5.255))
+            if height.isFinite { return height }
+        }
+        if let gps = gpsAltitudeMeters, let error = gpsVerticalAccuracyMeters, gps.isFinite,
+           error >= 0, error <= Self.gpsAltitudeMaxError {
+            return gps
+        }
+        return nil
     }
 
     /// Venue name, else the first component of the stored label (never a full address).
@@ -147,6 +184,7 @@ public struct Encounter: Codable, Equatable, Identifiable, Sendable {
             noiseLevel: JSONFields.string(row["noise_level"]),
             elevation: JSONFields.string(row["elevation_category"]),
             venue: semantic.flatMap { JSONFields.string($0["name"]) },
+            placeType: semantic.flatMap { JSONFields.string($0["type"]) },
             temperatureCelsius: weather.flatMap { JSONFields.double($0["temperatureCelsius"]) },
             weatherCondition: weather.flatMap { JSONFields.string($0["condition"]) },
             relativeAltitudeMeters: JSONFields.double(row["relative_altitude_m"]),
@@ -165,6 +203,10 @@ public struct Encounter: Codable, Equatable, Identifiable, Sendable {
             vibeCapture: JSONFields.string(row["vibe_capture"]),
             latitude: JSONFields.double(row["gps_lat"]),
             longitude: JSONFields.double(row["gps_lon"]),
+            stationPressureKPa: JSONFields.double(row["barometric_pressure_kpa"]),
+            seaLevelPressureHpa: weather.flatMap { JSONFields.double($0["pressureMslHpa"]) },
+            gpsAltitudeMeters: JSONFields.double(row["gps_altitude_m"]),
+            gpsVerticalAccuracyMeters: JSONFields.double(row["gps_vertical_accuracy_m"]),
             reportingUserID: JSONFields.string(row["reporting_user_id"])
         )
     }
@@ -476,7 +518,8 @@ enum EncounterLabels {
         return rows
     }
 
-    /// Colorful metric pills in KMP order: condition, temperature, wind, noise, elevation, compass.
+    /// Colorful metric pills in KMP order (condition, temperature, wind, noise, elevation), then
+    /// pressure and compass.
     nonisolated static func metricPills(for encounter: Encounter) -> [MetricPill] {
         var pills: [MetricPill] = []
 
@@ -495,15 +538,16 @@ enum EncounterLabels {
             pills.append(MetricPill(symbol: "wind", tintHex: "#81D4FA", text: "\(Int(wind.rounded())) km/h\(direction)"))
         }
 
-        if let noiseCat = encounter.noiseLevel.flatMap(noise) {
-            pills.append(MetricPill(symbol: "waveform", tintHex: "#69F0AE", text: noiseCat))
+        if let sound = soundText(for: encounter) {
+            pills.append(MetricPill(symbol: "waveform", tintHex: "#69F0AE", text: sound))
         }
 
-        let elevCat = encounter.elevation.flatMap(elevation)
-        let elevM = (encounter.relativeAltitudeMeters ?? encounter.barometricElevationMeters).flatMap { $0.isFinite ? "\(Int($0.rounded())) m" : nil }
-        let elevParts = [elevCat, elevM].compactMap { $0 }
-        if !elevParts.isEmpty {
-            pills.append(MetricPill(symbol: "mountain.2", tintHex: "#90CAF9", text: elevParts.joined(separator: " · ")))
+        if let height = heightText(for: encounter) {
+            pills.append(MetricPill(symbol: "mountain.2", tintHex: "#90CAF9", text: height))
+        }
+
+        if let pressure = pressureText(for: encounter) {
+            pills.append(MetricPill(symbol: "gauge.with.dots.needle.50percent", tintHex: "#CE93D8", text: pressure))
         }
 
         if let azimuth = encounter.compassAzimuth, azimuth.isFinite {
@@ -540,6 +584,29 @@ enum EncounterLabels {
         case let (name?, nil, display?) where name != display: return "\(name) · \(display)"
         default: return display ?? name ?? area
         }
+    }
+
+    /// How loud it was, in words ("Quiet"); the measured dB stays on the server. Rows that only
+    /// stored the dB are banded with the tiers the app writes.
+    nonisolated static func soundText(for encounter: Encounter) -> String? {
+        let decibels = encounter.noiseDecibels.flatMap { $0.isFinite ? $0 : nil }
+        return (encounter.noiseLevel ?? decibels.map(EncounterSensorSampler.noiseLevel(decibels:))).flatMap(noise)
+    }
+
+    /// "Elevated · 12 m" above the ground when the server could tell, else "Alt. 29 m" above
+    /// sea level from the best reading the phone made.
+    nonisolated static func heightText(for encounter: Encounter) -> String? {
+        let band = encounter.elevation.flatMap(elevation)
+        let aboveGround = encounter.relativeAltitudeMeters.flatMap { $0.isFinite ? "\(Int($0.rounded())) m" : nil }
+        if band != nil || aboveGround != nil { return [band, aboveGround].compactMap { $0 }.joined(separator: " · ") }
+        return encounter.altitudeMeters.map { "Alt. \(Int($0.rounded())) m" }
+    }
+
+    /// The phone's own barometer reading, else the weather's sea-level pressure ("1016 hPa").
+    nonisolated static func pressureText(for encounter: Encounter) -> String? {
+        guard let hectopascals = encounter.stationPressureKPa.map({ $0 * 10 }) ?? encounter.seaLevelPressureHpa,
+              hectopascals.isFinite, hectopascals > 0 else { return nil }
+        return "\(Int(hectopascals.rounded())) hPa"
     }
 
     nonisolated static func compass(_ degrees: Double) -> String {

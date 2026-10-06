@@ -129,11 +129,31 @@ struct EncounterContextTests {
         #expect(patches.map(\.id) == ["mine"])
     }
 
-    @Test("Suggestions follow the KMP hour rules")
+    @Test("Suggestions weigh time, place, sensors and history")
     func suggestions() {
-        #expect(ContextTagTaxonomy.suggest(locationName: nil, hour: 23).map(\.id).prefix(2) == ["party", "bar"])
-        #expect(ContextTagTaxonomy.suggest(locationName: "Blue Bottle Coffee", hour: 9).first?.id == "cafe")
-        #expect(ContextTagTaxonomy.suggest(locationName: nil, hour: 4).count == 4)
+        var calendar = Calendar(identifier: .gregorian)
+        calendar.timeZone = TimeZone(identifier: "UTC")!
+        // Tuesday 6 Oct 2026 at the given hour (UTC).
+        func at(_ hour: Int) -> Date { calendar.date(from: DateComponents(year: 2026, month: 10, day: 6, hour: hour))! }
+        func ids(_ signals: TagSignals) -> [String] { ContextTagTaxonomy.suggest(signals, calendar: calendar).map(\.id) }
+
+        #expect(ids(TagSignals(date: at(23))).prefix(2) == ["party", "bar"])
+        #expect(ids(TagSignals(date: at(9), placeName: "Blue Bottle Coffee")).first == "cafe")
+        #expect(ids(TagSignals(date: at(4))).count == 4)
+        // A café at lunch: the place leads, the hour adds dining.
+        #expect(ids(TagSignals(date: at(12), placeName: "Café Allegro", placeType: "cafe")).prefix(2) == ["cafe", "study"])
+        // Campus by day, quiet: class and studying, never a party.
+        let campus = ids(TagSignals(date: at(16), placeName: "University of Washington", placeType: "university", noiseDecibels: 38))
+        #expect(campus.prefix(2) == ["lecture", "study"])
+        #expect(!campus.contains("party"))
+        // Walking together reads as a commute.
+        #expect(ids(TagSignals(date: at(16), isMoving: true)).first == "transit")
+        // At an event, Campus Event first.
+        #expect(ids(TagSignals(date: at(20), atEvent: true)).first == "event")
+        // What these people usually tag together outranks the hour.
+        #expect(ids(TagSignals(date: at(23), pastTags: ["gym", "gym", "Extended Hangout"])).first == "gym")
+        // The server-only tag is never suggested.
+        #expect(!ids(TagSignals(date: at(20), pastTags: ["at_event", "at_event"])).contains("at_event"))
     }
 
     @Test("Reconnect ordinal copy")

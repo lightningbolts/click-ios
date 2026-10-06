@@ -41,3 +41,37 @@ struct SearchLaunchField: View {
         .accessibilityHint("Opens search for people, messages, places and events")
     }
 }
+
+/// A search field that filters the list it sits over in place (Nearby, the event picker),
+/// rather than opening global search.
+struct FilterSearchField: View {
+    let prompt: String
+    @Binding var text: String
+    var isFocused: FocusState<Bool>.Binding
+
+    var body: some View {
+        HStack(spacing: 8) {
+            Image(systemName: "magnifyingglass")
+                .foregroundStyle(ClickColors.textTertiary)
+            TextField(prompt, text: $text)
+                .focused(isFocused)
+                .submitLabel(.search)
+                .autocorrectionDisabled()
+                .foregroundStyle(ClickColors.textPrimary)
+            if !text.isEmpty {
+                Button {
+                    text = ""
+                } label: {
+                    Image(systemName: "xmark.circle.fill")
+                        .foregroundStyle(ClickColors.textTertiary)
+                }
+                .buttonStyle(.plain)
+                .accessibilityLabel("Clear search")
+            }
+        }
+        .font(ClickTypography.body)
+        .padding(.horizontal, 14)
+        .frame(minHeight: ClickMetrics.searchMinHeight)
+        .background(ClickColors.fillSubtle, in: Capsule())
+    }
+}
