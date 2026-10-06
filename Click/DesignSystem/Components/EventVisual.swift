@@ -142,10 +142,10 @@ public struct EventVisual: View {
         })
     }
 
-    static let pixelSize: CGFloat = 900
+    public static let pixelSize: CGFloat = 900
     /// Map pins and list thumbnails (up to 64 pt at 3x): a fraction of a full decode, shared by
     /// the map and Nearby.
-    static let thumbnailPixelSize: CGFloat = 192
+    public static let thumbnailPixelSize: CGFloat = 192
 
     /// Decodes these pictures into memory ahead of display.
     static func prefetch(_ urls: [String?], maxPixelSize: CGFloat = pixelSize) {
