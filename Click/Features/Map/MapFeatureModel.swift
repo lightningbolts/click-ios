@@ -199,7 +199,11 @@ final class MapFeatureModel {
     }
 
 
-    var camera: MapCameraPosition = .automatic
+    /// Opens where the map was last left (usually around you), so it never starts zoomed out to
+    /// every pin and then jumps to your location on the first fix.
+    var camera: MapCameraPosition = MapFeatureModel.restoredRegion.map { .region($0) } ?? .automatic
+    /// The region `camera` opened on, if any.
+    private let openedRegion = MapFeatureModel.restoredRegion
     /// Every fix, unobserved: views read `origin`, so a fix a second doesn't redraw the map and list.
     @ObservationIgnored private(set) var userCoordinate: CLLocationCoordinate2D?
     /// Where Nearby measures distance from: the user's location, moved only after a real move.
@@ -314,7 +318,7 @@ final class MapFeatureModel {
     /// The map's pins and bubbles: clustering is quadratic, so it reruns only when the items or
     /// the zoom change.
     func clusters(pins: [ConnectionPin]) -> [MapCluster] {
-        let zoom = renderZoom
+        let zoom = clusterZoom
         return clustersMemo(ClustersKey(items: itemsKey(pins: pins, filter: filter, now: .now), zoom: zoom)) {
             Self.clusters(items(pins: pins), zoom: zoom)
         }
@@ -507,7 +511,13 @@ final class MapFeatureModel {
         }
         if firstFix, !hasCenteredOnUser, selection == nil {
             hasCenteredOnUser = true
-            camera = .region(MKCoordinateRegion(center: location.coordinate, latitudinalMeters: 4000, longitudinalMeters: 4000))
+            // Already showing your area (where the map was left): stay. Otherwise glide over.
+            let showing = openedRegion.map { Self.distanceMeters($0.center, location.coordinate) < Self.recenterMeters } ?? false
+            if !showing {
+                withAnimation(.smooth(duration: 0.6)) {
+                    camera = .region(MKCoordinateRegion(center: location.coordinate, latitudinalMeters: 4000, longitudinalMeters: 4000))
+                }
+            }
         }
         fetchIfMoved(to: location.coordinate)
     }
@@ -517,6 +527,7 @@ final class MapFeatureModel {
     func loadCached() async {
         guard let environment, let userID = environment.session.currentSession?.userId else { return }
         discovery.seed(await environment.beacons.cachedDiscovery(userID: userID))
+        prefetchThumbnails()
         await loadHangouts()
     }
 
@@ -527,12 +538,18 @@ final class MapFeatureModel {
 
     /// Coalesces viewport changes: refetches only when the center moved ~5 km from the last fetch
     /// (a tenth of the 50 km discovery radius).
-    /// Latitude span of the visible region; clustering kicks in when zoomed out.
-    private(set) var visibleLatitudeDelta: Double = 0.05
+    /// Latitude span of the visible region; clustering kicks in when zoomed out. Unobserved, like
+    /// the two below: the map redraws only when `clusterZoom` changes, not after every pan.
+    @ObservationIgnored private(set) var visibleLatitudeDelta: Double = 0.05
+    /// The middle of the map on screen (where "+" creates a beacon when there's no location).
+    @ObservationIgnored private(set) var visibleCenter: CLLocationCoordinate2D?
     /// Pin mode stays on until the zoom clearly drops (hysteresis), and a cluster tap sets a
     /// floor so the zoom it lands on is always shown as individual pins.
-    private var stickyPinMode = false
-    private var pinRenderZoomFloor: Double?
+    @ObservationIgnored private var stickyPinMode = false
+    @ObservationIgnored private var pinRenderZoomFloor: Double?
+    /// `renderZoom` in quarter steps (rounded down, so the cluster threshold holds exactly): what
+    /// pins are clustered at. Small zooms and pans leave it, and so the pins, as they are.
+    private(set) var clusterZoom: Double = MapFeatureModel.zoomStep(MapFeatureModel.zoom(forLatitudeDelta: 0.05))
     /// Pins stacked under a tap, shown in the "Which pin?" chooser.
     var overlapChoices: [MapItem] = []
     /// The item just picked from the chooser: its selection must not reopen the chooser.
@@ -547,9 +564,11 @@ final class MapFeatureModel {
 
     func noteClusterTap(targetZoom: Double) {
         pinRenderZoomFloor = max(Self.clusterThresholdZoom + 0.25, targetZoom)
+        updateClusterZoom()
     }
 
     func cameraSettled(center: CLLocationCoordinate2D, latitudeDelta: Double? = nil) {
+        visibleCenter = center
         if let latitudeDelta {
             visibleLatitudeDelta = latitudeDelta
             let zoom = Self.zoom(forLatitudeDelta: latitudeDelta)
@@ -558,9 +577,36 @@ final class MapFeatureModel {
                 stickyPinMode = false
                 pinRenderZoomFloor = nil
             }
+            updateClusterZoom()
+            Self.restoredRegion = MKCoordinateRegion(center: center, span: MKCoordinateSpan(latitudeDelta: latitudeDelta, longitudeDelta: latitudeDelta))
         }
         guard userCoordinate == nil || locationState == .denied else { return }
         fetchIfMoved(to: center)
+    }
+
+    private func updateClusterZoom() {
+        let step = Self.zoomStep(renderZoom)
+        if step != clusterZoom { clusterZoom = step }
+    }
+
+    nonisolated static func zoomStep(_ zoom: Double) -> Double { (zoom * 4).rounded(.down) / 4 }
+
+    /// Sign-out: the next account's map doesn't open on this one's area.
+    nonisolated static func forgetLastRegion() { restoredRegion = nil }
+
+    /// Where the map was last left, kept across launches.
+    private nonisolated static var restoredRegion: MKCoordinateRegion? {
+        get {
+            guard let values = UserDefaults.standard.array(forKey: "map.lastRegion.v1") as? [Double], values.count == 3,
+                  CLLocationCoordinate2DIsValid(CLLocationCoordinate2D(latitude: values[0], longitude: values[1])),
+                  values[2] > 0 else { return nil }
+            return MKCoordinateRegion(center: CLLocationCoordinate2D(latitude: values[0], longitude: values[1]),
+                                      span: MKCoordinateSpan(latitudeDelta: values[2], longitudeDelta: values[2]))
+        }
+        set {
+            guard let region = newValue else { return UserDefaults.standard.removeObject(forKey: "map.lastRegion.v1") }
+            UserDefaults.standard.set([region.center.latitude, region.center.longitude, region.span.latitudeDelta], forKey: "map.lastRegion.v1")
+        }
     }
 
     private func fetchIfMoved(to center: CLLocationCoordinate2D) {
@@ -598,6 +644,7 @@ final class MapFeatureModel {
                 guard !Task.isCancelled else { return }
                 discovery.succeed(fresh)
                 firstPageLoaded = true
+                prefetchThumbnails()
                 // The first page shows at once; the rest of the area fills in behind it (map pins
                 // and the Nearby list read the same items). A new fetch cancels this.
                 var pages = 1
@@ -615,6 +662,17 @@ final class MapFeatureModel {
             }
         }
     }
+
+    /// Decodes the first pins' pictures at thumbnail size, so pins and Nearby rows paint them on
+    /// their first frame instead of swapping them in.
+    private func prefetchThumbnails() {
+        guard let value = discovery.value else { return }
+        let beacons: [String?] = value.beacons.compactMap(\.imageURL).prefix(Self.prefetchedThumbnails).map { $0 }
+        let places: [String?] = value.places.compactMap(\.photoURL?.absoluteString).prefix(Self.prefetchedThumbnails).map { $0 }
+        EventVisual.prefetch(beacons + places, maxPixelSize: EventVisual.thumbnailPixelSize)
+    }
+
+    static let prefetchedThumbnails = 60
 
     /// How far the user moves before Nearby distances and the distance order update.
     static let originStepMeters: Double = 50
@@ -715,6 +773,8 @@ extension MapFeatureModel {
     nonisolated static let pinModeExitZoom: Double = clusterThresholdZoom - 0.75
     /// Kept for callers that size zooms relative to the old span threshold (~9 km).
     nonisolated static let clusteringSpan: Double = 0.08
+    /// A map opening within this of you is left where it was rather than recentered.
+    nonisolated static let recenterMeters: Double = 3_000
 
     /// Web-Mercator zoom for a visible latitude span.
     nonisolated static func zoom(forLatitudeDelta delta: Double) -> Double {

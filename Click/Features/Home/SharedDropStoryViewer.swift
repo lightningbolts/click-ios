@@ -36,6 +36,8 @@ struct SharedDropStoryViewer: View {
     @State private var toast: String?
     @State private var confirmDelete = false
     @State private var reporting = false
+    /// The emoji picker or the list of who reacted is up over the current drop.
+    @State private var reactionSheet = false
     /// False while zoomed into the source tile: before the open, and while closing.
     @State private var presented = false
     /// The card cross-fading with its tile while it's tile-sized: in as the zoom starts, out as it
@@ -47,8 +49,8 @@ struct SharedDropStoryViewer: View {
     @State private var insets = EdgeInsets()
     /// Each drop's shape (width over height), from its photo or, before that, its preview.
     @State private var aspects: [String: CGFloat] = [:]
-    /// The header's and each kind of footer's height (see `footerKind`): the photo sits in the
-    /// space between them, and the next person's page lays out the same before it's measured.
+    /// The header's and the footer's height: the photo sits in the space between them, and the
+    /// next person's page lays out the same before it's measured.
     @State private var chromeHeights: [String: CGFloat] = [:]
     /// The sideways turn between people, Instagram's cube: the drag (or turn) offset, observed only
     /// by the two faces so a drag doesn't re-render the viewer.
@@ -68,8 +70,6 @@ struct SharedDropStoryViewer: View {
     private let playlist: StoryPlaylist
 
     private static let secondsPerDrop: Double = 6
-    /// Your own drop's reactor row (a face, its emoji and a name), held while reactions load.
-    private static let reactorRowHeight: CGFloat = 68
     /// The gap between the photo and the header above it or the reactions below.
     private static let photoGap: CGFloat = 8
     /// Quicker than the system zoom, so a drop feels like it pops open. A curve rather than a
@@ -154,7 +154,7 @@ struct SharedDropStoryViewer: View {
         !reduceMotion && (playing.contains(id) || store.freshlyDeveloped.contains(id))
     }
     private var isPaused: Bool {
-        holding || replyFocused || confirmDelete || reporting || cubeSide != nil || !isShown(currentID)
+        holding || replyFocused || confirmDelete || reporting || reactionSheet || cubeSide != nil || !isShown(currentID)
     }
 
     var body: some View {
@@ -266,17 +266,11 @@ struct SharedDropStoryViewer: View {
                     .onGeometryChange(for: CGFloat.self, of: { $0.size.height }) { measured("header", $0, live: live) }
                 Spacer(minLength: 0)
                 footer(drop, live: live)
-                    // Held while typing, so a growing reply never shrinks the photo.
-                    .onGeometryChange(for: CGFloat.self, of: { $0.size.height }) { if !replyFocused { measured(footerKind(drop), $0, live: live) } }
             }
         }
         .background(Color.black.ignoresSafeArea())
         .allowsHitTesting(live)
         .accessibilityHidden(!live)
-    }
-
-    private func footerKind(_ drop: SharedDrop) -> String {
-        drop.isMine ? "mine" : drop.connectionID != nil ? "reply" : "plain"
     }
 
     private func measured(_ key: String, _ height: CGFloat, live: Bool) {
@@ -285,9 +279,7 @@ struct SharedDropStoryViewer: View {
     }
 
     private var headerHeight: CGFloat { chromeHeights["header"] ?? 0 }
-    private func footerHeight(_ drop: SharedDrop?) -> CGFloat {
-        drop.flatMap { chromeHeights[footerKind($0)] } ?? 0
-    }
+    private var footerHeight: CGFloat { chromeHeights["footer"] ?? 0 }
 
     // MARK: - Photo
 
@@ -315,7 +307,7 @@ struct SharedDropStoryViewer: View {
                     }
                 }
                 .padding(.top, headerHeight + Self.photoGap)
-                .padding(.bottom, footerHeight(drop) + Self.photoGap)
+                .padding(.bottom, footerHeight + Self.photoGap)
             }
             .overlay { if !shown { developingLabel(drop) } }
             .overlay { if live { tapZones } }
@@ -415,27 +407,33 @@ struct SharedDropStoryViewer: View {
     }
 
     /// The reactions sit still from the first frame: no fade while the viewer zooms open or the
-    /// photo develops (Liquid Glass flickers under a changing opacity), and your own drop's
-    /// reactor row keeps its height while it loads, so nothing at the bottom moves. They only
-    /// fade while you type a reply, so they never sit over the keyboard.
+    /// photo develops (Liquid Glass flickers under a changing opacity). Every drop reserves the
+    /// same footer, the palette over a one-line reply, whatever it shows (your own drop's
+    /// reactors, a drop with no chat to reply in, reactions arriving), so the photo above it sits
+    /// in one place on every page. The palette steps aside while you type a reply.
     private func footer(_ drop: SharedDrop, live: Bool) -> some View {
-        let reactable = isShown(drop.id) && !replyFocused
-        return VStack(spacing: 14) {
-            ReactionBar(target: .sharedDrop, id: drop.id, isOwner: drop.isMine) { emoji in
+        ZStack(alignment: .bottom) {
+            VStack(spacing: 12) {
+                Color.clear.frame(height: ReactionBar<EmptyView>.trayHeight)
+                Text(" ").font(ClickTypography.body).padding(.vertical, 12)
+            }
+            .frame(maxWidth: .infinity)
+            .padding(.bottom, 10)
+            .hidden()
+            .onGeometryChange(for: CGFloat.self, of: { $0.size.height }) { measured("footer", $0, live: live) }
+            ReactionBar(target: .sharedDrop, id: drop.id, isOwner: drop.isMine, presenting: $reactionSheet,
+                        reactable: isShown(drop.id), composing: replyFocused) { emoji in
                 send(emoji, about: drop, reaction: true)
+            } accessory: {
+                if !drop.isMine, drop.connectionID != nil {
+                    replyField(drop, live: live)
+                }
             }
             .id(drop.id)
-            .frame(minHeight: drop.isMine ? Self.reactorRowHeight : nil, alignment: .bottomLeading)
-            .opacity(replyFocused ? 0 : 1)
-            .allowsHitTesting(reactable)
-            .accessibilityHidden(!reactable)
-            .animation(ClickMotion.subtleFade, value: replyFocused)
-            if !drop.isMine, drop.connectionID != nil {
-                replyField(drop, live: live)
-            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .padding(.bottom, 10)
         }
         .padding(.horizontal, 14)
-        .padding(.bottom, 10)
     }
 
     /// The incoming face's field is the same view with no text, so nothing changes as it lands.
@@ -634,7 +632,7 @@ struct SharedDropStoryViewer: View {
 
     /// Where the current photo sits on screen (global), fitted between the header and footer.
     private var photoRect: CGRect {
-        let top = headerHeight + Self.photoGap, bottom = footerHeight(current) + Self.photoGap
+        let top = headerHeight + Self.photoGap, bottom = footerHeight + Self.photoGap
         let area = CGRect(x: frame.minX, y: frame.minY + top, width: frame.width, height: max(frame.height - top - bottom, 1))
         guard let aspect = aspect(currentID) else { return area }
         let size = area.width / area.height > aspect

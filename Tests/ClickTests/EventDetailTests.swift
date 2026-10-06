@@ -31,6 +31,14 @@ struct EventDetailTests {
         #expect(String(rendered.characters) == "Bring snacks and see site")
         #expect(rendered.runs.contains { $0.link?.absoluteString == "https://joinclick.co" })
     }
+
+    @Test("Who's going names a few people and counts the rest")
+    func goingNames() {
+        #expect(BeaconDetailView.goingNames(["Andrew Lu", "Zakia"], more: 44, isGoing: true) == "Andrew Lu, Zakia and 44 more")
+        #expect(BeaconDetailView.goingNames([], more: 3, isGoing: false) == "3 going")
+        #expect(BeaconDetailView.goingNames([], more: 0, isGoing: true) == "Just you so far")
+        #expect(BeaconDetailView.goingNames([], more: 0, isGoing: false) == "See who's going")
+    }
 }
 
 @Suite("Event reminders and beacon form rules")

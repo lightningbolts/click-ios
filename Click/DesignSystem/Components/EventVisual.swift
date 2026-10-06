@@ -120,29 +120,36 @@ public struct EventVisual: View {
     private let imageURL: URL?
     private let symbol: String?
     private let cornerRadius: CGFloat
+    private let maxPixelSize: CGFloat
 
     @State private var image: UIImage?
 
     /// - Parameters:
     ///   - seed: the raw entity ID (beacon/hub ID) — never a list-key prefix.
     ///   - symbol: optional SF Symbol drawn over the generated visual (kind glyph).
-    public init(seed: String, imageURL: String? = nil, symbol: String? = nil, cornerRadius: CGFloat = ClickRadius.compact) {
+    ///   - maxPixelSize: how large the picture is decoded; `thumbnailPixelSize` for pins and rows.
+    public init(seed: String, imageURL: String? = nil, symbol: String? = nil, cornerRadius: CGFloat = ClickRadius.compact,
+                maxPixelSize: CGFloat = EventVisual.pixelSize) {
         self.seed = seed
         let trimmed = imageURL?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
         let url = trimmed.isEmpty ? nil : URL(string: trimmed)
         self.imageURL = url
         self.symbol = symbol
         self.cornerRadius = cornerRadius
+        self.maxPixelSize = maxPixelSize
         self._image = State(initialValue: url.flatMap {
-            ImagePipeline.shared.firstFrameImage(for: $0, maxPixelSize: Self.pixelSize)
+            ImagePipeline.shared.firstFrameImage(for: $0, maxPixelSize: maxPixelSize)
         })
     }
 
-    private static let pixelSize: CGFloat = 900
+    public static let pixelSize: CGFloat = 900
+    /// Map pins and list thumbnails (up to 64 pt at 3x): a fraction of a full decode, shared by
+    /// the map and Nearby.
+    public static let thumbnailPixelSize: CGFloat = 192
 
     /// Decodes these pictures into memory ahead of display.
-    static func prefetch(_ urls: [String?]) {
-        ImagePipeline.shared.prefetch(urls.compactMap { $0?.nonEmptyTrimmed.flatMap(URL.init(string:)) }, maxPixelSize: pixelSize)
+    static func prefetch(_ urls: [String?], maxPixelSize: CGFloat = pixelSize) {
+        ImagePipeline.shared.prefetch(urls.compactMap { $0?.nonEmptyTrimmed.flatMap(URL.init(string:)) }, maxPixelSize: maxPixelSize)
     }
 
     public var body: some View {
@@ -177,7 +184,7 @@ public struct EventVisual: View {
         .accessibilityHidden(true)
         .task(id: imageURL) {
             guard let imageURL, image == nil else { return }
-            let loaded = await ImagePipeline.shared.image(for: imageURL, maxPixelSize: Self.pixelSize)
+            let loaded = await ImagePipeline.shared.image(for: imageURL, maxPixelSize: maxPixelSize)
             if !Task.isCancelled { image = loaded }
         }
     }
