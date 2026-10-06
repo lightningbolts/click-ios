@@ -137,9 +137,10 @@ struct ClickFlyerSheet: View {
         isSaving = true
         defer { isSaving = false }
         let file = FileManager.default.temporaryDirectory.appendingPathComponent("click-flyer-\(UUID().uuidString).png")
+        // Removed on every path, including a write that fails partway.
+        defer { try? FileManager.default.removeItem(at: file) }
         do {
             try data.write(to: file)
-            defer { try? FileManager.default.removeItem(at: file) }
             try await PhotoLibrarySaver.saveImage(at: file)
             ClickHaptics.success()
             notice = "Saved to Photos."

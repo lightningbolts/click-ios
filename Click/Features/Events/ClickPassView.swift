@@ -208,13 +208,11 @@ struct ClickPassView: View {
         if let beacon {
             HStack(spacing: 10) {
                 if beacon.schedule != nil {
-                    Button { Task { await calendar.add(beacon) } } label: {
+                    CalendarMenu(beacon: beacon, model: calendar) {
                         EventActionTile(title: calendar.isAdded ? "In Calendar" : "Calendar",
                                         systemImage: calendar.isAdded ? "calendar.badge.checkmark" : "calendar.badge.plus",
-                                        tint: calendar.isAdded ? ClickColors.online : nil, busy: calendar.isAdding)
+                                        tint: calendar.isAdded ? ClickColors.online : nil)
                     }
-                    .buttonStyle(.plain)
-                    .disabled(calendar.isAdded || calendar.isAdding)
                 }
                 Button { directions = beacon.directions } label: {
                     EventActionTile(title: "Directions", systemImage: "location.north.line")
@@ -224,7 +222,6 @@ struct ClickPassView: View {
                     EventActionTile(title: "Contact", systemImage: "bubble.left.and.text.bubble.right")
                 }
             }
-            .onAppear { calendar.refresh(beaconID: beacon.id) }
         }
     }
 

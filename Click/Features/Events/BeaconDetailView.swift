@@ -390,16 +390,12 @@ struct BeaconDetailView: View {
         return { env.router.showOnMap(.place(beacon.id)) }
     }
 
-    /// One tap to the calendar (the system sheet only when Click has no calendar access).
+    /// Add to Calendar: a menu of where (Apple Calendar, with its own calendar picker; Google; Outlook).
     private func calendarButton(_ beacon: MapBeacon) -> some View {
-        Button { Task { await calendar.add(beacon) } } label: {
+        CalendarMenu(beacon: beacon, model: calendar) {
             HStack(spacing: 6) {
-                if calendar.isAdding {
-                    ProgressView().controlSize(.small)
-                } else {
-                    Image(systemName: calendar.isAdded ? "calendar.badge.checkmark" : "calendar.badge.plus")
-                        .contentTransition(.symbolEffect(.replace))
-                }
+                Image(systemName: calendar.isAdded ? "calendar.badge.checkmark" : "calendar.badge.plus")
+                    .contentTransition(.symbolEffect(.replace))
                 Text(calendar.isAdded ? "In Calendar" : "Add to Calendar")
             }
             .font(ClickTypography.supportingEmphasized)
@@ -409,10 +405,7 @@ struct BeaconDetailView: View {
             .background(calendar.isAdded ? ClickColors.online.opacity(0.14) : ClickColors.selectionTint, in: Capsule())
             .contentShape(Capsule())
         }
-        .buttonStyle(.plain)
-        .disabled(calendar.isAdded || calendar.isAdding)
         .padding(.top, 2)
-        .onAppear { calendar.refresh(beaconID: beacon.id) }
         .animation(ClickMotion.selection, value: calendar.isAdded)
     }
 
