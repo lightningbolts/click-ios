@@ -25,6 +25,7 @@ struct PlacePinView: View {
                 .overlay {
                     if let photo = place.photoURL {
                         PinPhoto(url: photo) { symbol }
+                            .id(photo)
                             .frame(width: 30, height: 30)
                             .clipShape(RoundedRectangle(cornerRadius: 7, style: .continuous))
                     } else {

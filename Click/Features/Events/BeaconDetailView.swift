@@ -209,7 +209,12 @@ struct BeaconDetailView: View {
             withAnimation(ClickMotion.subtleFade) { showsCompactTitle = pastTitle }
         }
         // The event's own colors wash the top of the page, under the bar and around the hero.
-        .background { EventBackdrop(seed: beacon.id, imageURL: beacon.imageURL ?? resolvedArtwork).ignoresSafeArea() }
+        .background {
+            // Keyed by picture, so a new one (edited, or resolved art) washes in its own colors.
+            EventBackdrop(seed: beacon.id, imageURL: beacon.imageURL ?? resolvedArtwork)
+                .id(beacon.imageURL ?? resolvedArtwork)
+                .ignoresSafeArea()
+        }
         .sheet(isPresented: $sharingToChat) {
             ShareToChatSheet(beacon: beacon)
         }

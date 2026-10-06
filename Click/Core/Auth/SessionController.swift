@@ -466,6 +466,7 @@ public final class SessionController: SessionControlling {
     /// running or push previews decrypting for an account that's signed out. The account's stored
     /// history is the caller's call: a sign-out wipes it, a rejected refresh keeps it.
     private func endSession() async {
+        let ending = retainedSession?.refreshToken
         profileNameHint = nil
         vault.deleteSession()
         migrator.deleteLegacySession()
@@ -476,6 +477,8 @@ public final class SessionController: SessionControlling {
         SharedEpochKeyStore.removeAll()
         await FreshnessCache.shared.removeAll()
         await onSignOut?()
+        // A sign-in that landed during the awaits above keeps its session.
+        guard retainedSession?.refreshToken == ending else { return }
         retainedSession = nil
         state = .unauthenticated
     }

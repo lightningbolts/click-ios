@@ -591,6 +591,9 @@ final class MapFeatureModel {
 
     nonisolated static func zoomStep(_ zoom: Double) -> Double { (zoom * 4).rounded(.down) / 4 }
 
+    /// Sign-out: the next account's map doesn't open on this one's area.
+    nonisolated static func forgetLastRegion() { restoredRegion = nil }
+
     /// Where the map was last left, kept across launches.
     private nonisolated static var restoredRegion: MKCoordinateRegion? {
         get {

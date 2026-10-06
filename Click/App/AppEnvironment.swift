@@ -281,6 +281,7 @@ public final class AppEnvironment {
         ConversationListModel.forgetRestored()
         pendingSends.removeAll()
         await beacons.clearCache()
+        MapFeatureModel.forgetLastRegion()
         await telemetryQueue.removeAll()
         await EventReminderScheduler.cancelAll()
         onboardingCoordinators.removeAll()
