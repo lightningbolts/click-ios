@@ -457,6 +457,9 @@ public final class SessionController: SessionControlling {
             // Stored timelines, inbox and read models belong to this account only.
             LocalStore.shared.wipe(userID: userId)
         }
+        // A different account signed in while the server call ran (an OAuth callback): leave its
+        // session be. Matched by account, not token, so a refresh meanwhile still signs out.
+        if let current = currentSession, current.userId != signingOutUserId { return }
         await endSession()
     }
 
