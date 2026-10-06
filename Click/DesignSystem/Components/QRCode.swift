@@ -123,20 +123,26 @@ private struct ClickDataScannerView: UIViewControllerRepresentable {
 }
 
 /// While a code is on screen for someone else's camera, the display goes to full brightness (a
-/// dim screen is the usual reason a scan fails) and returns to where it was when the code goes
-/// away or the app leaves the foreground.
+/// dim screen is the usual reason a scan fails) and returns to where it was the moment the code
+/// stops being shown: it leaves, its sheet is swiped down to half height, or the app leaves the
+/// foreground.
 struct BoostsScreenBrightness: ViewModifier {
     @Environment(\.scenePhase) private var scenePhase
+    @Environment(\.isSheetCollapsed) private var isSheetCollapsed
+    @State private var isOnScreen = false
     @State private var isHolding = false
+
+    private var wantsHold: Bool { isOnScreen && scenePhase == .active && !isSheetCollapsed }
 
     func body(content: Content) -> some View {
         content
-            .onAppear { hold(true) }
-            .onDisappear { hold(false) }
-            .onChange(of: scenePhase) { _, phase in hold(phase == .active) }
+            .onAppear { isOnScreen = true; sync() }
+            .onDisappear { isOnScreen = false; sync() }
+            .onChange(of: wantsHold) { sync() }
     }
 
-    private func hold(_ on: Bool) {
+    private func sync() {
+        let on = wantsHold
         guard on != isHolding else { return }
         isHolding = on
         if on { ScreenBrightness.shared.boost() } else { ScreenBrightness.shared.restore() }
@@ -178,15 +184,20 @@ final class ScreenBrightness {
     private var holders = 0
     private var original: CGFloat?
     private var ramp: Task<Void, Never>?
+    /// The level a restore is easing back to, until it gets there.
+    private var restoring: CGFloat?
 
     private var screen: UIScreen? {
-        (UIApplication.shared.connectedScenes.first { $0.activationState == .foregroundActive } as? UIWindowScene)?.screen
+        let scenes = UIApplication.shared.connectedScenes.compactMap { $0 as? UIWindowScene }
+        return (scenes.first { $0.activationState == .foregroundActive } ?? scenes.first { $0.activationState == .foregroundInactive })?.screen
     }
 
     func boost() {
         holders += 1
         guard holders == 1, let screen else { return }
-        original = screen.brightness
+        // Back on screen while still easing down: the user's level is where that ease was headed.
+        original = restoring ?? screen.brightness
+        restoring = nil
         animate(screen, to: 1)
     }
 
@@ -195,11 +206,12 @@ final class ScreenBrightness {
         holders -= 1
         guard holders == 0, let screen, let original else { return }
         self.original = nil
-        animate(screen, to: original)
+        restoring = original
+        animate(screen, to: original) { [weak self] in self?.restoring = nil }
     }
 
     /// A quick ease rather than a jump: the change reads as intentional, not a flicker.
-    private func animate(_ screen: UIScreen, to target: CGFloat) {
+    private func animate(_ screen: UIScreen, to target: CGFloat, completion: @escaping @MainActor () -> Void = {}) {
         ramp?.cancel()
         let start = screen.brightness
         ramp = Task { @MainActor in
@@ -211,6 +223,7 @@ final class ScreenBrightness {
                 screen.brightness = start + (target - start) * CGFloat(eased)
                 try? await Task.sleep(for: .milliseconds(16))
             }
+            completion()
         }
     }
 }

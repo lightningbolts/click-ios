@@ -427,9 +427,9 @@ public final class AppRouter {
             if host == "e", let beaconId = pathComponents.first {
                 return .event(beaconID: beaconId)
             }
-            // click://pass/{beaconId} (the Live Activity's "Show pass")
+            // click://pass/{beaconId} (the Live Activity's "Pass"), …/scan (the host's "Scan")
             if host == "pass", let beaconId = pathComponents.first {
-                return .eventPass(beaconID: beaconId)
+                return pathComponents.dropFirst().first == "scan" ? .passScanner(beaconID: beaconId) : .eventPass(beaconID: beaconId)
             }
             // click://hub/{hubId}
             if host == "hub", let hubId = pathComponents.first {

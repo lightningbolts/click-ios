@@ -234,7 +234,7 @@ struct BeaconVisual: View {
 
 /// Pattern ink over the generated gradient, matching web `cardVisualPattern.ts`
 /// (white at 14% alpha). Drawn once with `Canvas`; no per-frame work.
-private struct CardPatternLayer: View {
+struct CardPatternLayer: View {
     let pattern: CardVisual.Pattern
 
     var body: some View {

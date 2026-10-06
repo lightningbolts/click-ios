@@ -3,7 +3,8 @@ import SwiftUI
 import WidgetKit
 
 /// The event Live Activity: a countdown to an event you're going to, then "on now" with how much
-/// is left, wearing the event's own colors. Tapping opens the event; "Pass" opens your Click Pass.
+/// is left, wearing the event's own colors. Tapping opens the event; "Pass" opens your Click Pass
+/// ("Scan", the door scanner, when you host it).
 struct EventLiveActivity: Widget {
     var body: some WidgetConfiguration {
         ActivityConfiguration(for: EventActivityAttributes.self) { context in
@@ -18,7 +19,7 @@ struct EventLiveActivity: Widget {
                         .padding(.leading, 4)
                 }
                 DynamicIslandExpandedRegion(.trailing) {
-                    PassLink(url: context.attributes.passURL)
+                    PassLink(attributes: context.attributes)
                         .padding(.trailing, 4)
                 }
                 DynamicIslandExpandedRegion(.center) {
@@ -88,7 +89,7 @@ private struct LockScreenView: View {
                 Status(state: context.state, isStale: context.isStale, tint: Palette(context.attributes.gradient).accent)
             }
             Spacer(minLength: 0)
-            PassLink(url: context.attributes.passURL)
+            PassLink(attributes: context.attributes)
         }
         .foregroundStyle(.white)
         .padding(16)
@@ -117,7 +118,7 @@ private struct Status: View {
                         .foregroundStyle(.secondary)
                 }
                 .font(.subheadline)
-                ProgressView(timerInterval: state.start...state.end, countsDown: false) {
+                ProgressView(timerInterval: state.start...max(state.start, state.end), countsDown: false) {
                     EmptyView()
                 } currentValueLabel: {
                     EmptyView()
@@ -176,22 +177,25 @@ private struct EventBadge: View {
     }
 }
 
+/// Your Click Pass, or for the host the door scanner.
 private struct PassLink: View {
-    let url: URL
+    let attributes: EventActivityAttributes
+
+    private var isHost: Bool { attributes.isHost == true }
 
     var body: some View {
-        Link(destination: url) {
+        Link(destination: isHost ? attributes.scannerURL : attributes.passURL) {
             VStack(spacing: 3) {
-                Image(systemName: "qrcode")
+                Image(systemName: isHost ? "qrcode.viewfinder" : "qrcode")
                     .font(.system(size: 20, weight: .semibold))
-                Text("Pass")
+                Text(isHost ? "Scan" : "Pass")
                     .font(.caption2.weight(.semibold))
             }
             .foregroundStyle(.white)
             .frame(width: 52, height: 52)
             .background(.white.opacity(0.16), in: RoundedRectangle(cornerRadius: 14, style: .continuous))
         }
-        .accessibilityLabel("Show Click Pass")
+        .accessibilityLabel(isHost ? "Scan Click Passes" : "Show Click Pass")
     }
 }
 

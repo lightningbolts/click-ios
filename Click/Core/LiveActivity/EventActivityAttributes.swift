@@ -16,7 +16,11 @@ struct EventActivityAttributes: ActivityAttributes {
     let place: String?
     /// The event's generated colors (hex, `CardVisual`), so the activity wears them.
     let gradient: [String]
+    /// You host it: the activity offers the door scanner rather than a pass. Optional, so an
+    /// activity started by an earlier build still decodes.
+    var isHost: Bool? = nil
 
     var eventURL: URL { URL(string: "click://e/\(beaconID)")! }
     var passURL: URL { URL(string: "click://pass/\(beaconID)")! }
+    var scannerURL: URL { URL(string: "click://pass/\(beaconID)/scan")! }
 }

@@ -4,7 +4,8 @@ import Foundation
 /// Starts, updates and ends the event Live Activity: from a few hours before an event you're
 /// going to (or hosting) until it ends, the Lock Screen and Dynamic Island count down to it, then
 /// show it's on, with your Click Pass one tap away. Started on the device (no push), refreshed
-/// whenever Click comes to the foreground and when your RSVP or check-in changes.
+/// whenever Click comes to the foreground and when your RSVP or check-in changes. One you swipe
+/// away stays away: it isn't started again for that event.
 ///
 /// ActivityKit is only touched from `nonisolated` functions given plain values, so no activity
 /// object ever crosses into or out of the main actor.
@@ -57,6 +58,7 @@ enum EventLiveActivities {
         generation += 1
         lastSync = nil
         await reconcile([])
+        Started.reset()
     }
 
     /// Events worth a Live Activity now: starting within the lead time or on now, soonest first.
@@ -66,27 +68,38 @@ enum EventLiveActivities {
             .sorted { $0.start < $1.start }
     }
 
-    /// Ends activities no longer wanted, updates the ones that changed, starts the missing ones.
+    /// Ends activities no longer wanted, updates the ones that changed, starts the missing ones
+    /// (unless you dismissed that event's one already).
     nonisolated private static func reconcile(_ wanted: [EventActivityTarget]) async {
         let wantedIDs = Set(wanted.map(\.event.beaconID))
         for activity in Activity<EventActivityAttributes>.activities where !wantedIDs.contains(activity.attributes.beaconID) {
             await activity.end(nil, dismissalPolicy: .immediate)
+            Started.forget(activity.attributes.beaconID)
+        }
+        Started.prune(keeping: wantedIDs)
+        // Running before this list existed (an earlier build started it) counts as started.
+        for activity in Activity<EventActivityAttributes>.activities where wantedIDs.contains(activity.attributes.beaconID) {
+            Started.remember(activity.attributes.beaconID)
         }
         for item in wanted {
             let state = EventActivityAttributes.ContentState(start: item.event.start, end: item.event.end, checkedIn: item.checkedIn)
             if let activity = Activity<EventActivityAttributes>.activities.first(where: { $0.attributes.beaconID == item.event.beaconID }) {
-                if activity.content.state != state { await activity.update(content(state)) }
-            } else {
+                if activity.activityState == .active, activity.content.state != state { await activity.update(content(state)) }
+            } else if !Started.contains(item.event.beaconID) {
                 let attributes = EventActivityAttributes(beaconID: item.event.beaconID, title: item.event.title, place: item.event.place,
-                                                         gradient: CardVisual(seed: item.event.beaconID).gradient)
-                _ = try? Activity.request(attributes: attributes, content: content(state), pushType: nil)
+                                                         gradient: CardVisual(seed: item.event.beaconID).gradient,
+                                                         isHost: item.event.isHost)
+                if (try? Activity.request(attributes: attributes, content: content(state), pushType: nil)) != nil {
+                    Started.remember(item.event.beaconID)
+                }
             }
         }
     }
 
     /// After a check-in on this phone (or the pass learning the host scanned you).
     nonisolated static func setCheckedIn(_ checkedIn: Bool, beaconID: String) async {
-        for activity in Activity<EventActivityAttributes>.activities where activity.attributes.beaconID == beaconID {
+        for activity in Activity<EventActivityAttributes>.activities
+        where activity.attributes.beaconID == beaconID && activity.activityState == .active {
             var state = activity.content.state
             guard state.checkedIn != checkedIn else { continue }
             state.checkedIn = checkedIn
@@ -99,6 +112,25 @@ enum EventLiveActivities {
     nonisolated private static func content(_ state: EventActivityAttributes.ContentState) -> ActivityContent<EventActivityAttributes.ContentState> {
         ActivityContent(state: state, staleDate: state.start > Date() ? state.start : state.end)
     }
+}
+
+/// Events whose activity this device started and hasn't ended itself. One that's gone from
+/// `Activity.activities` while still listed here was swiped away (or timed out), so it isn't
+/// started again. UserDefaults is thread-safe, so this is usable off the main actor.
+private enum Started {
+    private static let key = "events.liveActivity.started"
+
+    private static var ids: Set<String> {
+        get { Set(UserDefaults.standard.stringArray(forKey: key) ?? []) }
+        set { UserDefaults.standard.set(Array(newValue), forKey: key) }
+    }
+
+    static func contains(_ beaconID: String) -> Bool { ids.contains(beaconID) }
+    static func remember(_ beaconID: String) { ids.insert(beaconID) }
+    static func forget(_ beaconID: String) { ids.remove(beaconID) }
+    /// Events no longer upcoming drop out, so the list never grows.
+    static func prune(keeping wanted: Set<String>) { ids.formIntersection(wanted) }
+    static func reset() { UserDefaults.standard.removeObject(forKey: key) }
 }
 
 /// One event to show, with what its activity displays.
