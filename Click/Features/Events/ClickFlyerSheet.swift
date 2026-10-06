@@ -182,7 +182,7 @@ enum FlyerFormat: String, CaseIterable, Identifiable {
         case .story:
             FlyerMetrics(cardWidth: 284, photoAspects: 1.0...1.91, maxPhotoHeight: 250, plainAspect: 1.6, titleSize: 27, brandGap: 20)
         case .post:
-            FlyerMetrics(cardWidth: 304, photoAspects: 1.7...2.4, maxPhotoHeight: 165, plainAspect: 2.1, titleSize: 23, brandGap: 14)
+            FlyerMetrics(cardWidth: 304, photoAspects: 1.7...2.4, maxPhotoHeight: 150, plainAspect: 2.1, titleSize: 23, brandGap: 14)
         }
     }
 }
@@ -400,9 +400,9 @@ struct FlyerCanvas: View {
                     Color.clear.overlay { Image(uiImage: picture).resizable().scaledToFill() }
                 } else {
                     Color.clear.overlay {
-                        Image(uiImage: art.swatch ?? picture).resizable().interpolation(.high).scaledToFill().blur(radius: 8)
+                        Image(uiImage: art.swatch ?? picture).resizable().interpolation(.high).scaledToFill().blur(radius: 24).scaleEffect(1.3)
                     }
-                    Color.black.opacity(0.15)
+                    Color.black.opacity(0.3)
                     Image(uiImage: picture).resizable().scaledToFit()
                 }
             } else {

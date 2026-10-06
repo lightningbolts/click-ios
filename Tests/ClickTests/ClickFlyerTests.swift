@@ -16,14 +16,14 @@ struct ClickFlyerTests {
         // No picture: the generated art at the format's own shape.
         #expect(story.photoFrame(for: nil) == CGSize(width: 260, height: 163))
         let post = FlyerFormat.post.metrics
-        #expect(post.photoFrame(for: CGSize(width: 1000, height: 1000)).height == 165)
+        #expect(post.photoFrame(for: CGSize(width: 1000, height: 1000)).height == 150)
         #expect(post.photoFrame(for: CGSize(width: 3000, height: 1000)) == CGSize(width: 280, height: 117))
     }
 
     @Test("A picture near its frame's shape fills it; a poster far from it is shown whole")
     func fillOrFit() {
-        #expect(FlyerMetrics.fills(CGSize(width: 1600, height: 1200), frame: CGSize(width: 280, height: 165)))
-        #expect(!FlyerMetrics.fills(CGSize(width: 1000, height: 1000), frame: CGSize(width: 280, height: 165)))
+        #expect(FlyerMetrics.fills(CGSize(width: 1600, height: 1200), frame: CGSize(width: 280, height: 150)))
+        #expect(!FlyerMetrics.fills(CGSize(width: 1000, height: 1000), frame: CGSize(width: 280, height: 150)))
         #expect(FlyerMetrics.fills(CGSize(width: 1000, height: 1000), frame: CGSize(width: 260, height: 250)))
     }
 
@@ -44,7 +44,6 @@ struct ClickFlyerTests {
                 let image = try #require(FlyerCanvas.render(format: format, content: Self.content, art: FlyerArt(seed: "e1", picture: picture)))
                 #expect(image.size == format.size)
                 #expect(image.scale == 3)
-                Self.dump(image, name: "\(format.rawValue)-\(name)")
             }
         }
     }
@@ -89,20 +88,6 @@ struct ClickFlyerTests {
             let style = [NSAttributedString.Key.font: UIFont.systemFont(ofSize: 150, weight: .black),
                          .foregroundColor: UIColor(red: 0.85, green: 0.78, blue: 0.55, alpha: 1)]
             ("TEAM\nTUESDAY\nMEETUPS" as NSString).draw(at: CGPoint(x: 50, y: 60), withAttributes: style)
-        }
-    }
-
-    /// Logs a small JPEG as known issues (shown in the CI log without failing), for checking the layout.
-    private static func dump(_ image: UIImage, name: String) {
-        let small = UIGraphicsImageRenderer(size: image.size, format: { let format = UIGraphicsImageRendererFormat(); format.scale = 1; return format }())
-            .image { _ in image.draw(in: CGRect(origin: .zero, size: image.size)) }
-        guard let data = small.jpegData(compressionQuality: 0.6) else { return }
-        let encoded = Array(data.base64EncodedString())
-        var chunk = 0
-        for start in stride(from: 0, to: encoded.count, by: 4000) {
-            let part = String(encoded[start..<min(start + 4000, encoded.count)])
-            withKnownIssue { Issue.record(Comment(rawValue: "FLYER_SNAPSHOT \(name) \(chunk) \(part)")) }
-            chunk += 1
         }
     }
 }
