@@ -498,7 +498,13 @@ struct ScanClickCodeView: View {
                     revealed = nil
                     env.router.navigate(to: .userProfile(userID: peer.id, connectionID: peer.connectionID))
                 },
-                onOpenGroups: { finishReveal() },
+                onOpenGroup: { group in
+                    finishReveal()
+                    guard let group else { return }
+                    env.router.addClickPath.removeAll()
+                    env.router.selectTab(.connections)
+                    env.router.navigate(to: .groupChat(group.chatRoute))
+                },
                 onOpenEvent: { id in
                     revealed = nil
                     env.router.navigate(to: .event(beaconID: id))
