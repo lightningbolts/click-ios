@@ -90,7 +90,7 @@ struct BeaconDetailView: View {
 
     // MARK: - Content
 
-    private static let page = "eventPage"
+    private nonisolated static let page = "eventPage"
 
     private func content(_ beacon: MapBeacon) -> some View {
         // Read here so the scroll threshold below updates once the title is measured.
