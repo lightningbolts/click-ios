@@ -6,10 +6,12 @@ import SwiftUI
 struct PostConnectView: View {
     @Environment(AppEnvironment.self) private var env
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @Environment(ConversationListModel.self) private var conversations
     @State var model: PostConnectModel
     let onSayHi: (ProximityPeer) -> Void
     let onViewProfile: (ProximityPeer) -> Void
-    let onOpenGroups: () -> Void
+    /// The group's chat once it exists, otherwise nil to fall back to the Groups list.
+    let onOpenGroup: (CliqueItem?) -> Void
     let onOpenEvent: (String) -> Void
     let onDone: () -> Void
 
@@ -69,8 +71,10 @@ struct PostConnectView: View {
             withAnimation(reduceMotion ? .easeOut(duration: 0.2) : ClickMotion.reveal) { joined = true }
             if let session = model.clickDropSession, session.endsAt > .now { env.clickDropSession = session }
             async let sensors: Void = model.recordSensorContext(env)
+            async let group: Void = model.prepareGroup(env, conversations: conversations)
             await model.load(env)
             await sensors
+            await group
         }
         .alert("Couldn't send the Click Drop", isPresented: Binding(get: { dropError != nil }, set: { if !$0 { dropError = nil } })) {
             Button("OK", role: .cancel) {}
@@ -83,6 +87,28 @@ struct PostConnectView: View {
         .animation(ClickMotion.content, value: model.recommendation)
         .animation(ClickMotion.reveal, value: model.encounters.count)
         .sheet(item: $sharingSouvenir) { ActivityShareSheet(items: [$0.image]).presentationDetents([.medium, .large]) }
+    }
+
+    @ViewBuilder
+    private var groupActions: some View {
+        switch model.groupState {
+        case .ready(let group):
+            Button("Open group chat") { onOpenGroup(group) }
+                .buttonStyle(.clickPrimary)
+        case .idle, .preparing:
+            Button("Setting up group chat…") {}
+                .buttonStyle(.clickPrimary)
+                .disabled(true)
+        case .failed(let message):
+            Text(message)
+                .font(ClickTypography.supporting)
+                .foregroundStyle(ClickColors.textSecondary)
+                .multilineTextAlignment(.center)
+            Button("Try again") { Task { await model.prepareGroup(env, conversations: conversations) } }
+                .buttonStyle(.clickPrimary)
+            Button("Open Groups") { onOpenGroup(nil) }
+                .buttonStyle(.clickSecondary)
+        }
     }
 
     // MARK: - Souvenir
@@ -230,8 +256,7 @@ struct PostConnectView: View {
                 .disabled(model.saveState == .saving)
             }
             if model.isGroup {
-                Button("Open Groups") { onOpenGroups() }
-                    .buttonStyle(.clickPrimary)
+                groupActions
             } else if let peer = model.primaryPeer {
                 Button("Say hi") { onSayHi(peer) }
                     .buttonStyle(.clickPrimary)

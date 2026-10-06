@@ -98,6 +98,21 @@ struct ClicksInboxTests {
         #expect(items[1].unreadCount == 0)
     }
 
+    @Test("A proximity group connection is not listed as a direct chat with one of its members")
+    func groupConnectionsAreNotDirectChats() {
+        var group = row("group", peer: "usr_carey", createdAgo: 60)
+        group["user_ids"] = [me, "usr_carey", "usr_andrew"]
+        group["is_group"] = true
+        var flagged = row("flagged", peer: "usr_ada", createdAgo: 60)
+        flagged["is_group"] = true
+        let items = Phase3Repository.inboxItems(
+            rows: [group, flagged, row("pair", peer: "usr_carey", createdAgo: 60)],
+            currentUserID: me, identities: [:], previews: [:],
+            coreIDs: [], archived: false, now: now
+        )
+        #expect(items.map(\.id) == ["pair"])
+    }
+
     @Test("Only unstarted pending connections inside 48 hours get a say-hi deadline")
     func sayHiDeadline() {
         let rows = [

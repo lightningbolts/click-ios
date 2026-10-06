@@ -93,6 +93,18 @@ struct ProximityResultTests {
         #expect(match.isGroup)
     }
 
+    @Test("A confirmed group knows every member and tags its shared connection once")
+    @MainActor
+    func confirmedGroup() throws {
+        let result = try parse(#"{"success":true,"connection_id":"g1","is_new_connection":true,"is_group":true,"encounter_logged":true,"group_clique_candidate":{"member_user_ids":["a","b","me"]},"matches":[{"id":"a","name":"A","connection_id":"g1"},{"id":"b","name":"B","connection_id":"g1"}]}"#)
+        guard case .matched(let match) = result else { Issue.record("expected match"); return }
+        let model = PostConnectModel(match: match, method: .tap)
+        #expect(model.isGroup)
+        #expect(model.groupMemberIDs(viewerID: "me") == ["a", "b", "me"])
+        #expect(model.taggedConnectionIDs == ["g1"])
+        #expect(model.groupState == .idle)
+    }
+
     @Test("First-time multi-peer taps require host selection before anything is created")
     func awaitingSelection() throws {
         let result = try parse(#"{"awaiting_selection":true,"pending_handshake_id":"p1","matches":[{"id":"a","name":"A"},{"id":"b","name":"B"}]}"#)

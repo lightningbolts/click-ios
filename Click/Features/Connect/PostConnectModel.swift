@@ -14,6 +14,14 @@ final class PostConnectModel {
         case failed(String)
     }
 
+    /// The verified group (clique) chat for a group Click. The server only creates the group
+    /// connection and the pairwise connections; the group chat is a clique a client must create.
+    enum GroupState: Equatable {
+        case idle, preparing
+        case ready(CliqueItem)
+        case failed(String)
+    }
+
     let match: ProximityMatch
     let method: Method
     let suggestions: [ContextTag]
@@ -27,6 +35,7 @@ final class PostConnectModel {
     private(set) var saveState: SaveState = .idle
     private(set) var recommendationDismissed = false
     private(set) var rsvpPending = false
+    private(set) var groupState: GroupState = .idle
 
     /// Ordered selection; custom text is stored as its own label (KMP convention).
     var selectedTags: [String] = []
@@ -107,10 +116,78 @@ final class PostConnectModel {
         recommendation = await suggestion ?? nil
     }
 
+    /// Everyone in this group Click, including the viewer.
+    func groupMemberIDs(viewerID: String) -> [String] {
+        Array(Set(match.groupMemberIDs + match.peers.map(\.id) + [viewerID])).sorted()
+    }
+
+    /// Finds or creates the verified group chat for a group Click. Every member's phone runs this,
+    /// so the lowest member ID creates right away and the others first wait for that group to
+    /// appear (create_verified_clique rejects a second group for the same members anyway).
+    func prepareGroup(_ env: AppEnvironment, conversations: ConversationListModel) async {
+        guard isGroup, let userID = env.session.currentSession?.userId else { return }
+        switch groupState {
+        case .preparing, .ready: return
+        case .idle, .failed: break
+        }
+        let members = groupMemberIDs(viewerID: userID)
+        guard members.count >= 3 else { return }
+        groupState = .preparing
+
+        func existing() async -> CliqueItem? {
+            let groups = (try? await env.groups.groups(userID: userID)) ?? []
+            return groups.first { Set($0.members.map(\.userID)) == Set(members) }
+        }
+
+        if let group = await existing() { return await open(group, env, conversations) }
+        if members.first != userID {
+            for wait in Self.creatorWaits {
+                try? await Task.sleep(for: wait)
+                if Task.isCancelled { groupState = .idle; return }
+                if let group = await existing() { return await open(group, env, conversations) }
+            }
+        }
+
+        let peers = members.filter { $0 != userID }
+        do {
+            let pairs = try await env.groups.pairConnectionIDs(viewerID: userID, peerIDs: peers)
+            let names = match.peers.map { HomeFeedModel.firstName($0.name) ?? $0.name }.sorted()
+            _ = try await env.groups.create(creatorID: userID, connectionIDs: pairs, name: names.joined(separator: ", "))
+        } catch {
+            // Another member's phone may have created it between our check and our create.
+            if let group = await existing() { return await open(group, env, conversations) }
+            groupState = .failed("Couldn't set up the group chat. \(error.userFacingMessage)")
+            return
+        }
+        if let group = await existing() {
+            await open(group, env, conversations)
+        } else {
+            groupState = .failed("The group was created but couldn't be loaded yet. Pull to refresh Groups.")
+        }
+    }
+
+    private func open(_ group: CliqueItem, _ env: AppEnvironment, _ conversations: ConversationListModel) async {
+        groupState = .ready(group)
+        _ = try? await env.chat.reconcileMembershipEpoch(chatID: group.chatID, participantUserIDs: group.members.map(\.userID))
+        await conversations.refresh()
+    }
+
+    /// How long a non-creating member waits for the creator's group before creating it itself
+    /// (the creator may be on Android, which only offers a prefilled group sheet).
+    nonisolated static let creatorWaits: [Duration] = [.seconds(2), .seconds(3), .seconds(4)]
+
+    /// Connections this tap's tags and sensor context go to. A confirmed group gives every peer
+    /// the same group connection ID, so it is written once.
+    var taggedConnectionIDs: [String] {
+        guard match.isGroup else { return [match.connectionID].compactMap { $0 } }
+        var seen = Set<String>()
+        return match.peers.compactMap(\.connectionID).filter { seen.insert($0).inserted }
+    }
+
     func save(_ env: AppEnvironment) async {
         let tags = ContextTagPicker.resolved(selected: selectedTags, custom: customTag)
         guard let userID = env.session.currentSession?.userId else { return }
-        let connectionIDs = match.isGroup ? match.peers.compactMap(\.connectionID) : [match.connectionID].compactMap { $0 }
+        let connectionIDs = taggedConnectionIDs
         guard !connectionIDs.isEmpty else {
             saveState = .failed("This connection isn't ready for tags yet.")
             return
@@ -137,7 +214,7 @@ final class PostConnectModel {
     func recordSensorContext(_ env: AppEnvironment) async {
         guard env.settings.ambientNoiseOptIn,
               let userID = env.session.currentSession?.userId else { return }
-        let connectionIDs = match.isGroup ? match.peers.compactMap(\.connectionID) : [match.connectionID].compactMap { $0 }
+        let connectionIDs = taggedConnectionIDs
         guard !connectionIDs.isEmpty else { return }
         let sensor = await EncounterSensorSampler.sample(settings: env.settings)
         guard !sensor.isEmpty else { return }

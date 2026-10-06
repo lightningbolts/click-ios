@@ -23,7 +23,11 @@ struct TapConnectView: View {
                     onViewProfile: { peer in
                         env.router.navigate(to: .userProfile(userID: peer.id, connectionID: peer.connectionID ?? match.connectionID))
                     },
-                    onOpenGroups: { env.router.selectTab(.connections) },
+                    onOpenGroup: { group in
+                        env.router.addClickPath.removeAll()
+                        env.router.selectTab(.connections)
+                        if let group { env.router.navigate(to: .groupChat(group.chatRoute)) }
+                    },
                     onOpenEvent: { env.router.navigate(to: .event(beaconID: $0)) },
                     onDone: { dismiss() }
                 )

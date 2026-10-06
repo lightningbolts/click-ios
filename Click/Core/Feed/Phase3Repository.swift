@@ -348,8 +348,12 @@ public actor Phase3Repository {
         return nil
     }
 
+    /// The other member of a 1:1 connection; nil for a proximity group connection (3+ members or
+    /// `is_group`), which is never a direct chat. Its members already get pairwise connections,
+    /// and its chat is the verified group (KMP `isOneToOnePairEdge`).
     private nonisolated static func peerID(in row: [String: Any], currentUserID: String) -> String? {
-        (row["user_ids"] as? [String])?.first { $0 != currentUserID }
+        guard let userIDs = row["user_ids"] as? [String], userIDs.count == 2, bool(row["is_group"]) != true else { return nil }
+        return userIDs.first { $0 != currentUserID }
     }
 
     /// Lightweight self identity (name + avatar) without the timeline or inbox requests that a
