@@ -127,6 +127,24 @@ public actor GroupRepository {
         throw APIError.decoding
     }
 
+    /// The viewer's 1:1 connection with each peer, for `create`. A Tap to Connect group also has a
+    /// 3+ member connection containing every pair; it is never a pairwise wrap key, so only
+    /// two-member rows count. Active/kept edges win over a still-pending fresh Click.
+    public func pairConnectionIDs(viewerID: String, peerIDs: [String]) async throws -> [String: String] {
+        var result: [String: String] = [:]
+        for peer in Set(peerIDs) where peer != viewerID {
+            let rows = try await rest("connections", [
+                .init(name: "select", value: "id,user_ids,status"),
+                .init(name: "user_ids", value: "cs.{\(viewerID),\(peer)}"),
+                .init(name: "limit", value: "10")
+            ])
+            let pairs = rows.filter { JSONFields.stringArray($0["user_ids"]).count == 2 }
+            let best = pairs.first { ["active", "kept"].contains(JSONFields.string($0["status"]) ?? "") } ?? pairs.first
+            if let id = best.flatMap({ JSONFields.string($0["id"]) }) { result[peer] = id }
+        }
+        return result
+    }
+
     /// True when every pair in `memberIDs` (which must include the caller) has an active 1:1
     /// connection (`verified_clique_edges_exist`); deduplicated and sorted like the server.
     public func cliqueExists(memberIDs: [String]) async throws -> Bool {
