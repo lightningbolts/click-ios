@@ -321,6 +321,9 @@ public struct ChatComposerView: View {
             axis: .vertical
         )
         .focused($isFocused)
+        // Anything pushed over the chat (a profile, an event) takes focus with it: SwiftUI would
+        // otherwise restore it on the way back and raise the keyboard over the latest messages.
+        .onDisappear { isFocused = false }
         .lineLimit(1...5)
         .font(ClickTypography.body)
         .foregroundStyle(ClickColors.textPrimary)

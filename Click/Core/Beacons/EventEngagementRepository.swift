@@ -19,6 +19,49 @@ public struct EventEngagement: Equatable, Sendable, Codable {
     public var checkInCount: Int
 }
 
+/// Your Click Pass for an event (`GET /api/beacons/{id}/pass`): the QR the host scans at the door.
+/// The credential never changes for an attendee, so it's kept on the device and shows offline.
+public struct ClickPass: Equatable, Sendable, Codable {
+    /// The QR payload: the event's public link carrying the pass.
+    public let credentialURL: String
+    /// "K7P-4QX": under the QR and in Wallet, so the host can tell passes apart.
+    public let code: String
+    public var checkedInAt: Date?
+    public let walletAvailable: Bool
+}
+
+/// An event you're hosting or going to (`GET /api/beacons/mine`), as the Live Activity needs it.
+public struct MyEvent: Equatable, Sendable {
+    public let beaconID: String
+    public let title: String
+    public let start: Date
+    public let end: Date
+    public let place: String?
+    public let isHost: Bool
+}
+
+/// What a host's scan of a Click Pass found (`POST /api/beacons/{id}/pass/scan`).
+public struct PassScan: Equatable, Sendable {
+    public enum Result: String, Sendable {
+        case checkedIn = "checked_in"
+        case alreadyCheckedIn = "already_checked_in"
+        case notGoing = "not_going"
+        case wrongEvent = "wrong_event"
+        case invalid
+    }
+
+    public struct Holder: Equatable, Sendable {
+        public let userID: String
+        public let name: String
+        public let avatarURL: String?
+    }
+
+    public let result: Result
+    public let holder: Holder?
+    public let checkedInAt: Date?
+    public let checkInCount: Int?
+}
+
 public struct DirectoryAttendee: Identifiable, Equatable, Sendable {
     public enum Relationship: String, Sendable {
         case `self`, connection, mutual, stranger
@@ -87,6 +130,7 @@ public actor EventEngagementRepository {
     private nonisolated let rsvpCache = MemoryCache<String, RSVPState>()
     private nonisolated let engagementCache = MemoryCache<String, EventEngagement>()
     private nonisolated let directoryCache = MemoryCache<String, EventDirectory>()
+    private nonisolated let passCache = MemoryCache<String, ClickPass>()
 
     // MARK: - Persistence
 
@@ -95,6 +139,8 @@ public actor EventEngagementRepository {
     private struct Persisted: Codable {
         var rsvp: [String: RSVPState]
         var engagement: [String: EventEngagement]
+        /// Optional: files written before passes existed decode without it.
+        var passes: [String: ClickPass]?
     }
 
     private static let persistKey = "events.engagement"
@@ -111,9 +157,11 @@ public actor EventEngagementRepository {
         rsvpCache.removeAll()
         engagementCache.removeAll()
         directoryCache.removeAll()
+        passCache.removeAll()
         guard let stored = LocalStore.shared.load(Persisted.self, key: Self.persistKey, userID: userID)?.value else { return }
         rsvpCache.fill(stored.rsvp)
         engagementCache.fill(stored.engagement)
+        passCache.fill(stored.passes ?? [:])
     }
 
     /// Sign-out: nothing of one account's events is shown to the next.
@@ -122,6 +170,7 @@ public actor EventEngagementRepository {
         rsvpCache.removeAll()
         engagementCache.removeAll()
         directoryCache.removeAll()
+        passCache.removeAll()
     }
 
     private func persist() {
@@ -132,7 +181,7 @@ public actor EventEngagementRepository {
             rsvp = Dictionary(uniqueKeysWithValues: rsvp.prefix(Self.persistLimit).map { ($0.key, $0.value) })
             engagement = Dictionary(uniqueKeysWithValues: engagement.prefix(Self.persistLimit).map { ($0.key, $0.value) })
         }
-        LocalStore.shared.save(Persisted(rsvp: rsvp, engagement: engagement), key: Self.persistKey, userID: userID)
+        LocalStore.shared.save(Persisted(rsvp: rsvp, engagement: engagement, passes: passCache.all), key: Self.persistKey, userID: userID)
     }
 
     /// RSVP and saved state for events likely to be opened next (Home's saved events), loaded
@@ -194,7 +243,64 @@ public actor EventEngagementRepository {
         _ = try await object("/api/beacons/\(beaconID)/rsvp", .delete)
         let prevCount = rsvpCache[beaconID]?.count ?? 1
         rsvpCache[beaconID] = RSVPState(isGoing: false, request: nil, count: max(0, prevCount - 1))
+        // The pass is void at the door from now on; don't keep showing it.
+        passCache[beaconID] = nil
         persist()
+    }
+
+    // MARK: - Click Pass
+
+    public nonisolated func cachedPass(beaconID: String) -> ClickPass? {
+        passCache[beaconID]
+    }
+
+    /// Throws `APIError.forbidden` when you aren't going (no pass yet, or the RSVP was cancelled).
+    public func pass(beaconID: String) async throws -> ClickPass {
+        do {
+            let root = try await object("/api/beacons/\(beaconID)/pass", .get)
+            guard let url = JSONFields.string(root["credential_url"]), let code = JSONFields.string(root["code"]) else {
+                throw APIError.decoding
+            }
+            let pass = ClickPass(credentialURL: url, code: code, checkedInAt: JSONFields.date(root["checked_in_at"]),
+                                 walletAvailable: JSONFields.bool(root["wallet_available"]) ?? false)
+            passCache[beaconID] = pass
+            persist()
+            return pass
+        } catch APIError.forbidden {
+            passCache[beaconID] = nil
+            persist()
+            throw APIError.forbidden
+        }
+    }
+
+    /// Events you're hosting or going to that have a schedule (newest RSVPs first, up to 50).
+    public func myEvents() async throws -> [MyEvent] {
+        let root = try await object("/api/beacons/mine", .get)
+        return JSONFields.rows(root["events"]).compactMap { row in
+            guard let id = JSONFields.string(row["beacon_id"]),
+                  let start = JSONFields.date(row["event_start_at"]),
+                  let end = JSONFields.date(row["event_end_at"]), end > start else { return nil }
+            return MyEvent(beaconID: id, title: JSONFields.string(row["title"]) ?? "Event", start: start, end: end,
+                           place: JSONFields.string(row["location_name"]), isHost: JSONFields.string(row["role"]) == "creator")
+        }
+    }
+
+    /// The signed Apple Wallet pass (`.pkpass` bytes).
+    public func walletPass(beaconID: String) async throws -> Data {
+        try await api.executeRaw(APIRequest(path: "/api/beacons/\(beaconID)/pass/wallet")).0
+    }
+
+    /// Host only (the server checks): checks the pass's holder in, or says why not.
+    public func scanPass(beaconID: String, credential: String) async throws -> PassScan {
+        let body = try JSONSerialization.data(withJSONObject: ["credential": credential])
+        let root = try await object("/api/beacons/\(beaconID)/pass/scan", .post, body: body)
+        guard let result = JSONFields.string(root["result"]).flatMap(PassScan.Result.init(rawValue:)) else { throw APIError.decoding }
+        let holder = JSONFields.dictionary(root["attendee"]).flatMap { row -> PassScan.Holder? in
+            guard let id = JSONFields.string(row["user_id"]) else { return nil }
+            return PassScan.Holder(userID: id, name: JSONFields.string(row["name"]) ?? "Guest", avatarURL: JSONFields.string(row["avatar_url"]))
+        }
+        return PassScan(result: result, holder: holder, checkedInAt: JSONFields.date(root["checked_in_at"]),
+                        checkInCount: JSONFields.int(root["check_in_count"]))
     }
 
     public func engagement(beaconID: String) async throws -> EventEngagement {

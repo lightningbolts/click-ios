@@ -41,6 +41,8 @@
 			</array>
 		</dict>
 	</array>
+	<key>NSSupportsLiveActivities</key>
+	<true/>
 	<key>NSNearbyInteractionUsageDescription</key>
 	<string>Click uses Nearby Interaction during Tap to Connect to measure proximity between nearby iPhones and help confirm you are connecting with the person physically next to you.</string>
 	<key>UILaunchScreen</key>

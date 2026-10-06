@@ -9,6 +9,7 @@ This document preserves the authoritative Apple developer and provisioning ident
 | Main App Bundle ID | `compose.project.click.click` |
 | App Clip Bundle ID | `compose.project.click.click.Clip` |
 | Notification Service Bundle ID | `compose.project.click.click.NotificationService` |
+| Widgets Extension Bundle ID | `compose.project.click.click.Widgets` (event Live Activity; `NSSupportsLiveActivities` on the app) |
 | URL Schemes | `click`, `com.googleusercontent.apps.530817233802-crnehf5a9duauov4vos4lgsijkgingdj` |
 | App Store Listing ID | `6757996346` |
 | Associated Domains | `applinks:joinclick.co`, `applinks:www.joinclick.co`, `applinks:click-us.vercel.app` |
@@ -28,3 +29,10 @@ This document preserves the authoritative Apple developer and provisioning ident
 - **Account**: `x25519_identity_private_key`
 - **Format**: 32 raw private-key bytes
 - **Accessibility**: `kSecAttrAccessibleWhenUnlockedThisDeviceOnly`
+
+## Click Pass and Apple Wallet
+
+- The app adds Click Passes with `PKAddPassesViewController` / `AddPassToWalletButton`: no entitlement needed.
+- Signing is server-side (click-web `WALLET_PASS_TYPE_ID`, `WALLET_PASS_CERT`, `WALLET_PASS_KEY`, `WALLET_WWDR_CERT`). Create the Pass Type ID (e.g. `pass.co.joinclick.event`) under team `W4C3V9Z2N4`. Until it's configured the server reports `wallet_available: false` and the button is hidden.
+- Optional: adding the Pass Type ID to the app's `com.apple.developer.pass-type-identifiers` entitlement lets the pass screen read "View in Wallet" for passes already added (without it, Wallet itself says the pass is already there).
+- Calendar: "Add to Calendar" asks for write-only access (`NSCalendarsWriteOnlyAccessUsageDescription`); declining falls back to the system add-event sheet, which needs no access.

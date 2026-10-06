@@ -103,6 +103,10 @@ public enum AppRoute: Hashable, Sendable {
     case eventPeople(beaconID: String)
     /// The host's guest list import for an event.
     case guestList(beaconID: String)
+    /// Your Click Pass for an event you're going to: the QR the host scans at the door.
+    case eventPass(beaconID: String)
+    /// The host's door scanner for Click Passes.
+    case passScanner(beaconID: String)
     case beacon(beaconID: String)
     case hub(hubID: String)
     /// A Click Place page (`click://p/{slug}`). `anchorToken` comes from a check-in QR code and
@@ -136,7 +140,7 @@ public enum AppRoute: Hashable, Sendable {
         switch self {
         case .chat, .userProfile, .publicProfile, .groupChat, .groupProfile, .conversation:
             .connections
-        case .event, .eventChat, .eventPeople, .guestList, .beacon, .hub, .eventRecap, .place:
+        case .event, .eventChat, .eventPeople, .guestList, .eventPass, .passScanner, .beacon, .hub, .eventRecap, .place:
             .map
         case .myQR, .scanQR, .tapConnect, .findFriends, .connectionInvocation:
             .addClick
@@ -422,6 +426,10 @@ public final class AppRouter {
             // click://e/{beaconId}
             if host == "e", let beaconId = pathComponents.first {
                 return .event(beaconID: beaconId)
+            }
+            // click://pass/{beaconId} (the Live Activity's "Show pass")
+            if host == "pass", let beaconId = pathComponents.first {
+                return .eventPass(beaconID: beaconId)
             }
             // click://hub/{hubId}
             if host == "hub", let hubId = pathComponents.first {

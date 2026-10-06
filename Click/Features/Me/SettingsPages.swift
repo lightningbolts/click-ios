@@ -672,7 +672,7 @@ struct CalendarSettingsView: View {
                     }
                 }
             } footer: {
-                Text("Plans and events show whether you're free then, and suggest the next free time when you're not. Click reads only busy and free times, on this iPhone. Event titles, locations, and attendees never leave your device, and Click never adds or changes calendar events.")
+                Text("Plans and events show whether you're free then, and suggest the next free time when you're not. Click reads only busy and free times, on this iPhone. Event titles, locations, and attendees never leave your device. Click never changes your calendar events, and only adds the ones you ask it to.")
             }
         }
         .navigationTitle("Calendar")

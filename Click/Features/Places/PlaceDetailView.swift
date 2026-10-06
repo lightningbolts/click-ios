@@ -256,16 +256,22 @@ private struct PlaceDetailContent: View {
                 Button {
                     env.router.navigate(to: .event(beaconID: event.beaconID))
                 } label: {
-                    HStack {
+                    HStack(spacing: 12) {
+                        EventVisual(seed: event.beaconID, imageURL: event.imageURL, symbol: "calendar", cornerRadius: 10,
+                                    maxPixelSize: EventVisual.thumbnailPixelSize)
+                            .frame(width: 52, height: 52)
                         VStack(alignment: .leading, spacing: 2) {
-                            Text(event.title).font(ClickTypography.body).foregroundStyle(ClickColors.textPrimary)
+                            Text(event.title)
+                                .font(ClickTypography.body)
+                                .foregroundStyle(ClickColors.textPrimary)
+                                .lineLimit(2)
                             if let start = event.startsAt {
                                 Text(start.formatted(date: .abbreviated, time: .shortened))
                                     .font(ClickTypography.supporting)
                                     .foregroundStyle(ClickColors.textSecondary)
                             }
                         }
-                        Spacer()
+                        Spacer(minLength: 0)
                         if event.isLive { StatusPill("Live", style: .live) }
                     }
                 }
