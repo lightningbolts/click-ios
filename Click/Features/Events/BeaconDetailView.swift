@@ -93,7 +93,8 @@ struct BeaconDetailView: View {
     private static let page = "eventPage"
 
     private func content(_ beacon: MapBeacon) -> some View {
-        let titleBottom = titleBottom
+        // Read here so the scroll threshold below updates once the title is measured.
+        let pastTitleAt = titleBottom
         return ScrollView {
             VStack(alignment: .leading, spacing: 20) {
                 // Inset and whole, at the picture's own shape (a poster is never cropped to a
@@ -203,7 +204,7 @@ struct BeaconDetailView: View {
         }
         .heroBar(clear: !showsCompactTitle)
         .onScrollGeometryChange(for: Bool.self) { geometry in
-            geometry.contentOffset.y + geometry.contentInsets.top > titleBottom
+            geometry.contentOffset.y + geometry.contentInsets.top > pastTitleAt
         } action: { _, pastTitle in
             withAnimation(ClickMotion.subtleFade) { showsCompactTitle = pastTitle }
         }
