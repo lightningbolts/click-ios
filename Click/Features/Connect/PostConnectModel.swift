@@ -257,14 +257,14 @@ final class PostConnectModel {
         let tags = ContextTagPicker.resolved(selected: selectedTags, custom: customTag)
         guard let userID = env.session.currentSession?.userId else { return }
         saveState = .saving
-        let connectionIDs = await taggableConnectionIDs(env, userID: userID)
-        guard !connectionIDs.isEmpty else {
-            saveState = .failed("This connection isn't ready for tags yet.")
-            return
-        }
         // Sensor context is recorded on its own when the screen opens (`recordSensorContext`).
         let sensor = EncounterSensorContext()
         do {
+            let connectionIDs = try await taggableConnectionIDs(env, userID: userID)
+            guard !connectionIDs.isEmpty else {
+                saveState = .failed("This connection isn't ready for tags yet.")
+                return
+            }
             for (index, connectionID) in connectionIDs.enumerated() {
                 do {
                     try await env.encounterContext.saveContext(connectionID: connectionID, tags: tags, sensor: sensor, reportingUserID: userID)
@@ -292,7 +292,9 @@ final class PostConnectModel {
         await Task {
             async let ids = taggableConnectionIDs(env, userID: userID)
             let sensor = await EncounterSensorSampler.sample(settings: env.settings)
-            let connectionIDs = await ids
+            // Best effort: if the members' own connections can't be resolved, the reading still
+            // reaches the Click's own connections.
+            let connectionIDs = (try? await ids) ?? directConnectionIDs
             guard !sensor.isEmpty else { return }
             // Shown on the details card at once, rather than after the next read.
             if latestEncounter?.noiseDecibels == nil {
@@ -312,19 +314,26 @@ final class PostConnectModel {
     /// Resolved once: the viewer's own connection with each member of a group Click.
     private var pairConnectionIDs: [String]?
 
-    /// Where this Click's tags and sensor context go. One-to-one: its connection. A group: the
-    /// group connection plus the viewer's own connection with each member, since that is the
-    /// timeline each person's profile shows (a group confirm returns the group ID for every peer).
-    private func taggableConnectionIDs(_ env: AppEnvironment, userID: String) async -> [String] {
+    /// The connections the Click itself returned (one-to-one: its connection; a group: the
+    /// group connection, which a group confirm returns for every peer).
+    private var directConnectionIDs: [String] {
         guard isGroup else { return [match.connectionID ?? primaryPeer?.connectionID].compactMap { $0 } }
+        return [match.connectionID].compactMap { $0 } + match.peers.compactMap(\.connectionID)
+    }
+
+    /// Where this Click's tags and sensor context go: its own connections, plus for a group the
+    /// viewer's own connection with each member, since that is the timeline each person's
+    /// profile shows. Throws if those can't be resolved, so a group is never tagged partially;
+    /// a failure is not cached, so a retry resolves again.
+    private func taggableConnectionIDs(_ env: AppEnvironment, userID: String) async throws -> [String] {
+        guard isGroup else { return directConnectionIDs }
         if pairConnectionIDs == nil {
             let peers = groupMemberIDs(viewerID: userID).filter { $0 != userID }
-            let pairs = (try? await env.groups.pairConnectionIDs(viewerID: userID, peerIDs: peers)) ?? [:]
+            let pairs = try await env.groups.pairConnectionIDs(viewerID: userID, peerIDs: peers)
             pairConnectionIDs = peers.compactMap { pairs[$0] }
         }
         var seen = Set<String>()
-        let ids = [match.connectionID].compactMap { $0 } + match.peers.compactMap(\.connectionID) + (pairConnectionIDs ?? [])
-        return ids.filter { seen.insert($0).inserted }
+        return (directConnectionIDs + (pairConnectionIDs ?? [])).filter { seen.insert($0).inserted }
     }
 
     /// What this tap added (new spot, level, streak, milestone), once history has loaded.

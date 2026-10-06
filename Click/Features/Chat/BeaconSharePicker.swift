@@ -210,8 +210,9 @@ struct BeaconSharePicker: View {
         var saved = Self.resolve(await cachedSaved ?? [], beacons: beacons)
         apply(nearby: nearby, saved: saved.found)
 
-        // Fresh bookmarks, then any saved event not already in hand, fetched in parallel.
-        let bookmarks = (try? await beacons.bookmarks(userID: userID)) ?? []
+        // Fresh bookmarks, then any saved event not already in hand, fetched in parallel. Offline,
+        // the cached Saved section stays.
+        guard let bookmarks = try? await beacons.bookmarks(userID: userID) else { return }
         saved = Self.resolve(bookmarks, beacons: beacons)
         let fetched = await withTaskGroup(of: MapBeacon?.self) { group in
             for id in saved.missing.prefix(20) {
