@@ -40,6 +40,11 @@ struct BeaconDetailView: View {
     /// Readable place for legacy beacons saved with the label "Current location".
     @State private var resolvedPlace: (name: String?, address: String?)?
     @State private var reporting = false
+    /// Apple Maps / Google Maps (/ Click's map) for Directions and the location card.
+    @State private var mapsTarget: MapsDestination?
+    @State private var calendar = CalendarButtonModel()
+    @State private var weather: PlaceWeather?
+    @State private var showingFlyer = false
 
     var body: some View {
         Group {
@@ -111,6 +116,7 @@ struct BeaconDetailView: View {
                         .onGeometryChange(for: CGFloat.self, of: { $0.frame(in: .named(Self.page)).maxY }) { titleBottom = $0 }
                     hostLine(beacon)
                     if let schedule = beacon.schedule { whenLine(schedule) }
+                    if beacon.isEvent, beacon.schedule != nil, !isExpired { calendarButton(beacon) }
                     if isExpired {
                         Label("This has ended.", systemImage: "clock.badge.xmark")
                             .font(ClickTypography.supporting)
@@ -121,6 +127,7 @@ struct BeaconDetailView: View {
                 if beacon.isEvent {
                     VStack(spacing: 10) {
                         if beacon.rsvpEnabled != false, !isExpired { rsvpButton(beacon) }
+                        if rsvp.value?.isGoing == true, !isExpired { passCard(beacon) }
                         eventActionRow(beacon)
                     }
                     LocationNudgeCard(
@@ -178,6 +185,13 @@ struct BeaconDetailView: View {
                         sectionHeader("Hosting")
                         VStack(spacing: 0) {
                             if beacon.isEvent {
+                                if !isExpired {
+                                    NavigationLink(value: AppRoute.passScanner(beaconID: beacon.id)) {
+                                        infoRow(systemImage: "qrcode.viewfinder", title: "Scan Click Passes",
+                                                subtitle: "Check guests in at the door", chevron: true)
+                                    }
+                                    Divider().padding(.leading, 56)
+                                }
                                 NavigationLink(value: AppRoute.guestList(beaconID: beacon.id)) {
                                     infoRow(systemImage: "list.bullet.rectangle", title: "Guest list", subtitle: nil, chevron: true)
                                 }
@@ -218,6 +232,11 @@ struct BeaconDetailView: View {
         .sheet(isPresented: $sharingToChat) {
             ShareToChatSheet(beacon: beacon)
         }
+        .sheet(isPresented: $showingFlyer) {
+            ClickFlyerSheet(beacon: beacon, shareURL: shareURL)
+        }
+        .mapsDialog($mapsTarget, onClickMap: clickMapAction(beacon))
+        .calendarEditorSheet(calendar)
         .sheet(isPresented: $editingBeacon) {
             CreateBeaconSheet(fallback: nil, editing: beacon) { updated in
                 self.beacon.succeed(updated)
@@ -257,7 +276,25 @@ struct BeaconDetailView: View {
     @ViewBuilder
     private func hostLine(_ beacon: MapBeacon) -> some View {
         let posted = beacon.createdAt.map { "posted \($0.formatted(.dateTime.month(.abbreviated).day()))" }
-        if let host = beacon.visibleCreatorName {
+        if let place = Self.placeLink(for: beacon, placesEnabled: env.features.isEnabled(.clickPlaces)) {
+            // A Place hosting its own event is the host: its photo and name, opening its page.
+            NavigationLink(value: AppRoute.place(idOrSlug: place.id, anchorToken: nil)) {
+                HStack(spacing: 8) {
+                    AvatarView(imageURL: place.photoURL, seed: place.id, initials: Phase3Repository.initials(from: place.name), size: 26)
+                    (Text("Hosted by ").foregroundColor(ClickColors.textSecondary)
+                        + Text(place.name).foregroundColor(ClickColors.textPrimary).fontWeight(.semibold)
+                        + Text(place.city.map { " · \($0)" } ?? "").foregroundColor(ClickColors.textSecondary))
+                        .font(ClickTypography.supporting)
+                        .lineLimit(1)
+                    Image(systemName: "chevron.right")
+                        .font(.caption2.weight(.bold))
+                        .foregroundStyle(ClickColors.textTertiary)
+                }
+                .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            .accessibilityHint("Opens \(place.name).")
+        } else if let host = beacon.visibleCreatorName {
             HStack(spacing: 8) {
                 AvatarView(imageURL: nil, seed: beacon.creatorID, initials: Phase3Repository.initials(from: host), size: 26)
                 (Text("Hosted by ").foregroundColor(ClickColors.textSecondary)
@@ -314,6 +351,71 @@ struct BeaconDetailView: View {
         .accessibilityHint(isActive ? "Double-tap to cancel" : "")
     }
 
+    /// Once you're going: the way to your Click Pass (the QR for the door, Wallet, directions).
+    private func passCard(_ beacon: MapBeacon) -> some View {
+        let checkedIn = engagement.value?.checkedIn == true || env.events.cachedPass(beaconID: beacon.id)?.checkedInAt != nil
+        return NavigationLink(value: AppRoute.eventPass(beaconID: beacon.id)) {
+            HStack(spacing: 14) {
+                Image(systemName: checkedIn ? "checkmark" : "qrcode")
+                    .font(.system(size: 20, weight: .semibold))
+                    .foregroundStyle(.white)
+                    .frame(width: 44, height: 44)
+                    .background(checkedIn ? ClickColors.online : ClickColors.primaryActionFill,
+                                in: RoundedRectangle(cornerRadius: 12, style: .continuous))
+                VStack(alignment: .leading, spacing: 2) {
+                    Text("Your Click Pass")
+                        .font(ClickTypography.bodyEmphasized)
+                        .foregroundStyle(ClickColors.textPrimary)
+                    Text(checkedIn ? "You're checked in" : "Show it at the door · Add to Wallet")
+                        .font(ClickTypography.supporting)
+                        .foregroundStyle(ClickColors.textSecondary)
+                }
+                Spacer(minLength: 0)
+                Image(systemName: "chevron.right")
+                    .font(.footnote.weight(.semibold))
+                    .foregroundStyle(ClickColors.textTertiary)
+            }
+            .padding(.horizontal, 14)
+            .padding(.vertical, 12)
+            .detailCard()
+            .contentShape(RoundedRectangle(cornerRadius: ClickRadius.surface, style: .continuous))
+        }
+        .buttonStyle(.plain)
+        .transition(.opacity.combined(with: .move(edge: .top)))
+    }
+
+    /// The location card also offers Click's own map; Directions doesn't.
+    private func clickMapAction(_ beacon: MapBeacon) -> (() -> Void)? {
+        guard mapsTarget?.wantsDirections == false else { return nil }
+        return { env.router.showOnMap(.place(beacon.id)) }
+    }
+
+    /// One tap to the calendar (the system sheet only when Click has no calendar access).
+    private func calendarButton(_ beacon: MapBeacon) -> some View {
+        Button { Task { await calendar.add(beacon) } } label: {
+            HStack(spacing: 6) {
+                if calendar.isAdding {
+                    ProgressView().controlSize(.small)
+                } else {
+                    Image(systemName: calendar.isAdded ? "calendar.badge.checkmark" : "calendar.badge.plus")
+                        .contentTransition(.symbolEffect(.replace))
+                }
+                Text(calendar.isAdded ? "In Calendar" : "Add to Calendar")
+            }
+            .font(ClickTypography.supportingEmphasized)
+            .foregroundStyle(calendar.isAdded ? ClickColors.online : ClickColors.accentForeground)
+            .padding(.horizontal, 12)
+            .frame(minHeight: 32)
+            .background(calendar.isAdded ? ClickColors.online.opacity(0.14) : ClickColors.selectionTint, in: Capsule())
+            .contentShape(Capsule())
+        }
+        .buttonStyle(.plain)
+        .disabled(calendar.isAdded || calendar.isAdding)
+        .padding(.top, 2)
+        .onAppear { calendar.refresh(beaconID: beacon.id) }
+        .animation(ClickMotion.selection, value: calendar.isAdded)
+    }
+
     /// Close (or Back, when pushed) · Save · Share over the hero (prototype event sheet header).
     @ToolbarContentBuilder
     private var headerButtons: some ToolbarContent {
@@ -346,6 +448,9 @@ struct BeaconDetailView: View {
                 }
                 if beacon.value != nil {
                     Button("Share to chat", systemImage: "bubble.left") { sharingToChat = true }
+                }
+                if beacon.value?.isEvent == true {
+                    Button("Create Click Flyer", systemImage: "photo.on.rectangle.angled") { showingFlyer = true }
                 }
                 Button("View on Map", systemImage: "map") { env.router.showOnMap(.place(beaconID)) }
                 ShareLink(item: shareURL, subject: Text(beacon.value?.title ?? "Click")) {
@@ -382,31 +487,13 @@ struct BeaconDetailView: View {
             }
             .disabled(!canCheckIn || engagement.value == nil || checkInPending)
             .opacity(canCheckIn ? 1 : 0.45)
-            iconAction("Directions", systemImage: "location.north.line") { openDirections(beacon) }
+            iconAction("Directions", systemImage: "location.north.line") { mapsTarget = beacon.directions }
         }
     }
 
     private func iconAction(_ title: String, systemImage: String, tint: Color? = nil, busy: Bool = false, action: @escaping () -> Void) -> some View {
         Button(action: action) {
-            VStack(spacing: 6) {
-                ZStack {
-                    if busy { ProgressView() } else {
-                        Image(systemName: systemImage).font(.system(size: 20, weight: .medium))
-                    }
-                }
-                .frame(height: 24)
-                Text(title)
-                    .font(ClickTypography.supportingEmphasized)
-                    .lineLimit(1)
-                    .minimumScaleFactor(0.8)
-            }
-            .foregroundStyle(tint ?? ClickColors.textPrimary)
-            .padding(.horizontal, 6)
-            .frame(maxWidth: .infinity, minHeight: 68)
-            // Filled tiles; a tinted state (checked in) tints its tile too.
-            .background(tint?.opacity(0.16) ?? ClickColors.fillSubtle,
-                        in: RoundedRectangle(cornerRadius: 18, style: .continuous))
-            .contentShape(RoundedRectangle(cornerRadius: 18, style: .continuous))
+            EventActionTile(title: title, systemImage: systemImage, tint: tint, busy: busy)
         }
         .buttonStyle(.plain)
     }
@@ -429,15 +516,16 @@ struct BeaconDetailView: View {
         .task { await env.calendar.refresh() }
     }
 
-    /// The place, its address and a map of it, all opening it on Click's map; then the Click
-    /// Place hosting it, when there is one.
+    /// The place, its address, the weather there and a map of it, all opening it in Apple or
+    /// Google Maps (or Click's map). A Click Place hosting the event shows as its host instead.
     private func locationSection(_ beacon: MapBeacon) -> some View {
-        VStack(alignment: .leading, spacing: 10) {
+        let label = Self.displayPlace(beacon, resolved: resolvedPlace)
+        return VStack(alignment: .leading, spacing: 10) {
             sectionHeader("Location")
             Button {
-                env.router.showOnMap(.place(beacon.id))
+                mapsTarget = MapsDestination(coordinate: beacon.coordinate, name: label.title ?? beacon.title,
+                                             address: label.subtitle, wantsDirections: false)
             } label: {
-                let label = Self.displayPlace(beacon, resolved: resolvedPlace)
                 VStack(alignment: .leading, spacing: 0) {
                     HStack(spacing: 8) {
                         VStack(alignment: .leading, spacing: 2) {
@@ -448,6 +536,18 @@ struct BeaconDetailView: View {
                                 Text(subtitle)
                                     .font(ClickTypography.supporting)
                                     .foregroundStyle(ClickColors.textSecondary)
+                            }
+                            if !isExpired, let weather, let summary = weather.summary(start: Self.forecastStart(beacon)) {
+                                Label {
+                                    Text(summary)
+                                } icon: {
+                                    Image(systemName: weather.systemImage ?? "cloud.sun.fill")
+                                        .symbolRenderingMode(.multicolor)
+                                }
+                                .font(ClickTypography.supporting)
+                                .foregroundStyle(ClickColors.textSecondary)
+                                .padding(.top, 4)
+                                .transition(.opacity)
                             }
                         }
                         .multilineTextAlignment(.leading)
@@ -466,17 +566,28 @@ struct BeaconDetailView: View {
                     guard Self.needsReverseGeocode(beacon), resolvedPlace == nil else { return }
                     resolvedPlace = await PlaceSearchModel.reverseGeocode(beacon.coordinate)
                 }
+                .task(id: beacon.id) { await loadWeather(beacon) }
             }
             .buttonStyle(.plain)
-            .accessibilityHint("Shows it on the map.")
-            if let place = Self.placeLink(for: beacon, placesEnabled: env.features.isEnabled(.clickPlaces)) {
-                NavigationLink(value: AppRoute.place(idOrSlug: place.id, anchorToken: nil)) {
-                    infoRow(systemImage: "building.2", title: "At \(place.name)", subtitle: nil, chevron: true)
-                }
-                .buttonStyle(.plain)
-                .detailCard()
-            }
+            .accessibilityHint("Opens it in Maps.")
         }
+    }
+
+    /// The forecast is for when it starts, while that's still ahead.
+    nonisolated static func forecastStart(_ beacon: MapBeacon, now: Date = .now) -> Date? {
+        guard let start = beacon.schedule?.start, start > now else { return nil }
+        return start
+    }
+
+    private func loadWeather(_ beacon: MapBeacon) async {
+        guard !isExpired else { return }
+        let start = Self.forecastStart(beacon)
+        if weather == nil {
+            weather = WeatherStore.shared.cached(latitude: beacon.latitude, longitude: beacon.longitude, start: start)
+        }
+        guard let fresh = await WeatherStore.shared.weather(latitude: beacon.latitude, longitude: beacon.longitude,
+                                                            start: start, api: env.api) else { return }
+        withAnimation(ClickMotion.subtleFade) { weather = fresh }
     }
 
     /// Every section on the page titles the same way (About, People here, Hosting).
@@ -623,7 +734,7 @@ struct BeaconDetailView: View {
             if beacon.kind == .soundtrack, let raw = beacon.musicURL, let url = URL(string: raw), url.scheme?.hasPrefix("http") == true {
                 iconAction("Open music", systemImage: "music.note") { UIApplication.shared.open(url) }
             }
-            iconAction("Directions", systemImage: "location.north.line") { openDirections(beacon) }
+            iconAction("Directions", systemImage: "location.north.line") { mapsTarget = beacon.directions }
             iconAction("Map", systemImage: "map") { env.router.showOnMap(.place(beacon.id)) }
         }
     }
@@ -636,13 +747,6 @@ struct BeaconDetailView: View {
         } catch {
             if !error.isCancellation { notice = "Couldn't send the report. \(error.userFacingMessage)" }
         }
-    }
-
-    /// Only the destination leaves the app; the user's location is not sent.
-    private func openDirections(_ beacon: MapBeacon) {
-        let item = MKMapItem(placemark: MKPlacemark(coordinate: beacon.coordinate))
-        item.name = beacon.locationName ?? beacon.title
-        item.openInMaps()
     }
 
     // MARK: - Loading & writes
@@ -716,6 +820,7 @@ struct BeaconDetailView: View {
             default: ClickHaptics.success()
             }
             await syncReminders(beacon)
+            await EventLiveActivities.sync(env: env, force: true)
         } catch {
             notice = error.userFacingMessage
         }
@@ -728,6 +833,7 @@ struct BeaconDetailView: View {
             try await env.events.cancelRSVP(beaconID: beacon.id)
             rsvp.succeed(try await env.events.rsvpState(beaconID: beacon.id))
             await syncReminders(beacon)
+            await EventLiveActivities.sync(env: env, force: true)
         } catch {
             notice = "Couldn't cancel. \(error.userFacingMessage)"
         }
@@ -818,6 +924,7 @@ struct BeaconDetailView: View {
                 ClickHaptics.success()
             }
             engagement.succeed(current)
+            await EventLiveActivities.setCheckedIn(current.checkedIn, beaconID: beacon.id)
         } catch {
             notice = error.localizedDescription
         }
@@ -834,7 +941,7 @@ struct BeaconDetailView: View {
         }
     }
 
-    /// The listed Click Place hosting this event, shown as "At {place}" only with Places on (spec 6.9).
+    /// The listed Click Place hosting this event, shown as its host only with Places on (spec 6.9).
     nonisolated static func placeLink(for beacon: MapBeacon, placesEnabled: Bool) -> MapBeaconPlace? {
         placesEnabled ? beacon.place : nil
     }

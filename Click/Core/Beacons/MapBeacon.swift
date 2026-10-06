@@ -392,9 +392,14 @@ public struct MapBeaconPlace: Codable, Hashable, Sendable {
     public let id: String
     public let slug: String
     public let name: String
+    /// The Place's photo and city, so an event it hosts shows the Place as its host (older
+    /// servers omit both).
+    public var photoURL: String? = nil
+    public var city: String? = nil
 
     static func decode(_ row: [String: Any]?) -> MapBeaconPlace? {
         guard let row, let id = JSONFields.string(row["id"]) else { return nil }
-        return MapBeaconPlace(id: id, slug: JSONFields.string(row["slug"]) ?? id, name: JSONFields.string(row["name"]) ?? "Place")
+        return MapBeaconPlace(id: id, slug: JSONFields.string(row["slug"]) ?? id, name: JSONFields.string(row["name"]) ?? "Place",
+                              photoURL: JSONFields.string(row["photo_url"]), city: JSONFields.string(row["city"]))
     }
 }

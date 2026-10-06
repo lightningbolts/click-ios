@@ -36,6 +36,10 @@ struct AppRouteDestination: View {
                 EventDirectoryView(beaconID: beaconID)
             case .guestList(let beaconID):
                 GuestListView(beaconID: beaconID)
+            case .eventPass(let beaconID):
+                ClickPassView(beaconID: beaconID)
+            case .passScanner(let beaconID):
+                PassScannerView(beaconID: beaconID)
             case .hub(let hubID):
                 HubChatView(hubID: hubID)
             case .place(let idOrSlug, let anchorToken):

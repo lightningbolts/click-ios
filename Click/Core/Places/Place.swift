@@ -127,6 +127,8 @@ public struct PlaceEventRef: Codable, Equatable, Identifiable, Sendable {
     public let startsAt: Date?
     public let endsAt: Date?
     public let isLive: Bool
+    /// The event's own picture (upcoming events only; older servers omit it).
+    public var imageURL: String? = nil
     public var id: String { beaconID }
 
     public static func decode(_ row: [String: Any]?) -> PlaceEventRef? {
@@ -136,7 +138,8 @@ public struct PlaceEventRef: Codable, Equatable, Identifiable, Sendable {
             title: JSONFields.string(row["title"]) ?? "Event",
             startsAt: JSONFields.date(row["starts_at"]),
             endsAt: JSONFields.date(row["ends_at"]),
-            isLive: JSONFields.bool(row["is_live"]) ?? false
+            isLive: JSONFields.bool(row["is_live"]) ?? false,
+            imageURL: JSONFields.string(row["image_url"])
         )
     }
 }

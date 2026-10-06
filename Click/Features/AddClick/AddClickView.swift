@@ -1,7 +1,4 @@
 import SwiftUI
-import CoreImage
-import CoreImage.CIFilterBuiltins
-import VisionKit
 
 /// The Add Click root: Tap to Connect is the signature action; My QR and Scan stay one tap
 /// away (prototype "interaction-first" hierarchy). Only working capabilities are shown.
@@ -292,11 +289,9 @@ struct MyClickCodeView: View {
             }
             startRefreshLoop()
         }
-        .onAppear { UIApplication.shared.isIdleTimerDisabled = true }
-        .onDisappear {
-            UIApplication.shared.isIdleTimerDisabled = false
-            refreshTask?.cancel()
-        }
+        .onDisappear { refreshTask?.cancel() }
+        .boostsScreenBrightness()
+        .keepsScreenAwake()
         .onChange(of: scenePhase) { _, phase in
             if phase == .active, (expiresAt ?? .distantPast) <= .now { startRefreshLoop() }
         }
@@ -390,7 +385,7 @@ final class QRCodeStore {
                 let value = JSONFields.string(payload["qrPayload"])
             else { throw APIError.decoding }
             let expiry = JSONFields.date(payload["expiresAt"]) ?? Date().addingTimeInterval(90)
-            return Code(payload: value, expiresAt: expiry, image: QRImageRenderer.image(for: value))
+            return Code(payload: value, expiresAt: expiry, image: QRCodeRenderer.image(for: value))
         }
         inFlight = task
         defer { inFlight = nil }
@@ -404,23 +399,9 @@ final class QRCodeStore {
     }
 }
 
-private enum QRImageRenderer {
-    static func image(for value: String) -> UIImage? {
-        let filter = CIFilter.qrCodeGenerator()
-        filter.message = Data(value.utf8)
-        filter.correctionLevel = "M"
-        guard let output = filter.outputImage else { return nil }
-        let scaled = output.transformed(by: CGAffineTransform(scaleX: 12, y: 12))
-        let context = CIContext()
-        guard let cgImage = context.createCGImage(scaled, from: scaled.extent) else { return nil }
-        return UIImage(cgImage: cgImage)
-    }
-}
-
 struct ScanClickCodeView: View {
     @Environment(AppEnvironment.self) private var env
     @Environment(ConversationListModel.self) private var conversations
-    @State private var permission: PermissionStatus = .notDetermined
     @State private var revealed: ProximityMatch?
     @State private var revealedVerification: ConnectionVerification?
     @State private var revealedFollowUp: EncounterFollowUp?
@@ -435,24 +416,13 @@ struct ScanClickCodeView: View {
         ZStack {
             Color.black.ignoresSafeArea()
 
-            if permission == .authorized {
-                if DataScannerViewController.isSupported && DataScannerViewController.isAvailable {
-                    ClickDataScannerView { value in
-                        guard scannedValue == nil, !isProcessing else { return }
-                        // The connection moment is when the code was recognized.
-                        let recognizedAt = Date.now
-                        scannedValue = value
-                        isProcessing = true
-                        Task { await handleScan(value, at: recognizedAt) }
-                    }
-                    .ignoresSafeArea()
-                } else {
-                    scannerUnavailable
-                }
-            } else if permission == .denied || permission == .restricted {
-                scannerDenied
-            } else {
-                ClickLoadingView(size: 34, fillsSpace: false)
+            QRCameraView(deniedMessage: "Camera access is required to scan Click codes.", onAuthorized: warmCapture) { value in
+                guard scannedValue == nil, !isProcessing else { return }
+                // The connection moment is when the code was recognized.
+                let recognizedAt = Date.now
+                scannedValue = value
+                isProcessing = true
+                Task { await handleScan(value, at: recognizedAt) }
             }
 
             VStack {
@@ -515,20 +485,14 @@ struct ScanClickCodeView: View {
         }
         .navigationTitle("Scan Code")
         .navigationBarTitleDisplayMode(.inline)
-        .task {
-            let current = env.permissions.status(for: .camera)
-            permission = current == .notDetermined
-                ? await env.permissions.requestPermission(for: .camera)
-                : current
-            await warmCapture()
-        }
         .onDisappear { capture.stop() }
     }
 
-    /// Never prompts: location warms only when Location snap is on and permission was already
-    /// granted (otherwise the scan asks, as before, and captures from then on).
+    /// Runs once the camera is authorized. Never prompts: location warms only when Location snap
+    /// is on and permission was already granted (otherwise the scan asks, as before, and
+    /// captures from then on).
     private func warmCapture() async {
-        guard permission == .authorized, let userID = env.session.currentSession?.userId else { return }
+        guard let userID = env.session.currentSession?.userId else { return }
         let wantsLocation = env.location.isAuthorized
             ? await env.shouldCaptureConnectionLocation(userID: userID)
             : false
@@ -546,30 +510,6 @@ struct ScanClickCodeView: View {
         env.router.selectedTab = .connections
         env.router.addClickPath.removeAll()
         env.router.connectionsPath.removeAll()
-    }
-
-    private var scannerUnavailable: some View {
-        ContentUnavailableView(
-            "Camera scanner unavailable",
-            systemImage: "viewfinder.circle",
-            description: Text("QR scanning requires a supported physical iPhone camera.")
-        )
-        .foregroundStyle(.white)
-    }
-
-    private var scannerDenied: some View {
-        VStack(spacing: 14) {
-            Image(systemName: "camera.fill")
-                .font(.system(size: 36))
-            Text("Camera access is required to scan Click codes.")
-                .multilineTextAlignment(.center)
-            Button("Open Settings") {
-                env.permissions.openSystemSettings()
-            }
-            .buttonStyle(.clickPrimary)
-        }
-        .foregroundStyle(.white)
-        .padding(30)
     }
 
     @MainActor
@@ -921,56 +861,6 @@ private enum ClickConnectionRedeemer {
             collaborationEndsAt: JSONFields.date(root["collaboration_ttl"]),
             verification: verification
         )
-    }
-}
-
-@MainActor
-private struct ClickDataScannerView: UIViewControllerRepresentable {
-    let onCode: (String) -> Void
-
-    func makeCoordinator() -> Coordinator {
-        Coordinator(onCode: onCode)
-    }
-
-    func makeUIViewController(context: Context) -> DataScannerViewController {
-        let scanner = DataScannerViewController(
-            recognizedDataTypes: [.barcode(symbologies: [.qr])],
-            qualityLevel: .balanced,
-            recognizesMultipleItems: false,
-            isHighFrameRateTrackingEnabled: true,
-            isHighlightingEnabled: true
-        )
-        scanner.delegate = context.coordinator
-        try? scanner.startScanning()
-        return scanner
-    }
-
-    func updateUIViewController(_ uiViewController: DataScannerViewController, context: Context) {}
-
-    static func dismantleUIViewController(_ uiViewController: DataScannerViewController, coordinator: Coordinator) {
-        uiViewController.stopScanning()
-    }
-
-    final class Coordinator: NSObject, DataScannerViewControllerDelegate {
-        let onCode: (String) -> Void
-        init(onCode: @escaping (String) -> Void) {
-            self.onCode = onCode
-        }
-
-        func dataScanner(
-            _ dataScanner: DataScannerViewController,
-            didAdd addedItems: [RecognizedItem],
-            allItems: [RecognizedItem]
-        ) {
-            for item in addedItems {
-                if case .barcode(let barcode) = item,
-                   let payload = barcode.payloadStringValue,
-                   !payload.isEmpty {
-                    onCode(payload)
-                    return
-                }
-            }
-        }
     }
 }
 

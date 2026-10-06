@@ -284,6 +284,7 @@ public final class AppEnvironment {
         MapFeatureModel.forgetLastRegion()
         await telemetryQueue.removeAll()
         await EventReminderScheduler.cancelAll()
+        await EventLiveActivities.endAll()
         onboardingCoordinators.removeAll()
         conversationModels.removeAll()
     }

@@ -39,8 +39,9 @@ targets:
       INFOPLIST_KEY_NSBluetoothAlwaysUsageDescription: "Click uses Bluetooth for Tap to Connect when you meet someone nearby."
       INFOPLIST_KEY_NSMicrophoneUsageDescription: "Click uses your microphone for Tap to Connect ultrasonic sensing and voice notes."
       INFOPLIST_KEY_NSNearbyInteractionUsageDescription: "Click uses Nearby Interaction during Tap to Connect to measure proximity between nearby iPhones and help confirm you are connecting with the person physically next to you."
-      INFOPLIST_KEY_NSCalendarsFullAccessUsageDescription: "Click checks your calendar on this iPhone to show whether you're free for plans and events. It reads only busy times and never changes your calendar."
-      INFOPLIST_KEY_NSCalendarsUsageDescription: "Click checks your calendar on this iPhone to show whether you're free for plans and events. It reads only busy times and never changes your calendar."
+      INFOPLIST_KEY_NSCalendarsFullAccessUsageDescription: "Click checks your calendar on this iPhone to show whether you're free for plans and events. It reads only busy times, and only adds events you ask it to."
+      INFOPLIST_KEY_NSCalendarsUsageDescription: "Click checks your calendar on this iPhone to show whether you're free for plans and events. It reads only busy times, and only adds events you ask it to."
+      INFOPLIST_KEY_NSCalendarsWriteOnlyAccessUsageDescription: "Click adds the events you choose to your calendar. It can't see anything else on it."
       INFOPLIST_KEY_NSContactsUsageDescription: "Click hashes phone numbers and emails on this device to find people you already know. Your address book never leaves your phone."
       INFOPLIST_KEY_NSLocationWhenInUseUsageDescription: "Click uses your location to show the map, find people and events near you, and remember where you met someone when you connect."
       INFOPLIST_KEY_NSLocationAlwaysAndWhenInUseUsageDescription: "If you turn on Past meeting spots, Click is told when you arrive somewhere so it can remind you of a Click you met there. Your location is never stored or shown to anyone."
@@ -62,6 +63,8 @@ targets:
       - target: ClickClip
         embed: true
       - target: NotificationService
+        embed: true
+      - target: ClickWidgets
         embed: true
 
   ClickClip:
@@ -103,6 +106,25 @@ targets:
       INFOPLIST_FILE: NotificationService/Info.plist
       CODE_SIGN_ENTITLEMENTS: NotificationService/NotificationService.entitlements
       INFOPLIST_KEY_CFBundleDisplayName: "NotificationService"
+      DEVELOPMENT_TEAM: W4C3V9Z2N4
+      CODE_SIGN_STYLE: Automatic
+      SWIFT_VERSION: "6.0"
+
+  ClickWidgets:
+    type: app-extension
+    platform: iOS
+    deploymentTarget: "18.2"
+    sources:
+      - path: ClickWidgets
+      - path: Click/Core/LiveActivity/EventActivityAttributes.swift
+    configFiles:
+      Debug: Config/Debug.xcconfig
+      Release: Config/Release.xcconfig
+    settings:
+      PRODUCT_BUNDLE_IDENTIFIER: compose.project.click.click.Widgets
+      PRODUCT_NAME: ClickWidgets
+      INFOPLIST_FILE: ClickWidgets/Info.plist
+      INFOPLIST_KEY_CFBundleDisplayName: "Click"
       DEVELOPMENT_TEAM: W4C3V9Z2N4
       CODE_SIGN_STYLE: Automatic
       SWIFT_VERSION: "6.0"

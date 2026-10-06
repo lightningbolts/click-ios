@@ -355,6 +355,13 @@ public struct ChatView: View {
         }
     }
 
+    /// Opens the profile / group info. The keyboard goes first so it never rides over the push
+    /// or comes back with the swipe home: back on the chat, the latest row sits above the composer.
+    private func openInfo(_ route: AppRoute) {
+        ClickKeyboard.dismiss()
+        env.router.navigate(to: route)
+    }
+
     /// A search result, pin or plan opened this chat: bring that message into view.
     private func consumeMessageFocus() async {
         guard model.isVisible, let focus = env.pendingMessageFocus, focus.matches(model.identity) else { return }
@@ -548,7 +555,7 @@ public struct ChatView: View {
             replyTarget: item.replyToID.flatMap { byID[$0] },
             onTapReplyQuote: { id in Task { await jump(to: id) } },
             onLongPress: { message, frame in
-                UIApplication.shared.sendAction(#selector(UIResponder.resignFirstResponder), to: nil, from: nil, for: nil)
+                ClickKeyboard.dismiss()
                 actionTarget = ActionTarget(message: message, frame: frame)
             },
             // The lifted copy stands in for the bubble while actions are open.
@@ -796,11 +803,11 @@ public struct ChatView: View {
             case .direct:
                 if let conversations, let item = conversations.connection(connectionID: model.identity.connectionID) {
                     DirectConversationActions(item: item, model: conversations, pending: $pendingAction) {
-                        env.router.navigate(to: .userProfile(userID: model.identity.peerUserID, connectionID: model.identity.connectionID))
+                        openInfo(.userProfile(userID: model.identity.peerUserID, connectionID: model.identity.connectionID))
                     }
                 } else {
                     Button("View profile", systemImage: "person.crop.circle") {
-                        env.router.navigate(to: .userProfile(userID: model.identity.peerUserID, connectionID: model.identity.connectionID))
+                        openInfo(.userProfile(userID: model.identity.peerUserID, connectionID: model.identity.connectionID))
                     }
                     if let connectionID = model.identity.connectionID {
                         Section {
@@ -820,11 +827,11 @@ public struct ChatView: View {
                         model: conversations,
                         currentUserID: env.session.currentSession?.userId,
                         pending: $pendingAction,
-                        onInfo: { env.router.navigate(to: .groupProfile(chatID: model.identity.chatID)) }
+                        onInfo: { openInfo(.groupProfile(chatID: model.identity.chatID)) }
                     )
                 } else {
                     Button("Group info", systemImage: "info.circle") {
-                        env.router.navigate(to: .groupProfile(chatID: model.identity.chatID))
+                        openInfo(.groupProfile(chatID: model.identity.chatID))
                     }
                 }
             case .hub:
@@ -953,11 +960,12 @@ public struct ChatView: View {
             case .direct:
                 guard !model.identity.peerUserID.isEmpty else { return }
                 ClickHaptics.selection()
-                env.router.navigate(to: .userProfile(userID: model.identity.peerUserID, connectionID: model.identity.connectionID))
+                openInfo(.userProfile(userID: model.identity.peerUserID, connectionID: model.identity.connectionID))
             case .group:
                 ClickHaptics.selection()
-                env.router.navigate(to: .groupProfile(chatID: model.identity.chatID))
+                openInfo(.groupProfile(chatID: model.identity.chatID))
             case .hub:
+                ClickKeyboard.dismiss()
                 onOpenHubInfo?()
             }
         } label: {

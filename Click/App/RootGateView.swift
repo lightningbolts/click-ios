@@ -214,6 +214,10 @@ public struct MainTabShellView: View {
         .task(id: env.session.currentSession?.userId) {
             await seedMeTabAvatar()
         }
+        // A new account brings its own events (sign-out ends the last one's in `clearSessionCaches`).
+        .task(id: env.session.currentSession?.userId) {
+            await EventLiveActivities.sync(env: env, force: true)
+        }
         .onChange(of: scenePhase) { _, phase in
             // Rebind with the current token on return; tear down while backgrounded.
             switch phase {
@@ -230,6 +234,7 @@ public struct MainTabShellView: View {
                 env.syncDeviceHistory()
                 env.flushTelemetry()
                 Task { await EventReminderScheduler.pruneRetired() }
+                Task { await EventLiveActivities.sync(env: env) }
             case .background:
                 conversations.stopRealtime()
                 env.live.setActive(false)

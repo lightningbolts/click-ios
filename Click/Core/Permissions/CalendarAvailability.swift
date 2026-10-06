@@ -5,7 +5,8 @@ import Observation
 /// Free/busy from the calendars on this iPhone (spec §81), so plans and events can say whether
 /// you're free and suggest the next free time. Read-only and on-device: only busy start/end
 /// times for the coming week are kept, in memory. Titles, places and people are never read into
-/// Click, nothing leaves the phone, and Click never adds or changes events.
+/// Click, nothing leaves the phone, and Click never changes events (it only adds the ones you ask
+/// it to: `EventCalendar`).
 @Observable
 @MainActor
 final class CalendarAvailability {

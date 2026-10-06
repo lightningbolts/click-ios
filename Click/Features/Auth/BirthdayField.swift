@@ -60,7 +60,7 @@ struct BirthdayField: View {
 
     private func toggle() {
         // The wheel replaces the keyboard; never show both.
-        UIApplication.shared.sendAction(#selector(UIResponder.resignFirstResponder), to: nil, from: nil, for: nil)
+        ClickKeyboard.dismiss()
         withAnimation(ClickMotion.subtleFade) {
             if birthday == nil { birthday = Self.wheelStart }
             isExpanded.toggle()

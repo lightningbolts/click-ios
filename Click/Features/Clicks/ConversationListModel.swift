@@ -429,6 +429,12 @@ final class ConversationListModel {
         return (snapshot.connections + snapshot.archived).first { $0.connectionID == connectionID }
     }
 
+    /// Your Click with this person, if you have one (to message an event's host directly).
+    func connection(userID: String) -> ConnectionItem? {
+        guard !userID.isEmpty, let snapshot else { return nil }
+        return (snapshot.connections + snapshot.archived).first { $0.userID == userID }
+    }
+
     /// Whether pushes for this conversation are muted right now (any of its IDs).
     func isMuted(_ ids: [String?], now: Date = .now) -> Bool {
         ids.compactMap { $0 }.contains { id in

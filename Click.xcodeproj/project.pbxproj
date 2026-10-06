@@ -306,6 +306,22 @@
 		FE7F721EAB9B5837E82B2E80 /* AlertConfirmations.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2F4F22044C2816AF8734BE2B /* AlertConfirmations.swift */; };
 		FEEF3EB93549BC0E8570F080 /* ClicksSnapshot.swift in Sources */ = {isa = PBXBuildFile; fileRef = C4BA259925DD4913607E5A68 /* ClicksSnapshot.swift */; };
 		FEF90A5A9FF3E2503A3054DE /* GroupsHubsSettingsTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 08AA20450324A4CA55FE6A68 /* GroupsHubsSettingsTests.swift */; };
+		B924369FC6285D96BE2CC294 /* Keyboard.swift in Sources */ = {isa = PBXBuildFile; fileRef = A54F9423B2075BF9C56B18D3 /* Keyboard.swift */; };
+		4B9CB8B3FB5AED9ED7A3F2D3 /* QRCode.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3780D071F45AC96D60FB53F5 /* QRCode.swift */; };
+		45F79CD443769910C2C84715 /* EventWeather.swift in Sources */ = {isa = PBXBuildFile; fileRef = 386E12898AB71FD0393EB794 /* EventWeather.swift */; };
+		9F82BCB4F837D063964539DE /* ClickFlyerSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = A2954C76CFFB42129167B976 /* ClickFlyerSheet.swift */; };
+		06D7E696B3D2704331816378 /* ClickPassView.swift in Sources */ = {isa = PBXBuildFile; fileRef = CB091A0B6AE6E5D88F254BDF /* ClickPassView.swift */; };
+		20671892ABA2234D2851F48F /* DirectionsDialog.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9AF47F166702F5BA54630C62 /* DirectionsDialog.swift */; };
+		7DADC5176F444CC733E2A489 /* EventActionTile.swift in Sources */ = {isa = PBXBuildFile; fileRef = CC7E52A7B9096E98FB2746E0 /* EventActionTile.swift */; };
+		70452A4F811985473DACF269 /* EventCalendar.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1368EE08BBDF8821C4ECE033 /* EventCalendar.swift */; };
+		BB9682F4603942600AE4427B /* PassScannerView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3D20B8C74438C6647B795D8B /* PassScannerView.swift */; };
+		8C1C4011A67701164E0192D1 /* EventActivityAttributes.swift in Sources */ = {isa = PBXBuildFile; fileRef = 874241FC58ACF0315609A5A6 /* EventActivityAttributes.swift */; };
+		709A1855B1FED7BCBCCE0DBD /* EventLiveActivities.swift in Sources */ = {isa = PBXBuildFile; fileRef = A3FF83772F3A1DBE1691F2E6 /* EventLiveActivities.swift */; };
+		276FA808D3BA3E406538BF04 /* EventExtrasTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = B448557335530455EC0F41AC /* EventExtrasTests.swift */; };
+		7E899CD0378A6AF1153A8D37 /* ClickWidgetsBundle.swift in Sources */ = {isa = PBXBuildFile; fileRef = B6129A521B124384FDD74AC5 /* ClickWidgetsBundle.swift */; };
+		B3631E3C57A90010DE50EFA0 /* EventLiveActivity.swift in Sources */ = {isa = PBXBuildFile; fileRef = C343EFD7B3AE41314F9C4CDC /* EventLiveActivity.swift */; };
+		BB499F6D99E1B13FA00C826D /* EventActivityAttributes.swift in Sources */ = {isa = PBXBuildFile; fileRef = 874241FC58ACF0315609A5A6 /* EventActivityAttributes.swift */; };
+		3EEFE086844997FB92D810D8 /* ClickWidgets.appex in Embed Foundation Extensions */ = {isa = PBXBuildFile; fileRef = FB4B30C16B773317ABEB3E62 /* ClickWidgets.appex */; settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -330,6 +346,13 @@
 			remoteGlobalIDString = DE87541893EB2F693419798F;
 			remoteInfo = Click;
 		};
+		53B5AFCD0EBA0C5D17115A2A /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = A31D8AF739E9293FB7ADD28E /* Project object */;
+			proxyType = 1;
+			remoteGlobalIDString = 32EFF01BF79466E84A5ACA25;
+			remoteInfo = ClickWidgets;
+		};
 /* End PBXContainerItemProxy section */
 
 /* Begin PBXCopyFilesBuildPhase section */
@@ -351,6 +374,7 @@
 			dstSubfolderSpec = 13;
 			files = (
 				39FBC50AAC377A417C47ED3C /* NotificationService.appex in Embed Foundation Extensions */,
+				3EEFE086844997FB92D810D8 /* ClickWidgets.appex in Embed Foundation Extensions */,
 			);
 			name = "Embed Foundation Extensions";
 			runOnlyForDeploymentPostprocessing = 0;
@@ -661,6 +685,22 @@
 		FD5B79848C6B2337EA8CD816 /* ConnectionFlowTelemetry.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ConnectionFlowTelemetry.swift; sourceTree = "<group>"; };
 		FF26912F27B4E25BACF33C07 /* AppRouteDestination.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppRouteDestination.swift; sourceTree = "<group>"; };
 		FFFD67D7FE88321EBB61258B /* ReconnectNearbyCard.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ReconnectNearbyCard.swift; sourceTree = "<group>"; };
+		A54F9423B2075BF9C56B18D3 /* Keyboard.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Keyboard.swift; sourceTree = "<group>"; };
+		3780D071F45AC96D60FB53F5 /* QRCode.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = QRCode.swift; sourceTree = "<group>"; };
+		386E12898AB71FD0393EB794 /* EventWeather.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = EventWeather.swift; sourceTree = "<group>"; };
+		A2954C76CFFB42129167B976 /* ClickFlyerSheet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ClickFlyerSheet.swift; sourceTree = "<group>"; };
+		CB091A0B6AE6E5D88F254BDF /* ClickPassView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ClickPassView.swift; sourceTree = "<group>"; };
+		9AF47F166702F5BA54630C62 /* DirectionsDialog.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DirectionsDialog.swift; sourceTree = "<group>"; };
+		CC7E52A7B9096E98FB2746E0 /* EventActionTile.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = EventActionTile.swift; sourceTree = "<group>"; };
+		1368EE08BBDF8821C4ECE033 /* EventCalendar.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = EventCalendar.swift; sourceTree = "<group>"; };
+		3D20B8C74438C6647B795D8B /* PassScannerView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PassScannerView.swift; sourceTree = "<group>"; };
+		874241FC58ACF0315609A5A6 /* EventActivityAttributes.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = EventActivityAttributes.swift; sourceTree = "<group>"; };
+		A3FF83772F3A1DBE1691F2E6 /* EventLiveActivities.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = EventLiveActivities.swift; sourceTree = "<group>"; };
+		B448557335530455EC0F41AC /* EventExtrasTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = EventExtrasTests.swift; sourceTree = "<group>"; };
+		FB4B30C16B773317ABEB3E62 /* ClickWidgets.appex */ = {isa = PBXFileReference; explicitFileType = "wrapper.app-extension"; includeInIndex = 0; path = ClickWidgets.appex; sourceTree = BUILT_PRODUCTS_DIR; };
+		F5DB3BC045F7C76231AB217F /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist; path = Info.plist; sourceTree = "<group>"; };
+		B6129A521B124384FDD74AC5 /* ClickWidgetsBundle.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ClickWidgetsBundle.swift; sourceTree = "<group>"; };
+		C343EFD7B3AE41314F9C4CDC /* EventLiveActivity.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = EventLiveActivity.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXGroup section */
@@ -692,6 +732,7 @@
 				CEEFE47A4CBAB925D04FB0E9 /* GroupedSurface.swift */,
 				A7252A59450164829D35B1E5 /* LocationNudgeCard.swift */,
 				30988D99C421B40B486F5134 /* OfflineNotice.swift */,
+				3780D071F45AC96D60FB53F5 /* QRCode.swift */,
 				29FFA9A94BF9230BBA3BD1B7 /* ReactionBar.swift */,
 				4C4D554431AED506420BE422 /* SearchLaunchField.swift */,
 				B483A0B1F4D2A86EB7E0B621 /* Shimmer.swift */,
@@ -706,6 +747,7 @@
 			children = (
 				51597966A20F5807BFB28499 /* Colors.swift */,
 				8C61BB3F2BA82EA2E549C314 /* Haptics.swift */,
+				A54F9423B2075BF9C56B18D3 /* Keyboard.swift */,
 				94D1D516E85E0C3A40A44899 /* Motion.swift */,
 				DE44FFADBC4622D64A3A704E /* Spacing.swift */,
 				115558E16D558D82B19CEDFD /* Typography.swift */,
@@ -798,6 +840,7 @@
 				9A2D124674FA7491AADE3AE6 /* Click */,
 				6DCC6E0F017EAA62C9FBF5CE /* ClickClip */,
 				7C1D5AE71566772AFF0EC6E6 /* ClickTests */,
+				61713FA2EA6A123728F1B30B /* ClickWidgets */,
 				69CC9E775556ED2A8068BE71 /* Config */,
 				4907E577393871CB14533954 /* Fonts */,
 				F1E64F3B58D637A809FDC3AD /* NotificationService */,
@@ -997,6 +1040,7 @@
 				3FBD98425A5A6DCFF4A41259 /* EncounterMergeTests.swift */,
 				1129F5B0BDFF83F9CE1A6759 /* EventDetailTests.swift */,
 				6EBF08A3A2ED30B6A3712FFD /* EventDropsTests.swift */,
+				B448557335530455EC0F41AC /* EventExtrasTests.swift */,
 				D96864E512FF90DCA0D3AF9E /* GlobalSearchTests.swift */,
 				08AA20450324A4CA55FE6A68 /* GroupsHubsSettingsTests.swift */,
 				F7E185BE4051D3D0888112E1 /* HomeFeedTests.swift */,
@@ -1162,6 +1206,7 @@
 				E3B19D4621050199A97E10A9 /* Click.app */,
 				F8AF88527EA315B8FEEC3769 /* ClickClip.app */,
 				77CF1D6BB251C87ECF61B463 /* ClickTests.xctest */,
+				FB4B30C16B773317ABEB3E62 /* ClickWidgets.appex */,
 				3D70677902656DA92DEB50B3 /* NotificationService.appex */,
 			);
 			name = Products;
@@ -1260,6 +1305,7 @@
 				AC24CFA0E6E02114CAA8699B /* EventEngagementRepository.swift */,
 				501636A7B4E12830E982F608 /* EventFormatting.swift */,
 				FCB1638F35F178E0F0FE80F1 /* EventReminderScheduler.swift */,
+				386E12898AB71FD0393EB794 /* EventWeather.swift */,
 				6E33EE76109A805205DBD78A /* MapBeacon.swift */,
 				E6C70DF08C801BD9CACEF605 /* SoundtrackPresence.swift */,
 				2CF5C854F68006800D32A653 /* SoundtrackResolver.swift */,
@@ -1447,6 +1493,7 @@
 				EE51EC0399938188732C592A /* Groups */,
 				7C1AF956311934939F6945A6 /* Hubs */,
 				E23BB2E3D49D245B40369901 /* Identity */,
+				0E0710FE38324303A9671450 /* LiveActivity */,
 				9FD50B350137C8BC4C502243 /* Location */,
 				A36D90FFB309134860059E75 /* Me */,
 				994727D0AF0A770B53C64833 /* Media */,
@@ -1469,15 +1516,40 @@
 				F1896AEE62C80D4462493FAC /* AlertConfirmationSection.swift */,
 				8449BE5D6B21017344E55E9E /* BeaconDetailView.swift */,
 				5ADA68357CD58D4E2E660244 /* BeaconForm.swift */,
+				A2954C76CFFB42129167B976 /* ClickFlyerSheet.swift */,
+				CB091A0B6AE6E5D88F254BDF /* ClickPassView.swift */,
+				9AF47F166702F5BA54630C62 /* DirectionsDialog.swift */,
+				CC7E52A7B9096E98FB2746E0 /* EventActionTile.swift */,
+				1368EE08BBDF8821C4ECE033 /* EventCalendar.swift */,
 				0E4638F7F8E159D459EAAE28 /* EventDropsSection.swift */,
 				EA15F73958EEFED407FE0ABA /* EventHistoryCards.swift */,
 				6604381235A310A8AAA5F38D /* EventRecapView.swift */,
 				05BFAB76DC5E32C164D4C1F8 /* GuestListView.swift */,
 				803C6B9126875C3963F55A69 /* ListeningNowSection.swift */,
+				3D20B8C74438C6647B795D8B /* PassScannerView.swift */,
 				8A25B36F7B43CDA3235FEFDD /* SavedEventsView.swift */,
 				4F2961167D1BBB04E30C2C4B /* SoundtrackPreviewCard.swift */,
 			);
 			path = Events;
+			sourceTree = "<group>";
+		};
+		0E0710FE38324303A9671450 /* LiveActivity */ = {
+			isa = PBXGroup;
+			children = (
+				874241FC58ACF0315609A5A6 /* EventActivityAttributes.swift */,
+				A3FF83772F3A1DBE1691F2E6 /* EventLiveActivities.swift */,
+			);
+			path = LiveActivity;
+			sourceTree = "<group>";
+		};
+		61713FA2EA6A123728F1B30B /* ClickWidgets */ = {
+			isa = PBXGroup;
+			children = (
+				B6129A521B124384FDD74AC5 /* ClickWidgetsBundle.swift */,
+				C343EFD7B3AE41314F9C4CDC /* EventLiveActivity.swift */,
+				F5DB3BC045F7C76231AB217F /* Info.plist */,
+			);
+			path = ClickWidgets;
 			sourceTree = "<group>";
 		};
 /* End PBXGroup section */
@@ -1551,6 +1623,7 @@
 			dependencies = (
 				4D156CDE89EE299CEE2E1919 /* PBXTargetDependency */,
 				BECD86095B0BE3585D1261CA /* PBXTargetDependency */,
+				1E70896DBD95B8F846D0CEE7 /* PBXTargetDependency */,
 			);
 			name = Click;
 			packageProductDependencies = (
@@ -1558,6 +1631,23 @@
 			productName = Click;
 			productReference = E3B19D4621050199A97E10A9 /* Click.app */;
 			productType = "com.apple.product-type.application";
+		};
+		32EFF01BF79466E84A5ACA25 /* ClickWidgets */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = C94A973C9AAB9FA55D47C6A6 /* Build configuration list for PBXNativeTarget "ClickWidgets" */;
+			buildPhases = (
+				27DC7A8972FAA3A744F0312C /* Sources */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+			);
+			name = ClickWidgets;
+			packageProductDependencies = (
+			);
+			productName = ClickWidgets;
+			productReference = FB4B30C16B773317ABEB3E62 /* ClickWidgets.appex */;
+			productType = "com.apple.product-type.app-extension";
 		};
 /* End PBXNativeTarget section */
 
@@ -1568,6 +1658,10 @@
 				BuildIndependentTargetsInParallel = YES;
 				LastUpgradeCheck = 1600;
 				TargetAttributes = {
+					32EFF01BF79466E84A5ACA25 = {
+						DevelopmentTeam = W4C3V9Z2N4;
+						ProvisioningStyle = Automatic;
+					};
 					05BF3B1FC1A07DE75A181358 = {
 						DevelopmentTeam = W4C3V9Z2N4;
 						ProvisioningStyle = Automatic;
@@ -1604,6 +1698,7 @@
 				498698202E515A6A7FC4E5A1 /* ClickClip */,
 				C41B65710C64CC67B7ACA96B /* ClickTests */,
 				05BF3B1FC1A07DE75A181358 /* NotificationService */,
+				32EFF01BF79466E84A5ACA25 /* ClickWidgets */,
 			);
 		};
 /* End PBXProject section */
@@ -1878,6 +1973,17 @@
 				3396C88A0F195A5E0253B73B /* UserProfileSnapshot.swift in Sources */,
 				321580BE501C35E6BE0107BC /* VisitMonitor.swift in Sources */,
 				EE2DD300DD8D42003D87096D /* WelcomeView.swift in Sources */,
+				B924369FC6285D96BE2CC294 /* Keyboard.swift in Sources */,
+				4B9CB8B3FB5AED9ED7A3F2D3 /* QRCode.swift in Sources */,
+				45F79CD443769910C2C84715 /* EventWeather.swift in Sources */,
+				9F82BCB4F837D063964539DE /* ClickFlyerSheet.swift in Sources */,
+				06D7E696B3D2704331816378 /* ClickPassView.swift in Sources */,
+				20671892ABA2234D2851F48F /* DirectionsDialog.swift in Sources */,
+				7DADC5176F444CC733E2A489 /* EventActionTile.swift in Sources */,
+				70452A4F811985473DACF269 /* EventCalendar.swift in Sources */,
+				BB9682F4603942600AE4427B /* PassScannerView.swift in Sources */,
+				8C1C4011A67701164E0192D1 /* EventActivityAttributes.swift in Sources */,
+				709A1855B1FED7BCBCCE0DBD /* EventLiveActivities.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -1946,6 +2052,7 @@
 				F39B3114B360B4DD6482DC0D /* SharedDropsTests.swift in Sources */,
 				1A5711493067F5BC9BDF30F1 /* ShellNavigationTests.swift in Sources */,
 				ADFB16FA877CFBED2013DF5F /* TelemetryTests.swift in Sources */,
+				276FA808D3BA3E406538BF04 /* EventExtrasTests.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -1955,6 +2062,16 @@
 			files = (
 				1B134B977C322761A9BE9F57 /* ClipApp.swift in Sources */,
 				9F990A7BA45B050C9B85AD6C /* ClipModel.swift in Sources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		27DC7A8972FAA3A744F0312C /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				7E899CD0378A6AF1153A8D37 /* ClickWidgetsBundle.swift in Sources */,
+				B3631E3C57A90010DE50EFA0 /* EventLiveActivity.swift in Sources */,
+				BB499F6D99E1B13FA00C826D /* EventActivityAttributes.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -1975,6 +2092,11 @@
 			isa = PBXTargetDependency;
 			target = DE87541893EB2F693419798F /* Click */;
 			targetProxy = 6E3C2652554AB259ED585809 /* PBXContainerItemProxy */;
+		};
+		1E70896DBD95B8F846D0CEE7 /* PBXTargetDependency */ = {
+			isa = PBXTargetDependency;
+			target = 32EFF01BF79466E84A5ACA25 /* ClickWidgets */;
+			targetProxy = 53B5AFCD0EBA0C5D17115A2A /* PBXContainerItemProxy */;
 		};
 /* End PBXTargetDependency section */
 
@@ -2102,8 +2224,9 @@
 				INFOPLIST_KEY_CFBundleDisplayName = Click;
 				INFOPLIST_KEY_ITSAppUsesNonExemptEncryption = NO;
 				INFOPLIST_KEY_NSBluetoothAlwaysUsageDescription = "Click uses Bluetooth for Tap to Connect when you meet someone nearby.";
-				INFOPLIST_KEY_NSCalendarsFullAccessUsageDescription = "Click checks your calendar on this iPhone to show whether you're free for plans and events. It reads only busy times and never changes your calendar.";
-				INFOPLIST_KEY_NSCalendarsUsageDescription = "Click checks your calendar on this iPhone to show whether you're free for plans and events. It reads only busy times and never changes your calendar.";
+				INFOPLIST_KEY_NSCalendarsFullAccessUsageDescription = "Click checks your calendar on this iPhone to show whether you're free for plans and events. It reads only busy times, and only adds events you ask it to.";
+				INFOPLIST_KEY_NSCalendarsUsageDescription = "Click checks your calendar on this iPhone to show whether you're free for plans and events. It reads only busy times, and only adds events you ask it to.";
+				INFOPLIST_KEY_NSCalendarsWriteOnlyAccessUsageDescription = "Click adds the events you choose to your calendar. It can't see anything else on it.";
 				INFOPLIST_KEY_NSCameraUsageDescription = "Click uses your camera to scan QR codes and capture photos.";
 				INFOPLIST_KEY_NSContactsUsageDescription = "Click hashes phone numbers and emails on this device to find people you already know. Your address book never leaves your phone.";
 				INFOPLIST_KEY_NSLocationAlwaysAndWhenInUseUsageDescription = "If you turn on Past meeting spots, Click is told when you arrive somewhere so it can remind you of a Click you met there. Your location is never stored or shown to anyone.";
@@ -2288,8 +2411,9 @@
 				INFOPLIST_KEY_CFBundleDisplayName = Click;
 				INFOPLIST_KEY_ITSAppUsesNonExemptEncryption = NO;
 				INFOPLIST_KEY_NSBluetoothAlwaysUsageDescription = "Click uses Bluetooth for Tap to Connect when you meet someone nearby.";
-				INFOPLIST_KEY_NSCalendarsFullAccessUsageDescription = "Click checks your calendar on this iPhone to show whether you're free for plans and events. It reads only busy times and never changes your calendar.";
-				INFOPLIST_KEY_NSCalendarsUsageDescription = "Click checks your calendar on this iPhone to show whether you're free for plans and events. It reads only busy times and never changes your calendar.";
+				INFOPLIST_KEY_NSCalendarsFullAccessUsageDescription = "Click checks your calendar on this iPhone to show whether you're free for plans and events. It reads only busy times, and only adds events you ask it to.";
+				INFOPLIST_KEY_NSCalendarsUsageDescription = "Click checks your calendar on this iPhone to show whether you're free for plans and events. It reads only busy times, and only adds events you ask it to.";
+				INFOPLIST_KEY_NSCalendarsWriteOnlyAccessUsageDescription = "Click adds the events you choose to your calendar. It can't see anything else on it.";
 				INFOPLIST_KEY_NSCameraUsageDescription = "Click uses your camera to scan QR codes and capture photos.";
 				INFOPLIST_KEY_NSContactsUsageDescription = "Click hashes phone numbers and emails on this device to find people you already know. Your address book never leaves your phone.";
 				INFOPLIST_KEY_NSLocationAlwaysAndWhenInUseUsageDescription = "If you turn on Past meeting spots, Click is told when you arrive somewhere so it can remind you of a Click you met there. Your location is never stored or shown to anyone.";
@@ -2313,6 +2437,48 @@
 				TARGETED_DEVICE_FAMILY = "1,2";
 			};
 			name = Debug;
+		};
+		FBA496DD6DC30219CACC00D8 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			baseConfigurationReference = 5CE872BED60D02250BA16BD1 /* Debug.xcconfig */;
+			buildSettings = {
+				CODE_SIGN_STYLE = Automatic;
+				DEVELOPMENT_TEAM = W4C3V9Z2N4;
+				INFOPLIST_FILE = ClickWidgets/Info.plist;
+				INFOPLIST_KEY_CFBundleDisplayName = Click;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+					"@executable_path/../../Frameworks",
+				);
+				PRODUCT_BUNDLE_IDENTIFIER = compose.project.click.click.Widgets;
+				PRODUCT_NAME = ClickWidgets;
+				SDKROOT = iphoneos;
+				SWIFT_VERSION = 6.0;
+				TARGETED_DEVICE_FAMILY = "1,2";
+			};
+			name = Debug;
+		};
+		626E870D725C6947FA60AB57 /* Release */ = {
+			isa = XCBuildConfiguration;
+			baseConfigurationReference = FC2D8FD2E9A926E650F8748C /* Release.xcconfig */;
+			buildSettings = {
+				CODE_SIGN_STYLE = Automatic;
+				DEVELOPMENT_TEAM = W4C3V9Z2N4;
+				INFOPLIST_FILE = ClickWidgets/Info.plist;
+				INFOPLIST_KEY_CFBundleDisplayName = Click;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+					"@executable_path/../../Frameworks",
+				);
+				PRODUCT_BUNDLE_IDENTIFIER = compose.project.click.click.Widgets;
+				PRODUCT_NAME = ClickWidgets;
+				SDKROOT = iphoneos;
+				SWIFT_VERSION = 6.0;
+				TARGETED_DEVICE_FAMILY = "1,2";
+			};
+			name = Release;
 		};
 /* End XCBuildConfiguration section */
 
@@ -2358,6 +2524,15 @@
 			buildConfigurations = (
 				142A7535322B2CBFB0FBBEDE /* Debug */,
 				923299573B6B11DD1C817ED2 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Debug;
+		};
+		C94A973C9AAB9FA55D47C6A6 /* Build configuration list for PBXNativeTarget "ClickWidgets" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				FBA496DD6DC30219CACC00D8 /* Debug */,
+				626E870D725C6947FA60AB57 /* Release */,
 			);
 			defaultConfigurationIsVisible = 0;
 			defaultConfigurationName = Debug;

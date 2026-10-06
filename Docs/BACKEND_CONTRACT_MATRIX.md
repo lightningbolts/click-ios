@@ -76,6 +76,11 @@ Authoritative ledger of backend HTTP endpoints, authorization requirements, and 
 | `/api/beacons/{id}/engagement` | GET | Bearer JWT | Events | `{bookmarked, checked_in, check_in_count, hub_id}` (hub_id not trusted for chat) |
 | `/api/beacons/{id}/bookmark` | PUT `{bookmarked}` | Bearer JWT | Events | `{ok, bookmarked}` |
 | `/api/beacons/{id}/check-in` | POST `{latitude, longitude, accuracy_meters, source, platform}` · DELETE | Bearer JWT | Events | 400 location required · 403 `OUT_OF_BOUNDS` · 409 not live ("Check-in opens when the event starts") |
+| `/api/beacons/{id}/pass` | GET | Bearer JWT | Events | Click Pass `{credential_url, code, checked_in_at, wallet_available}`; 403 `not_going` without an approved RSVP |
+| `/api/beacons/{id}/pass/wallet` | GET | Bearer JWT | Events | Signed `.pkpass` (`application/vnd.apple.pkpass`); 404 `wallet_unavailable` until configured |
+| `/api/beacons/{id}/pass/scan` | POST `{credential}` | Bearer JWT (event manager) | Events | `{result: checked_in·already_checked_in·not_going·wrong_event·invalid, attendee, checked_in_at, check_in_count}` (always 200) |
+| `/api/beacons/mine` | GET | Bearer JWT | Events | Events you host or RSVP'd to (newest RSVPs first); drives the event Live Activity |
+| `/api/geo/weather?lat&lng[&at]` | GET | Public (IP-limited) | Events | `{now, at}` readings (`temperature_c, condition, icon, is_day, precipitation_probability`); `at` only within 7 days |
 | `/api/beacons/{id}/attendees/directory` | GET | Bearer JWT | Events | `{attendees[{user_id, name, avatar_url, shared_interests, relationship, mutual_via, mutual_connection_count}], mutuals_section_unlocked}` |
 | `/api/beacons/{id}` | DELETE | Bearer JWT | Beacons | Creator only |
 | `/api/chat/search` | GET `?q` (≥2 chars) | Bearer JWT | Search | `{hits[{messageId, chatId, connectionId, chatName, snippet, timestamp, isHub, hubId?}]}` — plaintext bodies only |
