@@ -75,3 +75,44 @@ struct EventExtrasTests {
         #expect(BeaconDetailView.forecastStart(try beacon(startsIn: -600), now: now) == nil)
     }
 }
+
+@Suite("Add to Calendar: Google and Outlook links")
+@MainActor
+struct EventCalendarLinkTests {
+    private func beacon() throws -> MapBeacon {
+        try #require(MapBeacon.decode([
+            "id": "e1", "beacon_type": "event", "creator_id": "u1", "lat": 47.6, "lng": -122.3,
+            "metadata": [
+                "title": "Open mic & tea",
+                "location_name": "Café Allegro",
+                "event_start_at": "2026-10-08T02:00:00Z",
+                "event_end_at": "2026-10-08T04:30:00Z",
+            ],
+        ] as [String: Any]))
+    }
+
+    private func query(_ url: URL?) -> [String: String] {
+        Dictionary(uniqueKeysWithValues: (URLComponents(url: url!, resolvingAgainstBaseURL: false)?.queryItems ?? [])
+            .map { ($0.name, $0.value ?? "") })
+    }
+
+    @Test("Google Calendar gets UTC compact dates, the title and the place")
+    func google() throws {
+        let url = EventCalendar.googleURL(try beacon(), url: URL(string: "https://joinclick.co/e/e1")!)
+        let items = query(url)
+        #expect(url?.host() == "calendar.google.com")
+        #expect(items["action"] == "TEMPLATE")
+        #expect(items["text"] == "Open mic & tea")
+        #expect(items["dates"] == "20261008T020000Z/20261008T043000Z")
+        #expect(items["location"] == "Café Allegro")
+        #expect(items["details"]?.contains("https://joinclick.co/e/e1") == true)
+    }
+
+    @Test("Outlook gets ISO dates and the same details")
+    func outlook() throws {
+        let items = query(EventCalendar.outlookURL(try beacon(), url: URL(string: "https://joinclick.co/e/e1")!))
+        #expect(items["subject"] == "Open mic & tea")
+        #expect(items["startdt"] == "2026-10-08T02:00:00Z")
+        #expect(items["enddt"] == "2026-10-08T04:30:00Z")
+    }
+}

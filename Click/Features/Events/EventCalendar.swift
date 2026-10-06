@@ -3,17 +3,24 @@ import CoreLocation
 import EventKitUI
 import SwiftUI
 
-/// "Add to Calendar": one tap saves the event straight to the default calendar. The first time,
-/// iOS asks for add-only access (Click still can't read anything it didn't add); if that's declined,
-/// the system's own add-event sheet opens instead, prefilled, which needs no access at all.
-/// Added events are remembered per event, so the button reads "In Calendar" afterwards.
+/// "Add to Calendar": you choose where it goes. Apple Calendar opens the system add-event sheet,
+/// prefilled, with its own calendar picker (iCloud and any Google, Exchange or Outlook account on
+/// this iPhone) and no permission prompt; Google Calendar and Outlook open their own prefilled
+/// add-event pages (their apps when installed). An event saved through the sheet is remembered,
+/// so the control reads "In Calendar" afterwards.
 @MainActor
 enum EventCalendar {
-    enum Outcome {
-        case added
-        /// No access: show `EventCalendarEditor` with this prefilled event.
-        case needsEditor(EKEvent, EKEventStore)
-        case failed
+    enum Service: String, CaseIterable, Identifiable {
+        case apple, google, outlook
+        var id: String { rawValue }
+
+        var title: String {
+            switch self {
+            case .apple: "Apple Calendar"
+            case .google: "Google Calendar"
+            case .outlook: "Outlook"
+            }
+        }
     }
 
     private static let defaultsKey = "events.calendar.added"
@@ -23,8 +30,8 @@ enum EventCalendar {
         set { UserDefaults.standard.set(newValue, forKey: defaultsKey) }
     }
 
-    /// Whether this event was added from Click. With full access it's checked against the calendar,
-    /// so an event deleted there can be added again.
+    /// Whether this event was saved through the sheet. With full access it's checked against the
+    /// calendar, so an event deleted there can be added again.
     static func isAdded(beaconID: String) -> Bool {
         guard let identifier = added[beaconID] else { return false }
         guard EKEventStore.authorizationStatus(for: .event) == .fullAccess else { return true }
@@ -33,42 +40,73 @@ enum EventCalendar {
         return false
     }
 
-    static func add(_ beacon: MapBeacon, url: URL) async -> Outcome {
-        guard let schedule = beacon.schedule else { return .failed }
-        var status = EKEventStore.authorizationStatus(for: .event)
-        if status == .notDetermined {
-            // A throwaway store for the prompt (as `PermissionCoordinator` does): nothing
-            // non-Sendable is held across the await.
-            status = (try? await EKEventStore().requestWriteOnlyAccessToEvents()) == true ? .writeOnly : .denied
-        }
+    static func remember(beaconID: String, identifier: String?) {
+        guard let identifier else { return }
+        added[beaconID] = identifier
+    }
 
+    /// The prefilled event for the system sheet (which saves it to whichever calendar is picked).
+    static func draft(_ beacon: MapBeacon, url: URL) -> (event: EKEvent, store: EKEventStore)? {
+        guard let schedule = beacon.schedule else { return nil }
         let store = EKEventStore()
         let event = EKEvent(eventStore: store)
         event.title = beacon.title
         event.startDate = schedule.start
         event.endDate = schedule.end
-        event.location = [beacon.locationName, beacon.formattedAddress].compactMap { $0 }.joined(separator: ", ").nonEmptyTrimmed
+        event.location = place(beacon)
         let location = EKStructuredLocation(title: beacon.locationName ?? beacon.formattedAddress ?? beacon.title)
         location.geoLocation = CLLocation(latitude: beacon.latitude, longitude: beacon.longitude)
         event.structuredLocation = location
         event.url = url
-        event.notes = [beacon.description, url.absoluteString].compactMap { $0?.nonEmptyTrimmed }.joined(separator: "\n\n")
-
-        guard status == .fullAccess || status == .writeOnly else { return .needsEditor(event, store) }
-        do {
-            event.calendar = store.defaultCalendarForNewEvents
-            try store.save(event, span: .thisEvent)
-            remember(beaconID: beacon.id, identifier: event.eventIdentifier)
-            return .added
-        } catch {
-            return .needsEditor(event, store)
-        }
+        event.notes = notes(beacon, url: url)
+        return (event, store)
     }
 
-    static func remember(beaconID: String, identifier: String?) {
-        guard let identifier else { return }
-        added[beaconID] = identifier
+    /// Google Calendar's prefilled "add event" page (UTC times, `yyyyMMddTHHmmssZ`).
+    static func googleURL(_ beacon: MapBeacon, url: URL) -> URL? {
+        guard let schedule = beacon.schedule else { return nil }
+        var components = URLComponents(string: "https://calendar.google.com/calendar/render")
+        components?.queryItems = [
+            URLQueryItem(name: "action", value: "TEMPLATE"),
+            URLQueryItem(name: "text", value: beacon.title),
+            URLQueryItem(name: "dates", value: "\(compactUTC.string(from: schedule.start))/\(compactUTC.string(from: schedule.end))"),
+            URLQueryItem(name: "location", value: place(beacon)),
+            URLQueryItem(name: "details", value: notes(beacon, url: url)),
+        ]
+        return components?.url
     }
+
+    /// Outlook's prefilled "new event" page (Outlook.com; work accounts sign in the same way).
+    static func outlookURL(_ beacon: MapBeacon, url: URL) -> URL? {
+        guard let schedule = beacon.schedule else { return nil }
+        let iso = ISO8601DateFormatter()
+        var components = URLComponents(string: "https://outlook.live.com/calendar/0/action/compose")
+        components?.queryItems = [
+            URLQueryItem(name: "rru", value: "addevent"),
+            URLQueryItem(name: "subject", value: beacon.title),
+            URLQueryItem(name: "startdt", value: iso.string(from: schedule.start)),
+            URLQueryItem(name: "enddt", value: iso.string(from: schedule.end)),
+            URLQueryItem(name: "location", value: place(beacon)),
+            URLQueryItem(name: "body", value: notes(beacon, url: url)),
+        ]
+        return components?.url
+    }
+
+    private static func place(_ beacon: MapBeacon) -> String? {
+        [beacon.locationName, beacon.formattedAddress].compactMap { $0 }.joined(separator: ", ").nonEmptyTrimmed
+    }
+
+    private static func notes(_ beacon: MapBeacon, url: URL) -> String {
+        [beacon.description, url.absoluteString].compactMap { $0?.nonEmptyTrimmed }.joined(separator: "\n\n")
+    }
+
+    private static let compactUTC: DateFormatter = {
+        let formatter = DateFormatter()
+        formatter.locale = Locale(identifier: "en_US_POSIX")
+        formatter.timeZone = TimeZone(identifier: "UTC")
+        formatter.dateFormat = "yyyyMMdd'T'HHmmss'Z'"
+        return formatter
+    }()
 }
 
 /// The Add to Calendar control's state, shared by the event page and the Click Pass.
@@ -84,39 +122,58 @@ final class CalendarButtonModel {
     }
 
     private(set) var isAdded = false
-    private(set) var isAdding = false
     var editor: Editor?
 
     func refresh(beaconID: String) {
         isAdded = EventCalendar.isAdded(beaconID: beaconID)
     }
 
-    func add(_ beacon: MapBeacon) async {
-        guard !isAdding, !isAdded else { return }
-        isAdding = true
-        defer { isAdding = false }
-        switch await EventCalendar.add(beacon, url: URL(string: "https://joinclick.co/e/\(beacon.id)")!) {
-        case .added:
-            isAdded = true
-            ClickHaptics.success()
-        case .needsEditor(let event, let store):
-            editor = Editor(beaconID: beacon.id, event: event, store: store)
-        case .failed:
-            ClickHaptics.error()
+    func add(_ beacon: MapBeacon, to service: EventCalendar.Service) {
+        let url = URL(string: "https://joinclick.co/e/\(beacon.id)")!
+        switch service {
+        case .apple:
+            guard let draft = EventCalendar.draft(beacon, url: url) else { return }
+            editor = Editor(beaconID: beacon.id, event: draft.event, store: draft.store)
+        case .google:
+            if let link = EventCalendar.googleURL(beacon, url: url) { UIApplication.shared.open(link) }
+        case .outlook:
+            if let link = EventCalendar.outlookURL(beacon, url: url) { UIApplication.shared.open(link) }
         }
     }
 
-    /// The system sheet closed; a save there counts as added too.
+    /// The system sheet closed; a save there counts as added.
     func editorFinished(saved: Bool, editor finished: Editor) {
         editor = nil
         guard saved else { return }
         EventCalendar.remember(beaconID: finished.beaconID, identifier: finished.event.eventIdentifier)
+        ClickHaptics.success()
         isAdded = true
     }
 }
 
+/// "Add to Calendar" as a menu of where to add it, wearing whatever label the screen uses.
+struct CalendarMenu<Content: View>: View {
+    let beacon: MapBeacon
+    let model: CalendarButtonModel
+    @ViewBuilder let label: () -> Content
+
+    var body: some View {
+        Menu {
+            Section("Add to") {
+                ForEach(EventCalendar.Service.allCases) { service in
+                    Button(service.title) { model.add(beacon, to: service) }
+                }
+            }
+        } label: {
+            label()
+        }
+        .buttonStyle(.plain)
+        .onAppear { model.refresh(beaconID: beacon.id) }
+    }
+}
+
 extension View {
-    /// Presents the system add-event sheet when a one-tap add needs it.
+    /// Presents the system add-event sheet (with its calendar picker) for Apple Calendar.
     func calendarEditorSheet(_ model: CalendarButtonModel) -> some View {
         sheet(item: Binding(get: { model.editor }, set: { model.editor = $0 })) { editor in
             EventCalendarEditor(event: editor.event, store: editor.store) { saved in
@@ -127,7 +184,7 @@ extension View {
     }
 }
 
-/// The system add-event sheet, prefilled (used when Click has no calendar access).
+/// The system add-event sheet, prefilled: the user picks the calendar and saves (no access needed).
 struct EventCalendarEditor: UIViewControllerRepresentable {
     let event: EKEvent
     let store: EKEventStore
