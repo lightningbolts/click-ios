@@ -92,19 +92,16 @@ struct ClickFlyerTests {
         }
     }
 
-    /// Prints a downscaled JPEG to the test log, for checking the layout from CI.
+    /// Logs a small JPEG as known issues (shown in the CI log without failing), for checking the layout.
     private static func dump(_ image: UIImage, name: String) {
-        let small = UIGraphicsImageRenderer(size: image.size, format: { let format = UIGraphicsImageRendererFormat(); format.scale = 1.5; return format }())
+        let small = UIGraphicsImageRenderer(size: image.size, format: { let format = UIGraphicsImageRendererFormat(); format.scale = 1; return format }())
             .image { _ in image.draw(in: CGRect(origin: .zero, size: image.size)) }
-        guard let data = small.jpegData(compressionQuality: 0.8) else { return }
-        let encoded = data.base64EncodedString()
-        var index = 0
+        guard let data = small.jpegData(compressionQuality: 0.6) else { return }
+        let encoded = Array(data.base64EncodedString())
         var chunk = 0
-        while index < encoded.count {
-            let start = encoded.index(encoded.startIndex, offsetBy: index)
-            let end = encoded.index(start, offsetBy: min(3000, encoded.count - index))
-            print("FLYER_SNAPSHOT \(name) \(chunk) \(encoded[start..<end])")
-            index += 3000
+        for start in stride(from: 0, to: encoded.count, by: 4000) {
+            let part = String(encoded[start..<min(start + 4000, encoded.count)])
+            withKnownIssue { Issue.record(Comment(rawValue: "FLYER_SNAPSHOT \(name) \(chunk) \(part)")) }
             chunk += 1
         }
     }
