@@ -586,12 +586,11 @@ enum EncounterLabels {
         }
     }
 
-    /// "Quiet · 50 dB" (the level alone when only the band was stored).
+    /// How loud it was, in words ("Quiet"); the measured dB stays on the server. Rows that only
+    /// stored the dB are banded with the tiers the app writes.
     nonisolated static func soundText(for encounter: Encounter) -> String? {
         let decibels = encounter.noiseDecibels.flatMap { $0.isFinite ? $0 : nil }
-        let band = (encounter.noiseLevel ?? decibels.map(EncounterSensorSampler.noiseLevel(decibels:))).flatMap(noise)
-        let parts = [band, decibels.map { "\(Int($0.rounded())) dB" }].compactMap { $0 }
-        return parts.isEmpty ? nil : parts.joined(separator: " · ")
+        return (encounter.noiseLevel ?? decibels.map(EncounterSensorSampler.noiseLevel(decibels:))).flatMap(noise)
     }
 
     /// "Elevated · 12 m" above the ground when the server could tell, else "Alt. 29 m" above

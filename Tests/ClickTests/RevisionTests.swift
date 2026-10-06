@@ -74,7 +74,7 @@ struct EncounterLabelTests {
         encounter.seaLevelPressureHpa = 1019.4
         encounter.gpsAltitudeMeters = 29.55
         encounter.gpsVerticalAccuracyMeters = 4
-        #expect(EncounterLabels.soundText(for: encounter) == "Quiet · 50 dB")
+        #expect(EncounterLabels.soundText(for: encounter) == "Quiet")
         #expect(EncounterLabels.heightText(for: encounter) == "Alt. 29 m")
         #expect(EncounterLabels.pressureText(for: encounter) == "1016 hPa")
 

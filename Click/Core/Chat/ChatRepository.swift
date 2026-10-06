@@ -683,6 +683,7 @@ public actor ChatRepository: ChatRepositoryProtocol {
         participantUserIDs: [String],
         allowUpgrade: Bool,
         requiredEpoch: Int? = nil,
+        strictRotation: Bool = false,
         didRetryDiscovery: Bool = false
     ) async throws -> V2Session? {
         if let cached = v2SessionCache[scope.cacheKey] {
@@ -714,6 +715,7 @@ public actor ChatRepository: ChatRepositoryProtocol {
                 participantUserIDs: participantUserIDs,
                 allowUpgrade: allowUpgrade,
                 requiredEpoch: requiredEpoch,
+                strictRotation: strictRotation,
                 didRetryDiscovery: true
             )
         }
@@ -757,10 +759,11 @@ public actor ChatRepository: ChatRepositoryProtocol {
                     // A peer device can rotate first; fresh state is authoritative.
                     state = try await fetchEpochState(scope, deviceID: identity.info.deviceID)
                 } catch {
-                    // A rotation the server refuses must not block sending: the current epoch is
-                    // still valid, and the server's write gate rejects it if it no longer covers
-                    // every active device. Failing here broke every send after the reuse window.
-                    if error.isCancellation { throw error }
+                    // A rotation the server refuses must not block sending (chats, groups and hubs
+                    // alike): the current epoch is still valid, and the server's write gate rejects
+                    // it if it no longer covers every active device. Failing here broke every send
+                    // after the reuse window. A membership change (`strictRotation`) must rotate.
+                    if strictRotation || error.isCancellation { throw error }
                     ClickLog.net.error("epoch rotation for \(scope.cacheKey, privacy: .private) failed: \(String(describing: error), privacy: .public)")
                 }
             }
@@ -836,7 +839,8 @@ public actor ChatRepository: ChatRepositoryProtocol {
         guard let session = try await resolveV2Session(
             scope: .chat(chatID),
             participantUserIDs: participantUserIDs,
-            allowUpgrade: true
+            allowUpgrade: true,
+            strictRotation: true
         ) else {
             return .notUpgraded
         }
