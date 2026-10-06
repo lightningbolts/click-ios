@@ -19,9 +19,10 @@ struct ClickPassView: View {
     @State private var loadError: String?
     @State private var walletPass: PKPass?
     @State private var isInWallet = false
+    /// This device can't add passes, or the signed pass couldn't be fetched: no Wallet slot.
+    @State private var walletUnavailable = false
     @State private var directions: MapsDestination?
     @State private var calendar = CalendarButtonModel()
-    @State private var notice: String?
 
     var body: some View {
         Group {
@@ -59,11 +60,6 @@ struct ClickPassView: View {
         .task(id: pass?.checkedInAt == nil && isAtTheDoor) { await watchForCheckIn() }
         .mapsDialog($directions)
         .calendarEditorSheet(calendar)
-        .alert("Click Pass", isPresented: Binding(get: { notice != nil }, set: { if !$0 { notice = nil } })) {
-            Button("OK", role: .cancel) {}
-        } message: {
-            Text(notice ?? "")
-        }
     }
 
     // MARK: - Ticket
@@ -87,8 +83,7 @@ struct ClickPassView: View {
         }
         // A dim screen is the usual reason a scan fails; a sleeping one is the other.
         .boostsScreenBrightness()
-        .onAppear { UIApplication.shared.isIdleTimerDisabled = true }
-        .onDisappear { UIApplication.shared.isIdleTimerDisabled = false }
+        .keepsScreenAwake()
     }
 
     private func ticket(_ pass: ClickPass) -> some View {
@@ -188,7 +183,7 @@ struct ClickPassView: View {
 
     @ViewBuilder
     private func actions(_ pass: ClickPass) -> some View {
-        if pass.walletAvailable {
+        if pass.walletAvailable, !walletUnavailable {
             Group {
                 if let walletPass, isInWallet {
                     Button {
@@ -290,14 +285,19 @@ struct ClickPassView: View {
     }
 
     private func loadWalletPass() async {
-        guard walletPass == nil, PKAddPassesViewController.canAddPasses() else { return }
+        guard walletPass == nil else { return }
+        guard PKAddPassesViewController.canAddPasses() else {
+            walletUnavailable = true
+            return
+        }
         do {
             let data = try await env.events.walletPass(beaconID: beaconID)
             let loaded = try PKPass(data: data)
             isInWallet = PKPassLibrary().containsPass(loaded)
             walletPass = loaded
         } catch {
-            if !error.isCancellation { notice = "Couldn't prepare the Wallet pass. \(error.userFacingMessage)" }
+            // The QR above works without Wallet; drop the slot rather than leave a dead placeholder.
+            if !error.isCancellation { withAnimation(ClickMotion.subtleFade) { walletUnavailable = true } }
         }
     }
 }

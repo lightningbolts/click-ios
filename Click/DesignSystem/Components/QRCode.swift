@@ -145,6 +145,28 @@ struct BoostsScreenBrightness: ViewModifier {
 
 extension View {
     func boostsScreenBrightness() -> some View { modifier(BoostsScreenBrightness()) }
+
+    /// Keeps the screen from sleeping while this is on screen (a code being scanned, a scanner).
+    /// Counted, so one screen leaving never lets another's screen sleep.
+    func keepsScreenAwake() -> some View {
+        onAppear { ScreenAwake.hold() }.onDisappear { ScreenAwake.release() }
+    }
+}
+
+@MainActor
+enum ScreenAwake {
+    private static var holders = 0
+
+    static func hold() {
+        holders += 1
+        UIApplication.shared.isIdleTimerDisabled = true
+    }
+
+    static func release() {
+        guard holders > 0 else { return }
+        holders -= 1
+        if holders == 0 { UIApplication.shared.isIdleTimerDisabled = false }
+    }
 }
 
 /// One owner of the screen's brightness, so overlapping code screens (a pass pushed over My QR)

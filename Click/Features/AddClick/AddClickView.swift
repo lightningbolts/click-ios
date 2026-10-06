@@ -289,12 +289,9 @@ struct MyClickCodeView: View {
             }
             startRefreshLoop()
         }
-        .onAppear { UIApplication.shared.isIdleTimerDisabled = true }
-        .onDisappear {
-            UIApplication.shared.isIdleTimerDisabled = false
-            refreshTask?.cancel()
-        }
+        .onDisappear { refreshTask?.cancel() }
         .boostsScreenBrightness()
+        .keepsScreenAwake()
         .onChange(of: scenePhase) { _, phase in
             if phase == .active, (expiresAt ?? .distantPast) <= .now { startRefreshLoop() }
         }

@@ -214,7 +214,7 @@ public struct MainTabShellView: View {
         .task(id: env.session.currentSession?.userId) {
             await seedMeTabAvatar()
         }
-        // A new account (or none) never keeps the last one's event on the Lock Screen.
+        // A new account brings its own events (sign-out ends the last one's in `clearSessionCaches`).
         .task(id: env.session.currentSession?.userId) {
             await EventLiveActivities.sync(env: env, force: true)
         }

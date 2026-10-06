@@ -17,24 +17,46 @@ enum EventLiveActivities {
 
     private static var lastSync: Date?
     private static var syncing = false
+    /// A forced sync arrived while one was running: run again once it finishes.
+    private static var rerun = false
+    /// Bumped on sign-out, so a request started for the last account never lands afterwards.
+    private static var generation = 0
 
     /// Brings the running activities in line with your upcoming events. `force` skips the
-    /// foreground throttle (after an RSVP, a cancel or sign-out).
+    /// foreground throttle (after an RSVP, a cancel or a new account).
     static func sync(env: AppEnvironment, force: Bool = false) async {
-        guard env.session.currentSession?.userId != nil else {
-            await reconcile([])
+        guard let userID = env.session.currentSession?.userId else {
+            await endAll()
             return
         }
         if !force, let lastSync, Date().timeIntervalSince(lastSync) < 600 { return }
-        guard !syncing, ActivityAuthorizationInfo().areActivitiesEnabled else { return }
+        guard ActivityAuthorizationInfo().areActivitiesEnabled else { return }
+        guard !syncing else {
+            if force { rerun = true }
+            return
+        }
         syncing = true
         defer { syncing = false }
-        guard let mine = try? await env.events.myEvents() else { return }
-        lastSync = Date()
-        let wanted = upcoming(mine, now: Date()).prefix(maxConcurrent).map {
-            EventActivityTarget(event: $0, checkedIn: env.events.cachedEngagement(beaconID: $0.beaconID)?.checkedIn == true)
-        }
-        await reconcile(Array(wanted))
+        repeat {
+            rerun = false
+            let started = generation
+            guard let mine = try? await env.events.myEvents() else { return }
+            // Signed out, or another account signed in, while the request was out.
+            guard started == generation, env.session.currentSession?.userId == userID else { return }
+            lastSync = Date()
+            let wanted = upcoming(mine, now: Date()).prefix(maxConcurrent).map { event in
+                EventActivityTarget(event: event, checkedIn: env.events.cachedEngagement(beaconID: event.beaconID)?.checkedIn == true
+                    || env.events.cachedPass(beaconID: event.beaconID)?.checkedInAt != nil)
+            }
+            await reconcile(Array(wanted))
+        } while rerun
+    }
+
+    /// Sign-out: nothing of one account's events stays on the Lock Screen.
+    static func endAll() async {
+        generation += 1
+        lastSync = nil
+        await reconcile([])
     }
 
     /// Events worth a Live Activity now: starting within the lead time or on now, soonest first.
@@ -72,9 +94,10 @@ enum EventLiveActivities {
         }
     }
 
-    /// Before the start the content goes stale at the start, which flips the view to "on now".
+    /// The content goes stale at the start (flipping the view to "on now") and, once it's on, at
+    /// the end (flipping it to "ended"), so the Lock Screen is right even if Click isn't opened.
     nonisolated private static func content(_ state: EventActivityAttributes.ContentState) -> ActivityContent<EventActivityAttributes.ContentState> {
-        ActivityContent(state: state, staleDate: state.start > Date() ? state.start : nil)
+        ActivityContent(state: state, staleDate: state.start > Date() ? state.start : state.end)
     }
 }
 

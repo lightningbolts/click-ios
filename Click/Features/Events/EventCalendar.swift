@@ -77,6 +77,8 @@ enum EventCalendar {
 final class CalendarButtonModel {
     struct Editor: Identifiable {
         let id = UUID()
+        /// The event that opened the sheet (another may come on screen while it's up).
+        let beaconID: String
         let event: EKEvent
         let store: EKEventStore
     }
@@ -84,16 +86,13 @@ final class CalendarButtonModel {
     private(set) var isAdded = false
     private(set) var isAdding = false
     var editor: Editor?
-    @ObservationIgnored private var beaconID: String?
 
     func refresh(beaconID: String) {
-        self.beaconID = beaconID
         isAdded = EventCalendar.isAdded(beaconID: beaconID)
     }
 
     func add(_ beacon: MapBeacon) async {
         guard !isAdding, !isAdded else { return }
-        beaconID = beacon.id
         isAdding = true
         defer { isAdding = false }
         switch await EventCalendar.add(beacon, url: URL(string: "https://joinclick.co/e/\(beacon.id)")!) {
@@ -101,17 +100,17 @@ final class CalendarButtonModel {
             isAdded = true
             ClickHaptics.success()
         case .needsEditor(let event, let store):
-            editor = Editor(event: event, store: store)
+            editor = Editor(beaconID: beacon.id, event: event, store: store)
         case .failed:
             ClickHaptics.error()
         }
     }
 
     /// The system sheet closed; a save there counts as added too.
-    func editorFinished(saved: Bool, event: EKEvent) {
+    func editorFinished(saved: Bool, editor finished: Editor) {
         editor = nil
-        guard saved, let beaconID else { return }
-        EventCalendar.remember(beaconID: beaconID, identifier: event.eventIdentifier)
+        guard saved else { return }
+        EventCalendar.remember(beaconID: finished.beaconID, identifier: finished.event.eventIdentifier)
         isAdded = true
     }
 }
@@ -121,7 +120,7 @@ extension View {
     func calendarEditorSheet(_ model: CalendarButtonModel) -> some View {
         sheet(item: Binding(get: { model.editor }, set: { model.editor = $0 })) { editor in
             EventCalendarEditor(event: editor.event, store: editor.store) { saved in
-                model.editorFinished(saved: saved, event: editor.event)
+                model.editorFinished(saved: saved, editor: editor)
             }
             .ignoresSafeArea()
         }

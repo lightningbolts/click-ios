@@ -59,6 +59,11 @@ private func isOn(_ state: EventActivityAttributes.ContentState, isStale: Bool, 
     isStale || state.start <= now
 }
 
+/// Past the end (the content goes stale at the end once it's on, so this renders without the app).
+private func isOver(_ state: EventActivityAttributes.ContentState, now: Date) -> Bool {
+    now >= state.end
+}
+
 /// Now until the start, never inverted (a countdown range must not start after it ends).
 private func untilStart(_ state: EventActivityAttributes.ContentState, now: Date) -> ClosedRange<Date> {
     now...max(now, state.start)
@@ -90,7 +95,8 @@ private struct LockScreenView: View {
     }
 }
 
-/// "Starts in 12:04" → "On now · until 10 PM" with a progress bar → "You're in".
+/// "Starts in 12:04" → "On now · until 10 PM" with a progress bar ("You're in" once checked in)
+/// → "Ended".
 private struct Status: View {
     let state: EventActivityAttributes.ContentState
     let isStale: Bool
@@ -98,7 +104,11 @@ private struct Status: View {
 
     var body: some View {
         let now = Date()
-        if isOn(state, isStale: isStale, now: now) {
+        if isOver(state, now: now) {
+            Text(state.checkedIn ? "Ended · thanks for coming" : "Ended")
+                .font(.subheadline.weight(.semibold))
+                .foregroundStyle(.secondary)
+        } else if isOn(state, isStale: isStale, now: now) {
             VStack(alignment: .leading, spacing: 6) {
                 HStack(spacing: 4) {
                     Text(state.checkedIn ? "You're in" : "On now")
@@ -133,7 +143,10 @@ private struct CompactTime: View {
 
     var body: some View {
         let now = Date()
-        if isOn(state, isStale: isStale, now: now) {
+        if isOver(state, now: now) {
+            Image(systemName: "flag.checkered")
+                .font(.caption.weight(.bold))
+        } else if isOn(state, isStale: isStale, now: now) {
             Image(systemName: state.checkedIn ? "checkmark" : "dot.radiowaves.left.and.right")
                 .font(.caption.weight(.bold))
         } else {
