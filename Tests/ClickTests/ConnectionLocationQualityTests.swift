@@ -55,6 +55,27 @@ struct ConnectionLocationQualityTests {
         #expect(Quality.fused([fix(5, at: -0.2, north: 0)], around: t0, until: t0) == nil)
     }
 
+    // MARK: Refinement
+
+    @Test("Converged fixes after the moment tighten it; a marginal gain or a move does not")
+    func refinement() throws {
+        let original = fix(14, at: -0.5, north: 0)
+        let later = [fix(9, at: 4, north: 3), fix(5, at: 9, north: 2), fix(6, at: 12, north: 1)]
+        let refined = try #require(Quality.refined(original, later: later, moment: t0))
+        // The radius is the best fix's own, never statistically shrunk.
+        #expect(refined.horizontalAccuracyMeters == 5)
+        #expect(refined.observedAt == t0.addingTimeInterval(9))
+        let north = (refined.latitude - 47.6101) * 111_320
+        #expect(north > 1 && north < 3)
+
+        // 12 m is not enough of a gain over 14 m.
+        #expect(Quality.refined(original, later: [fix(12, at: 5, north: 0)], moment: t0) == nil)
+        // Fixes from before the moment are the capture's, not the follow-up's.
+        #expect(Quality.refined(original, later: [fix(5, at: -1, north: 0)], moment: t0) == nil)
+        // 60 m away: the phone was carried off, so nothing is sent.
+        #expect(Quality.refined(original, later: [fix(5, at: 8, north: 60)], moment: t0) == nil)
+    }
+
     // MARK: Selection
 
     @Test("A slightly worse fix at the moment beats a better one seconds earlier")

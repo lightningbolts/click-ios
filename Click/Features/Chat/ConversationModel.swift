@@ -872,12 +872,27 @@ public final class ConversationModel {
         if !changed.isEmpty { persist(changed) }
     }
 
-    /// Shares an event/beacon card into this conversation (optimistic, same send animation).
-    public func sendBeacon(_ beacon: MapBeacon) async {
-        let clientID = UUID().uuidString.lowercased()
-        let content = "Beacon: \(beacon.title)"
-        let card = SharedBeacon.parse(messageType: "beacon", metadata: ChatRepository.beaconMetadata(beacon, clientMessageID: clientID), content: content)
-        await performSend(makeOptimistic(content: content, type: .beacon, reply: nil, beacon: card, clientID: clientID), payload: .beacon(beacon))
+    /// The card a shared event/beacon shows as (in the timeline and the share preview).
+    static func beaconCard(_ beacon: MapBeacon, clientID: String = "") -> SharedBeacon? {
+        SharedBeacon.parse(messageType: "beacon", metadata: ChatRepository.beaconMetadata(beacon, clientMessageID: clientID),
+                           content: "Beacon: \(beacon.title)")
+    }
+
+    /// Shares event/beacon cards into this conversation: every row appears at once (same send
+    /// animation as any message), then they send one after another so they arrive in order.
+    public func sendBeacons(_ beacons: [MapBeacon]) async {
+        let chatID = identity.chatID
+        pendingSends.ensureAttached(self, chatID: chatID)
+        let clientIDs = beacons.map { beacon in
+            let clientID = UUID().uuidString.lowercased()
+            let optimistic = makeOptimistic(content: "Beacon: \(beacon.title)", type: .beacon, reply: nil,
+                                            beacon: Self.beaconCard(beacon, clientID: clientID), clientID: clientID)
+            pendingSends.add(optimistic, chatID: chatID, payload: .beacon(beacon))
+            return clientID
+        }
+        for clientID in clientIDs {
+            await transmitPending(clientID: clientID, chatID: chatID)
+        }
     }
 
     /// Attachments picked but not yet sent (photos, a file, a reviewed voice note).

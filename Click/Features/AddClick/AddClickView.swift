@@ -423,6 +423,7 @@ struct ScanClickCodeView: View {
     @State private var permission: PermissionStatus = .notDetermined
     @State private var revealed: ProximityMatch?
     @State private var revealedVerification: ConnectionVerification?
+    @State private var revealedFollowUp: EncounterFollowUp?
     @State private var scannedValue: String?
     @State private var isProcessing = false
     @State private var statusText: String?
@@ -483,7 +484,7 @@ struct ScanClickCodeView: View {
         }
         .fullScreenCover(item: Binding(get: { revealed.map(RevealItem.init) }, set: { if $0 == nil { finishReveal() } })) { item in
             PostConnectView(
-                model: PostConnectModel(match: item.match, method: .qr, verification: revealedVerification),
+                model: PostConnectModel(match: item.match, method: .qr, verification: revealedVerification, followUp: revealedFollowUp),
                 onSayHi: { peer in
                     revealed = nil
                     env.router.addClickPath.removeAll()
@@ -600,6 +601,7 @@ struct ScanClickCodeView: View {
             ClickHaptics.notification(.success)
             // Same reveal and tagging as Tap to Connect (spec §22, §26–§28).
             revealedVerification = result.verification
+            revealedFollowUp = result.followUp
             revealed = ProximityMatch(
                 connectionID: result.connectionID,
                 isNewConnection: result.isNew,
@@ -692,6 +694,8 @@ private enum ClickConnectionRedeemer {
         var collaborationEndsAt: Date?
         /// How this phone confirmed the connection (code + its own location accuracy).
         var verification: ConnectionVerification?
+        /// Tightens the scan's altitude and location in the seconds after it.
+        var followUp: EncounterFollowUp?
     }
 
     /// Encounter context captured at the connection moment, as the body keys `/api/qr` and
@@ -710,7 +714,7 @@ private enum ClickConnectionRedeemer {
         wait: ConnectionLocationQuality.Wait
     ) async -> (
         fields: [String: Any], fix: LocationObservation?, quality: [String: TelemetryValue],
-        altitudeFollowUp: EncounterAltitudeFollowUp?
+        followUp: EncounterFollowUp?
     ) {
         async let allowed = env.shouldCaptureConnectionLocation(userID: userID)
         async let sensor = EncounterSensorSampler.sample(settings: env.settings, includeNoise: false, includeHardware: true)
@@ -720,7 +724,7 @@ private enum ClickConnectionRedeemer {
         var context = await sensor
         context.barometer = observed.altitude
         // A scan usually beats the altimeter's first absolute fix; the height follows shortly.
-        let followUp = EncounterAltitudeFollowUp.begin(from: capture, snapshot: observed, api: env.api)
+        let followUp = EncounterFollowUp.begin(from: capture, snapshot: observed, api: env.api)
         var fields = context.columns
         fields["timezone_offset_minutes"] = TimeZone.current.secondsFromGMT() / 60
         // This phone's own raw readings of the scan, aligned on the recognition moment.
@@ -815,12 +819,13 @@ private enum ClickConnectionRedeemer {
         )
         if capture == nil { session.stop() }
         onCaptured(captured.quality)
-        let followUp = captured.altitudeFollowUp
+        let followUp = captured.followUp
         do {
-            let result = try await submit(invocation, environment: env, currentUserID: currentUserID,
+            var result = try await submit(invocation, environment: env, currentUserID: currentUserID,
                                           captured: (captured.fields, captured.fix), usedCapture: capture != nil)
             if result.encounterLogged, let connectionID = result.connectionID {
                 followUp?.confirm(connectionIDs: [connectionID])
+                result.followUp = followUp
             } else {
                 followUp?.cancel()
             }

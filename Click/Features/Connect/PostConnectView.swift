@@ -132,11 +132,26 @@ struct PostConnectView: View {
                 Divider().padding(.leading, 48)
                 detailRow("cloud.sun", "Weather", weather)
             }
+            if let encounter = model.latestEncounter {
+                if let sound = EncounterLabels.soundText(for: encounter) {
+                    Divider().padding(.leading, 48)
+                    detailRow("waveform", "Sound", sound)
+                }
+                if let height = EncounterLabels.heightText(for: encounter) {
+                    Divider().padding(.leading, 48)
+                    detailRow("mountain.2", "Height", height)
+                }
+                if let pressure = EncounterLabels.pressureText(for: encounter) {
+                    Divider().padding(.leading, 48)
+                    detailRow("gauge.with.dots.needle.50percent", "Pressure", pressure)
+                }
+            }
             Divider().padding(.leading, 48)
             detailRow("checkmark.shield", "Verified by", model.verificationLine)
         }
         .groupedSurface()
         .animation(ClickMotion.subtleFade, value: model.latestEncounter)
+        .animation(ClickMotion.subtleFade, value: model.verificationLine)
     }
 
     private var whereText: String {

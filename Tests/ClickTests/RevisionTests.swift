@@ -66,6 +66,25 @@ struct EncounterLabelTests {
         #expect(pills[5] == EncounterLabels.MetricPill(symbol: "safari", tintHex: "#B39DDB", text: "45°"))
     }
 
+    @Test("Without an absolute fix, altitude comes from pressure, else accurate GPS; pressure shows in hPa")
+    func altitudeAndPressure() {
+        var encounter = Encounter(id: "e", date: .now, place: nil, eventTitle: nil, eventBeaconID: nil,
+                                  contextTags: [], noiseLevel: nil, elevation: nil, noiseDecibels: 50.2)
+        encounter.stationPressureKPa = 101.593
+        encounter.seaLevelPressureHpa = 1019.4
+        encounter.gpsAltitudeMeters = 29.55
+        encounter.gpsVerticalAccuracyMeters = 4
+        #expect(EncounterLabels.soundText(for: encounter) == "Quiet · 50 dB")
+        #expect(EncounterLabels.heightText(for: encounter) == "Alt. 29 m")
+        #expect(EncounterLabels.pressureText(for: encounter) == "1016 hPa")
+
+        encounter.stationPressureKPa = nil
+        #expect(EncounterLabels.heightText(for: encounter) == "Alt. 30 m")
+        #expect(EncounterLabels.pressureText(for: encounter) == "1019 hPa")
+        encounter.gpsVerticalAccuracyMeters = 30
+        #expect(EncounterLabels.heightText(for: encounter) == nil)
+    }
+
     @Test("Without a venue, the place is the first address component")
     func placeFallback() {
         let encounter = Encounter(id: "e", date: .now, place: "Café Allegro, 4214 University Way", eventTitle: nil,

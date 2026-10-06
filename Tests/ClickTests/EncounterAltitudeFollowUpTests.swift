@@ -59,7 +59,7 @@ struct EncounterAltitudeFollowUpTests {
             absoluteAltitudeMeters: 116.437, accuracyMeters: 2.345, precisionMeters: nil,
             relativeAltitudeMeters: nil, pressureKPa: nil, observedAt: moment.addingTimeInterval(9)
         )
-        let body = try #require(EncounterAltitudeFollowUp.body(reading, moment: moment, connectionIDs: ["a", "b"]))
+        let body = try #require(EncounterFollowUp.altitudeBody(reading, moment: moment, connectionIDs: ["a", "b"]))
         #expect(body["connection_ids"] as? [String] == ["a", "b"])
         #expect(body["connection_moment"] as? String == "2026-09-21T14:13:20.123Z")
         #expect(body["observed_at"] as? String == "2026-09-21T14:13:29.123Z")
@@ -67,11 +67,27 @@ struct EncounterAltitudeFollowUpTests {
         #expect(body["barometric_accuracy_m"] as? Double == 2.35)
         #expect(body["barometric_precision_m"] == nil)
 
-        #expect(EncounterAltitudeFollowUp.body(reading, moment: moment, connectionIDs: []) == nil)
+        #expect(EncounterFollowUp.altitudeBody(reading, moment: moment, connectionIDs: []) == nil)
         let noAltitude = AltitudeObservation(
             absoluteAltitudeMeters: nil, accuracyMeters: nil, precisionMeters: nil,
             relativeAltitudeMeters: 0, pressureKPa: 101, observedAt: moment
         )
-        #expect(EncounterAltitudeFollowUp.body(noAltitude, moment: moment, connectionIDs: ["a"]) == nil)
+        #expect(EncounterFollowUp.altitudeBody(noAltitude, moment: moment, connectionIDs: ["a"]) == nil)
+    }
+
+    @Test("The location body carries the refined fix with the moment it refines")
+    func locationBody() {
+        let fix = LocationObservation(
+            latitude: 47.65295, longitude: -122.30399, horizontalAccuracyMeters: 4.876, verticalAccuracyMeters: nil,
+            altitudeMeters: nil, ellipsoidalAltitudeMeters: nil, observedAt: moment.addingTimeInterval(12),
+            floorLevel: nil, isFullAccuracy: true, isSimulatedBySoftware: nil, isProducedByAccessory: nil
+        )
+        let body = EncounterFollowUp.locationBody(fix, moment: moment, connectionIDs: ["a"])
+        #expect(body["connection_ids"] as? [String] == ["a"])
+        #expect(body["connection_moment"] as? String == "2026-09-21T14:13:20.123Z")
+        #expect(body["observed_at"] as? String == "2026-09-21T14:13:32.123Z")
+        #expect(body["gps_lat"] as? Double == 47.65295)
+        #expect(body["gps_lon"] as? Double == -122.30399)
+        #expect(body["gps_horizontal_accuracy_m"] as? Double == 4.88)
     }
 }

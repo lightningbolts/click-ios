@@ -968,7 +968,7 @@ private struct EncounterTagEditor: View {
                     ContextTagPicker(
                         selected: $selected,
                         custom: $custom,
-                        suggestions: ContextTagTaxonomy.suggest(locationName: encounter.placeName, hour: Calendar.current.component(.hour, from: encounter.date))
+                        suggestions: ContextTagTaxonomy.suggest(TagSignals(encounter: encounter))
                     )
                     if let error {
                         Text(error).font(ClickTypography.metadata).foregroundStyle(ClickColors.destructive)

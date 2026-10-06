@@ -28,7 +28,8 @@ struct TapConnectView: View {
             case .connected(let match):
                 // Only after the server confirmed the connection (spec §28).
                 PostConnectView(
-                    model: PostConnectModel(match: match, method: .tap, verification: model.verification, notice: model.resultNotice),
+                    model: PostConnectModel(match: match, method: .tap, verification: model.verification, notice: model.resultNotice,
+                                            followUp: model.followUp),
                     onSayHi: { peer in openChat(peer, connectionID: peer.connectionID ?? match.connectionID) },
                     onViewProfile: { peer in
                         env.router.navigate(to: .userProfile(userID: peer.id, connectionID: peer.connectionID ?? match.connectionID))

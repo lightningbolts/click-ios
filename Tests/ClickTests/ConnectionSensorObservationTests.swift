@@ -277,7 +277,7 @@ struct ConnectionSensorObservationTests {
             absoluteAltitudeMeters: 20, accuracyMeters: 3, precisionMeters: 0.5,
             relativeAltitudeMeters: nil, pressureKPa: nil, observedAt: snapshot.moment
         )
-        let body = try #require(EncounterAltitudeFollowUp.body(reading, moment: snapshot.moment, connectionIDs: ["c"]))
+        let body = try #require(EncounterFollowUp.altitudeBody(reading, moment: snapshot.moment, connectionIDs: ["c"]))
         #expect(body["connection_moment"] as? String == payload["connection_moment"] as? String)
     }
 

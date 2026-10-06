@@ -24,11 +24,14 @@ final class PostConnectModel {
 
     let match: ProximityMatch
     let method: Method
-    let suggestions: [ContextTag]
+    /// From the time alone at first, then from the place, sensors and history once loaded.
+    private(set) var suggestions: [ContextTag]
     /// What confirmed this connection on this phone (signals and location accuracy).
     let verification: ConnectionVerification?
     /// A one-off explanation shown above the details (e.g. another phone confirmed first).
     let notice: String?
+    /// Tightens this phone's location (and altitude) in the seconds after the connection.
+    let followUp: EncounterFollowUp?
     /// When this phone saw the connection.
     let connectedAt: Date
 
@@ -56,6 +59,7 @@ final class PostConnectModel {
         method: Method,
         verification: ConnectionVerification? = nil,
         notice: String? = nil,
+        followUp: EncounterFollowUp? = nil,
         now: Date = .now,
         calendar: Calendar = .current
     ) {
@@ -63,8 +67,9 @@ final class PostConnectModel {
         self.method = method
         self.verification = verification
         self.notice = notice
+        self.followUp = followUp
         self.connectedAt = now
-        self.suggestions = ContextTagTaxonomy.suggest(locationName: nil, hour: calendar.component(.hour, from: now))
+        self.suggestions = ContextTagTaxonomy.suggest(TagSignals(date: now), calendar: calendar)
     }
 
     var isGroup: Bool { match.isGroup || match.peers.count > 1 }
@@ -133,6 +138,8 @@ final class PostConnectModel {
     }
 
     var verificationLine: String {
+        var verification = verification
+        if let refined = followUp?.refinedAccuracyMeters { verification?.locationAccuracyMeters = refined }
         let summary = verification?.summary ?? ""
         switch method {
         case .tap: return summary.isEmpty ? "Tap to Connect" : summary
@@ -180,6 +187,10 @@ final class PostConnectModel {
         // row and tags it "Extended Hangout"; a row older than this tap means that.
         isExtendedHangout = !isGroup && match.isReconnect
             && latest.contextTags.contains(where: ContextTagTaxonomy.isExtendedHangout)
+        // Never reshuffled under a choice the user has started making.
+        if selectedTags.isEmpty {
+            suggestions = ContextTagTaxonomy.suggest(TagSignals(encounter: latest, history: Array(encounters.dropFirst())))
+        }
     }
 
     /// Everyone in this group Click, including the viewer.
@@ -245,17 +256,21 @@ final class PostConnectModel {
     func save(_ env: AppEnvironment) async {
         let tags = ContextTagPicker.resolved(selected: selectedTags, custom: customTag)
         guard let userID = env.session.currentSession?.userId else { return }
-        let connectionIDs = taggableConnectionIDs
+        saveState = .saving
+        let connectionIDs = await taggableConnectionIDs(env, userID: userID)
         guard !connectionIDs.isEmpty else {
             saveState = .failed("This connection isn't ready for tags yet.")
             return
         }
-        saveState = .saving
         // Sensor context is recorded on its own when the screen opens (`recordSensorContext`).
         let sensor = EncounterSensorContext()
         do {
-            for connectionID in connectionIDs {
-                try await env.encounterContext.saveContext(connectionID: connectionID, tags: tags, sensor: sensor, reportingUserID: userID)
+            for (index, connectionID) in connectionIDs.enumerated() {
+                do {
+                    try await env.encounterContext.saveContext(connectionID: connectionID, tags: tags, sensor: sensor, reportingUserID: userID)
+                } catch EncounterContextRepository.TagSaveError.noActiveEncounter where index > 0 {
+                    // A member's own row can predate this tap (merged into an earlier hangout).
+                }
             }
             saveState = .saved
             ClickHaptics.success()
@@ -268,25 +283,48 @@ final class PostConnectModel {
 
     /// Samples ambient noise now that the tap's microphone use is over, then writes it to this
     /// encounter (sensor-only patch; tags are saved separately). Silent on failure. The barometer
-    /// was already read at the connection moment, so a later reading never replaces it.
+    /// was already read at the connection moment, so a later reading never replaces it. Runs to
+    /// the end even if the screen is closed meanwhile, so a quick "Done" never loses the reading.
     func recordSensorContext(_ env: AppEnvironment) async {
         guard env.settings.ambientNoiseOptIn,
               let userID = env.session.currentSession?.userId else { return }
-        let connectionIDs = taggableConnectionIDs
-        guard !connectionIDs.isEmpty else { return }
-        let sensor = await EncounterSensorSampler.sample(settings: env.settings)
-        guard !sensor.isEmpty else { return }
-        for connectionID in connectionIDs {
-            try? await env.encounterContext.saveContext(connectionID: connectionID, tags: [], sensor: sensor, reportingUserID: userID)
-        }
+        let repository = env.encounterContext
+        await Task {
+            async let ids = taggableConnectionIDs(env, userID: userID)
+            let sensor = await EncounterSensorSampler.sample(settings: env.settings)
+            let connectionIDs = await ids
+            guard !sensor.isEmpty else { return }
+            // Shown on the details card at once, rather than after the next read.
+            if latestEncounter?.noiseDecibels == nil {
+                latestEncounter?.noiseLevel = sensor.noiseLevel
+                latestEncounter?.noiseDecibels = sensor.noiseDecibels
+            }
+            await withTaskGroup(of: Void.self) { group in
+                for connectionID in connectionIDs {
+                    group.addTask {
+                        try? await repository.saveContext(connectionID: connectionID, tags: [], sensor: sensor, reportingUserID: userID)
+                    }
+                }
+            }
+        }.value
     }
 
-    /// Where this Click's tags and sensor context go: the group itself plus each person's own
-    /// connection (a group confirm returns the group id for everyone, so de-duplicate).
-    private var taggableConnectionIDs: [String] {
+    /// Resolved once: the viewer's own connection with each member of a group Click.
+    private var pairConnectionIDs: [String]?
+
+    /// Where this Click's tags and sensor context go. One-to-one: its connection. A group: the
+    /// group connection plus the viewer's own connection with each member, since that is the
+    /// timeline each person's profile shows (a group confirm returns the group ID for every peer).
+    private func taggableConnectionIDs(_ env: AppEnvironment, userID: String) async -> [String] {
+        guard isGroup else { return [match.connectionID ?? primaryPeer?.connectionID].compactMap { $0 } }
+        if pairConnectionIDs == nil {
+            let peers = groupMemberIDs(viewerID: userID).filter { $0 != userID }
+            let pairs = (try? await env.groups.pairConnectionIDs(viewerID: userID, peerIDs: peers)) ?? [:]
+            pairConnectionIDs = peers.compactMap { pairs[$0] }
+        }
         var seen = Set<String>()
-        let ids = isGroup ? [match.connectionID] + match.peers.map(\.connectionID) : [match.connectionID ?? primaryPeer?.connectionID]
-        return ids.compactMap { $0 }.filter { seen.insert($0).inserted }
+        let ids = [match.connectionID].compactMap { $0 } + match.peers.compactMap(\.connectionID) + (pairConnectionIDs ?? [])
+        return ids.filter { seen.insert($0).inserted }
     }
 
     /// What this tap added (new spot, level, streak, milestone), once history has loaded.

@@ -457,7 +457,7 @@ private struct ChatAudioView: View {
             Button(action: BubbleTapGate.gated { Task { await toggle() } }) {
                 ZStack {
                     if isLoading {
-                        ProgressView().tint(foreground)
+                        ArcSpinner(tint: foreground, lineWidth: 2).frame(width: 18, height: 18)
                     } else {
                         Image(systemName: isActive && player.isPlaying ? "pause.fill" : "play.fill")
                             .font(.system(size: 16, weight: .bold))
@@ -552,7 +552,7 @@ private struct ChatFileView: View {
                         .opacity(0.8)
                 }
                 Spacer(minLength: 0)
-                if isLoading { ProgressView() }
+                if isLoading { ArcSpinner(tint: .primary, lineWidth: 2).frame(width: 20, height: 20) }
             }
             .foregroundStyle(message.isOutgoing ? ClickColors.messageOutgoingForeground : ClickColors.messageIncomingForeground)
             .frame(width: 240, alignment: .leading)
@@ -728,7 +728,10 @@ struct ComposerAttachmentButton: View {
         // by ComposerCircleLabel so it stays circular throughout press/presentation.
         .buttonStyle(.plain)
         .accessibilityLabel("Attach")
-        .photosPicker(isPresented: $showingPhotos, selection: $photoItems, maxSelectionCount: ConversationModel.maxStaged, selectionBehavior: .ordered, matching: .images)
+        // `.current` hands over the original bytes (HEIC included, which is re-encoded below), so
+        // the system never puts up its own "Preparing…" transcoding dialog over the chat.
+        .photosPicker(isPresented: $showingPhotos, selection: $photoItems, maxSelectionCount: ConversationModel.maxStaged,
+                      selectionBehavior: .ordered, matching: .images, preferredItemEncoding: .current)
         .fileImporter(isPresented: $showingFiles, allowedContentTypes: Self.fileTypes) { result in
             if case .success(let url) = result {
                 do { onDraft(try MediaDraftBuilder.file(at: url)) } catch { onError("Couldn't read that file.") }
@@ -745,14 +748,21 @@ struct ComposerAttachmentButton: View {
             guard !items.isEmpty else { return }
             photoItems = []
             Task {
-                // Keep the picked order; each photo is downscaled off the main actor.
-                for item in items {
-                    guard let data = try? await item.loadTransferable(type: Data.self),
-                          let draft = await MediaDraftBuilder.image(from: data) else {
-                        onError("Couldn't prepare that photo.")
-                        continue
+                // Photos load and downscale in parallel, off the main actor; they stage in the
+                // picked order.
+                let drafts = await withTaskGroup(of: (Int, MediaDraft?).self) { group in
+                    for (index, item) in items.enumerated() {
+                        group.addTask {
+                            guard let data = try? await item.loadTransferable(type: Data.self) else { return (index, nil) }
+                            return (index, await MediaDraftBuilder.image(from: data))
+                        }
                     }
-                    onDraft(draft)
+                    var drafts = [MediaDraft?](repeating: nil, count: items.count)
+                    for await (index, draft) in group { drafts[index] = draft }
+                    return drafts
+                }
+                for draft in drafts {
+                    if let draft { onDraft(draft) } else { onError("Couldn't prepare that photo.") }
                 }
             }
         }
@@ -874,66 +884,6 @@ struct AudioScrubber: View {
             let step = direction == .increment ? 0.1 : -0.1
             onCommit(min(max(progress + step, 0), 1))
         }
-    }
-}
-
-/// Picks a cached nearby beacon or saved event to share as a card.
-struct BeaconSharePicker: View {
-    @Environment(AppEnvironment.self) private var env
-    @Environment(\.dismiss) private var dismiss
-    let onPick: (MapBeacon) -> Void
-
-    @State private var beacons: [MapBeacon] = []
-    @State private var loaded = false
-
-    var body: some View {
-        NavigationStack {
-            List(beacons) { beacon in
-                Button {
-                    onPick(beacon)
-                    dismiss()
-                } label: {
-                    HStack(spacing: 12) {
-                        EventVisual(seed: beacon.id, imageURL: beacon.imageURL, symbol: beacon.kind.systemImage)
-                            .frame(width: 44, height: 44)
-                        VStack(alignment: .leading, spacing: 2) {
-                            Text(beacon.title).foregroundStyle(ClickColors.textPrimary).lineLimit(1)
-                            Text([beacon.kind.label, beacon.schedule.map { EventFormatting.when($0) }, beacon.locationName]
-                                .compactMap { $0 }.joined(separator: " · "))
-                                .font(ClickTypography.supporting)
-                                .foregroundStyle(ClickColors.textSecondary)
-                                .lineLimit(1)
-                        }
-                    }
-                }
-                .buttonStyle(.plain)
-            }
-            .overlay {
-                if loaded, beacons.isEmpty {
-                    ContentUnavailableView("Nothing to share yet", systemImage: "mappin.slash",
-                                           description: Text("Events and beacons near you or saved by you show up here."))
-                } else if !loaded {
-                    ClickLoadingView(size: 34, fillsSpace: false)
-                }
-            }
-            .navigationTitle("Share Event or Beacon")
-            .navigationBarTitleDisplayMode(.inline)
-            .toolbar { ToolbarItem(placement: .cancellationAction) { Button("Cancel") { dismiss() } } }
-            .task { await load() }
-        }
-        .presentationDetents([.medium, .large])
-    }
-
-    private func load() async {
-        defer { loaded = true }
-        guard let userID = env.session.currentSession?.userId else { return }
-        var result = (await env.beacons.cachedDiscovery(userID: userID))?.beacons.filter { $0.isActive() } ?? []
-        // Saved events are resolved to full beacons so the card carries real fields.
-        let saved = (try? await env.beacons.bookmarks(userID: userID)) ?? []
-        for event in saved.prefix(10) where event.isAvailable && !result.contains(where: { $0.id == event.beaconID }) {
-            if let full = try? await env.beacons.beacon(id: event.beaconID).beacon { result.append(full) }
-        }
-        beacons = result.sorted { ($0.isEvent ? 0 : 1, $0.title) < ($1.isEvent ? 0 : 1, $1.title) }
     }
 }
 

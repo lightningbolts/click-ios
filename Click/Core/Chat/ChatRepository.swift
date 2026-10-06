@@ -752,10 +752,17 @@ public actor ChatRepository: ChatRepositoryProtocol {
             if let currentEpoch = state.currentEpoch, mismatch {
                 do {
                     try await createEpoch(scope, identity: identity, devices: devices, epoch: currentEpoch + 1)
+                    state = try await fetchEpochState(scope, deviceID: identity.info.deviceID)
                 } catch APIError.conflict(_) {
-                    // A peer device can rotate first; fresh state below is authoritative.
+                    // A peer device can rotate first; fresh state is authoritative.
+                    state = try await fetchEpochState(scope, deviceID: identity.info.deviceID)
+                } catch {
+                    // A rotation the server refuses must not block sending: the current epoch is
+                    // still valid, and the server's write gate rejects it if it no longer covers
+                    // every active device. Failing here broke every send after the reuse window.
+                    if error.isCancellation { throw error }
+                    ClickLog.net.error("epoch rotation for \(scope.cacheKey, privacy: .private) failed: \(String(describing: error), privacy: .public)")
                 }
-                state = try await fetchEpochState(scope, deviceID: identity.info.deviceID)
             }
         }
 
@@ -869,7 +876,11 @@ public actor ChatRepository: ChatRepositoryProtocol {
         epoch: Int
     ) async throws {
         let epochKey = try ClickCryptoV2.generateEpochKey()
-        let envelopes: [[String: Any]] = try devices.map { recipient in
+        // One phone signed into several member accounts lists the same device (same key) once per
+        // account; the server stores one wrap for all of them.
+        var seen = Set<String>()
+        let recipients = devices.filter { seen.insert($0.deviceID).inserted }
+        let envelopes: [[String: Any]] = try recipients.map { recipient in
             let wire = try ClickCryptoV2.wrapEpochKey(
                 metadata: .init(
                     chatId: scope.id,

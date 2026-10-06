@@ -7,7 +7,7 @@ import Foundation
 /// altimeter and a 25 Hz device-motion stream, keeps small in-memory buffers of this phone's
 /// own readings, and at the connection moment hands back everything around that instant.
 /// Nothing outlives the flow: `stop()` (and the idle cap) end every sensor and drop the buffers.
-/// The one exception is an altimeter explicitly handed off to `EncounterAltitudeFollowUp`,
+/// The one exception is an altimeter explicitly handed off to `EncounterFollowUp`,
 /// which stops it within seconds.
 ///
 /// Never prompts. Callers start location only after Location snap and When-In-Use permission

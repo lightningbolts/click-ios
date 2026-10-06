@@ -124,33 +124,11 @@ struct NearbyListView: View {
     }
 
     private var searchField: some View {
-        HStack(spacing: 8) {
-            Image(systemName: "magnifyingglass")
-                .foregroundStyle(ClickColors.textTertiary)
-            TextField("Search places, events, people", text: $query)
-                .focused($isSearching)
-                .submitLabel(.search)
-                .autocorrectionDisabled()
-                .foregroundStyle(ClickColors.textPrimary)
-            if !query.isEmpty {
-                Button {
-                    query = ""
-                } label: {
-                    Image(systemName: "xmark.circle.fill")
-                        .foregroundStyle(ClickColors.textTertiary)
-                }
-                .buttonStyle(.plain)
-                .accessibilityLabel("Clear search")
+        FilterSearchField(prompt: "Search places, events, people", text: $query, isFocused: $isSearching)
+            .onChange(of: isSearching) { _, searching in
+                // Room for results above the keyboard.
+                if searching { model.nearbyDetent = .large }
             }
-        }
-        .font(ClickTypography.body)
-        .padding(.horizontal, 14)
-        .frame(minHeight: ClickMetrics.searchMinHeight)
-        .background(ClickColors.fillSubtle, in: Capsule())
-        .onChange(of: isSearching) { _, searching in
-            // Room for results above the keyboard.
-            if searching { model.nearbyDetent = .large }
-        }
     }
 
     private var trimmedQuery: String { query.trimmingCharacters(in: .whitespacesAndNewlines) }
@@ -252,16 +230,8 @@ struct NearbyListView: View {
                             .overlay(alignment: .bottom) {
                                 if !isLast { Divider().padding(.leading, NearbyRow.thumbnailSize + 28) }
                             }
-                            // Each row draws its slice of the section's card. A translucent fill,
-                            // not an opaque surface: it reads the same over the sheet's glass at
-                            // the medium height as over its solid full height.
-                            .background(ClickColors.fillSubtle, in: UnevenRoundedRectangle(
-                                topLeadingRadius: isFirst ? ClickRadius.surface : 0,
-                                bottomLeadingRadius: isLast ? ClickRadius.surface : 0,
-                                bottomTrailingRadius: isLast ? ClickRadius.surface : 0,
-                                topTrailingRadius: isFirst ? ClickRadius.surface : 0,
-                                style: .continuous
-                            ))
+                            // Each row draws its slice of the section's card.
+                            .groupedRowSlice(isFirst: isFirst, isLast: isLast)
                         }
                     } header: {
                         Text(section.title)
