@@ -20,6 +20,34 @@ struct NearbyMapTests {
         #expect(zoomedOut.contains { $0.items.count == 2 })
     }
 
+    @Test("Nearby rows read for every beacon kind, not only events")
+    @MainActor
+    func beaconRows() throws {
+        let now = Date(timeIntervalSince1970: 1_800_000_000)
+        func beacon(_ type: String, meta: [String: Any] = [:], created: TimeInterval? = nil, expires: TimeInterval? = nil) throws -> MapItem {
+            var row: [String: Any] = ["id": type, "lat": 47.6, "lng": -122.3, "beacon_type": type, "metadata": meta]
+            if let created { row["created_at"] = ISO8601DateFormatter().string(from: now.addingTimeInterval(created)) }
+            if let expires { row["expires_at"] = ISO8601DateFormatter().string(from: now.addingTimeInterval(expires)) }
+            return MapItem(kind: .beacon(try #require(MapBeacon.decode(row))))
+        }
+
+        let hazard = NearbyRow.eyebrow(try beacon("hazard", expires: 40 * 60), now: now)
+        #expect(hazard.tone == .alert)
+        #expect(hazard.text.hasPrefix("Hazard · ends "))
+        #expect(NearbyRow.eyebrow(try beacon("sos", created: -600), now: now).tone == .live)
+        let study = NearbyRow.eyebrow(try beacon("study", created: -2 * 3600, expires: 3 * 24 * 3600), now: now)
+        #expect(study.tone == .plain)
+        #expect(study.text.hasPrefix("Study · ") && study.text.contains("ago"))
+        #expect(NearbyRow.eyebrow(try beacon("utility"), now: now).text == "Utility")
+
+        // A soundtrack leads with its artist; a legacy "Current location" label shows the address.
+        let song = try beacon("soundtrack", meta: ["artist_name": "Phoebe Bridgers", "location_name": "Suzzallo"])
+        #expect(NearbyRow.place(song) == "Phoebe Bridgers · Suzzallo")
+        let legacy = try beacon("hazard", meta: ["location_name": "Current location", "formatted_address": "4215 E Stevens Way NE"])
+        #expect(NearbyRow.place(legacy) == "4215 E Stevens Way NE")
+        #expect(NearbyRow.place(try beacon("other")) == nil)
+    }
+
     @Test("Pins at the same venue are offered in the chooser; distant ones are not")
     func overlap() {
         let a = pin("a", 47.6200, -122.3200)

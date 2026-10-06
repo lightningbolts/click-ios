@@ -305,7 +305,7 @@ struct NearbyListView: View {
 
 /// One place, event or person: a large thumbnail, then when (in the accent while it's live or
 /// today), the title, and where, how far and how many are going.
-private struct NearbyRow: View {
+struct NearbyRow: View {
     let item: MapItem
     let origin: CLLocationCoordinate2D?
 
@@ -317,14 +317,13 @@ private struct NearbyRow: View {
             MapItemThumbnail(item: item, size: Self.thumbnailSize, cornerRadius: 14)
             VStack(alignment: .leading, spacing: 3) {
                 HStack(spacing: 5) {
-                    if eyebrow.isLive {
+                    if eyebrow.tone == .live {
                         Circle().fill(ClickColors.destructive).frame(width: 6, height: 6)
                     }
                     Text(eyebrow.text).lineLimit(1)
                 }
                 .font(ClickTypography.metadataEmphasized)
-                .foregroundStyle(eyebrow.isLive ? ClickColors.destructive
-                                 : eyebrow.isSoon ? ClickColors.accentForeground : ClickColors.textTertiary)
+                .foregroundStyle(eyebrow.tone.color)
                 Text(item.title)
                     .font(ClickTypography.bodyEmphasized)
                     .foregroundStyle(ClickColors.textPrimary)
@@ -366,36 +365,88 @@ private struct NearbyRow: View {
             .formatted(.measurement(width: .abbreviated, usage: .road, numberFormatStyle: .number.precision(.fractionLength(0...1))))
     }
 
-    /// The line over the title: when an event is ("Live · until 10 PM", "Tomorrow · 12:00 – 1:30 PM"),
-    /// else what the item is.
-    static func eyebrow(_ item: MapItem, now: Date = .now) -> (text: String, isLive: Bool, isSoon: Bool) {
+    /// The line over the title and how loud it is.
+    struct Eyebrow: Equatable {
+        enum Tone: Equatable {
+            /// Happening now (a live event or Place, an SOS): red, with a dot.
+            case live
+            /// Needs a look (a hazard): the warning color.
+            case alert
+            /// Later today: the accent.
+            case soon
+            case plain
+
+            var color: Color {
+                switch self {
+                case .live: ClickColors.destructive
+                case .alert: ClickColors.warning
+                case .soon: ClickColors.accentForeground
+                case .plain: ClickColors.textTertiary
+                }
+            }
+        }
+
+        let text: String
+        let tone: Tone
+    }
+
+    /// When an event is ("Live · until 10 PM", "Tomorrow · 12:00 – 1:30 PM"); for any other beacon,
+    /// what it is and how fresh ("Hazard · ends in 40 min", "Soundtrack · 2 hr. ago"); else what
+    /// the item is.
+    static func eyebrow(_ item: MapItem, now: Date = .now) -> Eyebrow {
         switch item.kind {
         case .beacon(let beacon):
-            guard beacon.isEvent, let schedule = beacon.schedule else { return (beacon.kind.label, false, false) }
-            if schedule.isLive(at: now) {
-                return ("Live · until \(schedule.end.formatted(date: .omitted, time: .shortened))", true, false)
+            if beacon.isEvent, let schedule = beacon.schedule {
+                if schedule.isLive(at: now) {
+                    return Eyebrow(text: "Live · until \(schedule.end.formatted(date: .omitted, time: .shortened))", tone: .live)
+                }
+                return Eyebrow(text: EventFormatting.when(schedule, now: now), tone: schedule.startsToday(at: now) ? .soon : .plain)
             }
-            return (EventFormatting.when(schedule, now: now), false, schedule.startsToday(at: now))
+            let tone: Eyebrow.Tone = switch beacon.kind {
+            case .sos: .live
+            case .hazard: .alert
+            default: .plain
+            }
+            return Eyebrow(text: ([beacon.kind.label] + [freshness(beacon, now: now)].compactMap { $0 }).joined(separator: " · "), tone: tone)
         case .hub:
-            return ("Hub", false, false)
+            return Eyebrow(text: "Hub", tone: .plain)
         case .person:
-            return ("Your Click", false, false)
+            return Eyebrow(text: "Your Click", tone: .plain)
         case .hangout(let hangout):
-            return ("Plan · " + PlanCardView.whenText(hangout.plan.startsAt, until: hangout.plan.endsAt), false, false)
+            return Eyebrow(text: "Plan · " + PlanCardView.whenText(hangout.plan.startsAt, until: hangout.plan.endsAt), tone: .plain)
         case .place(let place):
             let live = place.pulse.state == .live || place.nextEvent?.isLive == true
-            return (PlaceCopy.mapSubtitle(place, now: now), live, false)
+            return Eyebrow(text: PlaceCopy.mapSubtitle(place, now: now), tone: live ? .live : .plain)
         }
+    }
+
+    /// A short-lived beacon's ending within the day ("ends in 40 min"), else when it was posted.
+    static func freshness(_ beacon: MapBeacon, now: Date = .now) -> String? {
+        let formatter = RelativeDateTimeFormatter()
+        formatter.unitsStyle = .abbreviated
+        if let expiresAt = beacon.expiresAt, expiresAt > now, expiresAt.timeIntervalSince(now) < 24 * 3600 {
+            return "ends " + formatter.localizedString(for: expiresAt, relativeTo: now)
+        }
+        return beacon.createdAt.flatMap { $0 > now ? nil : formatter.localizedString(for: $0, relativeTo: now) }
     }
 
     /// Where it is, in words.
     static func place(_ item: MapItem) -> String? {
         switch item.kind {
-        case .beacon(let beacon): beacon.locationName ?? beacon.formattedAddress
-        case .hub: nil
-        case .person(let pin): pin.locationName.map { "Met at \($0)" }
-        case .hangout(let hangout): hangout.plan.placeName
-        case .place(let place): place.addressLine ?? place.city
+        case .beacon(let beacon):
+            // Legacy beacons were saved with the label "Current location": show the address instead.
+            let place = BeaconDetailView.needsReverseGeocode(beacon) ? beacon.formattedAddress : beacon.locationName
+            // A soundtrack leads with who's playing.
+            let artist = beacon.kind == .soundtrack ? beacon.artistName?.nonEmptyTrimmed : nil
+            return [artist, place].compactMap { $0 }.joined(separator: " · ").nonEmptyTrimmed
+        case .hub:
+            return nil
+        case .person(let pin):
+            return pin.locationName.map { "Met at \($0)" }
+        case .hangout(let hangout):
+            return hangout.plan.placeName
+        case .place(let place):
+            return place.addressLine ?? place.city
         }
     }
 }
