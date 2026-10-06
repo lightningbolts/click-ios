@@ -4,11 +4,12 @@ import Testing
 
 @Suite("Events: Click Pass, Live Activity, weather, Place hosts")
 struct EventExtrasTests {
-    @Test("click://pass/{id} opens the Click Pass on the Map tab; the pass's web link opens the event")
+    @Test("click://pass/{id} opens the Click Pass on the Map tab, …/scan the host's scanner; the pass's web link opens the event")
     @MainActor
     func passRoutes() {
         let router = AppRouter()
         #expect(router.parseIncomingURL(URL(string: "click://pass/e1")!) == .eventPass(beaconID: "e1"))
+        #expect(router.parseIncomingURL(URL(string: "click://pass/e1/scan")!) == .passScanner(beaconID: "e1"))
         #expect(AppRoute.eventPass(beaconID: "e1").canonicalTab == .map)
         #expect(AppRoute.passScanner(beaconID: "e1").presentsAsSheet == false)
         // A Click Pass QR read by the system camera is the event's public link.

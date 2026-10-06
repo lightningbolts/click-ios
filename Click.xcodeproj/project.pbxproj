@@ -322,6 +322,7 @@
 		B3631E3C57A90010DE50EFA0 /* EventLiveActivity.swift in Sources */ = {isa = PBXBuildFile; fileRef = C343EFD7B3AE41314F9C4CDC /* EventLiveActivity.swift */; };
 		BB499F6D99E1B13FA00C826D /* EventActivityAttributes.swift in Sources */ = {isa = PBXBuildFile; fileRef = 874241FC58ACF0315609A5A6 /* EventActivityAttributes.swift */; };
 		3EEFE086844997FB92D810D8 /* ClickWidgets.appex in Embed Foundation Extensions */ = {isa = PBXBuildFile; fileRef = FB4B30C16B773317ABEB3E62 /* ClickWidgets.appex */; settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
+		8A26A5333A92050BC83A1CFE /* ClickFlyerTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3A0DF380B4CF8E9CE99A6FE2 /* ClickFlyerTests.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -701,6 +702,7 @@
 		F5DB3BC045F7C76231AB217F /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist; path = Info.plist; sourceTree = "<group>"; };
 		B6129A521B124384FDD74AC5 /* ClickWidgetsBundle.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ClickWidgetsBundle.swift; sourceTree = "<group>"; };
 		C343EFD7B3AE41314F9C4CDC /* EventLiveActivity.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = EventLiveActivity.swift; sourceTree = "<group>"; };
+		3A0DF380B4CF8E9CE99A6FE2 /* ClickFlyerTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ClickFlyerTests.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXGroup section */
@@ -1032,6 +1034,7 @@
 				AB9A71018D3F776F0EF48368 /* ClickCryptoTests.swift */,
 				E48DD112855D186C03848B60 /* ClickDropDevelopTests.swift */,
 				C617AC86021B01BE0BE320EA /* ClickDropTests.swift */,
+				3A0DF380B4CF8E9CE99A6FE2 /* ClickFlyerTests.swift */,
 				74BFF7B0D6FD295C17BDCAFD /* ClicksInboxTests.swift */,
 				A56AFA878309955840844A51 /* ConnectionLocationQualityTests.swift */,
 				DB47F26DF4D3A5B7A279362B /* ConnectionSensorObservationTests.swift */,
@@ -2053,6 +2056,7 @@
 				1A5711493067F5BC9BDF30F1 /* ShellNavigationTests.swift in Sources */,
 				ADFB16FA877CFBED2013DF5F /* TelemetryTests.swift in Sources */,
 				276FA808D3BA3E406538BF04 /* EventExtrasTests.swift in Sources */,
+				8A26A5333A92050BC83A1CFE /* ClickFlyerTests.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};

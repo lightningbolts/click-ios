@@ -146,6 +146,7 @@ struct RoutedSheetStack<Root: View>: View {
             root.appRouteDestinations()
         }
         .environment(\.isInSheet, true)
+        .environment(\.isSheetCollapsed, detent != .large)
         .onChange(of: path) { old, new in
             if new.count > old.count, new.last?.presentsAsSheet == false { detent = .large }
         }
@@ -157,6 +158,9 @@ struct RoutedSheetStack<Root: View>: View {
 extension EnvironmentValues {
     /// Set on a sheet's navigation stack; its screens leave the tab bar underneath alone.
     @Entry var isInSheet = false
+    /// The sheet is swiped down to its smaller detent: its screens are half off screen, so
+    /// anything held only while they're in view (a QR's full brightness) lets go.
+    @Entry var isSheetCollapsed = false
 }
 
 extension View {
