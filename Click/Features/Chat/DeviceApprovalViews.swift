@@ -12,13 +12,20 @@ struct DeviceApprovalSheet: View {
     @State private var phase: Phase = .asking
 
     private var deviceName: String { approval.deviceLabel ?? "device" }
+    /// Browsers name themselves ("Chrome on Mac"); the apps name the device ("iPhone").
+    private var isBrowser: Bool {
+        guard let label = approval.deviceLabel else { return false }
+        return label == "Web browser" || label.contains(" on ")
+    }
 
     private var symbol: String {
-        switch approval.deviceLabel?.lowercased() {
-        case "ipad": "ipad"
-        case "web browser": "laptopcomputer"
-        default: "iphone"
+        let label = approval.deviceLabel?.lowercased() ?? ""
+        if label == "ipad" { return "ipad" }
+        // Browsers say what they are ("Chrome on Mac"); a phone's browser still shows a phone.
+        if label == "web browser" || label.contains(" on ") {
+            return label.hasSuffix(" on iphone") || label.hasSuffix(" on android") ? "iphone" : "laptopcomputer"
         }
+        return "iphone"
     }
 
     var body: some View {
@@ -55,9 +62,11 @@ struct DeviceApprovalSheet: View {
         .interactiveDismissDisabled(phase == .approving || phase == .denying)
     }
 
-    /// "An iPhone", "A web browser", or "A new device" when an older build didn't say.
+    /// "An iPhone", "A web browser", "Chrome on Mac" (browsers name themselves), or "A new
+    /// device" when an older build didn't say.
     static func withArticle(_ label: String?) -> String {
         guard let label, let first = label.first else { return "A new device" }
+        if label.contains(" on ") { return label }
         let name = label == "Web browser" ? "web browser" : label
         return ("aeiou".contains(first.lowercased()) ? "An " : "A ") + name
     }
@@ -73,9 +82,13 @@ struct DeviceApprovalSheet: View {
     private var detail: String {
         switch phase {
         case .approved:
-            return "Your past messages will appear on your \(deviceName) in a moment."
+            if isBrowser, let label = approval.deviceLabel, label.contains(" on ") {
+                let place = label.replacingOccurrences(of: " on ", with: " on your ")
+                return "Your past messages will appear in \(place) in a moment."
+            }
+            return "Your past messages will appear on your \(isBrowser ? "browser" : deviceName) in a moment."
         case .denied:
-            return "That \(deviceName) can't read your past messages. If you didn't sign in, change your password in Settings."
+            return "That \(isBrowser ? "browser" : deviceName) can't read your past messages. If you didn't sign in, change your password in Settings."
         case .failed(let message):
             return message
         default:
