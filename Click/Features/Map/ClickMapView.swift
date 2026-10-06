@@ -10,7 +10,6 @@ public struct ClickMapView: View {
     @Environment(\.scenePhase) private var scenePhase
     @State private var model = MapFeatureModel()
     @State private var creating = false
-    @State private var mapCenter: CLLocationCoordinate2D?
     /// The tab bar's inset, held while a screen is pushed: a pushed screen hides the tab bar and
     /// the map root's safe area briefly loses it (during the back-swipe too), and holding it
     /// keeps the lip and buttons from dropping and jumping back. Otherwise it follows the real
@@ -170,7 +169,7 @@ public struct ClickMapView: View {
             .presentationDragIndicator(.visible)
         }
         .sheet(isPresented: $creating) {
-            CreateBeaconSheet(fallback: mapCenter) { beacon in
+            CreateBeaconSheet(fallback: model.visibleCenter) { beacon in
                 model.refresh()
                 env.router.navigate(to: beacon.isEvent ? .event(beaconID: beacon.id) : .beacon(beaconID: beacon.id))
             }
@@ -227,7 +226,6 @@ public struct ClickMapView: View {
         .onMapCameraChange(frequency: .onEnd) { context in
             model.cameraSettled(center: context.region.center, latitudeDelta: context.region.span.latitudeDelta)
             env.friction.recordPan()
-            mapCenter = context.region.center
         }
     }
 
@@ -401,7 +399,8 @@ private struct MapPinView: View {
                 AvatarView(imageURL: pin.avatarURL, seed: pin.userID, initials: pin.initials, size: 40)
                     .overlay(Circle().stroke(.white, lineWidth: 3))
             case .beacon(let beacon):
-                EventVisual(seed: beacon.id, imageURL: beacon.imageURL, symbol: beacon.kind.systemImage, cornerRadius: 12)
+                EventVisual(seed: beacon.id, imageURL: beacon.imageURL, symbol: beacon.kind.systemImage, cornerRadius: 12,
+                            maxPixelSize: EventVisual.thumbnailPixelSize)
                     .frame(width: 40, height: 40)
                     .overlay(RoundedRectangle(cornerRadius: 12, style: .continuous).stroke(.white, lineWidth: 3))
                 if beacon.schedule?.isLive() == true {

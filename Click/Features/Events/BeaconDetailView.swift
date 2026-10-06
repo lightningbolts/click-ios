@@ -26,6 +26,8 @@ struct BeaconDetailView: View {
     @State private var hasLoaded = false
     /// Scrolled past the hero: the bar shows the title (like a profile's compact name).
     @State private var showsCompactTitle = false
+    /// Where the large title ends, down the page's scroll content: once scrolled past, the bar shows it.
+    @State private var titleBottom: CGFloat = .infinity
     @State private var checkInPending = false
     @State private var notice: String?
     /// Album art resolved on device for a soundtrack the server couldn't enrich.
@@ -88,122 +90,125 @@ struct BeaconDetailView: View {
 
     // MARK: - Content
 
+    private static let page = "eventPage"
+
     private func content(_ beacon: MapBeacon) -> some View {
-        ScrollView {
-            VStack(alignment: .leading, spacing: 0) {
-                // Full-bleed hero (prototype event sheet); uploaded image overrides the pattern.
-                EventVisual(seed: beacon.id, imageURL: beacon.imageURL ?? resolvedArtwork, symbol: beacon.kind.systemImage, cornerRadius: 0)
+        let titleBottom = titleBottom
+        return ScrollView {
+            VStack(alignment: .leading, spacing: 20) {
+                // Inset and whole, at the picture's own shape (a poster is never cropped to a
+                // banner); the uploaded image overrides the generated pattern.
+                EventHero(seed: beacon.id, imageURL: beacon.imageURL ?? resolvedArtwork, symbol: beacon.kind.systemImage)
                     .id(beacon.imageURL ?? resolvedArtwork)
-                    .frame(height: 250)
-                    .frame(maxWidth: .infinity)
-                    .clipped()
 
-                VStack(alignment: .leading, spacing: 18) {
+                VStack(alignment: .leading, spacing: 10) {
                     pills(beacon)
-                    VStack(alignment: .leading, spacing: 8) {
-                        Text(beacon.title)
-                            .font(ClickTypography.identityTitle)
-                            .foregroundStyle(ClickColors.textPrimary)
-                            .fixedSize(horizontal: false, vertical: true)
-                        hostLine(beacon)
-                    }
-
+                    Text(beacon.title)
+                        .font(ClickTypography.identityTitle)
+                        .foregroundStyle(ClickColors.textPrimary)
+                        .fixedSize(horizontal: false, vertical: true)
+                        .onGeometryChange(for: CGFloat.self, of: { $0.frame(in: .named(Self.page)).maxY }) { titleBottom = $0 }
+                    hostLine(beacon)
+                    if let schedule = beacon.schedule { whenLine(schedule) }
                     if isExpired {
                         Label("This has ended.", systemImage: "clock.badge.xmark")
                             .font(ClickTypography.supporting)
                             .foregroundStyle(ClickColors.textSecondary)
                     }
+                }
 
-                    if beacon.isEvent {
+                if beacon.isEvent {
+                    VStack(spacing: 10) {
                         if beacon.rsvpEnabled != false, !isExpired { rsvpButton(beacon) }
                         eventActionRow(beacon)
-                        LocationNudgeCard(
-                            nudge: .businessInsights,
-                            systemImage: "chart.bar.xaxis",
-                            title: "Help this venue host better events",
-                            message: "Clicks you make here join the venue's anonymous count of how many people actually meet at its events. Venues use it to bring back the events where people connect, so you get more of them. Click never shares who you are or who you met.",
-                            acceptTitle: "Count me in",
-                            isRelevant: engagement.value?.checkedIn == true
-                        )
-                    } else {
-                        beaconActions(beacon)
                     }
+                    LocationNudgeCard(
+                        nudge: .businessInsights,
+                        systemImage: "chart.bar.xaxis",
+                        title: "Help this venue host better events",
+                        message: "Clicks you make here join the venue's anonymous count of how many people actually meet at its events. Venues use it to bring back the events where people connect, so you get more of them. Click never shares who you are or who you met.",
+                        acceptTitle: "Count me in",
+                        isRelevant: engagement.value?.checkedIn == true
+                    )
+                } else {
+                    beaconActions(beacon)
+                }
 
-                    if beacon.kind == .hazard, !isExpired, env.features.isEnabled(.alertConfirmations) {
-                        AlertConfirmationSection(beacon: beacon) {
-                            withAnimation(ClickMotion.content) { isExpired = true }
-                        }
-                    }
-
-                    if beacon.kind == .soundtrack {
-                        SoundtrackBeaconSection(beacon: beacon) { art in
-                            withAnimation(ClickMotion.subtleFade) { resolvedArtwork = art }
-                        }
-                        if !isExpired, env.features.isEnabled(.soundtrackPresence) {
-                            ListeningNowSection(beacon: beacon)
-                        }
-                    }
-
-                    infoCard(beacon)
-
-                    if let description = beacon.description, !description.isEmpty {
-                        VStack(alignment: .leading, spacing: 10) {
-                            sectionHeader("About")
-                            Text(Self.markdown(description))
-                                .font(ClickTypography.body)
-                                .foregroundStyle(ClickColors.textSecondary)
-                                .tint(ClickColors.accentForeground)
-                                .textSelection(.enabled)
-                                .frame(maxWidth: .infinity, alignment: .leading)
-                                .padding(.horizontal, 16)
-                                .padding(.vertical, 14)
-                                .detailCard()
-                        }
-                    }
-
-                    if beacon.isEvent, env.features.isEnabled(.eventDrops) {
-                        EventDropsSection(beacon: beacon)
-                    }
-
-                    if beacon.isEvent { peoplePreview }
-
-                    if beacon.creatorID == env.session.currentSession?.userId {
-                        VStack(alignment: .leading, spacing: 10) {
-                            sectionHeader("Hosting")
-                            VStack(spacing: 0) {
-                                if beacon.isEvent {
-                                    NavigationLink(value: AppRoute.guestList(beaconID: beacon.id)) {
-                                        infoRow(systemImage: "list.bullet.rectangle", title: "Guest list", subtitle: nil, chevron: true)
-                                    }
-                                    Divider().padding(.leading, 56)
-                                }
-                                Button { editingBeacon = true } label: {
-                                    infoRow(systemImage: "pencil", title: beacon.isEvent ? "Edit event" : "Edit beacon", subtitle: nil)
-                                }
-                                Divider().padding(.leading, 56)
-                                Button { confirmDelete = true } label: {
-                                    infoRow(systemImage: "trash", title: beacon.isEvent ? "Delete event" : "Delete beacon",
-                                            subtitle: nil, tint: ClickColors.destructive)
-                                }
-                            }
-                            .buttonStyle(.plain)
-                            .detailCard()
-                        }
+                if beacon.kind == .hazard, !isExpired, env.features.isEnabled(.alertConfirmations) {
+                    AlertConfirmationSection(beacon: beacon) {
+                        withAnimation(ClickMotion.content) { isExpired = true }
                     }
                 }
-                .padding(.horizontal, 20)
-                .padding(.top, 16)
-                .padding(.bottom, 32)
+
+                if beacon.kind == .soundtrack {
+                    SoundtrackBeaconSection(beacon: beacon) { art in
+                        withAnimation(ClickMotion.subtleFade) { resolvedArtwork = art }
+                    }
+                    if !isExpired, env.features.isEnabled(.soundtrackPresence) {
+                        ListeningNowSection(beacon: beacon)
+                    }
+                }
+
+                locationSection(beacon)
+
+                if beacon.isEvent { peopleSection(beacon) }
+
+                if let description = beacon.description, !description.isEmpty {
+                    VStack(alignment: .leading, spacing: 10) {
+                        sectionHeader("About")
+                        Text(Self.markdown(description))
+                            .font(ClickTypography.body)
+                            .foregroundStyle(ClickColors.textSecondary)
+                            .tint(ClickColors.accentForeground)
+                            .textSelection(.enabled)
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                            .padding(.horizontal, 16)
+                            .padding(.vertical, 14)
+                            .detailCard()
+                    }
+                }
+
+                if beacon.isEvent, env.features.isEnabled(.eventDrops) {
+                    EventDropsSection(beacon: beacon)
+                }
+
+                if beacon.creatorID == env.session.currentSession?.userId {
+                    VStack(alignment: .leading, spacing: 10) {
+                        sectionHeader("Hosting")
+                        VStack(spacing: 0) {
+                            if beacon.isEvent {
+                                NavigationLink(value: AppRoute.guestList(beaconID: beacon.id)) {
+                                    infoRow(systemImage: "list.bullet.rectangle", title: "Guest list", subtitle: nil, chevron: true)
+                                }
+                                Divider().padding(.leading, 56)
+                            }
+                            Button { editingBeacon = true } label: {
+                                infoRow(systemImage: "pencil", title: beacon.isEvent ? "Edit event" : "Edit beacon", subtitle: nil)
+                            }
+                            Divider().padding(.leading, 56)
+                            Button { confirmDelete = true } label: {
+                                infoRow(systemImage: "trash", title: beacon.isEvent ? "Delete event" : "Delete beacon",
+                                        subtitle: nil, tint: ClickColors.destructive)
+                            }
+                        }
+                        .buttonStyle(.plain)
+                        .detailCard()
+                    }
+                }
             }
+            .padding(.horizontal, 20)
+            .padding(.top, 8)
+            .padding(.bottom, 32)
+            .coordinateSpace(.named(Self.page))
         }
-        .ignoresSafeArea(edges: .top)
         .heroBar(clear: !showsCompactTitle)
         .onScrollGeometryChange(for: Bool.self) { geometry in
-            geometry.contentOffset.y + geometry.contentInsets.top > 210
-        } action: { _, pastHero in
-            withAnimation(ClickMotion.subtleFade) { showsCompactTitle = pastHero }
+            geometry.contentOffset.y + geometry.contentInsets.top > titleBottom
+        } action: { _, pastTitle in
+            withAnimation(ClickMotion.subtleFade) { showsCompactTitle = pastTitle }
         }
-        .background(ClickColors.surface)
+        // The event's own colors wash the top of the page, under the bar and around the hero.
+        .background { EventBackdrop(seed: beacon.id, imageURL: beacon.imageURL ?? resolvedArtwork).ignoresSafeArea() }
         .sheet(isPresented: $sharingToChat) {
             ShareToChatSheet(beacon: beacon)
         }
@@ -377,68 +382,95 @@ struct BeaconDetailView: View {
 
     private func iconAction(_ title: String, systemImage: String, tint: Color? = nil, busy: Bool = false, action: @escaping () -> Void) -> some View {
         Button(action: action) {
-            VStack(spacing: 8) {
+            VStack(spacing: 6) {
                 ZStack {
                     if busy { ProgressView() } else {
-                        Image(systemName: systemImage).font(.system(size: 22, weight: .regular))
+                        Image(systemName: systemImage).font(.system(size: 20, weight: .medium))
                     }
                 }
-                .frame(height: 26)
-                Text(title).font(ClickTypography.supporting)
+                .frame(height: 24)
+                Text(title)
+                    .font(ClickTypography.supportingEmphasized)
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.8)
             }
             .foregroundStyle(tint ?? ClickColors.textPrimary)
-            .frame(maxWidth: .infinity, minHeight: 76)
-            .overlay {
-                // Outlined, like the page's other controls; a tinted state tints its outline too.
-                RoundedRectangle(cornerRadius: 20, style: .continuous)
-                    .strokeBorder(tint?.opacity(0.6) ?? ClickColors.separator, lineWidth: 1.5)
-            }
-            .contentShape(RoundedRectangle(cornerRadius: 20, style: .continuous))
+            .padding(.horizontal, 6)
+            .frame(maxWidth: .infinity, minHeight: 68)
+            // Filled tiles; a tinted state (checked in) tints its tile too.
+            .background(tint?.opacity(0.16) ?? ClickColors.fillSubtle,
+                        in: RoundedRectangle(cornerRadius: 18, style: .continuous))
+            .contentShape(RoundedRectangle(cornerRadius: 18, style: .continuous))
         }
         .buttonStyle(.plain)
     }
 
-    // MARK: - Info card (time · place · people)
+    // MARK: - When · where · who
 
-    private func infoCard(_ beacon: MapBeacon) -> some View {
-        VStack(spacing: 0) {
-            if let schedule = beacon.schedule {
-                infoRow(systemImage: "clock", title: EventFormatting.when(schedule), subtitle: whenSubtitle(schedule))
-                    .task { await env.calendar.refresh() }
-                Divider().padding(.leading, 56)
+    /// "Tomorrow · 12:00 – 1:30 PM", then how it sits: "Starts in 14 hours · You're free then".
+    private func whenLine(_ schedule: EventSchedule) -> some View {
+        VStack(alignment: .leading, spacing: 2) {
+            Text(EventFormatting.when(schedule))
+                .font(.title3)
+                .foregroundStyle(ClickColors.textSecondary)
+            if let subtitle = whenSubtitle(schedule) {
+                Text(subtitle)
+                    .font(ClickTypography.supporting)
+                    .foregroundStyle(ClickColors.textTertiary)
             }
+        }
+        .accessibilityElement(children: .combine)
+        .task { await env.calendar.refresh() }
+    }
+
+    /// The place, its address and a map of it, all opening it on Click's map; then the Click
+    /// Place hosting it, when there is one.
+    private func locationSection(_ beacon: MapBeacon) -> some View {
+        VStack(alignment: .leading, spacing: 10) {
+            sectionHeader("Location")
             Button {
                 env.router.showOnMap(.place(beacon.id))
             } label: {
                 let label = Self.displayPlace(beacon, resolved: resolvedPlace)
-                infoRow(
-                    systemImage: "mappin.and.ellipse",
-                    title: label.title ?? "Show on map",
-                    subtitle: label.subtitle,
-                    chevron: true
-                )
+                VStack(alignment: .leading, spacing: 0) {
+                    HStack(spacing: 8) {
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text(label.title ?? "Show on map")
+                                .font(ClickTypography.bodyEmphasized)
+                                .foregroundStyle(ClickColors.textPrimary)
+                            if let subtitle = label.subtitle {
+                                Text(subtitle)
+                                    .font(ClickTypography.supporting)
+                                    .foregroundStyle(ClickColors.textSecondary)
+                            }
+                        }
+                        .multilineTextAlignment(.leading)
+                        Spacer(minLength: 0)
+                        Image(systemName: "chevron.right")
+                            .font(.footnote.weight(.semibold))
+                            .foregroundStyle(ClickColors.textTertiary)
+                    }
+                    .padding(.horizontal, 16)
+                    .padding(.vertical, 14)
+                    EventMapPreview(coordinate: beacon.coordinate, title: label.title ?? beacon.title)
+                }
+                .detailCard()
+                .contentShape(RoundedRectangle(cornerRadius: ClickRadius.surface, style: .continuous))
                 .task(id: beacon.id) {
                     guard Self.needsReverseGeocode(beacon), resolvedPlace == nil else { return }
                     resolvedPlace = await PlaceSearchModel.reverseGeocode(beacon.coordinate)
                 }
             }
             .buttonStyle(.plain)
+            .accessibilityHint("Shows it on the map.")
             if let place = Self.placeLink(for: beacon, placesEnabled: env.features.isEnabled(.clickPlaces)) {
-                Divider().padding(.leading, 56)
                 NavigationLink(value: AppRoute.place(idOrSlug: place.id, anchorToken: nil)) {
                     infoRow(systemImage: "building.2", title: "At \(place.name)", subtitle: nil, chevron: true)
                 }
                 .buttonStyle(.plain)
-            }
-            if beacon.isEvent {
-                Divider().padding(.leading, 56)
-                NavigationLink(value: AppRoute.eventPeople(beaconID: beacon.id)) {
-                    infoRow(systemImage: "person.2", title: peopleTitle(beacon), subtitle: peopleSubtitle(beacon), chevron: true)
-                }
-                .buttonStyle(.plain)
+                .detailCard()
             }
         }
-        .detailCard()
     }
 
     /// Every section on the page titles the same way (About, People here, Hosting).
@@ -510,86 +542,71 @@ struct BeaconDetailView: View {
         return count == 1 ? "1 going" : "\(count) going"
     }
 
-    private func peopleSubtitle(_ beacon: MapBeacon) -> String? {
+    private func peopleSubtitle(_ beacon: MapBeacon, mutuals: Int) -> String? {
         var parts: [String] = []
         if let here = engagement.value?.checkInCount, here > 0 { parts.append("\(here) here now") }
+        if mutuals > 0 { parts.append("\(mutuals) mutual\(mutuals == 1 ? "" : "s")") }
         if let scale = beacon.venueScale?.nonEmptyTrimmed { parts.append(scale.prefix(1).uppercased() + scale.dropFirst()) }
-        return parts.isEmpty ? "See who's going" : parts.joined(separator: " · ")
+        return parts.isEmpty ? nil : parts.joined(separator: " · ")
     }
 
-    // MARK: - People here
+    // MARK: - People
 
+    /// "48 going": a few faces and names (your Clicks and best matches first) and how many more,
+    /// opening everyone. While they load, a placeholder holds the section's space.
     @ViewBuilder
-    private var peoplePreview: some View {
-        let others = (people.value?.attendees ?? []).filter { $0.relationship != .self }
-        if others.isEmpty, people.value == nil, (rsvp.value?.count ?? 1) > 0 {
-            // Holds the section's space while people load, so the rest of the page never
-            // jumps down when they arrive.
-            VStack(alignment: .leading, spacing: 10) {
-                sectionHeader("People here", subtitle: "Loading who's going")
-                peopleCard {
-                    ForEach(0..<4, id: \.self) { _ in
-                        VStack(spacing: 6) {
-                            Circle().fill(ClickColors.fillSubtle).frame(width: 60, height: 60)
-                            Capsule().fill(ClickColors.fillSubtle).frame(width: 44, height: 10)
+    private func peopleSection(_ beacon: MapBeacon) -> some View {
+        let others = EventDirectoryView.bestMatch((people.value?.attendees ?? []).filter { $0.relationship != .self })
+        let loading = others.isEmpty && people.value == nil && (rsvp.value?.count ?? 1) > 0
+        let mutuals = others.filter { $0.relationship == .connection || $0.relationship == .mutual }.count
+        VStack(alignment: .leading, spacing: 10) {
+            sectionHeader(peopleTitle(beacon), subtitle: peopleSubtitle(beacon, mutuals: mutuals))
+            NavigationLink(value: AppRoute.eventPeople(beaconID: beacon.id)) {
+                HStack(spacing: 12) {
+                    if loading {
+                        VStack(alignment: .leading, spacing: 10) {
+                            Facepile(people: [], placeholders: 4, more: 0)
+                            Capsule().fill(ClickColors.fillStrong).frame(width: 180, height: 12)
                         }
-                        .frame(width: 66)
-                    }
-                }
-            }
-            .redacted(reason: .placeholder)
-            .accessibilityHidden(true)
-        } else if !others.isEmpty {
-            let ranked = EventDirectoryView.bestMatch(others)
-            let mutuals = others.filter { $0.relationship == .connection || $0.relationship == .mutual }.count
-            VStack(alignment: .leading, spacing: 10) {
-                NavigationLink(value: AppRoute.eventPeople(beaconID: beaconID)) {
-                    HStack(alignment: .firstTextBaseline) {
-                        sectionHeader("People here", subtitle: [mutuals > 0 ? "\(mutuals) mutual\(mutuals == 1 ? "" : "s")" : nil,
-                                                                "\(rsvp.value?.count ?? others.count) going"]
-                            .compactMap { $0 }.joined(separator: " · "))
-                        Spacer()
-                        Text("See all")
-                            .font(ClickTypography.supporting)
-                            .foregroundStyle(ClickColors.textSecondary)
-                        Image(systemName: "chevron.right")
-                            .font(.footnote.weight(.semibold))
-                            .foregroundStyle(ClickColors.textTertiary)
-                    }
-                }
-                .buttonStyle(.plain)
-                peopleCard {
-                    ForEach(ranked.prefix(10)) { person in
-                        NavigationLink(value: person.relationship == .connection
-                            ? AppRoute.userProfile(userID: person.userID, connectionID: nil)
-                            : AppRoute.publicProfile(userID: person.userID)) {
-                            VStack(spacing: 6) {
-                                AvatarView(imageURL: person.avatarURL, seed: person.userID, initials: person.initials, size: 60)
-                                Text(person.name.split(separator: " ").first.map(String.init) ?? person.name)
-                                    .font(ClickTypography.supporting)
-                                    .foregroundStyle(ClickColors.textPrimary)
-                                    .lineLimit(1)
-                            }
-                            .frame(width: 66)
-                        }
-                        .buttonStyle(.plain)
-                        .onAppear {
-                            env.profiles.primePublicProfile(userID: person.userID, name: person.name, avatarURL: person.avatarURL)
+                        .accessibilityHidden(true)
+                    } else {
+                        let shown = Array(others.prefix(Self.facesShown))
+                        // Everyone going but you: the server may send fewer people than it counts.
+                        let total = max(others.count, (rsvp.value?.count ?? 0) - (rsvp.value?.isGoing == true ? 1 : 0))
+                        let more = total - shown.count
+                        VStack(alignment: .leading, spacing: 10) {
+                            if !shown.isEmpty { Facepile(people: shown, placeholders: 0, more: more) }
+                            Text(Self.goingNames(shown.map(\.name), more: more, isGoing: rsvp.value?.isGoing == true))
+                                .font(ClickTypography.supporting)
+                                .foregroundStyle(ClickColors.textSecondary)
+                                .multilineTextAlignment(.leading)
                         }
                     }
+                    Spacer(minLength: 0)
+                    Image(systemName: "chevron.right")
+                        .font(.footnote.weight(.semibold))
+                        .foregroundStyle(ClickColors.textTertiary)
                 }
-            }
-        }
-    }
-
-    /// A card of faces that scrolls sideways, inset like the info card's rows.
-    private func peopleCard<Content: View>(@ViewBuilder _ faces: () -> Content) -> some View {
-        ScrollView(.horizontal, showsIndicators: false) {
-            HStack(spacing: 16) { faces() }
                 .padding(.horizontal, 16)
                 .padding(.vertical, 14)
+                .detailCard()
+                .contentShape(RoundedRectangle(cornerRadius: ClickRadius.surface, style: .continuous))
+            }
+            .buttonStyle(.plain)
+            .accessibilityHint("Shows everyone going.")
         }
-        .detailCard()
+    }
+
+    private static let facesShown = 4
+
+    /// "Andrew Lu, Pranav Donapaty, Zakia and 44 more"; "Just you so far" before anyone else.
+    nonisolated static func goingNames(_ names: [String], more: Int, isGoing: Bool) -> String {
+        guard !names.isEmpty else {
+            if more > 0 { return "\(more) going" }
+            return isGoing ? "Just you so far" : "See who's going"
+        }
+        guard more > 0 else { return ListFormatter.localizedString(byJoining: names) }
+        return names.joined(separator: ", ") + " and \(more) more"
     }
 
     // MARK: - Other beacon actions
@@ -851,6 +868,156 @@ extension View {
     func detailCard() -> some View {
         background(ClickColors.fillSubtle, in: RoundedRectangle(cornerRadius: ClickRadius.surface, style: .continuous))
             .clipShape(RoundedRectangle(cornerRadius: ClickRadius.surface, style: .continuous))
+    }
+}
+
+/// The event's picture, inset and rounded at its own shape (between 4:5 and 2:1), so a poster
+/// shows whole instead of cropped to a banner; the generated visual is a 16:9 banner. A picture
+/// already decoded sets the shape on the first frame.
+private struct EventHero: View {
+    let seed: String
+    let imageURL: String?
+    let symbol: String
+
+    @State private var aspect: CGFloat
+
+    init(seed: String, imageURL: String?, symbol: String) {
+        self.seed = seed
+        self.imageURL = imageURL
+        self.symbol = symbol
+        _aspect = State(initialValue: Self.url(imageURL)
+            .flatMap { ImagePipeline.shared.firstFrameImage(for: $0, maxPixelSize: EventVisual.pixelSize) }
+            .map(Self.aspect) ?? Self.bannerAspect)
+    }
+
+    private static let bannerAspect: CGFloat = 16 / 9
+
+    private static func url(_ raw: String?) -> URL? { raw?.nonEmptyTrimmed.flatMap(URL.init(string:)) }
+
+    private static func aspect(_ image: UIImage) -> CGFloat {
+        guard image.size.height > 0 else { return bannerAspect }
+        return min(max(image.size.width / image.size.height, 0.8), 2)
+    }
+
+    var body: some View {
+        EventVisual(seed: seed, imageURL: imageURL, symbol: symbol, cornerRadius: ClickRadius.prominent)
+            .aspectRatio(aspect, contentMode: .fit)
+            .frame(maxWidth: .infinity)
+            .task(id: imageURL) {
+                guard let url = Self.url(imageURL),
+                      let image = await ImagePipeline.shared.image(for: url, maxPixelSize: EventVisual.pixelSize) else { return }
+                let fitted = Self.aspect(image)
+                if abs(fitted - aspect) > 0.01 { withAnimation(ClickMotion.content) { aspect = fitted } }
+            }
+    }
+}
+
+/// A wash of the event's own colors over the top of its page, fading into the page: its picture
+/// shrunk to a few pixels and stretched (a blur that costs nothing to draw), else its generated
+/// gradient.
+private struct EventBackdrop: View {
+    let seed: String
+    let imageURL: String?
+
+    @Environment(\.colorScheme) private var colorScheme
+    @State private var swatch: UIImage?
+
+    private static let swatchSize: CGFloat = 12
+
+    init(seed: String, imageURL: String?) {
+        self.seed = seed
+        self.imageURL = imageURL
+        _swatch = State(initialValue: Self.url(imageURL).flatMap {
+            ImagePipeline.shared.firstFrameImage(for: $0, maxPixelSize: Self.swatchSize)
+        })
+    }
+
+    private static func url(_ raw: String?) -> URL? { raw?.nonEmptyTrimmed.flatMap(URL.init(string:)) }
+
+    var body: some View {
+        ZStack(alignment: .top) {
+            ClickColors.surface
+            Group {
+                if let swatch {
+                    Image(uiImage: swatch)
+                        .resizable()
+                        .interpolation(.high)
+                        .scaledToFill()
+                } else {
+                    LinearGradient(colors: CardVisual(seed: seed).gradient.map(Color.init(hex:)),
+                                   startPoint: .topLeading, endPoint: .bottomTrailing)
+                }
+            }
+            .frame(maxWidth: .infinity)
+            .frame(height: 560)
+            .clipped()
+            .opacity(colorScheme == .dark ? 0.5 : 0.35)
+            .mask(LinearGradient(colors: [.black, .black.opacity(0)], startPoint: .top, endPoint: .bottom))
+        }
+        .allowsHitTesting(false)
+        .accessibilityHidden(true)
+        .task(id: imageURL) {
+            guard swatch == nil, let url = Self.url(imageURL) else { return }
+            let loaded = await ImagePipeline.shared.image(for: url, maxPixelSize: Self.swatchSize)
+            if let loaded { withAnimation(ClickMotion.subtleFade) { swatch = loaded } }
+        }
+    }
+}
+
+/// A still map of the place with its pin; the card around it opens the real map.
+private struct EventMapPreview: View {
+    let coordinate: CLLocationCoordinate2D
+    let title: String
+
+    var body: some View {
+        Map(initialPosition: .region(MKCoordinateRegion(center: coordinate, latitudinalMeters: 1200, longitudinalMeters: 1200)),
+            interactionModes: []) {
+            Marker(title, coordinate: coordinate)
+                .tint(ClickColors.primaryActionFill)
+        }
+        .mapStyle(.standard(pointsOfInterest: .excludingAll))
+        .id("\(coordinate.latitude),\(coordinate.longitude)")
+        .frame(height: 150)
+        .allowsHitTesting(false)
+        .accessibilityHidden(true)
+    }
+}
+
+/// A few overlapping faces and how many more; empty circles while people load.
+private struct Facepile: View {
+    let people: [DirectoryAttendee]
+    let placeholders: Int
+    let more: Int
+
+    private static let size: CGFloat = 36
+
+    var body: some View {
+        HStack(spacing: -10) {
+            ForEach(people) { person in
+                AvatarView(imageURL: person.avatarURL, seed: person.userID, initials: person.initials, size: Self.size)
+                    .ringed()
+            }
+            ForEach(0..<placeholders, id: \.self) { _ in
+                Circle().fill(ClickColors.fillStrong).frame(width: Self.size, height: Self.size).ringed()
+            }
+            if more > 0 {
+                Text("+\(more)")
+                    .font(ClickTypography.metadataEmphasized)
+                    .foregroundStyle(ClickColors.textSecondary)
+                    .padding(.horizontal, 8)
+                    .frame(minWidth: Self.size, minHeight: Self.size)
+                    .background(ClickColors.surfaceElevated, in: Capsule())
+                    .ringed()
+            }
+        }
+        .accessibilityHidden(true)
+    }
+}
+
+private extension View {
+    /// The page's color around a face, so overlapping faces read apart.
+    func ringed() -> some View {
+        padding(2).background(ClickColors.surface, in: Capsule())
     }
 }
 

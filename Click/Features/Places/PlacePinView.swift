@@ -24,13 +24,9 @@ struct PlacePinView: View {
                 .frame(width: 34, height: 34)
                 .overlay {
                     if let photo = place.photoURL {
-                        AsyncImage(url: photo) { image in
-                            image.resizable().scaledToFill()
-                        } placeholder: {
-                            symbol
-                        }
-                        .frame(width: 30, height: 30)
-                        .clipShape(RoundedRectangle(cornerRadius: 7, style: .continuous))
+                        PinPhoto(url: photo) { symbol }
+                            .frame(width: 30, height: 30)
+                            .clipShape(RoundedRectangle(cornerRadius: 7, style: .continuous))
                     } else {
                         symbol
                     }
@@ -68,5 +64,35 @@ struct PlacePinView: View {
         if place.pulse.state == .live, let label = place.pulse.label { parts.append("\(label.title) now") }
         if let badge = PlaceCopy.pinBadge(place) { parts.append(badge == "LIVE" ? "event live now" : "event at \(badge)") }
         return parts.joined(separator: ", ")
+    }
+}
+
+/// A pin's photo through the shared image cache (a pin redrawn while panning paints it at once,
+/// where `AsyncImage` reloaded it each time), with `placeholder` until it arrives.
+private struct PinPhoto<Placeholder: View>: View {
+    let url: URL
+    @ViewBuilder let placeholder: Placeholder
+
+    @State private var image: UIImage?
+
+    init(url: URL, @ViewBuilder placeholder: () -> Placeholder) {
+        self.url = url
+        self.placeholder = placeholder()
+        _image = State(initialValue: ImagePipeline.shared.firstFrameImage(for: url, maxPixelSize: EventVisual.thumbnailPixelSize))
+    }
+
+    var body: some View {
+        Group {
+            if let image {
+                Image(uiImage: image).resizable().scaledToFill()
+            } else {
+                placeholder
+            }
+        }
+        .task(id: url) {
+            guard image == nil else { return }
+            let loaded = await ImagePipeline.shared.image(for: url, maxPixelSize: EventVisual.thumbnailPixelSize)
+            if !Task.isCancelled { image = loaded }
+        }
     }
 }

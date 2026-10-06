@@ -63,7 +63,7 @@ struct NearbyLip: View {
         HStack(spacing: -8) {
             ForEach(model.items(pins: pins).prefix(3)) { item in
                 if case .beacon(let beacon) = item.kind {
-                    EventVisual(seed: beacon.id, imageURL: beacon.imageURL, cornerRadius: 17)
+                    EventVisual(seed: beacon.id, imageURL: beacon.imageURL, cornerRadius: 17, maxPixelSize: EventVisual.thumbnailPixelSize)
                         .frame(width: 34, height: 34)
                         .overlay(Circle().stroke(ClickColors.surface, lineWidth: 2))
                 }
@@ -250,7 +250,7 @@ struct NearbyListView: View {
                             }
                             .buttonStyle(.plain)
                             .overlay(alignment: .bottom) {
-                                if !isLast { Divider().padding(.leading, 76) }
+                                if !isLast { Divider().padding(.leading, NearbyRow.thumbnailSize + 28) }
                             }
                             // Each row draws its slice of the section's card. A translucent fill,
                             // not an opaque surface: it reads the same over the sheet's glass at
@@ -303,47 +303,60 @@ struct NearbyListView: View {
     }
 }
 
+/// One place, event or person: a large thumbnail, then when (in the accent while it's live or
+/// today), the title, and where, how far and how many are going.
 private struct NearbyRow: View {
     let item: MapItem
     let origin: CLLocationCoordinate2D?
 
+    static let thumbnailSize: CGFloat = 64
+
     var body: some View {
+        let eyebrow = Self.eyebrow(item)
         HStack(spacing: 14) {
-            MapItemThumbnail(item: item)
-            VStack(alignment: .leading, spacing: 2) {
-                HStack(spacing: 6) {
-                    Text(item.title)
-                        .font(ClickTypography.body)
-                        .foregroundStyle(ClickColors.textPrimary)
-                        .lineLimit(1)
-                    if case .beacon(let beacon) = item.kind, beacon.schedule?.isLive() == true {
-                        StatusPill("LIVE", style: .live)
+            MapItemThumbnail(item: item, size: Self.thumbnailSize, cornerRadius: 14)
+            VStack(alignment: .leading, spacing: 3) {
+                HStack(spacing: 5) {
+                    if eyebrow.isLive {
+                        Circle().fill(ClickColors.destructive).frame(width: 6, height: 6)
                     }
+                    Text(eyebrow.text).lineLimit(1)
                 }
-                Text(item.subtitle)
-                    .font(ClickTypography.supporting)
-                    .foregroundStyle(ClickColors.textTertiary)
-                    .lineLimit(1)
+                .font(ClickTypography.metadataEmphasized)
+                .foregroundStyle(eyebrow.isLive ? ClickColors.destructive
+                                 : eyebrow.isSoon ? ClickColors.accentForeground : ClickColors.textTertiary)
+                Text(item.title)
+                    .font(ClickTypography.bodyEmphasized)
+                    .foregroundStyle(ClickColors.textPrimary)
+                    .lineLimit(2)
+                    .multilineTextAlignment(.leading)
+                detailLine
             }
-            Spacer(minLength: 8)
-            VStack(alignment: .trailing, spacing: 2) {
-                if let distance {
-                    Text(distance)
-                        .font(ClickTypography.metadataEmphasized)
-                }
-                if let people = item.peopleLabel {
-                    Text(people)
-                        .font(ClickTypography.metadata)
-                }
-            }
-            .foregroundStyle(ClickColors.textTertiary)
-            .monospacedDigit()
-            .lineLimit(1)
+            Spacer(minLength: 0)
         }
         .padding(.horizontal, 14)
-        .padding(.vertical, 10)
+        .padding(.vertical, 12)
         .contentShape(Rectangle())
         .accessibilityElement(children: .combine)
+    }
+
+    /// Where (truncating first), then how far and how many, which always show whole.
+    private var detailLine: some View {
+        let place = Self.place(item)
+        let rest = [distance, item.peopleLabel].compactMap { $0 }
+        return HStack(spacing: 0) {
+            if let place {
+                Text(place).lineLimit(1).truncationMode(.tail)
+            }
+            if !rest.isEmpty {
+                Text((place == nil ? "" : " · ") + rest.joined(separator: " · "))
+                    .monospacedDigit()
+                    .fixedSize()
+                    .layoutPriority(1)
+            }
+        }
+        .font(ClickTypography.supporting)
+        .foregroundStyle(ClickColors.textSecondary)
     }
 
     private var distance: String? {
@@ -351,6 +364,39 @@ private struct NearbyRow: View {
         let meters = MapFeatureModel.distanceMeters(origin, item.coordinate)
         return Measurement(value: meters, unit: UnitLength.meters)
             .formatted(.measurement(width: .abbreviated, usage: .road, numberFormatStyle: .number.precision(.fractionLength(0...1))))
+    }
+
+    /// The line over the title: when an event is ("Live · until 10 PM", "Tomorrow · 12:00 – 1:30 PM"),
+    /// else what the item is.
+    static func eyebrow(_ item: MapItem, now: Date = .now) -> (text: String, isLive: Bool, isSoon: Bool) {
+        switch item.kind {
+        case .beacon(let beacon):
+            guard beacon.isEvent, let schedule = beacon.schedule else { return (beacon.kind.label, false, false) }
+            if schedule.isLive(at: now) {
+                return ("Live · until \(schedule.end.formatted(date: .omitted, time: .shortened))", true, false)
+            }
+            return (EventFormatting.when(schedule, now: now), false, schedule.startsToday(at: now))
+        case .hub:
+            return ("Hub", false, false)
+        case .person:
+            return ("Your Click", false, false)
+        case .hangout(let hangout):
+            return ("Plan · " + PlanCardView.whenText(hangout.plan.startsAt, until: hangout.plan.endsAt), false, false)
+        case .place(let place):
+            let live = place.pulse.state == .live || place.nextEvent?.isLive == true
+            return (PlaceCopy.mapSubtitle(place, now: now), live, false)
+        }
+    }
+
+    /// Where it is, in words.
+    static func place(_ item: MapItem) -> String? {
+        switch item.kind {
+        case .beacon(let beacon): beacon.locationName ?? beacon.formattedAddress
+        case .hub: nil
+        case .person(let pin): pin.locationName.map { "Met at \($0)" }
+        case .hangout(let hangout): hangout.plan.placeName
+        case .place(let place): place.addressLine ?? place.city
+        }
     }
 }
 
@@ -365,7 +411,8 @@ struct MapItemThumbnail: View {
         case .person(let pin):
             AvatarView(imageURL: pin.avatarURL, seed: pin.userID, initials: pin.initials, size: size)
         case .beacon(let beacon):
-            EventVisual(seed: beacon.id, imageURL: beacon.imageURL, symbol: beacon.kind.systemImage, cornerRadius: cornerRadius)
+            EventVisual(seed: beacon.id, imageURL: beacon.imageURL, symbol: beacon.kind.systemImage, cornerRadius: cornerRadius,
+                        maxPixelSize: EventVisual.thumbnailPixelSize)
                 .frame(width: size, height: size)
         case .hub(let hub):
             EventVisual(seed: hub.id, symbol: MapLayer.hubs.systemImage, cornerRadius: size / 2)
@@ -374,7 +421,8 @@ struct MapItemThumbnail: View {
             EventVisual(seed: hangout.message.id, symbol: MapLayer.hangouts.systemImage, cornerRadius: cornerRadius)
                 .frame(width: size, height: size)
         case .place(let place):
-            EventVisual(seed: place.id, imageURL: place.photoURL?.absoluteString, symbol: place.category.symbol, cornerRadius: cornerRadius)
+            EventVisual(seed: place.id, imageURL: place.photoURL?.absoluteString, symbol: place.category.symbol, cornerRadius: cornerRadius,
+                        maxPixelSize: EventVisual.thumbnailPixelSize)
                 .frame(width: size, height: size)
         }
     }

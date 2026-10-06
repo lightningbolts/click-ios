@@ -452,14 +452,23 @@ public final class SessionController: SessionControlling {
         if let session = currentSession {
             await authService.signOut(jwt: session.jwt)
         }
-        profileNameHint = nil
-        vault.deleteSession()
-        migrator.deleteLegacySession()
         if let userId = signingOutUserId {
             settingsStore?.clearOnboardingState(for: userId)
             // Stored timelines, inbox and read models belong to this account only.
             LocalStore.shared.wipe(userID: userId)
         }
+        await endSession()
+    }
+
+    /// Ends the session on this device: credentials, session-scoped settings, key material and
+    /// everything the app holds in memory (live sockets, caches). Shared by an explicit sign-out
+    /// and a session the server ended (its refresh token rejected), so neither leaves sockets
+    /// running or push previews decrypting for an account that's signed out. The account's stored
+    /// history is the caller's call: a sign-out wipes it, a rejected refresh keeps it.
+    private func endSession() async {
+        profileNameHint = nil
+        vault.deleteSession()
+        migrator.deleteLegacySession()
         settingsStore?.resetSessionScopedData()
         // Decrypted chat media never outlives the session that decrypted it.
         await ChatMediaVault.shared.clear()
@@ -557,10 +566,7 @@ public final class SessionController: SessionControlling {
                         : wasResolvingProfile ? .restoring : .authenticated(stored)
                     return stored
                 }
-                self.vault.deleteSession()
-                self.migrator.deleteLegacySession()
-                self.retainedSession = nil
-                self.state = .unauthenticated
+                await self.endSession()
             default:
                 self.retainedSession = current
                 if wasProfileGated {
