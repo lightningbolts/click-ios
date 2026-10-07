@@ -648,7 +648,8 @@ private struct ConnectionAvatar: View {
             seed: item.userID,
             initials: item.initials,
             size: size,
-            presence: AvatarView.Presence(isOnline: item.isOnline, known: item.presenceKnown)
+            presence: AvatarView.Presence(isOnline: item.isOnline, known: item.presenceKnown),
+            isCore: item.isCore
         )
     }
 }

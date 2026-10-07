@@ -67,6 +67,14 @@ public enum ClickColors {
     public static let online = dynamic(lightHex: "#1FA855", darkHex: "#30D158")
     public static let offline = Color(uiColor: .systemGray)
 
+    /// The ring around a Core Click's avatar: gold sweeping into Click purple and back.
+    public static let coreRing = AngularGradient(
+        colors: [Color(hex: "#F5C451"), Color(hex: "#E39A3B"), Color(hex: "#A855F7"), Color(hex: "#7C3AED"), Color(hex: "#F5C451")],
+        center: .center,
+        startAngle: .degrees(-90),
+        endAngle: .degrees(270)
+    )
+
     // MARK: - Generated Content Palette (content visuals only, never app chrome)
 
     public enum GeneratedContent {

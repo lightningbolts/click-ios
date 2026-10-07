@@ -2,8 +2,8 @@ import SwiftUI
 
 /// Home: a linear social feed (spec §20.2, prototype hierarchy).
 ///
-/// 1. greeting + search · 2. "I'm down for…" · 3. one social opportunity · Click Drops · 4. recent people ·
-/// 5. recap · 6. saved & upcoming · 7. nearby discovery · 8. insights.
+/// 1. greeting + search · 2. "I'm down for…" · 3. one social opportunity · Click Drops · upcoming and
+/// recommended events · 4. recent people · 5. recap · 7. nearby discovery · 8. insights.
 ///
 /// The scaffold never waits on a request: each module renders its own cached / loading /
 /// empty / error state from `HomeFeedModel`, and recent people/insights come from the
@@ -45,11 +45,11 @@ public struct HomeView: View {
                 }
                 if let nudge = reconnectNudge { ReconnectNearbyCard(nudge: nudge) { reconnectNudge = nil } }
                 if env.features.isEnabled(.sharedDrops) { SharedDropsStrip() }
+                upcomingSection(promotedID: promotedEventID(opportunity))
                 HomeSetupCard()
                 recentPeopleSection(promoted: opportunity)
                 if env.features.isEnabled(.eventHistory), let recapCard = model.recapCard { HomeEventRecapCard(card: recapCard) }
                 recapSection
-                savedSection(promotedID: promotedEventID(opportunity))
                 nearbySection
                 insightsSection
             }
@@ -167,7 +167,7 @@ public struct HomeView: View {
         let people = conversations.active.filter { model.overlappingPeerIDs.contains($0.userID) }
         if let title = HomeFeedModel.overlapTitle(names: people.map { HomeFeedModel.firstName($0.displayName) ?? $0.displayName }) {
             HomeRow(inset: 60) {
-                AvatarView(imageURL: people[0].avatarUrl, seed: people[0].userID, initials: people[0].initials, size: 28)
+                AvatarView(imageURL: people[0].avatarUrl, seed: people[0].userID, initials: people[0].initials, size: 28, isCore: people[0].isCore)
             } content: {
                 Text(title)
                     .font(ClickTypography.bodyEmphasized)
@@ -299,7 +299,8 @@ public struct HomeView: View {
                                             seed: item.userID,
                                             initials: item.initials,
                                             size: 64,
-                                            presence: AvatarView.Presence(isOnline: item.isOnline, known: item.presenceKnown)
+                                            presence: AvatarView.Presence(isOnline: item.isOnline, known: item.presenceKnown),
+                                            isCore: item.isCore
                                         )
                                         Text(HomeFeedModel.firstName(item.displayName) ?? item.displayName)
                                             .font(ClickTypography.supporting)
@@ -432,52 +433,92 @@ public struct HomeView: View {
         ].filter { $0.1 > 0 }
     }
 
-    // MARK: - 6. Saved & upcoming
+    // MARK: - 6. Upcoming & recommended
 
+    /// Events you host, are going to or saved (soonest first, "View all" for the rest), then
+    /// events near you picked for you.
     @ViewBuilder
-    private func savedSection(promotedID: String?) -> some View {
-        let upcoming = model.upcomingSaved(excluding: promotedID)
+    private func upcomingSection(promotedID: String?) -> some View {
+        let upcoming = model.upcoming(excluding: promotedID)
+        let recommendations = model.recommendations(excluding: promotedID)
         VStack(alignment: .leading, spacing: 10) {
             HStack(alignment: .firstTextBaseline) {
-                HomeSectionTitle("Saved & upcoming")
+                HomeSectionTitle("Upcoming")
                 Spacer()
-                Button("All saved") { env.router.navigate(to: .savedEvents) }
-                    .font(ClickTypography.body)
-                    .foregroundStyle(ClickColors.accentForeground)
+                if !upcoming.isEmpty {
+                    Button { env.router.navigate(to: .upcomingEvents) } label: {
+                        HStack(spacing: 4) {
+                            Text("View all")
+                            Image(systemName: "chevron.right")
+                                .font(.footnote.weight(.semibold))
+                                .foregroundStyle(ClickColors.textTertiary)
+                        }
+                    }
+                    .font(ClickTypography.supporting)
+                    .foregroundStyle(ClickColors.textSecondary)
+                    .buttonStyle(.plain)
+                }
             }
             .padding(.horizontal, 4)
 
             VStack(spacing: 0) {
-                if model.savedEvents.value != nil {
-                    if upcoming.isEmpty {
-                        HomeEmptyRow(
-                            text: "Bookmark events to keep them here.",
-                            actionTitle: "Explore the map"
-                        ) {
-                            env.router.showOnMap(.layer(.events))
+                if !upcoming.isEmpty {
+                    let shown = upcoming.prefix(Self.upcomingShown)
+                    ForEach(shown) { event in
+                        Button { openEvent(event.id) } label: {
+                            UpcomingEventRow(event: event)
                         }
-                    } else {
-                        ForEach(upcoming.prefix(3)) { event in
-                            Button { openEvent(event.beaconID) } label: {
-                                SavedEventRow(event: event)
-                            }
-                            .buttonStyle(.plain)
-                            if event.id != upcoming.prefix(3).last?.id {
-                                HomeDivider(inset: 82)
-                            }
+                        .buttonStyle(.plain)
+                        if event.id != shown.last?.id {
+                            HomeDivider(inset: 82)
                         }
                     }
-                } else if model.savedEvents.isPending {
+                } else if model.hasUpcomingAnswer {
+                    HomeEmptyRow(
+                        text: recommendations.isEmpty ? "Events you're going to show up here." : "Nothing on your calendar yet.",
+                        actionTitle: "Find events"
+                    ) {
+                        env.router.showOnMap(.layer(.events))
+                    }
+                } else if model.myEvents.isPending || model.savedEvents.isPending {
                     HomeLoadingRow()
                 } else {
-                    HomeRetryRow(message: "Couldn't load saved events.") {
+                    HomeRetryRow(message: "Couldn't load your events.") {
                         Task { await model.refresh() }
                     }
                 }
             }
             .groupedSurface()
+
+            if !recommendations.isEmpty {
+                Text("Recommended for you")
+                    .font(ClickTypography.bodyEmphasized)
+                    .foregroundStyle(ClickColors.textPrimary)
+                    .padding(.horizontal, 4)
+                    .padding(.top, 10)
+                ScrollView(.horizontal) {
+                    LazyHStack(alignment: .top, spacing: 12) {
+                        ForEach(recommendations) { recommendation in
+                            Button { openEvent(recommendation.id) } label: {
+                                RecommendationCard(recommendation: recommendation, origin: env.location.lastFix?.coordinate)
+                            }
+                            .buttonStyle(.plain)
+                            // About two and a half cards on a phone, so the row reads as scrollable.
+                            .containerRelativeFrame(.horizontal) { width, _ in min(width * 0.62, 280) }
+                        }
+                    }
+                    .scrollTargetLayout()
+                }
+                .scrollIndicators(.hidden)
+                .scrollTargetBehavior(.viewAligned)
+                // Cards scroll out to the screen's edges, past the page gutter.
+                .scrollClipDisabled()
+            }
         }
     }
+
+    /// Upcoming rows on Home; "View all" shows the rest.
+    private static let upcomingShown = 3
 
     // MARK: - 7. Nearby discovery
 
@@ -514,12 +555,14 @@ public struct HomeView: View {
                         ScrollView(.horizontal) {
                             HStack(spacing: 8) {
                                 ForEach(counts, id: \.kind) { entry in
-                                    DiscoveryChip(title: entry.kind.pluralLabel, count: entry.count) {
+                                    DiscoveryChip(title: entry.kind.pluralLabel, count: entry.count,
+                                                  faces: Self.faces(of: entry.kind, in: discovery)) {
                                         env.router.showOnMap(.layer(MapLayer(kind: entry.kind)))
                                     }
                                 }
                                 if !discovery.hubs.isEmpty {
-                                    DiscoveryChip(title: "Hubs", count: discovery.hubs.count) {
+                                    DiscoveryChip(title: "Hubs", count: discovery.hubs.count,
+                                                  faces: discovery.hubs.prefix(3).map { MapItem(kind: .hub($0)) }) {
                                         env.router.showOnMap(.layer(.hubs))
                                     }
                                 }
@@ -544,6 +587,15 @@ public struct HomeView: View {
                 }
             }
         }
+    }
+
+    /// A few live beacons of a kind for its chip, those with a picture first.
+    private static func faces(of kind: BeaconKind, in discovery: NearbyDiscovery, now: Date = .now) -> [MapItem] {
+        let live = discovery.beacons.filter { $0.kind == kind && $0.isActive(at: now) }
+        let pictured = live.filter { $0.imageURL?.nonEmptyTrimmed != nil }
+        return (pictured + live.filter { $0.imageURL?.nonEmptyTrimmed == nil })
+            .prefix(3)
+            .map { MapItem(kind: .beacon($0)) }
     }
 
     // MARK: - 8. Insights

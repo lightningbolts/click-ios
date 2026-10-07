@@ -15,6 +15,12 @@ public struct ClickMapView: View {
     /// keeps the lip and buttons from dropping and jumping back. Otherwise it follows the real
     /// inset, so it fits every device rather than latching a stale maximum.
     @State private var stableBottomInset: CGFloat = 0
+    /// The map's on-screen width (it ignores the safe area): stacking works in screen points.
+    @State private var mapWidth: CGFloat = 0
+    /// A stack tapped while Nearby was up: its list opens once Nearby has closed.
+    @State private var queuedStack: MapCluster?
+    /// A row picked in a stack's list: opened once the list has closed.
+    @State private var pendingStackItem: MapItem?
 
     public init() {}
 
@@ -62,6 +68,9 @@ public struct ClickMapView: View {
             }
             .onChange(of: proxy.safeAreaInsets.bottom, initial: true) { _, inset in
                 if env.router.mapPath.isEmpty { stableBottomInset = inset }
+            }
+            .onChange(of: proxy.size.width + proxy.safeAreaInsets.leading + proxy.safeAreaInsets.trailing, initial: true) { _, width in
+                mapWidth = width
             }
         }
         // The Nearby sheet's search keyboard must not count as bottom inset: it would lift the
@@ -141,7 +150,12 @@ public struct ClickMapView: View {
                 Task { await env.friction.endSession() }
             }
         }
-        .sheet(isPresented: $model.isNearbyPresented) {
+        .sheet(isPresented: $model.isNearbyPresented, onDismiss: {
+            if let queuedStack {
+                self.queuedStack = nil
+                model.openStack = queuedStack
+            }
+        }) {
             // Rows open inside the sheet, over the feed: back returns to the same scroll spot.
             RoutedSheetStack(path: nearbyPath, detent: $model.nearbyDetent) {
                 NearbyListView(model: model, pins: pins, onOpen: open)
@@ -152,20 +166,22 @@ public struct ClickMapView: View {
         .onChange(of: model.isNearbyPresented) { _, open in
             if !open { model.nearbyDetent = .medium }
         }
-        .sheet(isPresented: Binding(get: { !model.overlapChoices.isEmpty }, set: { if !$0 { model.overlapChoices = [] } })) {
-            OverlappingPinsChooser(items: model.overlapChoices) { item in
-                model.overlapChoices = []
-                Task {
-                    try? await Task.sleep(for: .milliseconds(300))
-                    if case .person = item.kind {
-                        openProfile(for: item)
-                    } else {
-                        model.chosenFromStack = item.id
-                        model.selection = item.id
-                    }
-                }
-            }
-            .presentationDetents([.medium])
+        .sheet(item: $model.openStack, onDismiss: {
+            guard let item = pendingStackItem else { return }
+            pendingStackItem = nil
+            model.selection = nil
+            env.router.navigate(to: item.route)
+        }) { cluster in
+            MapStackSheet(
+                cluster: cluster,
+                origin: model.origin,
+                onOpen: { item in
+                    pendingStackItem = item
+                    model.openStack = nil
+                },
+                onZoom: MapFeatureModel.canSeparate(cluster) ? { zoom(into: cluster) } : nil
+            )
+            .presentationDetents([.medium, .large])
             .presentationDragIndicator(.visible)
         }
         .sheet(isPresented: $creating) {
@@ -186,10 +202,11 @@ public struct ClickMapView: View {
     // MARK: - Map
 
     private var map: some View {
-        Map(position: $model.camera, selection: mapSelection) {
+        Map(position: $model.camera, selection: $model.selection) {
             UserAnnotation()
             ForEach(model.clusters(pins: pins)) { cluster in
-                if cluster.items.count == 1, let item = cluster.items.first {
+                if cluster.items.count == 1 {
+                    let item = cluster.lead
                     Annotation(item.title, coordinate: item.coordinate, anchor: .bottom) {
                         MapPinView(item: item, isSelected: model.selection == item.id) {
                             openProfile(for: item)
@@ -198,22 +215,8 @@ public struct ClickMapView: View {
                     .tag(item.id)
                     .annotationTitles(.hidden)
                 } else {
-                    Annotation("\(cluster.items.count) places", coordinate: cluster.coordinate) {
-                        Button {
-                            zoom(into: cluster)
-                        } label: {
-                            Text("\(cluster.items.count)")
-                                .font(ClickTypography.supportingEmphasized)
-                                .monospacedDigit()
-                                .foregroundStyle(ClickColors.primaryActionForeground)
-                                .frame(minWidth: 40, minHeight: 40)
-                                .padding(.horizontal, 4)
-                                .background(ClickColors.primaryActionFill, in: Capsule())
-                                .overlay(Capsule().stroke(.white, lineWidth: 3))
-                                .shadow(color: .black.opacity(0.25), radius: 4, y: 2)
-                        }
-                        .buttonStyle(.plain)
-                        .accessibilityLabel("\(cluster.items.count) places. Zoom in.")
+                    Annotation(cluster.lead.title, coordinate: cluster.coordinate, anchor: .bottom) {
+                        MapStackPin(cluster: cluster) { openStack(cluster) }
                     }
                     .annotationTitles(.hidden)
                 }
@@ -224,7 +227,8 @@ public struct ClickMapView: View {
             MapCompass()
         }
         .onMapCameraChange(frequency: .onEnd) { context in
-            model.cameraSettled(center: context.region.center, latitudeDelta: context.region.span.latitudeDelta)
+            model.cameraSettled(center: context.region.center, latitudeDelta: context.region.span.latitudeDelta,
+                                visibleRect: context.rect, viewWidth: mapWidth)
             env.friction.recordPan()
         }
     }
@@ -277,26 +281,24 @@ public struct ClickMapView: View {
         env.router.navigate(to: item.route)
     }
 
-    /// Zooms into a cluster far enough that its members draw as pins (KMP cluster tap).
-    private func zoom(into cluster: MapCluster) {
-        let target = MapFeatureModel.zoomToFit(cluster)
-        model.noteClusterTap(targetZoom: target)
-        let delta = MapFeatureModel.latitudeDelta(forZoom: target)
-        withAnimation(ClickMotion.content) {
-            model.camera = .region(MKCoordinateRegion(center: cluster.coordinate,
-                                                      span: MKCoordinateSpan(latitudeDelta: delta, longitudeDelta: delta)))
+    /// A stack's list (Luma's cluster sheet). Over Nearby, Nearby closes first.
+    private func openStack(_ cluster: MapCluster) {
+        ClickHaptics.selection()
+        env.friction.recordMeaningfulAction()
+        if model.isNearbyPresented {
+            queuedStack = cluster
+            model.isNearbyPresented = false
+        } else {
+            model.openStack = cluster
         }
     }
 
-    /// Pins stacked under the tap: more than one opens the "Which pin?" chooser instead of
-    /// guessing (KMP `onMapPinTapped`).
-    private func stackedChoices(for selection: MapSelection) -> [MapItem]? {
-        let drawn = model.clusters(pins: pins)
-            .filter { $0.items.count == 1 }
-            .compactMap(\.items.first)
-        guard let tapped = drawn.first(where: { $0.id == selection }) else { return nil }
-        let stack = MapFeatureModel.overlapping(tapped, in: drawn, zoom: model.renderZoom)
-        return stack.count > 1 ? stack : nil
+    /// Closes the list and zooms until the stack's members draw apart.
+    private func zoom(into cluster: MapCluster) {
+        model.openStack = nil
+        withAnimation(ClickMotion.content) {
+            model.camera = .region(MapFeatureModel.region(fitting: cluster))
+        }
     }
 
     /// Spec §71.1 "grass nudge": a long, aimless map session gets a gentle prompt.
@@ -322,26 +324,8 @@ public struct ClickMapView: View {
         .padding(.horizontal, ClickSpacing.screenGutter)
     }
 
-    /// The map's selection, with stacked pins intercepted before they're selected: the chooser
-    /// opens and the tapped pin never pops up and back down.
-    private var mapSelection: Binding<MapSelection?> {
-        Binding(
-            get: { model.selection },
-            set: { selection in
-                if let selection, selection != model.chosenFromStack, model.overlapChoices.isEmpty,
-                   let stack = stackedChoices(for: selection) {
-                    env.friction.recordMeaningfulAction()
-                    model.overlapChoices = stack
-                } else {
-                    model.selection = selection
-                }
-            }
-        )
-    }
-
     private func handleSelection(_ selection: MapSelection?) {
         if selection != nil { env.friction.recordMeaningfulAction() }
-        if let selection, selection == model.chosenFromStack { model.chosenFromStack = nil }
         switch selection {
         case .person, nil:
             // First tap on a person shows the callout ("Priya Raman · first met here"); tapping
@@ -396,24 +380,16 @@ private struct MapPinView: View {
                     .transition(.scale(scale: 0.8, anchor: .bottom).combined(with: .opacity))
                     .accessibilityLabel("\(pin.displayName), first met here. Open profile.")
                 }
-                AvatarView(imageURL: pin.avatarURL, seed: pin.userID, initials: pin.initials, size: 40)
-                    .overlay(Circle().stroke(.white, lineWidth: 3))
+                MapPinTile(item: item)
             case .beacon(let beacon):
-                EventVisual(seed: beacon.id, imageURL: beacon.imageURL, symbol: beacon.kind.systemImage, cornerRadius: 12,
-                            maxPixelSize: EventVisual.thumbnailPixelSize)
-                    .frame(width: 40, height: 40)
-                    .overlay(RoundedRectangle(cornerRadius: 12, style: .continuous).stroke(.white, lineWidth: 3))
+                MapPinTile(item: item)
                 if beacon.schedule?.isLive() == true {
                     StatusPill("LIVE", style: .live)
                         .scaleEffect(0.8)
                         .offset(y: -8)
                 }
-            case .hub:
-                MapItemThumbnail(item: item, size: 40)
-                    .overlay(Circle().stroke(.white, lineWidth: 3))
-            case .hangout:
-                MapItemThumbnail(item: item, size: 40)
-                    .overlay(RoundedRectangle(cornerRadius: 12, style: .continuous).stroke(.white, lineWidth: 3))
+            case .hub, .hangout:
+                MapPinTile(item: item)
             case .place(let place):
                 PlacePinView(place: place)
             }
@@ -427,47 +403,146 @@ private struct MapPinView: View {
     }
 }
 
-/// "Which pin?": pins stacked at one spot (people met at the same venue), so the viewer picks
-/// instead of the map guessing (KMP `OverlappingMapPinsChooser`).
-private struct OverlappingPinsChooser: View {
-    let items: [MapItem]
-    let onPick: (MapItem) -> Void
+/// A pin's picture with its white edge; a Core Click's gold ring stands in for the edge.
+private struct MapPinTile: View {
+    let item: MapItem
+    var size: CGFloat = MapStackPin.tileSize
+
+    var body: some View {
+        MapItemThumbnail(item: item, size: size, cornerRadius: 12)
+            .overlay {
+                if !item.isCoreConnection { edge.stroke(.white, lineWidth: 3) }
+            }
+    }
+
+    private var edge: AnyShape {
+        switch item.kind {
+        case .person, .hub: AnyShape(Circle())
+        default: AnyShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
+        }
+    }
+}
+
+/// Pins that would overlap, as one stack (Luma's map): the first three fanned with the most
+/// important on top, its name and how many more underneath. Tapping lists them all.
+private struct MapStackPin: View {
+    let cluster: MapCluster
+    let action: () -> Void
+
+    static let tileSize: CGFloat = 40
+    /// Behind the lead: one tucked left and one right, turned slightly.
+    private static let fan: [(x: CGFloat, degrees: Double)] = [(0, 0), (-13, -9), (13, 9)]
+
+    var body: some View {
+        let shown = Array(cluster.items.prefix(Self.fan.count).enumerated())
+        Button(action: action) {
+            ZStack {
+                ForEach(shown.reversed(), id: \.element.id) { index, item in
+                    MapPinTile(item: item)
+                        .scaleEffect(index == 0 ? 1 : 0.88)
+                        .rotationEffect(.degrees(Self.fan[index].degrees))
+                        .offset(x: Self.fan[index].x)
+                }
+            }
+            .frame(width: Self.tileSize + 26, height: Self.tileSize)
+            .shadow(color: .black.opacity(0.25), radius: 4, y: 2)
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        // Hangs under the pin without changing its size, so the stack sits on its spot.
+        .overlay(alignment: .top) { caption.offset(y: Self.tileSize + 4) }
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel("\(cluster.lead.title) and \(cluster.items.count - 1) more")
+        .accessibilityHint("Shows everything here")
+        .accessibilityAddTraits(.isButton)
+        .accessibilityAction { action() }
+    }
+
+    private var caption: some View {
+        VStack(spacing: 1) {
+            if case .beacon(let beacon) = cluster.lead.kind, beacon.schedule?.isLive() == true {
+                StatusPill("LIVE", style: .live).scaleEffect(0.8)
+            }
+            Text(cluster.lead.title)
+                .font(.caption.weight(.semibold))
+                .foregroundStyle(ClickColors.textPrimary)
+                .lineLimit(1)
+                .truncationMode(.tail)
+            Text("+\(cluster.items.count - 1) more")
+                .font(.caption2.weight(.semibold))
+                .foregroundStyle(ClickColors.textSecondary)
+                .monospacedDigit()
+        }
+        .frame(maxWidth: 140)
+        .fixedSize(horizontal: false, vertical: true)
+        // A halo in the map's own background keeps the label readable over streets and water.
+        .shadow(color: ClickColors.plainBackground, radius: 1)
+        .shadow(color: ClickColors.plainBackground, radius: 2)
+        .allowsHitTesting(false)
+    }
+}
+
+/// Everything in a stack, most important first, in Nearby's rows (Luma's cluster sheet). Zoom in
+/// is offered when the members can actually be drawn apart.
+private struct MapStackSheet: View {
+    @Environment(\.dismiss) private var dismiss
+    let cluster: MapCluster
+    let origin: CLLocationCoordinate2D?
+    let onOpen: (MapItem) -> Void
+    let onZoom: (() -> Void)?
 
     var body: some View {
         NavigationStack {
-            List(items) { item in
-                Button {
-                    ClickHaptics.selection()
-                    onPick(item)
-                } label: {
-                    HStack(spacing: 12) {
-                        MapItemThumbnail(item: item, size: 44, cornerRadius: 10)
-                        VStack(alignment: .leading, spacing: 2) {
-                            Text(item.title)
-                                .font(ClickTypography.bodyEmphasized)
-                                .foregroundStyle(ClickColors.textPrimary)
-                                .lineLimit(2)
-                            Text(item.subtitle)
-                                .font(ClickTypography.supporting)
-                                .foregroundStyle(ClickColors.textSecondary)
-                                .lineLimit(1)
+            ScrollView {
+                LazyVStack(spacing: 0) {
+                    ForEach(cluster.items) { item in
+                        let isLast = item.id == cluster.items.last?.id
+                        Button {
+                            ClickHaptics.selection()
+                            onOpen(item)
+                        } label: {
+                            NearbyRow(item: item, origin: origin)
                         }
+                        .buttonStyle(.plain)
+                        .overlay(alignment: .bottom) {
+                            if !isLast { Divider().padding(.leading, NearbyRow.thumbnailSize + 28) }
+                        }
+                        .groupedRowSlice(isFirst: item.id == cluster.lead.id, isLast: isLast)
                     }
-                    .contentShape(Rectangle())
                 }
-                .buttonStyle(.plain)
+                .padding(.horizontal, ClickSpacing.screenGutter)
+                .padding(.bottom, 24)
             }
-            .listStyle(.plain)
-            .navigationTitle("Which pin?")
+            .navigationTitle(Self.title(cluster.items))
             .navigationBarTitleDisplayMode(.inline)
-            .safeAreaInset(edge: .top) {
-                Text("A few pins are stacked here — pick the one you meant.")
-                    .font(ClickTypography.supporting)
-                    .foregroundStyle(ClickColors.textSecondary)
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                    .padding(.horizontal, ClickSpacing.screenGutter)
-                    .padding(.bottom, 4)
+            .toolbar {
+                if let onZoom {
+                    ToolbarItem(placement: .topBarLeading) {
+                        Button("Zoom In", systemImage: "plus.magnifyingglass", action: onZoom)
+                    }
+                }
+                ToolbarItem(placement: .topBarTrailing) {
+                    Button("Close", systemImage: "xmark") { dismiss() }
+                }
             }
+        }
+    }
+
+    /// "5 Events", "3 Clicks", or "4 Here" when they're of different kinds.
+    static func title(_ items: [MapItem]) -> String {
+        let nouns = Set(items.map(\.pluralNoun))
+        return "\(items.count) \(nouns.count == 1 ? nouns.first ?? "Here" : "Here")"
+    }
+}
+
+private extension MapItem {
+    var pluralNoun: String {
+        switch kind {
+        case .beacon(let beacon): beacon.isEvent ? "Events" : "Beacons"
+        case .person: "Clicks"
+        case .place: "Places"
+        case .hub: "Hubs"
+        case .hangout: "Plans"
         }
     }
 }

@@ -30,14 +30,16 @@ public struct ClickPass: Equatable, Sendable, Codable {
     public let walletAvailable: Bool
 }
 
-/// An event you're hosting or going to (`GET /api/beacons/mine`), as the Live Activity needs it.
-public struct MyEvent: Equatable, Sendable {
+/// An event you're hosting or going to (`GET /api/beacons/mine`): Home's Upcoming and the Live
+/// Activity read it.
+public struct MyEvent: Codable, Equatable, Sendable {
     public let beaconID: String
     public let title: String
     public let start: Date
     public let end: Date
     public let place: String?
     public let isHost: Bool
+    public var imageURL: String? = nil
 }
 
 /// What a host's scan of a Click Pass found (`POST /api/beacons/{id}/pass/scan`).
@@ -281,7 +283,8 @@ public actor EventEngagementRepository {
                   let start = JSONFields.date(row["event_start_at"]),
                   let end = JSONFields.date(row["event_end_at"]), end > start else { return nil }
             return MyEvent(beaconID: id, title: JSONFields.string(row["title"]) ?? "Event", start: start, end: end,
-                           place: JSONFields.string(row["location_name"]), isHost: JSONFields.string(row["role"]) == "creator")
+                           place: JSONFields.string(row["location_name"]), isHost: JSONFields.string(row["role"]) == "creator",
+                           imageURL: JSONFields.string(row["image_url"]))
         }
     }
 

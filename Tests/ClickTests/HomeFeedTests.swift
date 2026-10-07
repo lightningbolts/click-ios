@@ -1,3 +1,4 @@
+import CoreLocation
 import Testing
 import Foundation
 @testable import Click
@@ -234,5 +235,95 @@ struct AvailabilityOverlapTests {
         #expect(HomeFeedModel.overlapTitle(names: ["Lena"]) == "Lena is also free")
         #expect(HomeFeedModel.overlapTitle(names: ["Lena", "Sam"]) == "Lena and Sam are also free")
         #expect(HomeFeedModel.overlapTitle(names: ["A", "B", "C"]) == "3 Clicks are also free")
+    }
+}
+
+@Suite("Home upcoming and recommended events")
+struct HomeUpcomingTests {
+    let now = Date(timeIntervalSince1970: 1_790_000_000)
+    let here = CLLocationCoordinate2D(latitude: 47.6553, longitude: -122.3035)
+
+    private func mine(_ id: String, startOffset: TimeInterval, host: Bool = false) -> MyEvent {
+        MyEvent(beaconID: id, title: id, start: now.addingTimeInterval(startOffset), end: now.addingTimeInterval(startOffset + 3600),
+                place: nil, isHost: host)
+    }
+
+    private func saved(_ id: String, startOffset: TimeInterval) -> SavedEvent {
+        SavedEvent(
+            beaconID: id, title: id,
+            schedule: EventSchedule(start: now.addingTimeInterval(startOffset), end: now.addingTimeInterval(startOffset + 3600)),
+            locationName: nil, formattedAddress: nil, categories: [], latitude: nil, longitude: nil,
+            expiresAt: nil, creatorName: nil, bookmarkedAt: nil, isAvailable: true
+        )
+    }
+
+    private func event(_ title: String, startsIn hours: Double, lat: Double = 47.6553, going: Int = 0, ageHours: Double = 48,
+                       categories: [String] = [], creator: String = "host") throws -> MapBeacon {
+        let start = now.addingTimeInterval(hours * 3600)
+        let row: [String: Any] = [
+            "id": title, "lat": lat, "lng": -122.3035, "beacon_type": "event", "creator_id": creator,
+            "created_at": now.addingTimeInterval(-ageHours * 3600).ISO8601Format(), "rsvp_count": going,
+            "metadata": ["title": title, "event_categories": categories,
+                         "event_start_at": start.ISO8601Format(), "event_end_at": start.addingTimeInterval(7200).ISO8601Format()]
+        ]
+        return try #require(MapBeacon.decode(row))
+    }
+
+    @Test("RSVPs and hosted events lead, saved ones join them, soonest first; ended and promoted ones drop")
+    func merge() {
+        let events = HomeUpcomingEvent.merge(
+            mine: [mine("going", startOffset: 7200), mine("hosting", startOffset: 3600, host: true),
+                   mine("ended", startOffset: -7200), mine("hero", startOffset: 600)],
+            saved: [saved("saved", startOffset: 5400), saved("going", startOffset: 7200)],
+            excluding: "hero",
+            now: now
+        )
+        #expect(events.map(\.id) == ["hosting", "saved", "going"])
+        #expect(events.map(\.role) == [.hosting, .saved, .going])
+    }
+
+    @Test("Recommendations skip your events and your own, and say why they were picked")
+    func recommendations() throws {
+        let picks = HomeRecommendations.rank(
+            beacons: [
+                try event("Jazz Night", startsIn: 30, lat: 47.70, categories: ["Music"]),
+                try event("Startup Mixer", startsIn: 30, lat: 47.70),
+                try event("Filling Fast", startsIn: 50, lat: 47.70, going: 12, ageHours: 2),
+                try event("Going Already", startsIn: 2),
+                try event("Mine", startsIn: 2, creator: "me"),
+                try event("Next Month", startsIn: 24 * 30)
+            ],
+            interests: ["music", "Art"],
+            origin: here,
+            excluding: ["Going Already"],
+            viewerID: "me",
+            now: now
+        )
+        let titles = picks.map(\.beacon.title)
+        #expect(!titles.contains("Going Already") && !titles.contains("Mine") && !titles.contains("Next Month"))
+        #expect(titles.first == "Jazz Night")
+        #expect(picks.first?.reason == .interest("music"))
+        // "Art" is a whole word, never part of "Startup".
+        #expect(picks.first { $0.beacon.title == "Startup Mixer" }?.reason != .interest("Art"))
+        #expect(picks.first { $0.beacon.title == "Filling Fast" }?.reason == .trending(going: 12))
+    }
+
+    @Test("A repeating event is recommended once")
+    func repeatsOnce() throws {
+        let picks = HomeRecommendations.rank(
+            beacons: [try event("Run Club", startsIn: 20), try event("Run Club", startsIn: 20 + 24 * 7)],
+            interests: [], origin: here, excluding: [], viewerID: nil, now: now
+        )
+        #expect(picks.count == 1)
+    }
+
+    @Test("View all groups events by day")
+    func days() {
+        let calendar = Calendar(identifier: .gregorian)
+        let events = HomeUpcomingEvent.merge(mine: [mine("a", startOffset: 60), mine("b", startOffset: 120), mine("c", startOffset: 3 * 86_400)],
+                                             saved: [], excluding: nil, now: now)
+        let days = UpcomingEventsView.days(events, now: now, calendar: calendar)
+        #expect(days.count == 2)
+        #expect(days[0].events.map(\.id) == ["a", "b"])
     }
 }

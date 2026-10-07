@@ -53,7 +53,7 @@ struct ChatTargetPicker: View {
                             row(Target(id: item.id, title: item.displayName,
                                        identity: ConversationIdentity(chatID: item.chatID ?? item.connectionID, connectionID: item.connectionID,
                                                                       peerUserID: item.userID, peerDisplayName: item.displayName))) {
-                                AvatarView(imageURL: item.avatarUrl, seed: item.userID, initials: item.initials, size: 40)
+                                AvatarView(imageURL: item.avatarUrl, seed: item.userID, initials: item.initials, size: 40, isCore: item.isCore)
                             }
                         }
                     }

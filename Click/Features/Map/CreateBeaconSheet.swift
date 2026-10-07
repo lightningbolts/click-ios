@@ -122,7 +122,6 @@ struct CreateBeaconSheet: View {
     var body: some View {
         NavigationStack {
             Form {
-                if !isEditing { kindPicker }
                 if kind == .soundtrack { soundtrackSection }
                 Section {
                     TextField(kind == .event ? "Event name" : (kind == .soundtrack ? "Title (optional, uses the song name)" : "Title"), text: $title)
@@ -187,6 +186,11 @@ struct CreateBeaconSheet: View {
                 if let error {
                     Section { Text(error).foregroundStyle(ClickColors.destructive) }
                 }
+            }
+            // The type chips are a bar over the form, like Nearby's filters: they scroll out to the
+            // screen's edges instead of being cut off square inside a form row.
+            .safeAreaInset(edge: .top, spacing: 0) {
+                if !isEditing { kindPicker }
             }
             .navigationTitle(isEditing ? "Edit" : (kind == .event ? "New Event" : "Drop a Beacon"))
             .navigationBarTitleDisplayMode(.inline)
@@ -428,24 +432,32 @@ struct CreateBeaconSheet: View {
     }
 
     private var kindPicker: some View {
-        Section {
-            ScrollView(.horizontal, showsIndicators: false) {
-                HStack(spacing: 8) {
-                    ForEach(Kind.allCases) { option in
-                        Button { kind = option } label: {
-                            Label(option.label, systemImage: option.symbol)
-                                .font(ClickTypography.supporting)
-                                .padding(.horizontal, 12)
-                                .frame(minHeight: 34)
-                                .foregroundStyle(kind == option ? ClickColors.accentForeground : ClickColors.textSecondary)
-                                .background(kind == option ? ClickColors.selectionTint : ClickColors.fillSubtle, in: Capsule())
+        ScrollView(.horizontal, showsIndicators: false) {
+            HStack(spacing: 8) {
+                ForEach(Kind.allCases) { option in
+                    Button {
+                        ClickHaptics.selection()
+                        kind = option
+                    } label: {
+                        // Nearby's chip: icon tight to the label, one weight for both states.
+                        HStack(spacing: 6) {
+                            Image(systemName: option.symbol).imageScale(.small)
+                            Text(option.label)
                         }
-                        .buttonStyle(.plain)
+                        .font(ClickTypography.supporting.weight(.medium))
+                        .padding(.horizontal, 14)
+                        .frame(minHeight: ClickMetrics.chipHeight)
+                        .foregroundStyle(kind == option ? ClickColors.accentForeground : ClickColors.textSecondary)
+                        .background(kind == option ? ClickColors.selectionTint : ClickColors.fillSubtle, in: Capsule())
                     }
+                    .buttonStyle(.plain)
+                    .accessibilityAddTraits(kind == option ? .isSelected : [])
                 }
             }
-            .listRowInsets(EdgeInsets(top: 8, leading: 12, bottom: 8, trailing: 12))
         }
+        .contentMargins(.horizontal, ClickSpacing.screenGutter, for: .scrollContent)
+        .padding(.vertical, 8)
+        .background(Color(uiColor: .systemGroupedBackground))
     }
 
     /// Photo on every beacon type (spec §54): library or camera, shown at the 4:3 cover crop.
@@ -661,6 +673,8 @@ struct CreateBeaconSheet: View {
             ClickHaptics.success()
             dismiss()
             onCreated(saved)
+            // A new or moved event is on Home's Upcoming as soon as you get back there.
+            if saved.isEvent { Task { await env.homeFeed.reloadMyEvents() } }
         } catch {
             self.error = Self.serverReason(error) ?? error.userFacingMessage
         }

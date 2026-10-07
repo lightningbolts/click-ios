@@ -447,7 +447,7 @@ struct GroupMemberPickerSheet: View {
                             ClickHaptics.selection()
                         } label: {
                             HStack(spacing: 12) {
-                                AvatarView(imageURL: item.avatarUrl, seed: item.userID, initials: item.initials, size: 44)
+                                AvatarView(imageURL: item.avatarUrl, seed: item.userID, initials: item.initials, size: 44, isCore: item.isCore)
                                 // One name line and one (always present) subtitle line, so rows
                                 // keep their height as eligibility changes with the selection.
                                 VStack(alignment: .leading, spacing: 2) {
