@@ -16,6 +16,8 @@ public struct MessageBubbleView: View {
     /// itself is drawn beside the run's last message (WhatsApp / Instagram), the rest keep the inset.
     let showsSenderAvatarColumn: Bool
     let showsSenderAvatar: Bool
+    /// The sender is one of your Core Clicks: their avatar wears the Core ring.
+    let senderIsCore: Bool
     /// Hubs have no delivery/read receipts; only pending/failed state is shown.
     let showsReceipts: Bool
     /// Decrypted-media provider and opener; cannot be nil.
@@ -56,6 +58,7 @@ public struct MessageBubbleView: View {
         showsSenderName: Bool = false,
         showsSenderAvatarColumn: Bool = false,
         showsSenderAvatar: Bool = false,
+        senderIsCore: Bool = false,
         showsReceipts: Bool = true,
         mediaLoader: @escaping (ChatMessageItem) async throws -> URL,
         clickDrop: ClickDropControls? = nil,
@@ -89,6 +92,7 @@ public struct MessageBubbleView: View {
         self.showsSenderName = showsSenderName
         self.showsSenderAvatarColumn = showsSenderAvatarColumn
         self.showsSenderAvatar = showsSenderAvatar
+        self.senderIsCore = senderIsCore
         self.showsReceipts = showsReceipts
         self.message = message
         self.onReply = onReply
@@ -116,7 +120,8 @@ public struct MessageBubbleView: View {
                 Group {
                     if showsSenderAvatar {
                         AvatarView(imageURL: message.senderAvatarURL, seed: message.senderID,
-                                   initials: Phase3Repository.initials(from: message.senderName), size: Self.avatarSize)
+                                   initials: Phase3Repository.initials(from: message.senderName), size: Self.avatarSize,
+                                   isCore: senderIsCore)
                             .accessibilityHidden(true)
                     } else {
                         Color.clear.frame(width: Self.avatarSize, height: 1)
@@ -161,7 +166,8 @@ public struct MessageBubbleView: View {
                     .overlay(alignment: .bottomLeading) {
                         if hasAvatarColumn, showsSenderAvatar {
                             AvatarView(imageURL: message.senderAvatarURL, seed: message.senderID,
-                                       initials: Phase3Repository.initials(from: message.senderName), size: Self.avatarSize)
+                                       initials: Phase3Repository.initials(from: message.senderName), size: Self.avatarSize,
+                                       isCore: senderIsCore)
                                 .offset(x: -(Self.avatarSize + Self.avatarSpacing))
                                 .accessibilityHidden(true)
                         }

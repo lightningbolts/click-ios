@@ -497,16 +497,29 @@ public struct HomeView: View {
                     .padding(.horizontal, 4)
                     .padding(.top, 10)
                 ScrollView(.horizontal) {
-                    LazyHStack(alignment: .top, spacing: 12) {
+                    // Eager (at most `HomeRecommendations.limit` cards) so every card can take the
+                    // tallest one's height and their buttons line up.
+                    HStack(spacing: 12) {
                         ForEach(recommendations) { recommendation in
-                            Button { openEvent(recommendation.id) } label: {
-                                RecommendationCard(recommendation: recommendation, origin: env.location.lastFix?.coordinate)
+                            HomeEventCard(
+                                beaconID: recommendation.id,
+                                imageURL: recommendation.beacon.imageURL,
+                                pill: StatusPill(recommendation.reason.text, style: recommendation.reason == .live ? .live : .neutral),
+                                title: recommendation.beacon.title,
+                                detail: recommendation.detail(),
+                                onOpen: { openEvent(recommendation.id) },
+                                onShowOnMap: { env.router.showOnMap(.beacon(recommendation.id)) }
+                            )
+                            .frame(maxHeight: .infinity)
+                            .groupedSurface()
+                            // Happening now's card at full width; with more than one, the next
+                            // one peeks in so the row reads as scrollable.
+                            .containerRelativeFrame(.horizontal) { width, _ in
+                                min(recommendations.count == 1 ? width : width - 32, 460)
                             }
-                            .buttonStyle(.plain)
-                            // About two and a half cards on a phone, so the row reads as scrollable.
-                            .containerRelativeFrame(.horizontal) { width, _ in min(width * 0.62, 280) }
                         }
                     }
+                    .fixedSize(horizontal: false, vertical: true)
                     .scrollTargetLayout()
                 }
                 .scrollIndicators(.hidden)

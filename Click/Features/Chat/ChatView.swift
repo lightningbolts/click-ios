@@ -419,10 +419,12 @@ public struct ChatView: View {
         let items = model.items
         let indexByStableID = Dictionary(items.enumerated().map { ($0.element.stableID, $0.offset) }, uniquingKeysWith: { first, _ in first })
         let byID = Dictionary(items.map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first })
+        let coreIDs: Set<String> = model.identity.isDirect ? [] : conversations?.coreUserIDs ?? []
         var hasher = Hasher()
         hasher.combine(items)
         hasher.combine(model.typingNames)
         hasher.combine(model.readCursors)
+        hasher.combine(coreIDs)
         let readers = model.readersByMessageID
         let version = hasher.finalize()
         return ChatTimelineView(
@@ -444,7 +446,7 @@ public struct ChatView: View {
                 case .message(let stableID):
                     if let index = indexByStableID[stableID], items.indices.contains(index) {
                         AnyView(VStack(spacing: 0) {
-                            bubble(for: items[index], at: index, in: items, byID: byID)
+                            bubble(for: items[index], at: index, in: items, byID: byID, coreIDs: coreIDs)
                             if let seenBy = readers[items[index].id] { SeenByAvatars(userIDs: seenBy) }
                         })
                     } else {
@@ -517,7 +519,8 @@ public struct ChatView: View {
         }
     }
 
-    private func bubble(for item: ChatMessageItem, at index: Int, in items: [ChatMessageItem], byID: [String: ChatMessageItem]) -> some View {
+    private func bubble(for item: ChatMessageItem, at index: Int, in items: [ChatMessageItem], byID: [String: ChatMessageItem],
+                        coreIDs: Set<String>) -> some View {
         MessageBubbleView(
             message: item,
             onReply: { target in
@@ -539,6 +542,7 @@ public struct ChatView: View {
             showsSenderName: !model.identity.isDirect && Self.startsSenderRun(at: index, in: items),
             showsSenderAvatarColumn: !model.identity.isDirect,
             showsSenderAvatar: !model.identity.isDirect && Self.endsSenderRun(at: index, in: items),
+            senderIsCore: coreIDs.contains(item.senderID),
             showsReceipts: model.identity.supportsReceipts,
             mediaLoader: { message in try await model.mediaURL(for: message) },   // never nil
             clickDrop: clickDropControls(for: item),
@@ -980,7 +984,8 @@ public struct ChatView: View {
                         imageURL: model.identity.peerAvatarURL,
                         seed: model.identity.isDirect ? model.identity.peerUserID : model.identity.chatID,
                         initials: model.identity.initials,
-                        size: ClickMetrics.Avatar.navigation
+                        size: ClickMetrics.Avatar.navigation,
+                        isCore: model.identity.isDirect && conversations?.coreUserIDs.contains(model.identity.peerUserID) == true
                     )
                 }
 

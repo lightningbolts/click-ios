@@ -51,6 +51,7 @@ struct ChatSearchBar: View {
 /// existing reaction is an explicit action on the current user's row rather than the chip itself.
 struct ReactorsSheet: View {
     @Environment(AppEnvironment.self) private var env
+    @Environment(ConversationListModel.self) private var conversations: ConversationListModel?
     @Environment(\.dismiss) private var dismiss
 
     let reactions: [ReactionSummary]
@@ -211,7 +212,8 @@ struct ReactorsSheet: View {
                     imageURL: people[id]?.avatarURL,
                     seed: id,
                     initials: String((people[id]?.name ?? "?").prefix(1)),
-                    size: 42
+                    size: 42,
+                    isCore: conversations?.coreUserIDs.contains(id) == true
                 )
 
                 VStack(alignment: .leading, spacing: 2) {

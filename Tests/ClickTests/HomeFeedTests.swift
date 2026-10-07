@@ -308,6 +308,16 @@ struct HomeUpcomingTests {
         #expect(picks.first { $0.beacon.title == "Filling Fast" }?.reason == .trending(going: 12))
     }
 
+    @Test("A recommendation reads like Happening now: when, where, and how many are going")
+    func recommendationDetail() throws {
+        let calendar = Calendar.current
+        let pick = HomeRecommendation(beacon: try event("Board Meeting", startsIn: 26, going: 3), reason: .tomorrow)
+        let schedule = try #require(pick.beacon.schedule)
+        #expect(pick.detail(now: now) == "\(EventFormatting.when(schedule, now: now, calendar: calendar)) · 3 going")
+        let quiet = HomeRecommendation(beacon: try event("Quiet", startsIn: 26), reason: .tomorrow)
+        #expect(!quiet.detail(now: now).contains("going"))
+    }
+
     @Test("A repeating event is recommended once")
     func repeatsOnce() throws {
         let picks = HomeRecommendations.rank(
@@ -325,5 +335,19 @@ struct HomeUpcomingTests {
         let days = UpcomingEventsView.days(events, now: now, calendar: calendar)
         #expect(days.count == 2)
         #expect(days[0].events.map(\.id) == ["a", "b"])
+    }
+}
+
+@Suite("Profiles of people you haven't Clicked with")
+@MainActor
+struct NotConnectedProfileTests {
+    @Test("The journal isn't requested (the server refuses it), so it never reads as a failed load")
+    func journalUnavailable() async {
+        let model = PeerProfileModel(userID: "stranger", connectionID: nil)
+        model.attach(AppEnvironment(network: NetworkMonitor(start: false)), fallbackConnectionID: nil)
+        await model.loadJournal()
+        await model.loadEncounters()
+        #expect(model.journal.errorMessage == nil && model.encounters.errorMessage == nil)
+        #expect(model.journal.phase == .unavailable("Journal notes appear once you're connected."))
     }
 }

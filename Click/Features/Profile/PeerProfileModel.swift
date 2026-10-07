@@ -218,6 +218,11 @@ final class PeerProfileModel {
 
     func loadJournal() async {
         guard let environment else { return }
+        // Journal notes are about a connection (the server refuses anyone else).
+        guard connectionID != nil else {
+            journal.markUnavailable("Journal notes appear once you're connected.")
+            return
+        }
         journal.begin()
         do {
             let fresh = try await environment.profiles.journal(targetUserID: userID)
