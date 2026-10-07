@@ -10,8 +10,13 @@ struct EventDropsSection: View {
 
     @State private var state = ModuleState<EventDropsState>()
     @State private var showingCamera = false
+    /// The photo just taken, held until the camera is gone so its tile arrives on screen.
+    @State private var captured: Data?
     /// Uploads in flight or failed, newest last. A failed one keeps its photo and ID for a safe retry.
     @State private var uploads: [PendingUpload] = []
+    /// Drops posted from this screen, by the upload they came from: the tile keeps its identity
+    /// and develops in place instead of being swapped for a new one.
+    @State private var landed: [String: UUID] = [:]
     @State private var confirmDelete: EventDrop?
     @State private var message: String?
 
@@ -19,6 +24,19 @@ struct EventDropsSection: View {
         let id = UUID()
         let jpeg: Data
         var failed = false
+    }
+
+    /// One tile in your strip: a posted drop, or an upload still on its way.
+    private enum Tile: Identifiable {
+        case drop(EventDrop, id: String)
+        case upload(PendingUpload)
+
+        var id: String {
+            switch self {
+            case .drop(_, let id): id
+            case .upload(let upload): upload.id.uuidString
+            }
+        }
     }
 
     var body: some View {
@@ -30,16 +48,12 @@ struct EventDropsSection: View {
         }
         .onAppear { state.seed(env.beaconExtras.cached(BeaconExtrasCache.eventDrops(beacon.id))) }
         .task(id: beacon.id) { await load() }
-        .fullScreenCover(isPresented: $showingCamera) {
+        .fullScreenCover(isPresented: $showingCamera, onDismiss: startCapturedUpload) {
             ClickDropCameraView(
                 endsAt: state.value?.closesAt,
                 subtitle: EventDropsState.developsCaption(state.value?.revealAt),
                 showsLooks: false
-            ) { draft in
-                let upload = PendingUpload(jpeg: draft.data)
-                uploads.append(upload)
-                Task { await send(upload) }
-            }
+            ) { draft in captured = draft.data }
         }
         .confirmation("Delete this drop?", isPresented: Binding(get: { confirmDelete != nil }, set: { if !$0 { confirmDelete = nil } }),
                       keep: "Keep It") {
@@ -96,23 +110,18 @@ struct EventDropsSection: View {
             }
 
             if current.phase != .revealed, !current.myDrops.isEmpty || !uploads.isEmpty {
-                ScrollView(.horizontal, showsIndicators: false) {
-                    HStack(spacing: 8) {
-                        ForEach(current.myDrops) { drop in
-                            thumbnail(drop)
-                        }
-                        ForEach(uploads) { upload in
-                            uploadTile(upload)
-                        }
-                    }
-                }
+                strip(current)
+                    .transition(.opacity)
             }
 
-            if current.canPost {
+            // Uploads on their way already count against what's left.
+            let remaining = current.remaining - uploads.count
+            if current.canPost, remaining > 0 {
                 Button {
                     showingCamera = true
                 } label: {
-                    Label("Add a drop · \(current.remaining) left", systemImage: "camera")
+                    Label("Add a drop · \(remaining) left", systemImage: "camera")
+                        .contentTransition(.numericText(value: Double(remaining)))
                         .font(ClickTypography.supportingEmphasized)
                         .frame(maxWidth: .infinity, minHeight: 36)
                 }
@@ -152,9 +161,37 @@ struct EventDropsSection: View {
         }
     }
 
+    private static let tileSize = CGSize(width: 72, height: 96)
+
+    private func strip(_ current: EventDropsState) -> some View {
+        let tiles = current.myDrops.map { Tile.drop($0, id: landed[$0.id]?.uuidString ?? $0.id) } + uploads.map(Tile.upload)
+        return ScrollViewReader { proxy in
+            ScrollView(.horizontal, showsIndicators: false) {
+                HStack(spacing: 8) {
+                    ForEach(tiles) { tile in
+                        // One frame for both states, so an upload develops into its drop in place.
+                        ZStack {
+                            switch tile {
+                            case .drop(let drop, _): thumbnail(drop).transition(.opacity)
+                            case .upload(let upload): uploadTile(upload).transition(.opacity)
+                            }
+                        }
+                        .frame(width: Self.tileSize.width, height: Self.tileSize.height)
+                        .transition(.scale(scale: 0.8).combined(with: .opacity))
+                    }
+                }
+            }
+            // A new photo lands at the end of the strip: bring it into view.
+            .onChange(of: uploads.last?.id) { _, id in
+                guard let id else { return }
+                withAnimation(ClickMotion.content) { proxy.scrollTo(id.uuidString, anchor: .trailing) }
+            }
+        }
+    }
+
     private func thumbnail(_ drop: EventDrop) -> some View {
         PixelatedPreview(url: drop.previewURL)
-            .frame(width: 72, height: 96)
+            .frame(width: Self.tileSize.width, height: Self.tileSize.height)
             .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
             .contextMenu {
                 Button("Delete", systemImage: "trash", role: .destructive) { confirmDelete = drop }
@@ -164,7 +201,7 @@ struct EventDropsSection: View {
     }
 
     private func uploadTile(_ upload: PendingUpload) -> some View {
-        UploadingDropTile(jpeg: upload.jpeg, failed: upload.failed, size: CGSize(width: 72, height: 96), cornerRadius: 12) {
+        UploadingDropTile(jpeg: upload.jpeg, failed: upload.failed, size: Self.tileSize, cornerRadius: 12) {
             Task { await retry(upload) }
         }
     }
@@ -180,34 +217,61 @@ struct EventDropsSection: View {
     private func load() async {
         state.begin()
         do {
-            state.succeed(try await env.beaconExtras.loadEventDrops(beacon.id, env: env))
+            let fresh = try await env.beaconExtras.loadEventDrops(beacon.id, env: env)
+            // Changes to what's already on screen (a drop added or deleted) move rather than jump.
+            withAnimation(state.value == nil ? nil : ClickMotion.content) { state.succeed(fresh) }
         } catch {
             if !error.isCancellation { state.fail(error.userFacingMessage) }
         }
     }
 
+    /// Once the camera has gone: the photo's tile arrives in the strip and its upload starts.
+    private func startCapturedUpload() {
+        guard let jpeg = captured else { return }
+        captured = nil
+        let upload = PendingUpload(jpeg: jpeg)
+        withAnimation(ClickMotion.content) {
+            uploads.append(upload)
+            message = nil
+        }
+        Task { await send(upload) }
+    }
+
     private func send(_ upload: PendingUpload) async {
         do {
-            _ = try await env.beacons.postEventDrop(beaconID: beacon.id, clientDropID: upload.id, jpeg: upload.jpeg,
-                                                    showToAbsentees: nil)
-            uploads.removeAll { $0.id == upload.id }
-            message = nil
+            let drop = try await env.beacons.postEventDrop(beaconID: beacon.id, clientDropID: upload.id, jpeg: upload.jpeg,
+                                                           showToAbsentees: nil)
+            // Its preview is here before the tile turns into it, so the photo develops in one fade.
+            await PixelatedPreview.prefetch(drop.previewURL)
+            withAnimation(ClickMotion.content) {
+                uploads.removeAll { $0.id == upload.id }
+                landed[drop.id] = upload.id
+                if let current = state.value { state.succeed(current.adding(drop)) }
+                message = nil
+            }
             ClickHaptics.success()
             await reload()
         } catch let refusal as EventDropPostError {
-            uploads.removeAll { $0.id == upload.id }
-            message = refusal.errorDescription
+            withAnimation(ClickMotion.content) {
+                uploads.removeAll { $0.id == upload.id }
+                message = refusal.errorDescription
+            }
             await reload()
         } catch {
             guard !error.isCancellation else { return }
-            if let index = uploads.firstIndex(where: { $0.id == upload.id }) { uploads[index].failed = true }
-            message = "Couldn't upload your drop. Tap Retry — it won't be added twice."
+            withAnimation(ClickMotion.subtleFade) {
+                if let index = uploads.firstIndex(where: { $0.id == upload.id }) { uploads[index].failed = true }
+                message = "Couldn't upload your drop. Tap Retry — it won't be added twice."
+            }
         }
     }
 
     private func retry(_ upload: PendingUpload) async {
         guard let index = uploads.firstIndex(where: { $0.id == upload.id }) else { return }
-        uploads[index].failed = false
+        withAnimation(ClickMotion.subtleFade) {
+            uploads[index].failed = false
+            message = nil
+        }
         await send(uploads[index])
     }
 
@@ -215,6 +279,7 @@ struct EventDropsSection: View {
         do {
             try await env.beacons.deleteEventDrop(beaconID: beacon.id, dropID: drop.id)
             await reload()
+            landed[drop.id] = nil
         } catch {
             if !error.isCancellation { message = "Couldn't delete the drop. \(error.userFacingMessage)" }
         }
@@ -239,6 +304,12 @@ struct PixelatedPreview: View {
     @State private var image: UIImage?
 
     private static let pixels: CGFloat = 480
+
+    /// Loads a preview ahead, so the next view showing it paints it on its first frame.
+    static func prefetch(_ url: URL?) async {
+        guard let url else { return }
+        _ = await ImagePipeline.shared.image(for: url, maxPixelSize: pixels, signed: true)
+    }
 
     init(url: URL?, onAspect: @escaping (CGFloat) -> Void = { _ in }) {
         self.url = url
@@ -297,6 +368,11 @@ struct UploadingDropTile: View {
             .frame(width: size.width, height: size.height)
             .clipShape(RoundedRectangle(cornerRadius: cornerRadius, style: .continuous))
             .accessibilityLabel(failed ? "Upload failed" : "Uploading your drop")
-            .task { photo = ClickDropService.thumbnail(jpeg, maxPixels: max(size.width, size.height) * 3) }
+            .task {
+                // Decoded off the main actor, so the tile's arrival animation never hitches.
+                let jpeg = jpeg, maxPixels = max(size.width, size.height) * 3
+                let decoded = await Task.detached(priority: .userInitiated) { ClickDropService.thumbnail(jpeg, maxPixels: maxPixels) }.value
+                withAnimation(ClickMotion.subtleFade) { photo = decoded }
+            }
     }
 }

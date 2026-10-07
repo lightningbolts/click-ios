@@ -25,11 +25,31 @@ struct EventDetailTests {
         #expect(MapBeacon.decode(["id": "e2", "lat": 1.0, "lng": 2.0])?.rsvpEnabled == true)
     }
 
-    @Test("Descriptions keep inline markdown formatting")
-    func markdown() {
-        let rendered = BeaconDetailView.markdown("Bring **snacks** and see [site](https://joinclick.co)")
+    @Test("Descriptions keep inline markdown formatting; links go only to the web or mail")
+    func inlineMarkdown() {
+        let rendered = MarkdownBlock.inline("Bring **snacks** and see [site](https://joinclick.co)")
         #expect(String(rendered.characters) == "Bring snacks and see site")
         #expect(rendered.runs.contains { $0.link?.absoluteString == "https://joinclick.co" })
+        #expect(!MarkdownBlock.inline("[call](tel:5551234)").runs.contains { $0.link != nil })
+    }
+
+    @Test("Descriptions render headings, lists and quotes like the web")
+    func blockMarkdown() {
+        let blocks = MarkdownBlock.parse("# Run Club\n\nJoin us.\nAll paces.\n\n\n## What to bring\n\n- Shoes\n* Water\nDoors at 7.\n\n3. Warm up\n4. Run\n\n> Rain or shine\n\n#### Not a heading")
+        let text = { (block: MarkdownBlock) -> String in
+            switch block {
+            case .heading(let level, let text): "h\(level) " + String(text.characters)
+            case .paragraph(let text): String(text.characters)
+            case .quote(let text): "> " + String(text.characters)
+            case .list(let items): items.map { item in (item.marker.map { "\($0)" } ?? "•") + " " + String(item.text.characters) }.joined(separator: " | ")
+            }
+        }
+        #expect(blocks.map(text) == [
+            "h1 Run Club", "Join us.\nAll paces.", "h2 What to bring", "• Shoes | • Water", "Doors at 7.",
+            "3 Warm up | 4 Run", "> Rain or shine", "#### Not a heading"
+        ])
+        #expect(MarkdownBlock.parse("**Bold** start").count == 1)
+        #expect(MarkdownBlock.parse(" \n\n ").isEmpty)
     }
 
     @Test("Who's going names a few people and counts the rest")

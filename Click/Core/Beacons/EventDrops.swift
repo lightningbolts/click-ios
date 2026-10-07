@@ -62,6 +62,17 @@ public struct EventDropsState: Sendable, Equatable {
 
     public var myDrops: [EventDrop] { drops.filter(\.isMine) }
 
+    /// This state with a drop the server just confirmed (newest last, like the server orders
+    /// them), until the next load says the same.
+    public func adding(_ drop: EventDrop) -> EventDropsState {
+        guard !drops.contains(where: { $0.id == drop.id }) else { return self }
+        return EventDropsState(
+            phase: phase, opensAt: opensAt, closesAt: closesAt, revealAt: revealAt, eventTitle: eventTitle, access: access,
+            canPost: canPost && remaining > 1, remaining: max(0, remaining - 1), showToAbsentees: showToAbsentees,
+            drops: drops + [drop]
+        )
+    }
+
     /// When drops develop, as a day and clock time ("tomorrow at 10:00 AM"). Never relative
     /// ("in 7 hours"): that's frozen at whenever the screen drew it.
     public static func revealPhrase(_ revealAt: Date, now: Date = .now, calendar: Calendar = .current) -> String {

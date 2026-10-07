@@ -161,10 +161,10 @@ struct BeaconDetailView: View {
 
                 if beacon.isEvent { peopleSection(beacon) }
 
-                if let description = beacon.description, !description.isEmpty {
+                if let description = beacon.description?.nonEmptyTrimmed {
                     VStack(alignment: .leading, spacing: 10) {
                         sectionHeader("About")
-                        Text(Self.markdown(description))
+                        MarkdownText(description)
                             .font(ClickTypography.body)
                             .foregroundStyle(ClickColors.textSecondary)
                             .tint(ClickColors.accentForeground)
@@ -951,12 +951,6 @@ struct BeaconDetailView: View {
             return (title, resolved?.address ?? (resolved?.name != nil ? beacon.formattedAddress : nil))
         }
         return (beacon.locationName, beacon.formattedAddress)
-    }
-
-    /// Descriptions keep their inline formatting (links, emphasis) instead of raw markdown.
-    nonisolated static func markdown(_ text: String) -> AttributedString {
-        (try? AttributedString(markdown: text, options: .init(interpretedSyntax: .inlineOnlyPreservingWhitespace)))
-            ?? AttributedString(text)
     }
 }
 

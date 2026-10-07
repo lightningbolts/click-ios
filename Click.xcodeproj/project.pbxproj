@@ -261,6 +261,7 @@
 		DA964C45F465551076944CB1 /* AudioSessionController.swift in Sources */ = {isa = PBXBuildFile; fileRef = 72D81EDF1823BF01D30A9CE9 /* AudioSessionController.swift */; };
 		DCF918349766112AF4A11269 /* PermissionCoordinator.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2C5A7CE7107D552FF7C4C6AC /* PermissionCoordinator.swift */; };
 		DE83893E301F23E142D54F5F /* PlaceCopy.swift in Sources */ = {isa = PBXBuildFile; fileRef = 96701F50D69BDC8C6C0D5929 /* PlaceCopy.swift */; };
+		DF98FCFF423E682044BABCF5 /* MarkdownText.swift in Sources */ = {isa = PBXBuildFile; fileRef = E2E2AD636CD6E9F7CD20A549 /* MarkdownText.swift */; };
 		DFCC9DF32D532A6567CFF401 /* Manrope-SemiBold.ttf in Resources */ = {isa = PBXBuildFile; fileRef = 24F8E9B9D0F0B51D39CA35F3 /* Manrope-SemiBold.ttf */; };
 		E010C0DE392C7E161105210F /* EncounterMergeTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3FBD98425A5A6DCFF4A41259 /* EncounterMergeTests.swift */; };
 		E13CF95370E4E460DCD559FD /* EventDetailTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1129F5B0BDFF83F9CE1A6759 /* EventDetailTests.swift */; };
@@ -652,6 +653,7 @@
 		DF55528B36B6CD4C5CCBEAF5 /* TapConnectModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TapConnectModel.swift; sourceTree = "<group>"; };
 		DFFB60FCF05BC5CD192D91F3 /* InboxFormatting.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = InboxFormatting.swift; sourceTree = "<group>"; };
 		E242ED11CC7420590A7C5777 /* ClickDropFilter.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ClickDropFilter.swift; sourceTree = "<group>"; };
+		E2E2AD636CD6E9F7CD20A549 /* MarkdownText.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MarkdownText.swift; sourceTree = "<group>"; };
 		E2EC3690E271F4DA7D73D18B /* AuthValidationTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AuthValidationTests.swift; sourceTree = "<group>"; };
 		E3B19D4621050199A97E10A9 /* Click.app */ = {isa = PBXFileReference; includeInIndex = 0; lastKnownFileType = wrapper.application; path = Click.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		E3F99966A30696562944AC52 /* RelationshipRepository.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RelationshipRepository.swift; sourceTree = "<group>"; };
@@ -733,6 +735,7 @@
 				856572EA2FE8C0C700768A86 /* GroupAvatarView.swift */,
 				CEEFE47A4CBAB925D04FB0E9 /* GroupedSurface.swift */,
 				A7252A59450164829D35B1E5 /* LocationNudgeCard.swift */,
+				E2E2AD636CD6E9F7CD20A549 /* MarkdownText.swift */,
 				30988D99C421B40B486F5134 /* OfflineNotice.swift */,
 				3780D071F45AC96D60FB53F5 /* QRCode.swift */,
 				29FFA9A94BF9230BBA3BD1B7 /* ReactionBar.swift */,
@@ -1891,6 +1894,7 @@
 				761B604CDB4F953AFB0B3E29 /* LocationProvider.swift in Sources */,
 				F52ACBD891E2FDA84ECE47D4 /* MapBeacon.swift in Sources */,
 				F812BC1232D69B6E594EF4A6 /* MapFeatureModel.swift in Sources */,
+				DF98FCFF423E682044BABCF5 /* MarkdownText.swift in Sources */,
 				1B4617C370DCCBFD2032386E /* MeRepository.swift in Sources */,
 				5B7B2613D4B9042F81200881 /* MeTabAvatarModel.swift in Sources */,
 				724C7C8B838896AB2B8A7CE2 /* MeView.swift in Sources */,
