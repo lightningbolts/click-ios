@@ -12,19 +12,45 @@ concurrency:
 
 jobs:
   build-and-test:
-    runs-on: macos-15
+    name: ${{ matrix.name }}
+    runs-on: ${{ matrix.runner }}
+    # The forward-compatibility lane reports but never fails the run.
+    continue-on-error: ${{ matrix.experimental }}
+    timeout-minutes: 60
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          # Required: the current Apple toolchain (newest Xcode 26 on macOS 26, iOS 26 SDK).
+          - name: build-and-test
+            runner: macos-26
+            xcode: "26"
+            experimental: false
+          # Forward compatibility: Xcode 27 / iOS 27 (GitHub's public-preview image).
+          - name: xcode-27 (non-blocking)
+            runner: xcode-27
+            xcode: "27"
+            experimental: true
 
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
 
       - name: Select Xcode Version
+        env:
+          XCODE_MAJOR: ${{ matrix.xcode }}
         run: |
+          # Newest release Xcode of this major: betas and their symlinked aliases are skipped.
           DEVELOPER_DIR=$(python3 - <<'PY'
           import glob
+          import os
           import re
 
-          apps = glob.glob("/Applications/Xcode_16*.app")
+          major = os.environ["XCODE_MAJOR"]
+          apps = [
+              path for path in glob.glob(f"/Applications/Xcode_{major}*.app")
+              if not os.path.islink(path) and "beta" not in path.lower()
+          ]
 
           def version(path):
               match = re.search(r"Xcode_(\d+)(?:\.(\d+))?(?:\.(\d+))?\.app$", path)
@@ -33,9 +59,12 @@ jobs:
           print(max(apps, key=version) if apps else "")
           PY
           )
-          if [ -n "$DEVELOPER_DIR" ]; then
-            sudo xcode-select -s "$DEVELOPER_DIR"
+          if [ -z "$DEVELOPER_DIR" ]; then
+            echo "::error::No release Xcode $XCODE_MAJOR found on this runner"
+            ls -d /Applications/Xcode* || true
+            exit 1
           fi
+          sudo xcode-select -s "$DEVELOPER_DIR"
           xcodebuild -version
 
       - name: Install XcodeGen
@@ -54,10 +83,29 @@ jobs:
 
       - name: Run Unit Tests
         run: |
-          DEVICE_NAME=$(xcrun simctl list devices available | grep -E "iPhone (16|15)" | head -n 1 | sed -E 's/^[[:space:]]+//; s/[[:space:]]+\(.*\).*$//')
-          if [ -z "$DEVICE_NAME" ]; then DEVICE_NAME="iPhone 16"; fi
+          # An iPhone on the newest iOS runtime of the selected Xcode (names change every year).
+          DEVICE_ID=$(xcrun simctl list devices available -j | python3 -c '
+          import json, re, sys
+          runtimes = json.load(sys.stdin)["devices"]
+          def version(key):
+              match = re.search(r"iOS-(\d+)-(\d+)(?:-(\d+))?$", key)
+              return tuple(int(v or 0) for v in match.groups()) if match else None
+          ios = sorted((k for k in runtimes if version(k)), key=version, reverse=True)
+          for key in ios:
+              phones = [d for d in runtimes[key] if d["name"].startswith("iPhone")]
+              if phones:
+                  phones.sort(key=lambda d: ("Pro" not in d["name"], d["name"]))
+                  print(phones[0]["udid"])
+                  break
+          ')
+          if [ -z "$DEVICE_ID" ]; then
+            echo "::error::No available iPhone simulator"
+            xcrun simctl list devices available
+            exit 1
+          fi
+          xcrun simctl list devices available | grep "$DEVICE_ID"
           xcodebuild test \
             -project Click.xcodeproj \
             -scheme ClickTests \
-            -destination "platform=iOS Simulator,name=$DEVICE_NAME" \
+            -destination "platform=iOS Simulator,id=$DEVICE_ID" \
             CODE_SIGNING_ALLOWED=NO
