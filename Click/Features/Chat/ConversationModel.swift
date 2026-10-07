@@ -65,6 +65,11 @@ public final class ConversationModel {
     @ObservationIgnored private var staleReactionIDs = Set<String>()
     @ObservationIgnored private var refreshAllReactions = false
     @ObservationIgnored private var reactionRefreshTask: Task<Void, Never>?
+    /// A short, bounded poll only while this visible thread contains history that may become
+    /// decryptable after another device finishes an approved key transfer.
+    @ObservationIgnored private var historyUnlockTask: Task<Void, Never>?
+    private var historyUnlockAttempt = 0
+    private static let historyUnlockDelays: [Duration] = [.seconds(2), .seconds(5), .seconds(10), .seconds(20)]
     /// True between the chat screen's appear and disappear.
     public private(set) var isVisible = false
     /// Click Drop develop state (spec §2): when this viewer developed each drop, synced server-side.
@@ -376,6 +381,9 @@ public final class ConversationModel {
         pendingSends.detach(self, chatID: identity.chatID)
         typingStopTask?.cancel()
         typingStopTask = nil
+        historyUnlockTask?.cancel()
+        historyUnlockTask = nil
+        historyUnlockAttempt = 0
         if typingActive {
             realtimeManager.sendTyping(isTyping: false, userID: currentUserID)
         }
@@ -440,6 +448,7 @@ public final class ConversationModel {
             operationError = nil
             await captureUnreadAndMarkRead()
             await refreshDropStates()
+            scheduleHistoryUnlockRetryIfNeeded()
         } catch {
             if error.isCancellation {
                 if phase == .loading { phase = items.isEmpty ? .initial : .loaded }
@@ -448,6 +457,28 @@ public final class ConversationModel {
             } else {
                 operationError = error.userFacingMessage
             }
+        }
+    }
+
+    /// Approved history is transferred client-to-client, so the recipient can briefly render
+    /// locked rows after approval while another device uploads the wrapped epoch keys. Retry only
+    /// while this thread is visible, with a strict cap; normal message/realtime sync remains unchanged.
+    private func scheduleHistoryUnlockRetryIfNeeded() {
+        historyUnlockTask?.cancel()
+        historyUnlockTask = nil
+
+        guard isVisible, items.contains(where: \.isLockedHistory) else {
+            historyUnlockAttempt = 0
+            return
+        }
+        guard historyUnlockAttempt < Self.historyUnlockDelays.count else { return }
+
+        let delay = Self.historyUnlockDelays[historyUnlockAttempt]
+        historyUnlockAttempt += 1
+        historyUnlockTask = Task { [weak self] in
+            try? await Task.sleep(for: delay)
+            guard !Task.isCancelled, let self, self.isVisible else { return }
+            await self.loadMessages(force: true)
         }
     }
 
