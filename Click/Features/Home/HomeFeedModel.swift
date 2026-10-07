@@ -231,11 +231,13 @@ enum HomeRecommendations {
             let rising = MapItem(kind: .beacon(beacon)).risingScore(now: now)
             let interest = Self.interest(of: beacon, among: tags)
 
-            let score = (interest == nil ? 0 : 3)
-                + (meters.map { 2.5 * exp(-$0 / 3_000) } ?? 0)
-                + (live ? 2 : 2 * exp(-hoursAway / 36))
-                + min(1.5, log1p(Double(going)) * 0.6)
-                + min(1.5, rising * 3)
+            // Typed parts: one long mixed expression is too slow for the type checker.
+            let interestScore: Double = interest == nil ? 0 : 3
+            let nearScore: Double = meters.map { 2.5 * exp(-$0 / 3_000) } ?? 0
+            let soonScore: Double = live ? 2 : 2 * exp(-hoursAway / 36)
+            let hotScore: Double = min(1.5, log1p(Double(going)) * 0.6)
+            let risingScore: Double = min(1.5, rising * 3)
+            let score = interestScore + nearScore + soonScore + hotScore + risingScore
 
             let reason: HomeRecommendation.Reason
             if let interest {
