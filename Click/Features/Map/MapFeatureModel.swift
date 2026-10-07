@@ -316,16 +316,15 @@ final class MapFeatureModel {
     }
 
     /// The map's pins and bubbles: clustering is quadratic, so it reruns only when the items or
-    /// the zoom change.
+    /// the zoom change. Pins merge a Place's events into it; lists and counts keep every event.
     func clusters(pins: [ConnectionPin]) -> [MapCluster] {
         let zoom = clusterZoom
         return clustersMemo(ClustersKey(items: itemsKey(pins: pins, filter: filter, now: .now), zoom: zoom)) {
-            Self.clusters(items(pins: pins), zoom: zoom)
+            Self.clusters(Self.mergingPlaceEvents(items(pins: pins)), zoom: zoom)
         }
     }
 
-    /// Pure item assembly (testable without an environment). With Places on, a Place's official
-    /// events render inside its pin: those beacons are dropped from the list (§6.5 event merge).
+    /// Pure item assembly (testable without an environment).
     nonisolated static func items(
         discovery: NearbyDiscovery?,
         focusedBeacons: [MapBeacon] = [],
@@ -343,10 +342,6 @@ final class MapFeatureModel {
             beacons.append(focused)
         }
         let places = placesEnabled ? placeFilters.apply(discovery?.places ?? []) : []
-        if placesEnabled {
-            let placeIDs = Set((discovery?.places ?? []).map(\.id))
-            beacons.removeAll { beacon in beacon.venueID.map(placeIDs.contains) ?? false }
-        }
         let all = beacons.map { MapItem(kind: .beacon($0)) }
             + places.map { MapItem(kind: .place($0)) }
             + (discovery?.hubs ?? []).map { MapItem(kind: .hub($0)) }
@@ -356,6 +351,22 @@ final class MapFeatureModel {
             layers.contains(item.layer) && (filter == nil || filter == item.layer)
         }
     }
+
+    /// §6.5 event merge, for map pins: an official event held at a Place on the map rides in its
+    /// pin instead of stacking a second pin on it. An event the Place hosts somewhere else, or
+    /// whose Place is filtered out, keeps its own pin.
+    nonisolated static func mergingPlaceEvents(_ items: [MapItem]) -> [MapItem] {
+        var places: [String: PlaceSummary] = [:]
+        for item in items { if case .place(let place) = item.kind { places[place.id] = place } }
+        guard !places.isEmpty else { return items }
+        return items.filter { item in
+            guard case .beacon(let beacon) = item.kind, let place = beacon.venueID.flatMap({ places[$0] }) else { return true }
+            return distanceMeters(beacon.coordinate, place.coordinate) > Double(place.radiusMeters) + placeMergeSlackMeters
+        }
+    }
+
+    /// How far past a Place's radius its event may sit and still merge (geocoding drift).
+    nonisolated static let placeMergeSlackMeters: Double = 100
 
     /// Discovery list: live events first, then by layer, then "My network" (the people whose
     /// pins the map shows) — the same items the chip counts come from. Rows follow `sort`.

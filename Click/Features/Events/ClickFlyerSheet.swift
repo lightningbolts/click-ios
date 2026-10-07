@@ -1,5 +1,6 @@
 import CoreImage
 import CoreImage.CIFilterBuiltins
+import LinkPresentation
 import SwiftUI
 
 /// "Create Click Flyer": the event as a ready-to-post image for an Instagram Story (9:16) or a
@@ -16,6 +17,7 @@ struct ClickFlyerSheet: View {
     @State private var art: FlyerArt?
     @State private var rendered: [FlyerFormat: UIImage] = [:]
     @State private var isSaving = false
+    @State private var isSharing = false
     @State private var linkCopied = false
     @State private var notice: String?
 
@@ -44,6 +46,12 @@ struct ClickFlyerSheet: View {
                 }
             }
             .task(id: format) { await render(format) }
+            .sheet(isPresented: $isSharing) {
+                if let flyer = rendered[format] {
+                    ActivityShareSheet(items: [FlyerImageItem(image: flyer, title: beacon.title), FlyerLinkItem(url: shareURL)])
+                        .presentationDetents([.medium, .large])
+                }
+            }
             .alert("Click Flyer", isPresented: Binding(get: { notice != nil }, set: { if !$0 { notice = nil } })) {
                 Button("OK", role: .cancel) {}
             } message: {
@@ -104,17 +112,9 @@ struct ClickFlyerSheet: View {
             .buttonStyle(.clickSecondary)
             .disabled(rendered[format] == nil || isSaving)
 
-            if let flyer = rendered[format] {
-                ShareLink(item: Image(uiImage: flyer), message: Text(shareURL.absoluteString),
-                          preview: SharePreview(beacon.title, image: Image(uiImage: flyer))) {
-                    Label("Share", systemImage: "square.and.arrow.up")
-                }
+            Button { isSharing = true } label: { Label("Share", systemImage: "square.and.arrow.up") }
                 .buttonStyle(.clickPrimary)
-            } else {
-                Button {} label: { Label("Share", systemImage: "square.and.arrow.up") }
-                    .buttonStyle(.clickPrimary)
-                    .disabled(true)
-            }
+                .disabled(rendered[format] == nil)
         }
         .padding(.horizontal, ClickSpacing.screenGutter)
         .padding(.top, 10)
@@ -162,6 +162,45 @@ struct ClickFlyerSheet: View {
         } catch {
             notice = error.localizedDescription
         }
+    }
+}
+
+// MARK: - Sharing
+
+/// The flyer, titled with the event in the share sheet's header.
+private final class FlyerImageItem: NSObject, UIActivityItemSource {
+    let image: UIImage
+    let title: String
+
+    init(image: UIImage, title: String) {
+        self.image = image
+        self.title = title
+    }
+
+    func activityViewControllerPlaceholderItem(_ controller: UIActivityViewController) -> Any { image }
+
+    func activityViewController(_ controller: UIActivityViewController, itemForActivityType type: UIActivity.ActivityType?) -> Any? { image }
+
+    func activityViewControllerLinkMetadata(_ controller: UIActivityViewController) -> LPLinkMetadata? {
+        let metadata = LPLinkMetadata()
+        metadata.title = title
+        metadata.imageProvider = NSItemProvider(object: image)
+        return metadata
+    }
+}
+
+/// The event link, sent with the flyer as its caption. Instagram (its app and the people it
+/// suggests) takes any text as the thing to share and refuses a link that isn't its own
+/// ("Content currently unavailable"), so it gets the flyer alone; the QR carries the link.
+private final class FlyerLinkItem: NSObject, UIActivityItemSource {
+    let url: URL
+
+    init(url: URL) { self.url = url }
+
+    func activityViewControllerPlaceholderItem(_ controller: UIActivityViewController) -> Any { url.absoluteString }
+
+    func activityViewController(_ controller: UIActivityViewController, itemForActivityType type: UIActivity.ActivityType?) -> Any? {
+        type?.rawValue.hasPrefix("com.burbn.instagram") == true ? nil : url.absoluteString
     }
 }
 
