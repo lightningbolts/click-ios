@@ -689,7 +689,7 @@ struct UpcomingEventsView: View {
     }
 
     /// "Today", "Tomorrow", then "Thu, Oct 8"; a live event sits under today.
-    static func days(_ events: [HomeUpcomingEvent], now: Date = .now, calendar: Calendar = .current) -> [(title: String, events: [HomeUpcomingEvent])] {
+    nonisolated static func days(_ events: [HomeUpcomingEvent], now: Date = .now, calendar: Calendar = .current) -> [(title: String, events: [HomeUpcomingEvent])] {
         var days: [(title: String, events: [HomeUpcomingEvent])] = []
         for event in events {
             let day = max(event.schedule.start, now)
