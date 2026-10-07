@@ -77,9 +77,9 @@ struct PlacesMapTests {
         )
     }
 
-    static func event(_ id: String, venueID: String?) throws -> MapBeacon {
+    static func event(_ id: String, venueID: String?, lat: Double = 47.6588) throws -> MapBeacon {
         var row: [String: Any] = [
-            "id": id, "beacon_type": "event", "creator_id": "u1", "lat": 47.6588, "lng": -122.3131,
+            "id": id, "beacon_type": "event", "creator_id": "u1", "lat": lat, "lng": -122.3131,
             "metadata": ["title": "Open mic", "event_start_at": "2026-01-01T00:00:00Z", "event_end_at": "2099-01-01T00:00:00Z"],
             "expires_at": "2099-01-01T00:00:00Z"
         ]
@@ -91,13 +91,39 @@ struct PlacesMapTests {
         NearbyDiscovery(beacons: beacons, hubs: [], latitude: 47.6, longitude: -122.3, fetchedAt: .now, places: places)
     }
 
-    @Test("An official event at a listed Place merges into the Place pin")
+    @Test("An official event at a Place on the map merges into its pin")
     func eventMerge() throws {
         let d = Self.discovery(beacons: [try Self.event("e-at-place", venueID: "p1"), try Self.event("e-elsewhere", venueID: nil)], places: [Self.place("p1")])
-        let ids = MapFeatureModel.items(discovery: d, placesEnabled: true).map(\.id)
+        let ids = MapFeatureModel.mergingPlaceEvents(MapFeatureModel.items(discovery: d, placesEnabled: true)).map(\.id)
         #expect(ids.contains(.place("p1")))
         #expect(ids.contains(.beacon("e-elsewhere")))
         #expect(!ids.contains(.beacon("e-at-place")))
+    }
+
+    @Test("Lists keep every event, merged pins or not")
+    func listsKeepPlaceEvents() throws {
+        let d = Self.discovery(beacons: [try Self.event("e-at-place", venueID: "p1")], places: [Self.place("p1")])
+        let ids = MapFeatureModel.items(discovery: d, placesEnabled: true).map(\.id)
+        #expect(ids.contains(.beacon("e-at-place")))
+    }
+
+    @Test("An event a Place hosts somewhere else keeps its own pin")
+    func eventAwayFromPlace() throws {
+        // ~1.4 km south of the Place: a Place hosting at another venue.
+        let d = Self.discovery(beacons: [try Self.event("e-away", venueID: "p1", lat: 47.6462)], places: [Self.place("p1")])
+        let ids = MapFeatureModel.mergingPlaceEvents(MapFeatureModel.items(discovery: d, placesEnabled: true)).map(\.id)
+        #expect(ids.contains(.beacon("e-away")))
+    }
+
+    @Test("An event whose Place is hidden (layer, filter or chip) keeps its own pin")
+    func eventWithHiddenPlace() throws {
+        let d = Self.discovery(beacons: [try Self.event("e-at-place", venueID: "p1")], places: [Self.place("p1")])
+        var layers = Set(MapLayer.allCases)
+        layers.remove(.places)
+        let hiddenLayer = MapFeatureModel.mergingPlaceEvents(MapFeatureModel.items(discovery: d, placesEnabled: true, layers: layers))
+        #expect(hiddenLayer.map(\.id) == [.beacon("e-at-place")])
+        let eventsChip = MapFeatureModel.mergingPlaceEvents(MapFeatureModel.items(discovery: d, placesEnabled: true, filter: .events))
+        #expect(eventsChip.map(\.id) == [.beacon("e-at-place")])
     }
 
     @Test("With Places off, nothing changes: no Place pins and no merge")
