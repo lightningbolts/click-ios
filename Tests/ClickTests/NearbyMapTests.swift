@@ -10,14 +10,63 @@ struct NearbyMapTests {
                                             latitude: lat, longitude: lon, locationName: nil, isCore: false)))
     }
 
-    @Test("Zoomed in, every pin stands alone; zoomed out, close pins merge")
-    func clustering() {
+    private func beacon(_ id: String, type: String, lat: Double, lon: Double, start: Date? = nil, end: Date? = nil) throws -> MapItem {
+        var meta: [String: Any] = ["title": id]
+        if let start, let end {
+            meta["event_start_at"] = start.ISO8601Format()
+            meta["event_end_at"] = end.ISO8601Format()
+        }
+        let row: [String: Any] = ["id": id, "lat": lat, "lng": lon, "beacon_type": type, "metadata": meta]
+        return MapItem(kind: .beacon(try #require(MapBeacon.decode(row))))
+    }
+
+    @Test("Pins stack exactly when they would overlap on screen")
+    func stacking() {
+        // a and b ~600 m apart; c ~40 km away.
         let items = [pin("a", 47.6200, -122.3200), pin("b", 47.6250, -122.3240), pin("c", 47.9, -122.9)]
-        #expect(MapFeatureModel.clusters(items, zoom: 14).count == 3)
-        // Zoom 9 → 1 km radius: a and b (~600 m apart) merge, c (~40 km away) doesn't.
-        let zoomedOut = MapFeatureModel.clusters(items, zoom: 9)
+        // Zoom 16: ~1.6 m per point, so 600 m is ~370 pt apart. Nothing overlaps.
+        #expect(MapFeatureModel.clusters(items, zoom: 16).count == 3)
+        // Zoom 12: ~26 m per point, so a and b are ~23 pt apart and would overlap.
+        let zoomedOut = MapFeatureModel.clusters(items, zoom: 12)
         #expect(zoomedOut.count == 2)
-        #expect(zoomedOut.contains { $0.items.count == 2 })
+        #expect(zoomedOut.contains { $0.items.map(\.title).sorted() == ["a", "b"] })
+        // Same spot (one venue): stacked even fully zoomed in.
+        let venue = [pin("x", 47.62, -122.32), pin("y", 47.62001, -122.32001)]
+        #expect(MapFeatureModel.clusters(venue, zoom: 20).count == 1)
+    }
+
+    @Test("A stack leads with what matters most (an alert first) and sits on its lead")
+    func stackLead() throws {
+        let now = Date()
+        let person = pin("Ana", 47.62, -122.32)
+        let later = try beacon("Later", type: "event", lat: 47.62001, lon: -122.32,
+                               start: now.addingTimeInterval(3 * 86_400), end: now.addingTimeInterval(3 * 86_400 + 3_600))
+        let live = try beacon("Live", type: "event", lat: 47.62002, lon: -122.32,
+                              start: now.addingTimeInterval(-600), end: now.addingTimeInterval(3_600))
+        let hazard = try beacon("Hazard", type: "hazard", lat: 47.62, lon: -122.32001)
+        let clusters = MapFeatureModel.clusters([person, later, hazard, live], zoom: 18, now: now)
+        #expect(clusters.count == 1)
+        let stack = try #require(clusters.first)
+        #expect(stack.items.map(\.title) == ["Hazard", "Live", "Later", "Ana"])
+        #expect(stack.coordinate.longitude == hazard.coordinate.longitude)
+        let withoutAlert = MapFeatureModel.clusters([person, later, live], zoom: 18, now: now)
+        #expect(withoutAlert.first?.items.map(\.title) == ["Live", "Later", "Ana"])
+        #expect(withoutAlert.first?.coordinate.latitude == live.coordinate.latitude)
+    }
+
+    @Test("Zoom in is offered only when a stack's members can be drawn apart, and fits them all")
+    func stackZoom() {
+        let sameSpot = MapCluster(id: "s", coordinate: .init(latitude: 47.62, longitude: -122.32),
+                                  items: [pin("a", 47.62, -122.32), pin("b", 47.62001, -122.32001)])
+        #expect(!MapFeatureModel.canSeparate(sameSpot))
+        let spread = MapCluster(id: "t", coordinate: .init(latitude: 47.62, longitude: -122.32),
+                                items: [pin("a", 47.62, -122.32), pin("b", 47.63, -122.34)])
+        #expect(MapFeatureModel.canSeparate(spread))
+        let region = MapFeatureModel.region(fitting: spread)
+        for item in spread.items {
+            #expect(abs(item.coordinate.latitude - region.center.latitude) < region.span.latitudeDelta / 2)
+            #expect(abs(item.coordinate.longitude - region.center.longitude) < region.span.longitudeDelta / 2)
+        }
     }
 
     @Test("Nearby rows read for every beacon kind, not only events")
@@ -48,23 +97,6 @@ struct NearbyMapTests {
         #expect(NearbyRow.place(try beacon("other")) == nil)
     }
 
-    @Test("Pins at the same venue are offered in the chooser; distant ones are not")
-    func overlap() {
-        let a = pin("a", 47.6200, -122.3200)
-        let b = pin("b", 47.62001, -122.32001)
-        let c = pin("c", 47.6300, -122.3300)
-        let stack = MapFeatureModel.overlapping(a, in: [a, b, c], zoom: 16)
-        #expect(stack.map(\.title) == ["a", "b"])
-    }
-
-    @Test("Overlap radius follows KMP: 44 pt × 0.85 × metres per point, clamped 12–90 m")
-    func overlapRadius() {
-        #expect(MapFeatureModel.overlapRadiusMeters(latitude: 0, zoom: 22) == 12)
-        #expect(MapFeatureModel.overlapRadiusMeters(latitude: 0, zoom: 10) == 90)
-        let mid = MapFeatureModel.overlapRadiusMeters(latitude: 0, zoom: 16)
-        #expect(abs(mid - 44 * 0.85 * 156_543.033_92 / 65_536) < 0.01)
-    }
-
     private func event(_ id: String, going: Int, hoursOld: Double, lat: Double, now: Date) -> MapItem {
         let created = now.addingTimeInterval(-hoursOld * 3600).ISO8601Format()
         let row: [String: Any] = ["id": id, "lat": lat, "lng": -122.32, "beacon_type": "event", "created_at": created,
@@ -92,12 +124,5 @@ struct NearbyMapTests {
         #expect(order(.alphabetical) == ["Fresh", "Old", "Quiet"])
         #expect(order(.new) == ["Quiet", "Fresh", "Old"])
         #expect(order(.rising) == ["Fresh", "Old", "Quiet"])
-    }
-
-    @Test("A cluster tap always lands in pin mode")
-    func clusterTapZoom() {
-        let cluster = MapCluster(id: "x", coordinate: .init(latitude: 0, longitude: 0),
-                                 items: [pin("a", 47.0, -122.0), pin("b", 49.0, -120.0)])
-        #expect(MapFeatureModel.zoomToFit(cluster) >= MapFeatureModel.clusterThresholdZoom + 1)
     }
 }

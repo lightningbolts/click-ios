@@ -197,7 +197,8 @@ public struct ProfileView: View {
                 imageURL: profile?.avatarURL ?? inboxItem?.avatarUrl,
                 seed: model.userID,
                 initials: profile?.initials ?? inboxItem?.initials ?? "",
-                size: 112
+                size: 112,
+                isCore: inboxItem?.isCore == true
             )
             Text(profile?.displayName ?? inboxItem?.displayName ?? " ")
                 .font(ClickTypography.identityTitle)

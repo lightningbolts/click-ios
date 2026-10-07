@@ -222,7 +222,7 @@ public struct MeView: View {
                             env.router.navigate(to: .userProfile(userID: item.userID, connectionID: item.connectionID))
                         } label: {
                             VStack(spacing: 6) {
-                                AvatarView(imageURL: item.avatarUrl, seed: item.userID, initials: item.initials, size: 64)
+                                AvatarView(imageURL: item.avatarUrl, seed: item.userID, initials: item.initials, size: 64, isCore: item.isCore)
                                 Text(HomeFeedModel.firstName(item.displayName) ?? item.displayName)
                                     .font(ClickTypography.supporting)
                                     .foregroundStyle(ClickColors.textPrimary)

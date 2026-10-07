@@ -328,7 +328,7 @@ struct GlobalSearchView: View {
             resultRow(
                 title: item.displayName,
                 subtitle: reason ?? (archived ? "Archived" : item.encounterLocation.nonEmptyTrimmed),
-                avatar: AnyView(AvatarView(imageURL: item.avatarUrl, seed: item.userID, initials: item.initials, size: 40))
+                avatar: AnyView(AvatarView(imageURL: item.avatarUrl, seed: item.userID, initials: item.initials, size: 40, isCore: item.isCore))
             ) {
                 open(.chat(DirectChatRoute(
                     chatID: item.chatID, connectionID: item.connectionID, peerUserID: item.userID,

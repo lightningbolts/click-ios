@@ -193,10 +193,10 @@ struct ClickPassView: View {
                     }
                     .buttonStyle(.clickSecondary)
                 } else if let walletPass {
-                    AddPassToWalletButton([walletPass]) { added in
+                    AddToWalletButton(pass: walletPass) { added in
                         if added { isInWallet = true }
                     }
-                    .addPassToWalletButtonStyle(.black)
+                    .frame(maxWidth: .infinity)
                     .frame(height: ClickMetrics.primaryActionHeight)
                 } else {
                     // Holds the button's place while the signed pass downloads.
@@ -362,5 +362,56 @@ extension MapBeacon {
     /// Directions to the event's spot, labelled the way the page shows it.
     var directions: MapsDestination {
         MapsDestination(coordinate: coordinate, name: locationName ?? title, address: formattedAddress, wantsDirections: true)
+    }
+}
+
+/// Apple's "Add to Apple Wallet" button. Wallet's own sheet is presented from the top-most view
+/// controller as a standard page sheet: SwiftUI's `AddPassToWalletButton`, inside the event
+/// sheet, laid it out in that sheet's frame (square top edge, the screen showing at the bottom).
+private struct AddToWalletButton: UIViewRepresentable {
+    let pass: PKPass
+    /// Whether the pass is in Wallet once its sheet closes.
+    let onFinish: (Bool) -> Void
+
+    func makeCoordinator() -> Coordinator { Coordinator(self) }
+
+    func makeUIView(context: Context) -> PKAddPassButton {
+        let button = PKAddPassButton(addPassButtonStyle: .black)
+        // Fills the row like the other actions instead of hugging its label.
+        button.setContentHuggingPriority(.defaultLow, for: .horizontal)
+        button.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
+        button.addTarget(context.coordinator, action: #selector(Coordinator.present(_:)), for: .touchUpInside)
+        return button
+    }
+
+    func updateUIView(_ button: PKAddPassButton, context: Context) {
+        context.coordinator.parent = self
+    }
+
+    @MainActor
+    final class Coordinator: NSObject, @preconcurrency PKAddPassesViewControllerDelegate {
+        var parent: AddToWalletButton
+
+        init(_ parent: AddToWalletButton) {
+            self.parent = parent
+        }
+
+        @objc func present(_ sender: UIView) {
+            var presenter = sender.window?.rootViewController
+            while let presented = presenter?.presentedViewController, !presented.isBeingDismissed {
+                presenter = presented
+            }
+            guard let presenter, let controller = PKAddPassesViewController(pass: parent.pass) else { return }
+            // A page sheet over everything, never laid out inside the event sheet's frame.
+            controller.modalPresentationStyle = .pageSheet
+            controller.delegate = self
+            presenter.present(controller, animated: true)
+        }
+
+        func addPassesViewControllerDidFinish(_ controller: PKAddPassesViewController) {
+            let added = PKPassLibrary().containsPass(parent.pass)
+            controller.dismiss(animated: true)
+            parent.onFinish(added)
+        }
     }
 }

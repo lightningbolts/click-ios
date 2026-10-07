@@ -112,6 +112,175 @@ struct HomeEventHighlight: Equatable, Identifiable {
     }
 }
 
+/// An event on your plate, for Home's Upcoming: one you host, are going to, or saved.
+struct HomeUpcomingEvent: Identifiable, Equatable {
+    enum Role: Equatable {
+        case hosting, going, saved
+
+        var label: String {
+            switch self {
+            case .hosting: "Hosting"
+            case .going: "Going"
+            case .saved: "Saved"
+            }
+        }
+    }
+
+    let id: String
+    let title: String
+    let schedule: EventSchedule
+    let place: String?
+    let imageURL: String?
+    let role: Role
+
+    /// Hosting and going first-hand (`/api/beacons/mine`), then saved events not already there;
+    /// soonest first, nothing that has ended, and not the event Home's hero already shows.
+    static func merge(mine: [MyEvent], saved: [SavedEvent], excluding promotedID: String?, now: Date) -> [HomeUpcomingEvent] {
+        var events: [HomeUpcomingEvent] = mine.compactMap { event in
+            guard let schedule = EventSchedule(start: event.start, end: event.end), !schedule.isEnded(at: now) else { return nil }
+            return HomeUpcomingEvent(id: event.beaconID, title: event.title, schedule: schedule, place: event.place,
+                                     imageURL: event.imageURL, role: event.isHost ? .hosting : .going)
+        }
+        let known = Set(events.map(\.id))
+        events += saved.compactMap { event in
+            guard !known.contains(event.beaconID), event.isUpcomingOrLive(at: now), let schedule = event.schedule else { return nil }
+            return HomeUpcomingEvent(id: event.beaconID, title: event.title ?? "Saved event", schedule: schedule,
+                                     place: event.placeLabel, imageURL: nil, role: .saved)
+        }
+        return events
+            .filter { $0.id != promotedID }
+            .sorted { $0.schedule.start != $1.schedule.start ? $0.schedule.start < $1.schedule.start : $0.title < $1.title }
+    }
+}
+
+/// An event Home suggests that you haven't joined, and the one reason it reads first.
+struct HomeRecommendation: Identifiable, Equatable {
+    enum Reason: Equatable {
+        case interest(String)
+        case trending(going: Int)
+        case live
+        case today
+        case tomorrow
+        case nearby(meters: Double)
+        case popular(going: Int)
+        case comingUp
+
+        var text: String {
+            switch self {
+            case .interest(let tag): "Because you like \(tag)"
+            case .trending(let going): "Trending · \(going) going"
+            case .live: "Happening now"
+            case .today: "Today"
+            case .tomorrow: "Tomorrow"
+            case .nearby(let meters):
+                Measurement(value: meters, unit: UnitLength.meters)
+                    .formatted(.measurement(width: .abbreviated, usage: .road, numberFormatStyle: .number.precision(.fractionLength(0...1))))
+                    + " away"
+            case .popular(let going): "\(going) going"
+            case .comingUp: "Coming up"
+            }
+        }
+
+        var systemImage: String {
+            switch self {
+            case .interest: "heart.fill"
+            case .trending: "flame.fill"
+            case .live: "dot.radiowaves.left.and.right"
+            case .today: "clock.fill"
+            case .tomorrow: "calendar"
+            case .nearby: "location.fill"
+            case .popular: "person.2.fill"
+            case .comingUp: "sparkles"
+            }
+        }
+    }
+
+    let beacon: MapBeacon
+    let reason: Reason
+    var id: String { beacon.id }
+}
+
+/// Picks events for "Recommended for you" from what's around you: your interests, how close,
+/// how soon, and how fast people are joining (rising) or how many already have (hot).
+enum HomeRecommendations {
+    static let limit = 8
+    /// Only what's coming up in the next two weeks.
+    static let horizon: TimeInterval = 14 * 86_400
+
+    static func rank(
+        beacons: [MapBeacon],
+        interests: [String],
+        origin: CLLocationCoordinate2D?,
+        excluding taken: Set<String>,
+        viewerID: String?,
+        now: Date = .now,
+        calendar: Calendar = .current
+    ) -> [HomeRecommendation] {
+        let tags = interests.compactMap { tag -> (label: String, key: String)? in
+            tag.nonEmptyTrimmed.map { ($0, $0.lowercased()) }
+        }
+        var scored: [(recommendation: HomeRecommendation, score: Double)] = []
+        for beacon in beacons {
+            guard beacon.isEvent, let schedule = beacon.schedule, !schedule.isEnded(at: now),
+                  schedule.start.timeIntervalSince(now) <= horizon,
+                  !taken.contains(beacon.id), beacon.creatorID != viewerID else { continue }
+            let live = schedule.isLive(at: now)
+            let hoursAway = max(0, schedule.start.timeIntervalSince(now)) / 3600
+            let meters = origin.map { MapFeatureModel.distanceMeters($0, beacon.coordinate) }
+            let going = beacon.rsvpCount ?? 0
+            let rising = MapItem(kind: .beacon(beacon)).risingScore(now: now)
+            let interest = Self.interest(of: beacon, among: tags)
+
+            let score = (interest == nil ? 0 : 3)
+                + (meters.map { 2.5 * exp(-$0 / 3_000) } ?? 0)
+                + (live ? 2 : 2 * exp(-hoursAway / 36))
+                + min(1.5, log1p(Double(going)) * 0.6)
+                + min(1.5, rising * 3)
+
+            let reason: HomeRecommendation.Reason
+            if let interest {
+                reason = .interest(interest)
+            } else if going >= 3, rising >= 0.25 {
+                reason = .trending(going: going)
+            } else if live {
+                reason = .live
+            } else if schedule.startsToday(at: now, calendar: calendar) {
+                reason = .today
+            } else if let tomorrow = calendar.date(byAdding: .day, value: 1, to: now), calendar.isDate(schedule.start, inSameDayAs: tomorrow) {
+                reason = .tomorrow
+            } else if let meters, meters <= 1_500 {
+                reason = .nearby(meters: meters)
+            } else if going >= 5 {
+                reason = .popular(going: going)
+            } else {
+                reason = .comingUp
+            }
+            scored.append((HomeRecommendation(beacon: beacon, reason: reason), score))
+        }
+        // A repeating event appears once: its best-placed date.
+        var seenTitles = Set<String>()
+        return scored
+            .sorted { $0.score != $1.score ? $0.score > $1.score : ($0.recommendation.beacon.schedule?.start ?? .distantFuture) < ($1.recommendation.beacon.schedule?.start ?? .distantFuture) }
+            .map(\.recommendation)
+            .filter { seenTitles.insert($0.beacon.title.lowercased()).inserted }
+            .prefix(limit)
+            .map { $0 }
+    }
+
+    /// The first of your interests the event is about: one of its categories, or named in its
+    /// title as a whole word ("Art" matches "Art Walk", never "Startup").
+    static func interest(of beacon: MapBeacon, among tags: [(label: String, key: String)]) -> String? {
+        let categories = Set(beacon.eventCategories.map { $0.lowercased() })
+        let title = beacon.title.lowercased()
+        let words = Set(title.split { !$0.isLetter && !$0.isNumber }.map(String.init))
+        return tags.first { tag in
+            categories.contains(tag.key)
+                || words.contains(tag.key)
+                || (tag.key.contains(" ") && title.contains(tag.key))
+        }?.label
+    }
+}
+
 /// Owns Home's independently loadable modules (spec §20.2 "Loading architecture").
 ///
 /// The scaffold renders immediately; each module seeds from cache, then refreshes concurrently
@@ -126,6 +295,8 @@ final class HomeFeedModel {
     var savedEvents: ModuleState<[SavedEvent]> { environment?.selfData.savedEvents ?? ModuleState() }
     private(set) var nudges = ModuleState<[InboxNudge]>()
     private(set) var discovery = ModuleState<NearbyDiscovery>()
+    /// Events you host or are going to (`/api/beacons/mine`), for Upcoming.
+    private(set) var myEvents = ModuleState<[MyEvent]>()
     private(set) var recaps: [ActivityRecap.Window: ModuleState<ActivityRecap>] = [:]
     /// The event-history recap card (flag-gated), cached so it's in place when Home opens.
     private(set) var recapCard: PastEvent?
@@ -174,11 +345,26 @@ final class HomeFeedModel {
     /// The opportunity card's minimum height.
     nonisolated static let opportunityPlaceholderHeight: CGFloat = 132
 
-    /// Saved events that are still upcoming/live, soonest first, excluding the promoted event.
-    func upcomingSaved(excluding promotedID: String?, now: Date = .now) -> [SavedEvent] {
-        (savedEvents.value ?? [])
-            .filter { $0.isUpcomingOrLive(at: now) && $0.beaconID != promotedID }
-            .sorted { ($0.schedule?.start ?? .distantFuture) < ($1.schedule?.start ?? .distantFuture) }
+    /// Events you host, are going to or saved that haven't ended, soonest first.
+    func upcoming(excluding promotedID: String?, now: Date = .now) -> [HomeUpcomingEvent] {
+        HomeUpcomingEvent.merge(mine: myEvents.value ?? [], saved: savedEvents.value ?? [], excluding: promotedID, now: now)
+    }
+
+    /// Whether Upcoming has heard back from both of its sources (cache counts).
+    var hasUpcomingAnswer: Bool { myEvents.value != nil && savedEvents.value != nil }
+
+    /// Events near you you're not part of yet, best first (none without discovery).
+    func recommendations(excluding promotedID: String?, now: Date = .now) -> [HomeRecommendation] {
+        var taken = Set(upcoming(excluding: nil, now: now).map(\.id))
+        if let promotedID { taken.insert(promotedID) }
+        return HomeRecommendations.rank(
+            beacons: discovery.value?.beacons ?? [],
+            interests: environment?.selfData.profile.value?.interests ?? [],
+            origin: environment?.location.lastFix?.coordinate,
+            excluding: taken,
+            viewerID: userID,
+            now: now
+        )
     }
 
     // MARK: - Loading
@@ -206,9 +392,11 @@ final class HomeFeedModel {
             discovery.seed(CacheStore.loadNow(NearbyDiscovery.self, key: "nearby", userID: userID))
         }
         recapCard = CacheStore.loadNow([PastEvent].self, key: Self.recapCardKey, userID: userID)?.first
+        myEvents.seed(CacheStore.loadNow([MyEvent].self, key: Self.myEventsKey, userID: userID))
     }
 
     private static let recapCardKey = "event-recap-card"
+    private static let myEventsKey = "my-events"
 
     /// A failed read keeps the card shown; an answer (a card or none) replaces it and is cached.
     func loadRecapCard() async {
@@ -228,9 +416,9 @@ final class HomeFeedModel {
         // Let the cached frame commit before network work competes for the main actor.
         await Task.yield()
         await refresh()
-        // Saved events open with their RSVP already known (their pages never wait on it).
-        let saved = upcomingSaved(excluding: nil).prefix(6).map(\.beaconID)
-        await environment.events.warm(beaconIDs: Array(saved))
+        // Upcoming events open with their RSVP already known (their pages never wait on it).
+        let upcoming = upcoming(excluding: nil).prefix(6).map(\.id)
+        await environment.events.warm(beaconIDs: Array(upcoming))
     }
 
     /// Refreshes every module concurrently; concurrent callers share one pass.
@@ -394,6 +582,7 @@ final class HomeFeedModel {
         if environment.location.isAuthorized {
             discovery.seed(await environment.beacons.cachedDiscovery(userID: userID))
         }
+        myEvents.seed(await CacheStore.shared.load([MyEvent].self, key: Self.myEventsKey, userID: userID))
     }
 
     private func performRefresh() async {
@@ -403,7 +592,21 @@ final class HomeFeedModel {
         async let nudges: Void = loadNudges()
         async let recap: Void = loadRecap(recapWindow)
         async let discovery: Void = loadDiscovery()
-        _ = await (identity, intents, saved, nudges, recap, discovery)
+        async let mine: Void = reloadMyEvents()
+        _ = await (identity, intents, saved, nudges, recap, discovery, mine)
+    }
+
+    /// Also after an RSVP, a cancel or a new event, so Upcoming is right when you come back.
+    func reloadMyEvents() async {
+        guard let environment, let userID else { return }
+        myEvents.begin()
+        do {
+            let fresh = try await environment.events.myEvents()
+            myEvents.succeed(fresh)
+            await CacheStore.shared.save(fresh, key: Self.myEventsKey, userID: userID)
+        } catch {
+            myEvents.fail(error)
+        }
     }
 
     private func loadIdentity() async {

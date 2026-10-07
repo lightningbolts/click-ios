@@ -430,7 +430,7 @@ struct MapItemThumbnail: View {
     var body: some View {
         switch item.kind {
         case .person(let pin):
-            AvatarView(imageURL: pin.avatarURL, seed: pin.userID, initials: pin.initials, size: size)
+            AvatarView(imageURL: pin.avatarURL, seed: pin.userID, initials: pin.initials, size: size, isCore: pin.isCore)
         case .beacon(let beacon):
             EventVisual(seed: beacon.id, imageURL: beacon.imageURL, symbol: beacon.kind.systemImage, cornerRadius: cornerRadius,
                         maxPixelSize: EventVisual.thumbnailPixelSize)

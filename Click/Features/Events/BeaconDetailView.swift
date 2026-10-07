@@ -813,7 +813,9 @@ struct BeaconDetailView: View {
             default: ClickHaptics.success()
             }
             await syncReminders(beacon)
-            await EventLiveActivities.sync(env: env, force: true)
+            async let liveActivities: Void = EventLiveActivities.sync(env: env, force: true)
+            async let upcoming: Void = env.homeFeed.reloadMyEvents()
+            _ = await (liveActivities, upcoming)
         } catch {
             notice = error.userFacingMessage
         }
@@ -826,7 +828,9 @@ struct BeaconDetailView: View {
             try await env.events.cancelRSVP(beaconID: beacon.id)
             rsvp.succeed(try await env.events.rsvpState(beaconID: beacon.id))
             await syncReminders(beacon)
-            await EventLiveActivities.sync(env: env, force: true)
+            async let liveActivities: Void = EventLiveActivities.sync(env: env, force: true)
+            async let upcoming: Void = env.homeFeed.reloadMyEvents()
+            _ = await (liveActivities, upcoming)
         } catch {
             notice = "Couldn't cancel. \(error.userFacingMessage)"
         }

@@ -315,8 +315,8 @@ final class MapFeatureModel {
         }
     }
 
-    /// The map's pins and bubbles: clustering is quadratic, so it reruns only when the items or
-    /// the zoom change. Pins merge a Place's events into it; lists and counts keep every event.
+    /// The map's pins and stacks, rebuilt only when the items or the zoom step change. Pins merge
+    /// a Place's events into it; lists and counts keep every event.
     func clusters(pins: [ConnectionPin]) -> [MapCluster] {
         let zoom = clusterZoom
         return clustersMemo(ClustersKey(items: itemsKey(pins: pins, filter: filter, now: .now), zoom: zoom)) {
@@ -547,57 +547,32 @@ final class MapFeatureModel {
         hangouts = await UpcomingPlans.everywhere(userID: userID).compactMap(PlannedHangout.init)
     }
 
-    /// Coalesces viewport changes: refetches only when the center moved ~5 km from the last fetch
-    /// (a tenth of the 50 km discovery radius).
-    /// Latitude span of the visible region; clustering kicks in when zoomed out. Unobserved, like
-    /// the two below: the map redraws only when `clusterZoom` changes, not after every pan.
+    /// Latitude span of the visible region (kept to reopen the map where it was left). Unobserved,
+    /// like the center below: the map redraws only when `clusterZoom` changes, not after every pan.
     @ObservationIgnored private(set) var visibleLatitudeDelta: Double = 0.05
     /// The middle of the map on screen (where "+" creates a beacon when there's no location).
     @ObservationIgnored private(set) var visibleCenter: CLLocationCoordinate2D?
-    /// Pin mode stays on until the zoom clearly drops (hysteresis), and a cluster tap sets a
-    /// floor so the zoom it lands on is always shown as individual pins.
-    @ObservationIgnored private var stickyPinMode = false
-    @ObservationIgnored private var pinRenderZoomFloor: Double?
-    /// `renderZoom` in quarter steps (rounded down, so the cluster threshold holds exactly): what
-    /// pins are clustered at. Small zooms and pans leave it, and so the pins, as they are.
-    private(set) var clusterZoom: Double = MapFeatureModel.zoomStep(MapFeatureModel.zoom(forLatitudeDelta: 0.05))
-    /// Pins stacked under a tap, shown in the "Which pin?" chooser.
-    var overlapChoices: [MapItem] = []
-    /// The item just picked from the chooser: its selection must not reopen the chooser.
-    var chosenFromStack: MapSelection?
+    /// The map's Web-Mercator zoom in quarter steps (rounded down, so stacks err toward merging):
+    /// what pins are stacked at. Small zooms and pans leave it, and so the pins, as they are.
+    private(set) var clusterZoom: Double = 14
+    /// The stack whose list sheet is open.
+    var openStack: MapCluster?
 
-    /// The zoom clustering renders at (with hysteresis and the post-tap floor applied).
-    var renderZoom: Double {
-        let zoom = Self.zoom(forLatitudeDelta: visibleLatitudeDelta)
-        if let floor = pinRenderZoomFloor { return max(zoom, floor) }
-        return stickyPinMode ? max(zoom, Self.clusterThresholdZoom) : zoom
-    }
-
-    func noteClusterTap(targetZoom: Double) {
-        pinRenderZoomFloor = max(Self.clusterThresholdZoom + 0.25, targetZoom)
-        updateClusterZoom()
-    }
-
-    func cameraSettled(center: CLLocationCoordinate2D, latitudeDelta: Double? = nil) {
+    /// - Parameters:
+    ///   - visibleRect: the map rect on screen; with `viewWidth` (points) it gives the true zoom,
+    ///     which stacking needs because it works in on-screen points.
+    func cameraSettled(center: CLLocationCoordinate2D, latitudeDelta: Double? = nil, visibleRect: MKMapRect? = nil, viewWidth: Double? = nil) {
         visibleCenter = center
+        if let visibleRect, let viewWidth, viewWidth > 0, visibleRect.size.width > 0 {
+            let step = Self.zoomStep(Self.zoom(mapPointsPerPoint: visibleRect.size.width / viewWidth))
+            if step != clusterZoom { clusterZoom = step }
+        }
         if let latitudeDelta {
             visibleLatitudeDelta = latitudeDelta
-            let zoom = Self.zoom(forLatitudeDelta: latitudeDelta)
-            if zoom >= Self.clusterThresholdZoom { stickyPinMode = true }
-            if zoom < Self.pinModeExitZoom {
-                stickyPinMode = false
-                pinRenderZoomFloor = nil
-            }
-            updateClusterZoom()
             Self.restoredRegion = MKCoordinateRegion(center: center, span: MKCoordinateSpan(latitudeDelta: latitudeDelta, longitudeDelta: latitudeDelta))
         }
         guard userCoordinate == nil || locationState == .denied else { return }
         fetchIfMoved(to: center)
-    }
-
-    private func updateClusterZoom() {
-        let step = Self.zoomStep(renderZoom)
-        if step != clusterZoom { clusterZoom = step }
     }
 
     nonisolated static func zoomStep(_ zoom: Double) -> Double { (zoom * 4).rounded(.down) / 4 }
@@ -620,6 +595,8 @@ final class MapFeatureModel {
         }
     }
 
+    /// Coalesces viewport changes: refetches only when the center moved ~5 km from the last fetch
+    /// (a tenth of the 50 km discovery radius).
     private func fetchIfMoved(to center: CLLocationCoordinate2D) {
         if let last = lastFetchCenter {
             let moved = CLLocation(latitude: last.latitude, longitude: last.longitude)
@@ -768,51 +745,72 @@ private final class Memo<Key: Equatable, Value> {
     }
 }
 
-/// A group of nearby map items drawn as one bubble when zoomed out.
-struct MapCluster: Identifiable {
+/// Map items whose pins would overlap on screen, drawn as one stack (Luma-style) and listed in a
+/// sheet when tapped. A lone item is a cluster of one.
+struct MapCluster: Identifiable, Equatable {
     let id: String
+    /// Where the stack sits: its lead's spot, so the most important pin never moves.
     let coordinate: CLLocationCoordinate2D
+    /// Most important first (see `MapItem.stackRank`); never empty.
     let items: [MapItem]
+
+    var lead: MapItem { items[0] }
+
+    static func == (lhs: MapCluster, rhs: MapCluster) -> Bool { lhs.id == rhs.id && lhs.items == rhs.items }
 }
 
-/// Clustering and overlap rules ported from the Kotlin app (`MapUtils.kt`,
-/// `MapViewModelCamera.kt`, `MapViewModelInteractions.kt`) so both clients group pins alike.
+extension MapItem {
+    /// A Core Click's pin wears the gold ring.
+    var isCoreConnection: Bool {
+        if case .person(let pin) = kind { return pin.isCore }
+        return false
+    }
+
+    /// Which item leads a stack and the order its list reads: alerts (so one is never hidden
+    /// under another pin), live events, then events (soonest first), Places, hubs, other beacons,
+    /// plans, Core Clicks, then everyone else.
+    func stackRank(now: Date) -> Int {
+        switch kind {
+        case .beacon(let beacon):
+            if beacon.kind == .hazard || beacon.kind == .sos { return -1 }
+            if beacon.isEvent { return beacon.schedule?.isLive(at: now) == true ? 0 : 1 }
+            return 4
+        case .place: return 2
+        case .hub: return 3
+        case .hangout: return 5
+        case .person(let pin): return pin.isCore ? 6 : 7
+        }
+    }
+
+    static func stackOrder(_ a: MapItem, _ b: MapItem, now: Date) -> Bool {
+        let (rankA, rankB) = (a.stackRank(now: now), b.stackRank(now: now))
+        if rankA != rankB { return rankA < rankB }
+        let (startA, startB) = (a.eventStart ?? .distantFuture, b.eventStart ?? .distantFuture)
+        if startA != startB { return startA < startB }
+        let order = a.title.localizedStandardCompare(b.title)
+        return order == .orderedSame ? "\(a.id)" < "\(b.id)" : order == .orderedAscending
+    }
+
+    private var eventStart: Date? {
+        if case .beacon(let beacon) = kind { return beacon.schedule?.start }
+        return nil
+    }
+}
+
+/// Stacking: pins merge exactly when they would overlap on screen, at every zoom, so the map
+/// never draws one face over another (spec §49.2, Luma's map).
 extension MapFeatureModel {
-    /// At or above this zoom every pin is drawn individually.
-    nonisolated static let clusterThresholdZoom: Double = 12
-    /// Pin mode, once entered, holds until the zoom drops below this (no flicker at the edge).
-    nonisolated static let pinModeExitZoom: Double = clusterThresholdZoom - 0.75
-    /// Kept for callers that size zooms relative to the old span threshold (~9 km).
-    nonisolated static let clusteringSpan: Double = 0.08
+    /// Pins whose centres are closer than this on screen (points) would collide: a 40 pt face
+    /// with its 3 pt edge, plus room for a stack's fan (13 pt each side) so stacks clear too.
+    nonisolated static let stackDistance: Double = 60
+    /// Members this close together can't be told apart at any zoom: the list offers no zoom.
+    nonisolated static let sameSpotMeters: Double = 20
     /// A map opening within this of you is left where it was rather than recentered.
     nonisolated static let recenterMeters: Double = 3_000
 
-    /// Web-Mercator zoom for a visible latitude span.
-    nonisolated static func zoom(forLatitudeDelta delta: Double) -> Double {
-        log2(360 / max(delta, 0.000_01))
-    }
-
-    nonisolated static func latitudeDelta(forZoom zoom: Double) -> Double {
-        360 / pow(2, zoom)
-    }
-
-    /// Radius within which pins merge, stepped by zoom (KMP `determineMapRenderData`).
-    nonisolated static func clusterRadiusMeters(zoom: Double) -> Double {
-        switch zoom {
-        case ..<6: 10_000
-        case ..<8: 5_000
-        case ..<10: 1_000
-        default: 500
-        }
-    }
-
-    /// Kinds that are always drawn on their own (KMP: soundtrack, hazard, SOS, utility, event).
-    nonisolated static func neverClusters(_ item: MapItem) -> Bool {
-        guard case .beacon(let beacon) = item.kind else { return false }
-        switch beacon.kind {
-        case .soundtrack, .hazard, .sos, .utility, .event: return true
-        default: return false
-        }
+    /// Web-Mercator zoom (256 pt world tiles) for an on-screen scale.
+    nonisolated static func zoom(mapPointsPerPoint: Double) -> Double {
+        log2(MKMapSize.world.width / 256 / max(mapPointsPerPoint, 0.000_001))
     }
 
     nonisolated static func distanceMeters(_ a: CLLocationCoordinate2D, _ b: CLLocationCoordinate2D) -> Double {
@@ -824,62 +822,65 @@ extension MapFeatureModel {
         return 2 * r * asin(min(1, sqrt(h)))
     }
 
-    /// Greedy single-pass clustering in input order (KMP `clusterUnifiedMembers`). Below the
-    /// threshold zoom, members within the zoom's radius of a seed merge into one bubble.
-    nonisolated static func clusters(_ items: [MapItem], zoom: Double) -> [MapCluster] {
-        let singles = { (item: MapItem) in MapCluster(id: "\(item.id)", coordinate: item.coordinate, items: [item]) }
-        guard zoom < clusterThresholdZoom else { return items.map(singles) }
-        let radius = clusterRadiusMeters(zoom: zoom)
-        var result: [MapCluster] = items.filter(neverClusters).map(singles)
-        let members = items.filter { !neverClusters($0) }
-        var assigned = Set<MapSelection>()
-        for seed in members where !assigned.contains(seed.id) {
-            let nearby = members.filter { !assigned.contains($0.id) && distanceMeters(seed.coordinate, $0.coordinate) <= radius }
-            for member in nearby { assigned.insert(member.id) }
-            if nearby.count == 1 {
-                result.append(singles(nearby[0]))
-                continue
+    /// Walking items most important first, each unclaimed item takes every unclaimed item whose
+    /// pin would overlap its own at `zoom`. A grid of `stackDistance` cells keeps this close to
+    /// linear for thousands of pins.
+    nonisolated static func clusters(_ items: [MapItem], zoom: Double, now: Date = .now) -> [MapCluster] {
+        let ordered = items.sorted { MapItem.stackOrder($0, $1, now: now) }
+        // On-screen points per map point at this zoom.
+        let scale = 256 * pow(2, zoom) / MKMapSize.world.width
+        let points = ordered.map { item -> (x: Double, y: Double) in
+            let point = MKMapPoint(item.coordinate)
+            return (point.x * scale, point.y * scale)
+        }
+        struct Cell: Hashable { let x: Int; let y: Int }
+        func cell(_ point: (x: Double, y: Double)) -> Cell {
+            Cell(x: Int((point.x / stackDistance).rounded(.down)), y: Int((point.y / stackDistance).rounded(.down)))
+        }
+        var grid: [Cell: [Int]] = [:]
+        for index in ordered.indices {
+            grid[cell(points[index]), default: []].append(index)
+        }
+        var claimed = [Bool](repeating: false, count: ordered.count)
+        var result: [MapCluster] = []
+        for seed in ordered.indices where !claimed[seed] {
+            claimed[seed] = true
+            var members = [seed]
+            let home = cell(points[seed])
+            for dx in -1...1 {
+                for dy in -1...1 {
+                    for other in grid[Cell(x: home.x + dx, y: home.y + dy)] ?? [] where !claimed[other] {
+                        let distance = hypot(points[other].x - points[seed].x, points[other].y - points[seed].y)
+                        guard distance < stackDistance else { continue }
+                        claimed[other] = true
+                        members.append(other)
+                    }
+                }
             }
-            let lat = nearby.map(\.coordinate.latitude).reduce(0, +) / Double(nearby.count)
-            let lon = nearby.map(\.coordinate.longitude).reduce(0, +) / Double(nearby.count)
-            let key = nearby.map { "\($0.id)" }.sorted().joined(separator: "|")
-            result.append(MapCluster(id: "cluster.\(key.hashValue)", coordinate: CLLocationCoordinate2D(latitude: lat, longitude: lon), items: nearby))
+            // Indices follow the stack order, so sorting them keeps the lead first.
+            members.sort()
+            let group = members.map { ordered[$0] }
+            result.append(MapCluster(id: group.count == 1 ? "\(group[0].id)" : "stack.\(group[0].id)",
+                                     coordinate: group[0].coordinate, items: group))
         }
         return result
     }
 
-    /// Metres covered by one pin at this zoom and latitude (44 pt pin × 0.85, clamped 12–90 m),
-    /// KMP `mapPinOverlapRadiusMeters`.
-    nonisolated static func overlapRadiusMeters(latitude: Double, zoom: Double, pinDiameter: Double = 44) -> Double {
-        let clampedZoom = min(max(zoom, 2), 22)
-        let clampedLat = min(max(latitude, -85), 85)
-        let metersPerPoint = 156_543.033_92 * cos(clampedLat * .pi / 180) / pow(2, clampedZoom)
-        return min(max(pinDiameter * 0.85 * metersPerPoint, 12), 90)
+    /// Whether zooming in could pull a stack apart (its members aren't all at one spot).
+    nonisolated static func canSeparate(_ cluster: MapCluster) -> Bool {
+        cluster.items.contains { distanceMeters(cluster.coordinate, $0.coordinate) > sameSpotMeters }
     }
 
-    /// Every drawn pin stacked under the tapped one (itself included), for the "Which pin?"
-    /// chooser (KMP `overlappingMapPins`).
-    nonisolated static func overlapping(_ tapped: MapItem, in items: [MapItem], zoom: Double) -> [MapItem] {
-        let radius = overlapRadiusMeters(latitude: tapped.coordinate.latitude, zoom: zoom)
-        var seen = Set<MapSelection>()
-        return ([tapped] + items.filter { distanceMeters(tapped.coordinate, $0.coordinate) <= radius })
-            .filter { seen.insert($0.id).inserted }
-    }
-
-    /// Zoom a cluster tap lands on: fits the members, never short of pin mode (KMP step table).
-    nonisolated static func zoomToFit(_ cluster: MapCluster) -> Double {
+    /// A region showing every member with room around them, close enough that they separate.
+    nonisolated static func region(fitting cluster: MapCluster) -> MKCoordinateRegion {
         let lats = cluster.items.map(\.coordinate.latitude)
         let lons = cluster.items.map(\.coordinate.longitude)
-        let span = max((lats.max() ?? 0) - (lats.min() ?? 0), (lons.max() ?? 0) - (lons.min() ?? 0))
-        let fit: Double = switch span {
-        case 10...: 4
-        case 5...: 6
-        case 1...: 8
-        case 0.1...: 10
-        case 0.01...: 12
-        case 0.001...: 14
-        default: 16
-        }
-        return max(clusterThresholdZoom + 1, fit)
+        let (minLat, maxLat) = (lats.min() ?? 0, lats.max() ?? 0)
+        let (minLon, maxLon) = (lons.min() ?? 0, lons.max() ?? 0)
+        return MKCoordinateRegion(
+            center: CLLocationCoordinate2D(latitude: (minLat + maxLat) / 2, longitude: (minLon + maxLon) / 2),
+            span: MKCoordinateSpan(latitudeDelta: max((maxLat - minLat) * 1.8, 0.003),
+                                   longitudeDelta: max((maxLon - minLon) * 1.8, 0.003))
+        )
     }
 }

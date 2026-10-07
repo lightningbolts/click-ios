@@ -16,11 +16,14 @@ public struct AvatarView: View {
     private let initials: String
     private let size: CGFloat
     private let presence: Presence?
+    private let isCore: Bool
 
     @State private var image: UIImage?
 
-    /// - Parameter seed: the stable user or group ID that selects the fallback color.
-    public init(imageURL: String?, seed: String, initials: String, size: CGFloat, presence: Presence? = nil) {
+    /// - Parameters:
+    ///   - seed: the stable user or group ID that selects the fallback color.
+    ///   - isCore: a Core Click: the gold-to-purple ring, drawn inside `size` so layouts never shift.
+    public init(imageURL: String?, seed: String, initials: String, size: CGFloat, presence: Presence? = nil, isCore: Bool = false) {
         let trimmed = imageURL?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
         let url = trimmed.isEmpty ? nil : URL(string: trimmed)
         self.url = url
@@ -28,6 +31,7 @@ public struct AvatarView: View {
         self.initials = initials
         self.size = size
         self.presence = presence
+        self.isCore = isCore
         // Seed from memory (or disk after a cold start) so rows never flash the fallback.
         self._image = State(initialValue: url.flatMap {
             ImagePipeline.shared.firstFrameImage(for: $0, maxPixelSize: Self.pixelSize(for: size))
@@ -35,17 +39,25 @@ public struct AvatarView: View {
     }
 
     public var body: some View {
+        let ring = isCore ? Self.ringWidth(for: size) : 0
+        let face = size - 2 * (isCore ? ring + Self.ringGap(for: size) : 0)
         ZStack {
             if let image {
                 Image(uiImage: image)
                     .resizable()
                     .scaledToFill()
             } else {
-                fallback
+                fallback(size: face)
             }
         }
-        .frame(width: size, height: size)
+        .frame(width: face, height: face)
         .clipShape(Circle())
+        .frame(width: size, height: size)
+        .overlay {
+            if isCore {
+                Circle().strokeBorder(ClickColors.coreRing, lineWidth: ring)
+            }
+        }
         .overlay(alignment: .bottomTrailing) {
             if let presence {
                 presenceDot(presence)
@@ -73,7 +85,10 @@ public struct AvatarView: View {
                                       maxPixelSize: pixelSize(for: size))
     }
 
-    private var fallback: some View {
+    private static func ringWidth(for size: CGFloat) -> CGFloat { max(2, (size * 0.045).rounded()) }
+    private static func ringGap(for size: CGFloat) -> CGFloat { max(1.5, (size * 0.03).rounded()) }
+
+    private func fallback(size: CGFloat) -> some View {
         Circle()
             .fill(ClickColors.GeneratedContent.avatarColor(for: seed))
             .overlay {

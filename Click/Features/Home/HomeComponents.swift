@@ -1,3 +1,4 @@
+import CoreLocation
 import SwiftUI
 
 // Home-local building blocks. Rows live inside one grouped surface per section; they are not
@@ -219,7 +220,7 @@ struct HomeOpportunitySection: View {
 
     private func sayHi(_ item: ConnectionItem, deadline: Date) -> some View {
         HStack(spacing: 12) {
-            AvatarView(imageURL: item.avatarUrl, seed: item.userID, initials: item.initials, size: 44)
+            AvatarView(imageURL: item.avatarUrl, seed: item.userID, initials: item.initials, size: 44, isCore: item.isCore)
             VStack(alignment: .leading, spacing: 2) {
                 Text("Say hi to \(HomeFeedModel.firstName(item.displayName) ?? item.displayName)")
                     .font(ClickTypography.bodyEmphasized)
@@ -291,7 +292,7 @@ struct HomeNudgeRow: View {
     var body: some View {
         HStack(spacing: 12) {
             if let person {
-                AvatarView(imageURL: person.avatarUrl, seed: person.userID, initials: person.initials, size: 44)
+                AvatarView(imageURL: person.avatarUrl, seed: person.userID, initials: person.initials, size: 44, isCore: person.isCore)
                     .overlay(alignment: .bottomTrailing) {
                         if nudge.kind != .reconnectLull {
                             Image(systemName: nudge.symbol)
@@ -389,22 +390,139 @@ struct SavedEventRow: View {
     }
 }
 
+/// One of your upcoming events: its picture, when and where, and whether you're hosting, going
+/// or saved it.
+struct UpcomingEventRow: View {
+    let event: HomeUpcomingEvent
+
+    var body: some View {
+        let status = EventFormatting.status(event.schedule)
+        HStack(spacing: 14) {
+            BeaconVisual(beaconID: event.id, imageURL: event.imageURL)
+                .frame(width: 50, height: 50)
+            VStack(alignment: .leading, spacing: 1) {
+                Text(event.title)
+                    .font(ClickTypography.bodyEmphasized)
+                    .foregroundStyle(ClickColors.textPrimary)
+                    .lineLimit(1)
+                Text(EventFormatting.whenAndWhere(event.schedule, place: event.place))
+                    .font(ClickTypography.supporting)
+                    .foregroundStyle(status?.isLive == true ? ClickColors.destructive : ClickColors.textTertiary)
+                    .lineLimit(1)
+            }
+            Spacer(minLength: 8)
+            Text(event.role.label)
+                .font(ClickTypography.metadataEmphasized)
+                .foregroundStyle(event.role == .saved ? ClickColors.textSecondary : ClickColors.accentForeground)
+                .padding(.horizontal, 9)
+                .padding(.vertical, 4)
+                .background(event.role == .saved ? ClickColors.fillSubtle : ClickColors.selectionTint, in: Capsule())
+                .fixedSize()
+        }
+        .padding(.horizontal, 18)
+        .padding(.vertical, 12)
+        .contentShape(Rectangle())
+        .accessibilityElement(children: .combine)
+    }
+}
+
+/// A suggested event: its picture with why it was picked, then when, what, and where.
+struct RecommendationCard: View {
+    let recommendation: HomeRecommendation
+    let origin: CLLocationCoordinate2D?
+
+    var body: some View {
+        let beacon = recommendation.beacon
+        let item = MapItem(kind: .beacon(beacon))
+        let eyebrow = NearbyRow.eyebrow(item)
+        VStack(alignment: .leading, spacing: 10) {
+            BeaconVisual(beaconID: beacon.id, imageURL: beacon.imageURL, symbol: beacon.kind.systemImage, cornerRadius: 16)
+                .aspectRatio(16 / 10, contentMode: .fit)
+                .overlay(alignment: .topLeading) {
+                    Label(recommendation.reason.text, systemImage: recommendation.reason.systemImage)
+                        .font(ClickTypography.metadataEmphasized)
+                        .labelStyle(.titleAndIcon)
+                        .lineLimit(1)
+                        .foregroundStyle(.white)
+                        .padding(.horizontal, 9)
+                        .padding(.vertical, 5)
+                        .background(.black.opacity(0.55), in: Capsule())
+                        .padding(8)
+                }
+            VStack(alignment: .leading, spacing: 3) {
+                Text(eyebrow.text)
+                    .font(ClickTypography.metadataEmphasized)
+                    .foregroundStyle(eyebrow.tone.color)
+                    .lineLimit(1)
+                Text(beacon.title)
+                    .font(ClickTypography.bodyEmphasized)
+                    .foregroundStyle(ClickColors.textPrimary)
+                    .lineLimit(2, reservesSpace: true)
+                    .multilineTextAlignment(.leading)
+                Text(detail(item))
+                    .font(ClickTypography.supporting)
+                    .foregroundStyle(ClickColors.textSecondary)
+                    .lineLimit(1)
+            }
+            .padding(.horizontal, 4)
+        }
+        .contentShape(Rectangle())
+        .accessibilityElement(children: .combine)
+        .accessibilityHint(recommendation.reason.text)
+    }
+
+    /// Where, how far, and how many are going.
+    private func detail(_ item: MapItem) -> String {
+        let distance = origin.map { origin in
+            Measurement(value: MapFeatureModel.distanceMeters(origin, item.coordinate), unit: UnitLength.meters)
+                .formatted(.measurement(width: .abbreviated, usage: .road, numberFormatStyle: .number.precision(.fractionLength(0...1))))
+        }
+        return [NearbyRow.place(item), distance, item.peopleLabel].compactMap { $0 }.joined(separator: " · ")
+    }
+}
+
+/// Up to three items' pictures, overlapping, each cut out of the surface behind it.
+struct MapItemFacePile: View {
+    let items: [MapItem]
+    var size: CGFloat = 22
+
+    var body: some View {
+        HStack(spacing: -size * 0.36) {
+            ForEach(items.prefix(3)) { item in
+                MapItemThumbnail(item: item, size: size, cornerRadius: size / 2)
+                    .clipShape(Circle())
+                    .padding(1.5)
+                    .background(ClickColors.background, in: Circle())
+            }
+        }
+        .accessibilityHidden(true)
+    }
+}
+
 struct DiscoveryChip: View {
     let title: String
     let count: Int
+    /// A few of what's counted, shown as overlapping pictures before the title.
+    var faces: [MapItem] = []
     let action: () -> Void
 
     var body: some View {
         Button(action: action) {
-            HStack(spacing: 6) {
-                Text(title)
-                    .foregroundStyle(ClickColors.textPrimary)
-                Text(count, format: .number)
-                    .foregroundStyle(ClickColors.textTertiary)
-                    .monospacedDigit()
+            HStack(spacing: 8) {
+                if !faces.isEmpty {
+                    MapItemFacePile(items: faces)
+                }
+                HStack(spacing: 6) {
+                    Text(title)
+                        .foregroundStyle(ClickColors.textPrimary)
+                    Text(count, format: .number)
+                        .foregroundStyle(ClickColors.textTertiary)
+                        .monospacedDigit()
+                }
             }
             .font(ClickTypography.supporting.weight(.medium))
-            .padding(.horizontal, 15)
+            .padding(.leading, faces.isEmpty ? 15 : 6)
+            .padding(.trailing, 15)
             .frame(minHeight: ClickMetrics.chipHeight)
             .background(ClickColors.fillSubtle, in: Capsule())
             .frame(minHeight: ClickMetrics.minimumHitTarget)
@@ -474,7 +592,7 @@ struct ReconnectCard: View {
         VStack(alignment: .leading, spacing: 12) {
             Button(action: onProfile) {
                 HStack(spacing: 12) {
-                    AvatarView(imageURL: person.avatarUrl, seed: person.userID, initials: person.initials, size: 48)
+                    AvatarView(imageURL: person.avatarUrl, seed: person.userID, initials: person.initials, size: 48, isCore: person.isCore)
                     VStack(alignment: .leading, spacing: 2) {
                         Text("Reconnect with \(HomeFeedModel.firstName(person.displayName) ?? person.displayName)")
                             .font(ClickTypography.bodyEmphasized)
@@ -511,5 +629,84 @@ struct ReconnectCard: View {
     private var context: String {
         let last = person.lastActivityAt.map { "Last talked \($0.formatted(.dateTime.month(.abbreviated).day()))" }
         return [last, person.encounterLocation.nonEmptyTrimmed.map { "met at \($0)" }].compactMap { $0 }.joined(separator: " · ")
+    }
+}
+
+/// Home's "View all": every event you host, are going to or saved that hasn't ended, by day.
+struct UpcomingEventsView: View {
+    @Environment(AppEnvironment.self) private var env
+    private var model: HomeFeedModel { env.homeFeed }
+
+    var body: some View {
+        let events = model.upcoming(excluding: nil)
+        List {
+            ForEach(Self.days(events), id: \.title) { day in
+                Section(day.title) {
+                    ForEach(day.events) { event in
+                        Button { env.router.navigate(to: .event(beaconID: event.id)) } label: {
+                            UpcomingEventRow(event: event)
+                                .padding(.horizontal, -18)
+                        }
+                        .buttonStyle(.plain)
+                    }
+                }
+            }
+        }
+        .listStyle(.insetGrouped)
+        .overlay {
+            if events.isEmpty {
+                if model.hasUpcomingAnswer {
+                    ContentUnavailableView {
+                        Label("Nothing coming up", systemImage: "calendar")
+                    } description: {
+                        Text("Events you host, RSVP to or save appear here.")
+                    } actions: {
+                        Button("Find Events") { env.router.showOnMap(.layer(.events)) }
+                    }
+                } else if let message = model.myEvents.errorMessage {
+                    ContentUnavailableView {
+                        Label("Couldn't load your events", systemImage: "exclamationmark.arrow.circlepath")
+                    } description: {
+                        Text(message)
+                    } actions: {
+                        Button("Try Again") { Task { await load() } }
+                    }
+                } else {
+                    ClickLoadingView()
+                }
+            }
+        }
+        .navigationTitle("Upcoming")
+        .navigationBarTitleDisplayMode(.inline)
+        .task { await load() }
+        .refreshable { await load() }
+    }
+
+    private func load() async {
+        async let mine: Void = model.reloadMyEvents()
+        async let saved: Void = env.selfData.loadSavedEvents(force: true)
+        _ = await (mine, saved)
+    }
+
+    /// "Today", "Tomorrow", then "Thu, Oct 8"; a live event sits under today.
+    static func days(_ events: [HomeUpcomingEvent], now: Date = .now, calendar: Calendar = .current) -> [(title: String, events: [HomeUpcomingEvent])] {
+        var days: [(title: String, events: [HomeUpcomingEvent])] = []
+        for event in events {
+            let day = max(event.schedule.start, now)
+            let tomorrow = calendar.date(byAdding: .day, value: 1, to: now) ?? now
+            let title = if calendar.isDate(day, inSameDayAs: now) {
+                "Today"
+            } else if calendar.isDate(day, inSameDayAs: tomorrow) {
+                "Tomorrow"
+            } else {
+                day.formatted(.dateTime.weekday(.abbreviated).month(.abbreviated).day())
+            }
+            if days.last?.title == title {
+                days[days.count - 1].events.append(event)
+            } else {
+                days.append((title, [event]))
+            }
+        }
+        return days
     }
 }
