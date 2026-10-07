@@ -4,6 +4,7 @@ import SwiftUI
 /// here now, and members.
 struct HubInfoView: View {
     @Environment(AppEnvironment.self) private var env
+    @Environment(ConversationListModel.self) private var conversations: ConversationListModel?
     @Environment(\.dismiss) private var dismiss
     let hub: HubInfo
     /// Called after the owner saves a change, so the chat reloads the hub.
@@ -69,10 +70,12 @@ struct HubInfoView: View {
                 }
                 Section("Members") {
                     if let ids = members.value?.participantIDs {
+                        let coreIDs = conversations?.coreUserIDs ?? []
                         ForEach(ids, id: \.self) { id in
                             HStack(spacing: 12) {
                                 AvatarView(imageURL: people[id]?.avatarURL, seed: id,
-                                           initials: String((people[id]?.name ?? "?").prefix(1)), size: 36)
+                                           initials: String((people[id]?.name ?? "?").prefix(1)), size: 36,
+                                           isCore: coreIDs.contains(id))
                                 Text(id == env.session.currentSession?.userId ? "You" : people[id]?.name ?? "Click user")
                                     .foregroundStyle(ClickColors.textPrimary)
                                 Spacer()

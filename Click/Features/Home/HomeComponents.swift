@@ -1,4 +1,3 @@
-import CoreLocation
 import SwiftUI
 
 // Home-local building blocks. Rows live inside one grouped surface per section; they are not
@@ -171,51 +170,15 @@ struct HomeOpportunitySection: View {
     }
 
     private func eventHero(_ event: HomeEventHighlight) -> some View {
-        VStack(alignment: .leading, spacing: 0) {
-            Button { onOpenEvent(event.id) } label: {
-                VStack(alignment: .leading, spacing: 0) {
-                    BeaconVisual(beaconID: event.id, imageURL: event.imageURL, symbol: nil, cornerRadius: 0)
-                        .frame(height: 148)
-                        .frame(maxWidth: .infinity)
-                        .clipped()
-                        .overlay(alignment: .topLeading) {
-                            StatusPill(event.isLive ? "Live now" : "Today", style: event.isLive ? .live : .neutral)
-                                .padding(14)
-                        }
-                    VStack(alignment: .leading, spacing: 3) {
-                        Text(event.title)
-                            .font(.title3.weight(.semibold))
-                            .foregroundStyle(ClickColors.textPrimary)
-                            .multilineTextAlignment(.leading)
-                        Text(EventFormatting.whenAndWhere(event.schedule, place: event.place))
-                            .font(ClickTypography.supporting)
-                            .foregroundStyle(ClickColors.textTertiary)
-                            .lineLimit(2)
-                    }
-                    .padding(.horizontal, 18)
-                    .padding(.top, 14)
-                }
-                .contentShape(Rectangle())
-            }
-            .buttonStyle(.plain)
-            .accessibilityElement(children: .combine)
-            .accessibilityHint("Opens event details")
-
-            HStack(spacing: 10) {
-                Button("View details") { onOpenEvent(event.id) }
-                    .buttonStyle(.clickPrimary)
-                Button {
-                    onShowOnMap(event.id)
-                } label: {
-                    // Matches View details beside it (secondary buttons are shorter by default).
-                    Label("Map", systemImage: "map")
-                        .frame(minHeight: ClickMetrics.primaryActionHeight)
-                }
-                .buttonStyle(.clickSecondary)
-                .frame(maxWidth: 110)
-            }
-            .padding(18)
-        }
+        HomeEventCard(
+            beaconID: event.id,
+            imageURL: event.imageURL,
+            pill: StatusPill(event.isLive ? "Live now" : "Today", style: event.isLive ? .live : .neutral),
+            title: event.title,
+            detail: EventFormatting.whenAndWhere(event.schedule, place: event.place),
+            onOpen: { onOpenEvent(event.id) },
+            onShowOnMap: { onShowOnMap(event.id) }
+        )
     }
 
     private func sayHi(_ item: ConnectionItem, deadline: Date) -> some View {
@@ -280,8 +243,8 @@ extension InboxNudge {
     }
 }
 
-/// A relationship nudge row: person, server copy, the kind's action, dismiss (or "Not us"
-/// for a hangout to confirm).
+/// A relationship nudge: person, server copy, the kind's action, and "Not now" (or "Not us" for a
+/// hangout to confirm).
 struct HomeNudgeRow: View {
     let nudge: InboxNudge
     let person: ConnectionItem?
@@ -290,9 +253,19 @@ struct HomeNudgeRow: View {
     let onDismiss: () -> Void
 
     var body: some View {
-        HStack(spacing: 12) {
+        let isHangout = nudge.kind == .hangoutConfirm
+        HomePersonPrompt(
+            title: nudge.headline,
+            detail: nudge.body.nonEmptyTrimmed,
+            primaryTitle: nudge.actionTitle,
+            onPrimary: onPrimary,
+            secondaryTitle: isHangout ? "Not us" : "Not now",
+            secondaryHint: isHangout ? "You weren't together; nothing is logged" : nil,
+            onSecondary: isHangout ? onDecline ?? onDismiss : onDismiss
+        ) {
             if let person {
-                AvatarView(imageURL: person.avatarUrl, seed: person.userID, initials: person.initials, size: 44, isCore: person.isCore)
+                AvatarView(imageURL: person.avatarUrl, seed: person.userID, initials: person.initials,
+                           size: ClickMetrics.Avatar.row, isCore: person.isCore)
                     .overlay(alignment: .bottomTrailing) {
                         if nudge.kind != .reconnectLull {
                             Image(systemName: nudge.symbol)
@@ -307,46 +280,78 @@ struct HomeNudgeRow: View {
             } else {
                 Image(systemName: nudge.symbol)
                     .foregroundStyle(ClickColors.accentForeground)
-                    .frame(width: 44, height: 44)
+                    .frame(width: ClickMetrics.Avatar.row, height: ClickMetrics.Avatar.row)
                     .background(ClickColors.selectionTint, in: Circle())
             }
+        }
+    }
+}
+
+/// A prompt about one person on Home (a nudge, a reconnect pick): who and why on top, then its
+/// action and a quiet way out side by side, so the copy never wraps around the buttons.
+struct HomePersonPrompt<Avatar: View>: View {
+    let title: String
+    let detail: String?
+    let primaryTitle: String
+    let onPrimary: () -> Void
+    let secondaryTitle: String
+    var secondaryHint: String? = nil
+    let onSecondary: () -> Void
+    /// Tapping who it's about (their profile); nil when it isn't a link.
+    var onOpen: (() -> Void)? = nil
+    @ViewBuilder let avatar: Avatar
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 14) {
+            if let onOpen {
+                Button(action: onOpen) { identity }
+                    .buttonStyle(.plain)
+            } else {
+                identity
+                    .accessibilityElement(children: .combine)
+            }
+            HStack(spacing: 10) {
+                Button(action: onPrimary) {
+                    Text(primaryTitle)
+                        .font(ClickTypography.supportingEmphasized)
+                        .foregroundStyle(ClickColors.accentForeground)
+                        .frame(maxWidth: .infinity, minHeight: 40)
+                        .background(ClickColors.selectionTint, in: Capsule())
+                }
+                Button(action: onSecondary) {
+                    Text(secondaryTitle)
+                        .font(ClickTypography.supporting)
+                        .foregroundStyle(ClickColors.textSecondary)
+                        .frame(maxWidth: .infinity, minHeight: 40)
+                        .background(ClickColors.fillSubtle, in: Capsule())
+                }
+                .accessibilityHint(secondaryHint ?? "")
+            }
+            .buttonStyle(.plain)
+            .lineLimit(1)
+            .minimumScaleFactor(0.85)
+        }
+    }
+
+    private var identity: some View {
+        HStack(spacing: 12) {
+            avatar
             VStack(alignment: .leading, spacing: 2) {
-                Text(nudge.headline)
+                Text(title)
                     .font(ClickTypography.bodyEmphasized)
                     .foregroundStyle(ClickColors.textPrimary)
-                if !nudge.body.isEmpty {
-                    Text(nudge.body)
+                    .lineLimit(2)
+                if let detail {
+                    Text(detail)
                         .font(ClickTypography.supporting)
-                        .foregroundStyle(ClickColors.textTertiary)
+                        .foregroundStyle(ClickColors.textSecondary)
                         .lineLimit(2)
                 }
             }
-            Spacer(minLength: 8)
-            VStack(spacing: 4) {
-                Button(nudge.actionTitle, action: onPrimary)
-                    .font(ClickTypography.supportingEmphasized)
-                    .foregroundStyle(ClickColors.accentForeground)
-                    .padding(.horizontal, 14)
-                    .frame(minHeight: 34)
-                    .background(ClickColors.selectionTint, in: Capsule())
-                if nudge.kind == .hangoutConfirm, let onDecline {
-                    Button("Not us", action: onDecline)
-                        .font(ClickTypography.caption)
-                        .foregroundStyle(ClickColors.textTertiary)
-                        .accessibilityHint("You weren't together; nothing is logged")
-                }
-            }
-            if nudge.kind != .hangoutConfirm {
-                Button(action: onDismiss) {
-                    Image(systemName: "xmark")
-                        .font(.system(size: 13, weight: .semibold))
-                        .foregroundStyle(ClickColors.textTertiary)
-                        .frame(width: 30, height: ClickMetrics.minimumHitTarget)
-                }
-                .buttonStyle(.plain)
-                .accessibilityLabel("Dismiss")
-            }
+            .multilineTextAlignment(.leading)
+            Spacer(minLength: 0)
         }
+        .contentShape(Rectangle())
     }
 }
 
@@ -426,58 +431,63 @@ struct UpcomingEventRow: View {
     }
 }
 
-/// A suggested event: its picture with why it was picked, then when, what, and where.
-struct RecommendationCard: View {
-    let recommendation: HomeRecommendation
-    let origin: CLLocationCoordinate2D?
+/// An event as Home features it (Happening now, Recommended for you): its picture with one pill,
+/// what, when and where, then View details and Map. The caller supplies the surface; given more
+/// height than it needs (a row of cards), the buttons stay at the bottom.
+struct HomeEventCard: View {
+    let beaconID: String
+    let imageURL: String?
+    let pill: StatusPill
+    let title: String
+    let detail: String
+    let onOpen: () -> Void
+    let onShowOnMap: () -> Void
 
     var body: some View {
-        let beacon = recommendation.beacon
-        let item = MapItem(kind: .beacon(beacon))
-        let eyebrow = NearbyRow.eyebrow(item)
-        VStack(alignment: .leading, spacing: 10) {
-            BeaconVisual(beaconID: beacon.id, imageURL: beacon.imageURL, symbol: beacon.kind.systemImage, cornerRadius: 16)
-                .aspectRatio(16 / 10, contentMode: .fit)
-                .overlay(alignment: .topLeading) {
-                    Label(recommendation.reason.text, systemImage: recommendation.reason.systemImage)
-                        .font(ClickTypography.metadataEmphasized)
-                        .labelStyle(.titleAndIcon)
-                        .lineLimit(1)
-                        .foregroundStyle(.white)
-                        .padding(.horizontal, 9)
-                        .padding(.vertical, 5)
-                        .background(.black.opacity(0.55), in: Capsule())
-                        .padding(8)
+        VStack(alignment: .leading, spacing: 0) {
+            Button(action: onOpen) {
+                VStack(alignment: .leading, spacing: 0) {
+                    BeaconVisual(beaconID: beaconID, imageURL: imageURL, symbol: nil, cornerRadius: 0)
+                        .frame(height: 148)
+                        .frame(maxWidth: .infinity)
+                        .clipped()
+                        .overlay(alignment: .topLeading) { pill.padding(14) }
+                    VStack(alignment: .leading, spacing: 3) {
+                        Text(title)
+                            .font(.title3.weight(.semibold))
+                            .foregroundStyle(ClickColors.textPrimary)
+                            .multilineTextAlignment(.leading)
+                            .lineLimit(2)
+                        // Each "·" keeps to the line it follows, so a wrapped line never starts with one.
+                        Text(detail.replacingOccurrences(of: " · ", with: "\u{00A0}· "))
+                            .font(ClickTypography.supporting)
+                            .foregroundStyle(ClickColors.textTertiary)
+                            .lineLimit(2)
+                    }
+                    .padding(.horizontal, 18)
+                    .padding(.top, 14)
                 }
-            VStack(alignment: .leading, spacing: 3) {
-                Text(eyebrow.text)
-                    .font(ClickTypography.metadataEmphasized)
-                    .foregroundStyle(eyebrow.tone.color)
-                    .lineLimit(1)
-                Text(beacon.title)
-                    .font(ClickTypography.bodyEmphasized)
-                    .foregroundStyle(ClickColors.textPrimary)
-                    .lineLimit(2, reservesSpace: true)
-                    .multilineTextAlignment(.leading)
-                Text(detail(item))
-                    .font(ClickTypography.supporting)
-                    .foregroundStyle(ClickColors.textSecondary)
-                    .lineLimit(1)
+                .contentShape(Rectangle())
             }
-            .padding(.horizontal, 4)
-        }
-        .contentShape(Rectangle())
-        .accessibilityElement(children: .combine)
-        .accessibilityHint(recommendation.reason.text)
-    }
+            .buttonStyle(.plain)
+            .accessibilityElement(children: .combine)
+            .accessibilityHint("Opens event details")
 
-    /// Where, how far, and how many are going.
-    private func detail(_ item: MapItem) -> String {
-        let distance = origin.map { origin in
-            Measurement(value: MapFeatureModel.distanceMeters(origin, item.coordinate), unit: UnitLength.meters)
-                .formatted(.measurement(width: .abbreviated, usage: .road, numberFormatStyle: .number.precision(.fractionLength(0...1))))
+            Spacer(minLength: 0)
+
+            HStack(spacing: 10) {
+                Button("View details", action: onOpen)
+                    .buttonStyle(.clickPrimary)
+                Button(action: onShowOnMap) {
+                    // Matches View details beside it (secondary buttons are shorter by default).
+                    Label("Map", systemImage: "map")
+                        .frame(minHeight: ClickMetrics.primaryActionHeight)
+                }
+                .buttonStyle(.clickSecondary)
+                .frame(maxWidth: 110)
+            }
+            .padding(18)
         }
-        return [NearbyRow.place(item), distance, item.peopleLabel].compactMap { $0 }.joined(separator: " · ")
     }
 }
 
@@ -580,8 +590,7 @@ enum ReconnectSuggestion {
     }
 }
 
-/// "Reconnect with Marcus" — identity on top, context on its own line, actions on their own
-/// row so nothing wraps awkwardly beside the buttons.
+/// "Reconnect with Marcus": when you last talked and where you met, then Say hi or Not now.
 struct ReconnectCard: View {
     let person: ConnectionItem
     let onSayHi: () -> Void
@@ -589,40 +598,17 @@ struct ReconnectCard: View {
     let onNotNow: () -> Void
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 12) {
-            Button(action: onProfile) {
-                HStack(spacing: 12) {
-                    AvatarView(imageURL: person.avatarUrl, seed: person.userID, initials: person.initials, size: 48, isCore: person.isCore)
-                    VStack(alignment: .leading, spacing: 2) {
-                        Text("Reconnect with \(HomeFeedModel.firstName(person.displayName) ?? person.displayName)")
-                            .font(ClickTypography.bodyEmphasized)
-                            .foregroundStyle(ClickColors.textPrimary)
-                        Text(context)
-                            .font(ClickTypography.supporting)
-                            .foregroundStyle(ClickColors.textSecondary)
-                            .lineLimit(2)
-                    }
-                    Spacer(minLength: 0)
-                }
-            }
-            .buttonStyle(.plain)
-            HStack(spacing: 10) {
-                Button(action: onSayHi) {
-                    Label("Say hi", systemImage: "hand.wave")
-                        .font(ClickTypography.supportingEmphasized)
-                        .frame(maxWidth: .infinity, minHeight: 40)
-                        .foregroundStyle(ClickColors.accentForeground)
-                        .background(ClickColors.selectionTint, in: Capsule())
-                }
-                Button(action: onNotNow) {
-                    Text("Not now")
-                        .font(ClickTypography.supporting)
-                        .frame(maxWidth: .infinity, minHeight: 40)
-                        .foregroundStyle(ClickColors.textSecondary)
-                        .background(ClickColors.fillSubtle, in: Capsule())
-                }
-            }
-            .buttonStyle(.plain)
+        HomePersonPrompt(
+            title: "Reconnect with \(HomeFeedModel.firstName(person.displayName) ?? person.displayName)",
+            detail: context.nonEmptyTrimmed,
+            primaryTitle: "Say hi",
+            onPrimary: onSayHi,
+            secondaryTitle: "Not now",
+            onSecondary: onNotNow,
+            onOpen: onProfile
+        ) {
+            AvatarView(imageURL: person.avatarUrl, seed: person.userID, initials: person.initials,
+                       size: ClickMetrics.Avatar.row, isCore: person.isCore)
         }
     }
 

@@ -169,7 +169,7 @@ struct HomeRecommendation: Identifiable, Equatable {
             switch self {
             case .interest(let tag): "Because you like \(tag)"
             case .trending(let going): "Trending · \(going) going"
-            case .live: "Happening now"
+            case .live: "Live now"
             case .today: "Today"
             case .tomorrow: "Tomorrow"
             case .nearby(let meters):
@@ -180,24 +180,18 @@ struct HomeRecommendation: Identifiable, Equatable {
             case .comingUp: "Coming up"
             }
         }
-
-        var systemImage: String {
-            switch self {
-            case .interest: "heart.fill"
-            case .trending: "flame.fill"
-            case .live: "dot.radiowaves.left.and.right"
-            case .today: "clock.fill"
-            case .tomorrow: "calendar"
-            case .nearby: "location.fill"
-            case .popular: "person.2.fill"
-            case .comingUp: "sparkles"
-            }
-        }
     }
 
     let beacon: MapBeacon
     let reason: Reason
     var id: String { beacon.id }
+
+    /// "Tomorrow · 5:00 – 6:00 PM · PLSE Lab · 3 going", like the Happening now card.
+    func detail(now: Date = .now) -> String {
+        let place = beacon.locationName ?? beacon.formattedAddress
+        let whenAndWhere = beacon.schedule.map { EventFormatting.whenAndWhere($0, place: place, now: now) } ?? place
+        return [whenAndWhere, MapItem(kind: .beacon(beacon)).peopleLabel].compactMap { $0 }.joined(separator: " · ")
+    }
 }
 
 /// Picks events for "Recommended for you" from what's around you: your interests, how close,
@@ -355,8 +349,10 @@ final class HomeFeedModel {
     /// Whether Upcoming has heard back from both of its sources (cache counts).
     var hasUpcomingAnswer: Bool { myEvents.value != nil && savedEvents.value != nil }
 
-    /// Events near you you're not part of yet, best first (none without discovery).
+    /// Events near you you're not part of yet, best first (none without discovery). Nothing while
+    /// Upcoming is first loading, so an event you're going to is never suggested in the meantime.
     func recommendations(excluding promotedID: String?, now: Date = .now) -> [HomeRecommendation] {
+        guard !myEvents.isPending, !savedEvents.isPending else { return [] }
         var taken = Set(upcoming(excluding: nil, now: now).map(\.id))
         if let promotedID { taken.insert(promotedID) }
         return HomeRecommendations.rank(

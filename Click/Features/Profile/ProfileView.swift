@@ -73,16 +73,19 @@ public struct ProfileView: View {
                 }
                 if !eventsTogether.isEmpty { EventsTogetherSection(events: eventsTogether) }
                 chatBackdrop
-                // Sticky: once the chips reach the top they're held there, over the content.
-                tabChips
-                    .visualEffect { content, proxy in
-                        content.offset(y: max(0, -proxy.frame(in: .scrollView(axis: .vertical)).minY))
-                    }
-                    .onGeometryChange(for: Bool.self) { proxy in
-                        proxy.frame(in: .scrollView(axis: .vertical)).minY < 0
-                    } action: { stripPinned = $0 }
-                    .zIndex(1)
-                tabContent
+                // Relationship history: nothing to show on your own profile.
+                if !isSelf {
+                    // Sticky: once the chips reach the top they're held there, over the content.
+                    tabChips
+                        .visualEffect { content, proxy in
+                            content.offset(y: max(0, -proxy.frame(in: .scrollView(axis: .vertical)).minY))
+                        }
+                        .onGeometryChange(for: Bool.self) { proxy in
+                            proxy.frame(in: .scrollView(axis: .vertical)).minY < 0
+                        } action: { stripPinned = $0 }
+                        .zIndex(1)
+                    tabContent
+                }
             }
             .padding(.horizontal, ClickSpacing.screenGutter)
             .padding(.bottom, 32)
@@ -381,13 +384,24 @@ public struct ProfileView: View {
 
     @ViewBuilder
     private var tabContent: some View {
-        switch tab {
-        case .timeline: timelineTab
-        case .media: mediaTab
-        case .links: linksTab
-        case .files: filesTab
-        case .beacons: sharedList(model.shared.tabs.value?.beacons, empty: "No events or beacons shared yet.")
-        case .pinned: pinnedTab
+        if model.connectionID == nil {
+            // Every tab is history with this person: one state, worded for the tab.
+            Text(tab.notConnectedText(peerFirstName))
+                .font(ClickTypography.supporting)
+                .foregroundStyle(ClickColors.textTertiary)
+                .multilineTextAlignment(.center)
+                .padding(20)
+                .frame(maxWidth: .infinity)
+                .groupedSurface()
+        } else {
+            switch tab {
+            case .timeline: timelineTab
+            case .media: mediaTab
+            case .links: linksTab
+            case .files: filesTab
+            case .beacons: sharedList(model.shared.tabs.value?.beacons, empty: "No events or beacons shared yet.")
+            case .pinned: pinnedTab
+            }
         }
     }
 
@@ -400,11 +414,6 @@ public struct ProfileView: View {
             .padding(14)
             .frame(maxWidth: .infinity, alignment: .leading)
             .groupedSurface()
-        } else {
-            Text("Pinned messages appear once you're connected.")
-                .font(ClickTypography.supporting)
-                .foregroundStyle(ClickColors.textTertiary)
-                .padding(20)
         }
     }
 
@@ -740,6 +749,19 @@ private enum ProfileTab: String, CaseIterable, Identifiable {
     case timeline, pinned, beacons, media, links, files
     var id: String { rawValue }
     var title: String { rawValue.capitalized }
+
+    /// What this tab will hold, for someone you haven't Clicked with yet.
+    func notConnectedText(_ name: String) -> String {
+        let what = switch self {
+        case .timeline: "Your Clicks and journal notes with \(name)"
+        case .pinned: "Messages you pin with \(name)"
+        case .beacons: "Events and beacons you share with \(name)"
+        case .media: "Photos and voice notes you share with \(name)"
+        case .links: "Links you share with \(name)"
+        case .files: "Files you share with \(name)"
+        }
+        return "\(what) show up here after you Click in person."
+    }
 }
 
 private enum SafetyAction {

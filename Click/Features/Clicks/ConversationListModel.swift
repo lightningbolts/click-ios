@@ -63,6 +63,8 @@ final class ConversationListModel {
     var archived: [ConnectionItem] { snapshot?.archived ?? [] }
     var groups: [CliqueItem] { snapshot?.cliques ?? [] }
     var core: [ConnectionItem] { active.filter(\.isCore) }
+    /// Your Core Clicks, by user: their avatar wears the Core ring wherever they appear (chats, hubs).
+    var coreUserIDs: Set<String> { Set(core.map(\.userID)) }
     var unreadTotal: Int {
         active.reduce(0) { $0 + $1.unreadCount } + groups.reduce(0) { $0 + $1.unreadCount }
     }
