@@ -478,11 +478,12 @@ public actor ChatRepository: ChatRepositoryProtocol {
     /// When a history re-read last ran per chat (keys shared later by another of the user's devices).
     private var sharedHistoryRefreshAt: [String: Date] = [:]
 
-    /// Re-reads this device's envelopes once a minute at most, so keys shared by the user's other
-    /// devices after an email approval become usable without restarting the app.
+    /// Re-reads this device's envelopes at a small bounded cadence while locked history is visible.
+    /// A key transfer can finish seconds after email approval; a long cache window would leave the
+    /// thread locked until navigation or foregrounding even though the envelopes already exist.
     private func refreshSessionForSharedHistory(chatID: String, participantUserIDs: [String]) async -> V2Session? {
         let key = V2Scope.chat(chatID).cacheKey
-        if let last = sharedHistoryRefreshAt[key], Date().timeIntervalSince(last) < 60 { return nil }
+        if let last = sharedHistoryRefreshAt[key], Date().timeIntervalSince(last) < 2 { return nil }
         sharedHistoryRefreshAt[key] = Date()
         v2SessionCache[key] = nil
         return try? await resolveV2Session(scope: .chat(chatID), participantUserIDs: participantUserIDs, allowUpgrade: false)
