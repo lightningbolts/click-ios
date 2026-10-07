@@ -58,6 +58,17 @@ struct EventDropsTests {
         #expect(EventDropsState.parse([:]).access == .none)
     }
 
+    @Test("A confirmed drop joins the strip at once and uses up one of what's left")
+    func addsConfirmedDrop() {
+        let state = EventDropsState.parse(["state": "open", "access": "participant", "can_post": true, "remaining": 1])
+        let drop = EventDrop.parse(["id": "d1", "is_mine": true])!
+        let added = state.adding(drop)
+        #expect(added.myDrops.map(\.id) == ["d1"])
+        #expect(added.remaining == 0)
+        #expect(!added.canPost)
+        #expect(added.adding(drop) == added)
+    }
+
     @Test("Recap looks are deterministic per seed and never Natural")
     func recapLooks() {
         for seed in [0, 1, 8, 9, 123_456_789, -3] {

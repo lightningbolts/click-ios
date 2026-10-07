@@ -116,6 +116,9 @@ struct CreateBeaconSheet: View {
 
     private var isEditing: Bool { editing != nil }
 
+    /// Events happen at a place the host picks; every other beacon marks where you are right now.
+    private var picksPlace: Bool { kind == .event }
+
     var body: some View {
         NavigationStack {
             Form {
@@ -134,9 +137,7 @@ struct CreateBeaconSheet: View {
                             if value.count > limit { details = String(value.prefix(limit)) }
                         }
                 }
-                Section("Where") {
-                    BeaconPlacePicker(place: $place, fallback: fallback)
-                }
+                whereSection
                 photoSection
                 switch kind {
                 case .event:
@@ -209,6 +210,11 @@ struct CreateBeaconSheet: View {
             // The preview keeps playing while the form scrolls; it stops when the form closes.
             .onDisappear { SoundtrackPreviewPlayer.shared.stop() }
             .onAppear(perform: prefill)
+            // A beacon drops where you are: have the fix ready by the time Post is tapped.
+            .task(id: picksPlace) {
+                guard !picksPlace, !isEditing else { return }
+                _ = await env.location.currentLocation(maximumAge: 120, acceptableAccuracy: 150, timeout: .seconds(6))
+            }
             .onChange(of: kind) { _, new in
                 // Alerts stay short by default (spec F4); people nearby extend them if it's still there.
                 guard !isEditing, new == .hazard, env.features.isEnabled(.alertConfirmations), hours == 4 else { return }
@@ -248,6 +254,23 @@ struct CreateBeaconSheet: View {
     }
 
     // MARK: - Sections
+
+    private var whereSection: some View {
+        Section {
+            if picksPlace {
+                BeaconPlacePicker(place: $place, fallback: fallback)
+            } else {
+                Label(isEditing ? "Where you dropped it" : "Your current location",
+                      systemImage: isEditing ? "mappin.and.ellipse" : "location.fill")
+            }
+        } header: {
+            Text("Where")
+        } footer: {
+            if !picksPlace {
+                Text(isEditing ? "Beacons stay where they were dropped." : "Beacons drop where you are, so people nearby know it's happening now.")
+            }
+        }
+    }
 
     /// Find a song by name in Click (the iTunes catalog); pasting a link is the fallback.
     private var soundtrackSection: some View {
@@ -555,19 +578,26 @@ struct CreateBeaconSheet: View {
         defer { isSaving = false }
         error = nil
 
-        var coordinate = place?.coordinate
+        // A beacon keeps where it was dropped; a new one lands where you are, never the map's center.
+        let pickedPlace = picksPlace ? place : nil
+        var coordinate = pickedPlace?.coordinate ?? (picksPlace ? nil : editing?.coordinate)
         if coordinate == nil {
-            coordinate = await env.location.currentLocation(maximumAge: 120, acceptableAccuracy: 150, timeout: .seconds(6))?.coordinate ?? fallback
+            // Posting is the intent to share where you are: ask, if location was never decided.
+            _ = await env.permissions.requestPermission(for: .locationWhenInUse)
+            let here = await env.location.currentLocation(maximumAge: 120, acceptableAccuracy: 150, timeout: .seconds(6))?.coordinate
+            coordinate = here ?? (picksPlace ? fallback : nil)
         }
         guard let coordinate else {
-            error = "Choose a place, or turn on location so it lands where you are."
+            error = picksPlace ? "Choose a place, or turn on location so it lands where you are."
+                : env.location.isAuthorized ? "Couldn't find where you are. Try again in a moment."
+                : "Turn on location in Settings to drop a beacon where you are."
             return
         }
 
         var metadata: [String: Any] = [:]
         if let name { metadata["title"] = name }
         metadata["description"] = details.nonEmptyTrimmed ?? (isEditing ? "" : nil)
-        if let place {
+        if let place = pickedPlace {
             metadata["location_name"] = place.name
             if let address = place.formattedAddress { metadata["formatted_address"] = address }
         }
