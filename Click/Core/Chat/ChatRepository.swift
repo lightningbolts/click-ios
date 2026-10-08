@@ -602,16 +602,20 @@ public actor ChatRepository: ChatRepositoryProtocol {
 
     /// Approves (or denies) another device of this account from this one. The server checks this
     /// device holds its identity key: it wraps a one-time challenge to it, which is unwrapped here
-    /// and sent back. After approving, this device shares the history it holds right away.
-    public func decideDeviceApproval(id: String, approve: Bool, currentUserID: String) async throws {
+    /// and sent back. The challenge is fetched while `authorize` (the device owner's Face ID) runs,
+    /// so its round trip overlaps the system prompt; nothing is sent unless `authorize` succeeds.
+    /// Sharing history with the approved device is the caller's to start, off this critical path.
+    public func decideDeviceApproval(id: String, approve: Bool, authorize: (@Sendable () async throws -> Void)? = nil) async throws {
         let identity = try vault.loadOrCreate()
         try await registerDevice()
         let base = "/api/chat/devices/history-requests/\(id)"
-        let (challengeData, _) = try await apiClient.executeRaw(APIRequest(
+        let challengeRequest = APIRequest(
             path: base + "/challenge", method: .post,
             body: try JSONSerialization.data(withJSONObject: ["approving_device_id": identity.info.deviceID])
-        ))
-        let challenge = try JSONFields.object(challengeData)
+        )
+        async let challengeResponse = apiClient.executeRaw(challengeRequest)
+        try await authorize?()
+        let challenge = try JSONFields.object(try await challengeResponse.0)
         guard let challengeID = JSONFields.string(challenge["challenge_id"]),
               let envelope = JSONFields.string(challenge["envelope"]),
               let chatID = JSONFields.string(challenge["chat_id"]),
@@ -631,7 +635,6 @@ public actor ChatRepository: ChatRepositoryProtocol {
                 "proof": proof.base64EncodedString()
             ])
         ))
-        if approve { _ = await shareHistoryWithApprovedDevices(currentUserID: currentUserID) }
     }
 
     /// "Email me a link" from the waiting device. False when the email already went out.

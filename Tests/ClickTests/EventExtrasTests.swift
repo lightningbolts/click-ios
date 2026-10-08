@@ -32,6 +32,17 @@ struct EventExtrasTests {
         #expect(picked.map(\.beaconID) == ["on", "soon"])
     }
 
+    @Test("An activity started by an earlier build (no picture) still decodes, and a picture round-trips")
+    func liveActivityStateDecodes() throws {
+        let earlier = Data(#"{"start":0,"end":3600,"checkedIn":true}"#.utf8)
+        let state = try JSONDecoder().decode(EventActivityAttributes.ContentState.self, from: earlier)
+        #expect(state.checkedIn && state.artwork == nil)
+        var withPicture = state
+        withPicture.artwork = "1a2b.jpg"
+        let decoded = try JSONDecoder().decode(EventActivityAttributes.ContentState.self, from: JSONEncoder().encode(withPicture))
+        #expect(decoded == withPicture && decoded != state)
+    }
+
     @Test("Weather reads now first, then the start-time forecast with a rain chance worth mentioning")
     func weatherSummary() {
         let start = Date(timeIntervalSince1970: 1_800_000_000)

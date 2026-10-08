@@ -124,6 +124,7 @@ targets:
       PRODUCT_BUNDLE_IDENTIFIER: compose.project.click.click.Widgets
       PRODUCT_NAME: ClickWidgets
       INFOPLIST_FILE: ClickWidgets/Info.plist
+      CODE_SIGN_ENTITLEMENTS: ClickWidgets/ClickWidgets.entitlements
       INFOPLIST_KEY_CFBundleDisplayName: "Click"
       DEVELOPMENT_TEAM: W4C3V9Z2N4
       CODE_SIGN_STYLE: Automatic

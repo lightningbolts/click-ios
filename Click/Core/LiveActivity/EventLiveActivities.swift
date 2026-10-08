@@ -1,5 +1,5 @@
 import ActivityKit
-import Foundation
+import UIKit
 
 /// Starts, updates and ends the event Live Activity: from a few hours before an event you're
 /// going to (or hosting) until it ends, the Lock Screen and Dynamic Island count down to it, then
@@ -77,12 +77,18 @@ enum EventLiveActivities {
             Started.forget(activity.attributes.beaconID)
         }
         Started.prune(keeping: wantedIDs)
+        var artworks: [String: String] = [:]
+        for item in wanted {
+            artworks[item.event.beaconID] = await Artwork.prepare(item.event)
+        }
+        Artwork.prune(keeping: Set(artworks.values))
         // Running before this list existed (an earlier build started it) counts as started.
         for activity in Activity<EventActivityAttributes>.activities where wantedIDs.contains(activity.attributes.beaconID) {
             Started.remember(activity.attributes.beaconID)
         }
         for item in wanted {
-            let state = EventActivityAttributes.ContentState(start: item.event.start, end: item.event.end, checkedIn: item.checkedIn)
+            let state = EventActivityAttributes.ContentState(start: item.event.start, end: item.event.end, checkedIn: item.checkedIn,
+                                                             artwork: artworks[item.event.beaconID])
             if let activity = Activity<EventActivityAttributes>.activities.first(where: { $0.attributes.beaconID == item.event.beaconID }) {
                 if activity.activityState == .active, activity.content.state != state { await activity.update(content(state)) }
             } else if !Started.contains(item.event.beaconID) {
@@ -111,6 +117,48 @@ enum EventLiveActivities {
     /// the end (flipping it to "ended"), so the Lock Screen is right even if Click isn't opened.
     nonisolated private static func content(_ state: EventActivityAttributes.ContentState) -> ActivityContent<EventActivityAttributes.ContentState> {
         ActivityContent(state: state, staleDate: state.start > Date() ? state.start : state.end)
+    }
+}
+
+/// Each event's picture as the small square the activity draws, saved where ClickWidgets reads
+/// it. Named by the event and the picture's URL, so a new picture is a new file (and an update).
+private enum Artwork {
+    /// The badge's largest size (52 pt on the Lock Screen) at 3x.
+    static let pixels: CGFloat = 156
+
+    /// The saved file's name, saving it first; nil when the event has no picture or it can't load.
+    static func prepare(_ event: MyEvent) async -> String? {
+        guard let directory = EventActivityAttributes.artworkDirectory,
+              let url = event.imageURL?.nonEmptyTrimmed.flatMap(URL.init(string:)) else { return nil }
+        let name = String(CardVisual.fnv1a32(event.beaconID + "|" + url.absoluteString), radix: 16) + ".jpg"
+        let file = directory.appendingPathComponent(name)
+        if FileManager.default.fileExists(atPath: file.path) { return name }
+        // Room to fill the square from a wide banner before it's cropped.
+        guard let image = await ImagePipeline.shared.image(for: url, maxPixelSize: pixels * 4),
+              let data = square(image).jpegData(compressionQuality: 0.8) else { return nil }
+        try? FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        return (try? data.write(to: file, options: .atomic)) != nil ? name : nil
+    }
+
+    /// Pictures of events no longer shown are deleted (all of them on sign-out).
+    static func prune(keeping names: Set<String>) {
+        guard let directory = EventActivityAttributes.artworkDirectory,
+              let files = try? FileManager.default.contentsOfDirectory(atPath: directory.path) else { return }
+        for file in files where !names.contains(file) {
+            try? FileManager.default.removeItem(at: directory.appendingPathComponent(file))
+        }
+    }
+
+    /// Center-cropped to a `pixels` square, as the badge draws it.
+    private static func square(_ image: UIImage) -> UIImage {
+        let scale = pixels / max(1, min(image.size.width, image.size.height))
+        let size = CGSize(width: image.size.width * scale, height: image.size.height * scale)
+        let format = UIGraphicsImageRendererFormat()
+        format.scale = 1
+        format.opaque = true
+        return UIGraphicsImageRenderer(size: CGSize(width: pixels, height: pixels), format: format).image { _ in
+            image.draw(in: CGRect(origin: CGPoint(x: (pixels - size.width) / 2, y: (pixels - size.height) / 2), size: size))
+        }
     }
 }
 

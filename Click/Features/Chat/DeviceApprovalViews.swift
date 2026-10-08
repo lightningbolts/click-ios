@@ -140,31 +140,21 @@ struct DeviceApprovalSheet: View {
     }
 
     private func decide(approve: Bool) async {
+        let env = self.env
         guard let userID = env.session.currentSession?.userId else { return }
         phase = approve ? .approving : .denying
+        // Approving needs the device owner (Face ID / Touch ID, or the passcode) every time; the
+        // server's challenge is fetched meanwhile. Cancelling never approves.
+        let authorize: @Sendable () async throws -> Void = { @MainActor in
+            try await Self.authenticateOwner()
+            // A session switch while the system prompt was open must never approve the old account.
+            guard env.session.currentSession?.userId == userID else { throw CancellationError() }
+        }
         do {
-            if approve {
-                // OS-managed Face ID / Touch ID, falling back to the device passcode.
-                // Authentication is required again for each approval; cancellation never approves.
-                let context = LAContext()
-                context.localizedCancelTitle = "Cancel"
-                guard context.canEvaluatePolicy(.deviceOwnerAuthentication, error: nil) else {
-                    throw ApprovalAuthenticationError.unavailable
-                }
-                try await context.evaluatePolicy(
-                    .deviceOwnerAuthentication,
-                    localizedReason: "Confirm that you want to share Click message history with this device."
-                )
-                // A session switch while the system prompt was open must never approve the old account.
-                guard env.session.currentSession?.userId == userID else {
-                    phase = .asking
-                    return
-                }
-            }
-            try await env.chat.decideDeviceApproval(id: approval.id, approve: approve, currentUserID: userID)
+            try await env.chat.decideDeviceApproval(id: approval.id, approve: approve, authorize: approve ? authorize : nil)
             withAnimation(ClickMotion.content) { phase = approve ? .approved : .denied }
             approve ? ClickHaptics.success() : ClickHaptics.impact(.medium)
-            env.deviceApprovalDecided(approval.id)
+            env.deviceApprovalDecided(approval.id, approved: approve)
             await ClickNotificationCoordinator.shared.reconcileDeviceApprovalNotifications(completedRequestID: approval.id)
         } catch {
             if let authError = error as? LAError,
@@ -179,6 +169,19 @@ struct DeviceApprovalSheet: View {
                     : "Couldn't reach Click. Check your connection and try again.")
             }
         }
+    }
+
+    /// OS-managed Face ID / Touch ID, falling back to the device passcode.
+    @MainActor private static func authenticateOwner() async throws {
+        let context = LAContext()
+        context.localizedCancelTitle = "Cancel"
+        guard context.canEvaluatePolicy(.deviceOwnerAuthentication, error: nil) else {
+            throw ApprovalAuthenticationError.unavailable
+        }
+        try await context.evaluatePolicy(
+            .deviceOwnerAuthentication,
+            localizedReason: "Confirm that you want to share Click message history with this device."
+        )
     }
 }
 

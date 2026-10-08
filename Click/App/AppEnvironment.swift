@@ -473,9 +473,14 @@ public final class AppEnvironment {
         if incomingDeviceApproval?.id == id { incomingDeviceApproval = nil }
     }
 
-    /// Decided on this device: never offered again.
-    func deviceApprovalDecided(_ id: String) {
+    /// Decided on this device: never offered again. Approved: share the history this device
+    /// holds right away, in the background (the sheet already says "Approved"; the next
+    /// foreground's `syncDeviceHistory` picks up anything left unsent).
+    func deviceApprovalDecided(_ id: String, approved: Bool) {
         deferredDeviceApprovals.insert(id)
+        guard approved, let userID = session.currentSession?.userId else { return }
+        let chat = self.chat
+        Task(priority: .utility) { _ = await chat.shareHistoryWithApprovedDevices(currentUserID: userID) }
     }
 
     func reportPresenceIfEnabled() {
