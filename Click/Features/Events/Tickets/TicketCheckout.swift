@@ -51,13 +51,16 @@ final class OrderConfirmationModel {
     let orderID: String
     private let fetch: (String) async throws -> TicketOrder
     private let sleep: (Duration) async throws -> Void
+    private let now: () -> Date
 
     init(orderID: String,
          fetch: @escaping (String) async throws -> TicketOrder,
-         sleep: @escaping (Duration) async throws -> Void = { try await Task.sleep(for: $0) }) {
+         sleep: @escaping (Duration) async throws -> Void = { try await Task.sleep(for: $0) },
+         now: @escaping () -> Date = Date.init) {
         self.orderID = orderID
         self.fetch = fetch
         self.sleep = sleep
+        self.now = now
     }
 
     /// A free claim needs no wait: Click issued the tickets before answering.
@@ -65,21 +68,28 @@ final class OrderConfirmationModel {
         self.orderID = orderID
         self.fetch = { _ in throw CancellationError() }
         self.sleep = { _ in }
+        self.now = Date.init
         state = .confirmed(ticketCount: confirmedTicketCount)
     }
 
     func run() async {
         guard state == .confirming else { return }
-        var waited = Duration.zero
+        let start = now()
         while !Task.isCancelled {
-            if let order = try? await fetch(orderID), let ending = Self.state(for: order) {
-                state = ending
-                return
+            do {
+                if let ending = Self.state(for: try await fetch(orderID)) {
+                    state = ending
+                    return
+                }
+            } catch let error as TicketingError where error.code == "not_found" {
+                break // not this buyer's order (or gone): waiting won't change that
+            } catch {
+                // A dropped poll: try again.
             }
-            let interval: Duration = waited < .seconds(10) ? .seconds(1) : .seconds(3)
-            guard waited + interval <= .seconds(60) else { break }
+            let waited = now().timeIntervalSince(start)
+            let interval: Duration = waited < 10 ? .seconds(1) : .seconds(3)
+            guard waited + TimeInterval(interval.components.seconds) <= 60 else { break }
             do { try await sleep(interval) } catch { return }
-            waited += interval
         }
         if !Task.isCancelled { state = .stillConfirming }
     }

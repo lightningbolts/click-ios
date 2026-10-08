@@ -24,17 +24,26 @@ struct TicketCheckoutTests {
         var outcomes: [TicketOrder.Outcome]
         var polls = 0
         var waited: [Duration] = []
+        /// A fake clock: sleeping advances it, and so does each answer's own latency.
+        var now = Date(timeIntervalSince1970: 0)
+        var latency: TimeInterval = 0
         init(_ outcomes: [TicketOrder.Outcome]) { self.outcomes = outcomes }
+
+        func sleep(_ interval: Duration) {
+            waited.append(interval)
+            now += TimeInterval(interval.components.seconds)
+        }
 
         func fetch(_ id: String) async throws -> TicketOrder {
             polls += 1
+            now += latency
             let outcome = outcomes.count > 1 ? outcomes.removeFirst() : outcomes[0]
             return TicketOrder(id: id, beaconID: "b1", outcome: outcome, ticketCount: 2)
         }
     }
 
     private func model(_ script: Script) -> OrderConfirmationModel {
-        OrderConfirmationModel(orderID: "o1", fetch: script.fetch, sleep: { script.waited.append($0) })
+        OrderConfirmationModel(orderID: "o1", fetch: script.fetch, sleep: { script.sleep($0) }, now: { script.now })
     }
 
     @Test("Pending a few times, then confirmed")
@@ -58,6 +67,28 @@ struct TicketCheckoutTests {
         let total = script.waited.reduce(Duration.zero, +)
         #expect(total <= .seconds(60))
         #expect(total > .seconds(57))
+    }
+
+    @Test("Slow answers count toward the minute: it still gives up on time")
+    func slowServer() async {
+        let script = Script([.pending])
+        script.latency = 8
+        let model = model(script)
+        await model.run()
+        #expect(model.state == .stillConfirming)
+        #expect(script.now.timeIntervalSince1970 <= 60 + script.latency)
+    }
+
+    @Test("An order Click can't find stops at once instead of spinning for a minute")
+    func notFound() async {
+        var polls = 0
+        let model = OrderConfirmationModel(orderID: "o1", fetch: { _ in
+            polls += 1
+            throw TicketingError(code: "not_found")
+        }, sleep: { _ in })
+        await model.run()
+        #expect(model.state == .stillConfirming)
+        #expect(polls == 1)
     }
 
     @Test("Each ending reads as web's return page", arguments: [
