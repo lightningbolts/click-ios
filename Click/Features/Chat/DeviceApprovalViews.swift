@@ -1,4 +1,9 @@
 import SwiftUI
+import LocalAuthentication
+
+private enum ApprovalAuthenticationError: Error {
+    case unavailable
+}
 
 /// "Approve new sign-in?" on a device the user already has: shown when another device of theirs
 /// asks for their past messages. Approving proves this device holds its key and shares the history
@@ -138,14 +143,39 @@ struct DeviceApprovalSheet: View {
         guard let userID = env.session.currentSession?.userId else { return }
         phase = approve ? .approving : .denying
         do {
+            if approve {
+                // OS-managed Face ID / Touch ID, falling back to the device passcode.
+                // Authentication is required again for each approval; cancellation never approves.
+                let context = LAContext()
+                context.localizedCancelTitle = "Cancel"
+                guard context.canEvaluatePolicy(.deviceOwnerAuthentication, error: nil) else {
+                    throw ApprovalAuthenticationError.unavailable
+                }
+                try await context.evaluatePolicy(
+                    .deviceOwnerAuthentication,
+                    localizedReason: "Confirm that you want to share Click message history with this device."
+                )
+                // A session switch while the system prompt was open must never approve the old account.
+                guard env.session.currentSession?.userId == userID else {
+                    phase = .asking
+                    return
+                }
+            }
             try await env.chat.decideDeviceApproval(id: approval.id, approve: approve, currentUserID: userID)
             withAnimation(ClickMotion.content) { phase = approve ? .approved : .denied }
             approve ? ClickHaptics.success() : ClickHaptics.impact(.medium)
             env.deviceApprovalDecided(approval.id)
         } catch {
+            if let authError = error as? LAError,
+               authError.code == .userCancel || authError.code == .systemCancel || authError.code == .appCancel {
+                phase = .asking
+                return
+            }
             guard !error.isCancellation else { phase = .asking; return }
             withAnimation(ClickMotion.content) {
-                phase = .failed("Couldn't reach Click. Check your connection and try again.")
+                phase = .failed(error is LAError || error is ApprovalAuthenticationError
+                    ? "Device authentication is required to approve this request."
+                    : "Couldn't reach Click. Check your connection and try again.")
             }
         }
     }
