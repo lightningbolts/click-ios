@@ -28,20 +28,31 @@ struct TicketButton: View {
 
     var body: some View {
         let state = Self.state(ticketing)
-        Button(action: action) {
-            HStack(spacing: 8) {
-                if state.enabled { Image(systemName: "ticket").font(.body.weight(.semibold)) }
-                Text(state.title)
-                    .font(ClickTypography.button)
-                    .multilineTextAlignment(.center)
+        if state.enabled {
+            Button(action: action) {
+                label(state)
+                    .foregroundStyle(ClickColors.primaryActionForeground)
+                    .background(ClickColors.primaryActionFill, in: Capsule())
             }
-            .padding(.horizontal, 20)
-            .padding(.vertical, 8)
-            .frame(maxWidth: .infinity, minHeight: 54)
-            .foregroundStyle(state.enabled ? ClickColors.primaryActionForeground : ClickColors.textSecondary)
-            .background(state.enabled ? ClickColors.primaryActionFill : ClickColors.fillSubtle, in: Capsule())
+            .buttonStyle(.plain)
+        } else {
+            // A closed sale is a status, not a dead button: full-contrast text, no tap.
+            label(state)
+                .foregroundStyle(ClickColors.textSecondary)
+                .background(ClickColors.fillStrong, in: Capsule())
+                .accessibilityElement(children: .combine)
         }
-        .buttonStyle(.plain)
-        .disabled(!state.enabled)
+    }
+
+    private func label(_ state: State) -> some View {
+        HStack(spacing: 8) {
+            if state.enabled { Image(systemName: "ticket").font(.body.weight(.semibold)) }
+            Text(state.title)
+                .font(ClickTypography.button)
+                .multilineTextAlignment(.center)
+        }
+        .padding(.horizontal, 20)
+        .padding(.vertical, 8)
+        .frame(maxWidth: .infinity, minHeight: 54)
     }
 }

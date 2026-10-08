@@ -105,23 +105,25 @@ private struct TicketGroupRow: View {
                     Text(when)
                         .font(ClickTypography.supporting)
                         .foregroundStyle(ClickColors.textSecondary)
+                        .lineLimit(2)
+                }
+                HStack(spacing: 6) {
+                    if group.event.cancelled {
+                        Text("Cancelled")
+                            .font(ClickTypography.metadataEmphasized)
+                            .foregroundStyle(ClickColors.textSecondary)
+                            .padding(.horizontal, 8)
+                            .padding(.vertical, 2)
+                            .background(ClickColors.fillStrong, in: Capsule())
+                            .fixedSize()
+                    }
+                    Text(summary)
+                        .font(ClickTypography.supporting)
+                        .foregroundStyle(ClickColors.textTertiary)
                         .lineLimit(1)
                 }
-                Text(summary)
-                    .font(ClickTypography.supporting)
-                    .foregroundStyle(ClickColors.textTertiary)
-                    .lineLimit(1)
             }
-            Spacer(minLength: 8)
-            if group.event.cancelled {
-                Text("Cancelled")
-                    .font(ClickTypography.metadataEmphasized)
-                    .foregroundStyle(ClickColors.textSecondary)
-                    .padding(.horizontal, 8)
-                    .padding(.vertical, 3)
-                    .background(ClickColors.fillStrong, in: Capsule())
-                    .fixedSize()
-            }
+            Spacer(minLength: 0)
         }
         .padding(.vertical, 4)
         .accessibilityElement(children: .combine)
@@ -130,7 +132,7 @@ private struct TicketGroupRow: View {
     /// In the event's own time zone, like the event page.
     private var when: String? {
         guard let start = group.event.startAt else { return group.event.locationName }
-        var style = Date.FormatStyle(date: .abbreviated, time: .shortened)
+        var style = Date.FormatStyle().weekday(.abbreviated).month(.abbreviated).day().hour().minute()
         if let id = group.event.timeZone, let zone = TimeZone(identifier: id) { style.timeZone = zone }
         let date = start.formatted(style)
         guard let place = group.event.locationName else { return date }

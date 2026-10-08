@@ -38,7 +38,7 @@ struct TicketPickerSheet: View {
                 }
             }
         }
-        .presentationDetents([.medium, .large])
+        .presentationDetents([.fraction(0.75), .large])
         .presentationDragIndicator(.visible)
         .sensoryFeedback(.selection, trigger: model.selection)
         .onChange(of: confirmation?.state.isConfirmed == true) { _, confirmed in
