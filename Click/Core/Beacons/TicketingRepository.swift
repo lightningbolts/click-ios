@@ -26,8 +26,11 @@ public actor TicketingRepository: TicketingClient {
     }
 
     private nonisolated let ticketCache = MemoryCache<String, CachedTickets>()
+    /// The wallet per scope (`upcoming` / `past`), so it opens filled.
+    private nonisolated let walletCache = MemoryCache<String, [MyTicketsGroup]>()
     private nonisolated let owner = Mutex<String?>(nil)
     private static let persistKey = "events.tickets"
+    private static let walletKey = "events.ticketWallet"
 
     /// Reads the signed-in user's saved tickets on the spot (before the shell's first frame).
     public nonisolated func restore(userID: String) {
@@ -36,14 +39,24 @@ public actor TicketingRepository: TicketingClient {
             return current != userID
         }) else { return }
         ticketCache.removeAll()
-        guard let stored = LocalStore.shared.load([String: CachedTickets].self, key: Self.persistKey, userID: userID)?.value else { return }
-        ticketCache.fill(stored)
+        walletCache.removeAll()
+        if let stored = LocalStore.shared.load([String: CachedTickets].self, key: Self.persistKey, userID: userID)?.value {
+            ticketCache.fill(stored)
+        }
+        if let stored = LocalStore.shared.load([String: [MyTicketsGroup]].self, key: Self.walletKey, userID: userID)?.value {
+            walletCache.fill(stored)
+        }
     }
 
     /// Sign-out: one account's tickets are never shown to the next.
     public nonisolated func clear() {
         owner.withLock { $0 = nil }
         ticketCache.removeAll()
+        walletCache.removeAll()
+    }
+
+    public nonisolated func cachedMyTickets(scope: TicketScope) -> [MyTicketsGroup]? {
+        walletCache[scope.rawValue]
     }
 
     public nonisolated func cachedEventTickets(beaconID: String) -> (tickets: [OwnedTicket], fetchedAt: Date)? {
@@ -110,11 +123,16 @@ public actor TicketingRepository: TicketingClient {
     /// The wallet, grouped by event.
     public func myTickets(scope: TicketScope) async throws -> [MyTicketsGroup] {
         let root = try await object(APIRequest(path: "/api/me/tickets", queryItems: [URLQueryItem(name: "scope", value: scope.rawValue)]))
-        return JSONFields.rows(root["groups"]).compactMap { row in
+        let groups = JSONFields.rows(root["groups"]).compactMap { row in
             TicketEvent.decode(JSONFields.dictionary(row["event"])).map {
                 MyTicketsGroup(event: $0, tickets: JSONFields.rows(row["tickets"]).compactMap(OwnedTicket.decode))
             }
         }
+        walletCache[scope.rawValue] = groups
+        if let userID = owner.withLock({ $0 }) {
+            LocalStore.shared.save(walletCache.all, key: Self.walletKey, userID: userID)
+        }
+        return groups
     }
 
     private func object(_ request: APIRequest) async throws -> [String: Any] {

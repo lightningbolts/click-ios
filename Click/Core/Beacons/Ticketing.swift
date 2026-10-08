@@ -224,6 +224,8 @@ public struct TicketingError: LocalizedError, Equatable, Sendable {
             return TicketingError(code: "network")
         case .unauthorized:
             return TicketingError(code: nil, signedOut: true)
+        case .notFound:
+            return TicketingError(code: "not_found")
         case .conflict(let code, let body):
             let fields = body.flatMap { try? JSONFields.object(Data($0.utf8)) } ?? [:]
             return TicketingError(code: code ?? JSONFields.string(fields["code"]), remaining: JSONFields.int(fields["remaining"]),

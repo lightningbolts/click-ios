@@ -208,6 +208,36 @@ struct TicketingTests {
         #expect(url.query == "ticket=t1")
     }
 
+    private static func group(_ id: String, start: TimeInterval?) -> MyTicketsGroup {
+        MyTicketsGroup(event: TicketEvent(beaconID: id, title: id, startAt: start.map { Date(timeIntervalSince1970: $0) }, endAt: nil,
+                                          timeZone: nil, locationName: nil, imageURL: nil, visualSeed: id, cancelled: false),
+                       tickets: [])
+    }
+
+    @Test("Upcoming tickets list soonest first; past ones most recent first")
+    @MainActor
+    func walletOrder() {
+        let groups = [Self.group("late", start: 300), Self.group("soon", start: 100), Self.group("undated", start: nil), Self.group("mid", start: 200)]
+        #expect(TicketsView.sections(groups, scope: .upcoming).map(\.event.beaconID) == ["soon", "mid", "late", "undated"])
+        #expect(TicketsView.sections(groups, scope: .past).map(\.event.beaconID) == ["late", "mid", "soon", "undated"])
+    }
+
+    @Test("The wallet paints from the last load, per scope")
+    func walletCache() async throws {
+        let me = "test-\(UUID().uuidString)"
+        defer { LocalStore.shared.wipe(userID: me) }
+        TicketingMockURLProtocol.handler = { _ in
+            (200, #"{"groups":[{"event":{"beacon_id":"b1","title":"Rooftop","visual_seed":"b1","cancelled":false},"tickets":[]}]}"#)
+        }
+        let first = repository()
+        first.restore(userID: me)
+        _ = try await first.myTickets(scope: .upcoming)
+        let relaunched = repository()
+        relaunched.restore(userID: me)
+        #expect(relaunched.cachedMyTickets(scope: .upcoming)?.first?.event.title == "Rooftop")
+        #expect(relaunched.cachedMyTickets(scope: .past) == nil)
+    }
+
     // MARK: - Cache
 
     @Test("Your tickets survive a relaunch for you and never show for someone else")

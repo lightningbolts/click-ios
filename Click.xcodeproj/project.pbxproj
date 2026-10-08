@@ -106,6 +106,7 @@
 		4083D10D51C7254F40D5AB0E /* EncounterSensorSampler.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8BF0B2661A42F5C41AC15B6F /* EncounterSensorSampler.swift */; };
 		40B1894C29E6069284EC4F6C /* ChatMessageSheets.swift in Sources */ = {isa = PBXBuildFile; fileRef = CFDEEB947FE11EAC6206E3B0 /* ChatMessageSheets.swift */; };
 		4162BB108AA253929551DACC /* OnboardingTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB1A77E8E59821A8087FC2A2 /* OnboardingTests.swift */; };
+		426B86DA3B4EEF720F18EFDB /* TicketsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = F5182B41CA9DAA5C0F052DB6 /* TicketsView.swift */; };
 		442412F4C84C8CA9E577190F /* AnimatedImage.swift in Sources */ = {isa = PBXBuildFile; fileRef = 62B7E583D5D077E8643F61A6 /* AnimatedImage.swift */; };
 		442AEA315FD898EB8BFED96F /* ChatRealtimeManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0984317C23132C065F522391 /* ChatRealtimeManager.swift */; };
 		4538B728A68E8E3B3EEA9912 /* TapConnectModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = DF55528B36B6CD4C5CCBEAF5 /* TapConnectModel.swift */; };
@@ -714,6 +715,7 @@
 		F1896AEE62C80D4462493FAC /* AlertConfirmationSection.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AlertConfirmationSection.swift; sourceTree = "<group>"; };
 		F23B8F9BB56FEA60442B3E78 /* PeerProfileModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PeerProfileModel.swift; sourceTree = "<group>"; };
 		F4A7259C78F05583D7D2BF35 /* ImagePipeline.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ImagePipeline.swift; sourceTree = "<group>"; };
+		F5182B41CA9DAA5C0F052DB6 /* TicketsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TicketsView.swift; sourceTree = "<group>"; };
 		F63751F6535F913F9900FA93 /* ClickLog.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ClickLog.swift; sourceTree = "<group>"; };
 		F6E168B3E644D7A7BDEDF120 /* SharedContentModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SharedContentModel.swift; sourceTree = "<group>"; };
 		F7952CF4B73D0A54B59F8315 /* Round8Tests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Round8Tests.swift; sourceTree = "<group>"; };
@@ -954,6 +956,7 @@
 				2A0F4D5E26638BFB8C8E7540 /* TicketPassContent.swift */,
 				EE1F8A085E5CA64FADC396EF /* TicketPickerModel.swift */,
 				8B422259755C2045FB8FA649 /* TicketPickerSheet.swift */,
+				F5182B41CA9DAA5C0F052DB6 /* TicketsView.swift */,
 			);
 			path = Tickets;
 			sourceTree = "<group>";
@@ -2040,6 +2043,7 @@
 				48585946511C9D5D5223E846 /* TicketPickerSheet.swift in Sources */,
 				25C646A51A5C5FB833DB07AC /* Ticketing.swift in Sources */,
 				24C8E140210E35D03BD2EBD4 /* TicketingRepository.swift in Sources */,
+				426B86DA3B4EEF720F18EFDB /* TicketsView.swift in Sources */,
 				5A024A97C03FD52D04F5BD7A /* TouchRipple.swift in Sources */,
 				B157719AA85CC74638A6B2F4 /* Typography.swift in Sources */,
 				10C0FB52F5A5968652E8AD18 /* UltrasonicService.swift in Sources */,
