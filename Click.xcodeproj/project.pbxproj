@@ -2231,6 +2231,7 @@
 				INFOPLIST_KEY_CADisableMinimumFrameDurationOnPhone = YES;
 				INFOPLIST_KEY_CFBundleDisplayName = Click;
 				INFOPLIST_KEY_ITSAppUsesNonExemptEncryption = NO;
+				INFOPLIST_KEY_NSFaceIDUsageDescription = "Click uses Face ID to confirm that you authorize sharing encrypted message history with another device.";
 				INFOPLIST_KEY_NSBluetoothAlwaysUsageDescription = "Click uses Bluetooth for Tap to Connect when you meet someone nearby.";
 				INFOPLIST_KEY_NSCalendarsFullAccessUsageDescription = "Click checks your calendar on this iPhone to show whether you're free for plans and events. It reads only busy times, and only adds events you ask it to.";
 				INFOPLIST_KEY_NSCalendarsUsageDescription = "Click checks your calendar on this iPhone to show whether you're free for plans and events. It reads only busy times, and only adds events you ask it to.";
@@ -2417,6 +2418,7 @@
 				INFOPLIST_KEY_CADisableMinimumFrameDurationOnPhone = YES;
 				INFOPLIST_KEY_CFBundleDisplayName = Click;
 				INFOPLIST_KEY_ITSAppUsesNonExemptEncryption = NO;
+				INFOPLIST_KEY_NSFaceIDUsageDescription = "Click uses Face ID to confirm that you authorize sharing encrypted message history with another device.";
 				INFOPLIST_KEY_NSBluetoothAlwaysUsageDescription = "Click uses Bluetooth for Tap to Connect when you meet someone nearby.";
 				INFOPLIST_KEY_NSCalendarsFullAccessUsageDescription = "Click checks your calendar on this iPhone to show whether you're free for plans and events. It reads only busy times, and only adds events you ask it to.";
 				INFOPLIST_KEY_NSCalendarsUsageDescription = "Click checks your calendar on this iPhone to show whether you're free for plans and events. It reads only busy times, and only adds events you ask it to.";
