@@ -1,9 +1,15 @@
 import Foundation
 import Synchronization
 
+/// What the ticket picker needs, so it can be tested without the network.
+public protocol TicketingClient: Sendable {
+    func offerings(beaconID: String) async throws -> [TicketOffering]
+    func startCheckout(beaconID: String, items: [(tierID: String, quantity: Int)]) async throws -> CheckoutStart
+}
+
 /// Buying and holding tickets. Web owns ticketing; this client lists, buys and shows them.
 /// Every refusal is thrown as a `TicketingError` carrying web's sentence.
-public actor TicketingRepository {
+public actor TicketingRepository: TicketingClient {
     private let api: ClickAPIClient
 
     public init(api: ClickAPIClient) {

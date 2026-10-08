@@ -237,3 +237,24 @@ public struct TicketingError: LocalizedError, Equatable, Sendable {
         }
     }
 }
+
+/// Money for integer minor units, as web `money.ts` shows it.
+public enum TicketPrice {
+    /// "$15.00", "$12.50", "Free".
+    public static func money(_ cents: Int, currency: String) -> String {
+        cents == 0 ? "Free" : format(cents, currency: currency, wholeOnly: false)
+    }
+
+    /// Compact, for "from" labels: "$12", "$12.50", "Free".
+    public static func from(_ cents: Int, currency: String) -> String {
+        cents == 0 ? "Free" : format(cents, currency: currency, wholeOnly: cents % 100 == 0)
+    }
+
+    private static func format(_ cents: Int, currency: String, wholeOnly: Bool) -> String {
+        (Decimal(cents) / 100).formatted(
+            .currency(code: currency.uppercased())
+                .locale(Locale(identifier: "en_US"))
+                .precision(.fractionLength(wholeOnly ? 0 : 2))
+        )
+    }
+}

@@ -109,6 +109,7 @@
 		4538B728A68E8E3B3EEA9912 /* TapConnectModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = DF55528B36B6CD4C5CCBEAF5 /* TapConnectModel.swift */; };
 		46A59596D6E2E0D84BA0552A /* TicketingTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 100423BB9BFCC55F0543F251 /* TicketingTests.swift */; };
 		4708F31411ACBDD9DC20FFA6 /* TelemetryQueue.swift in Sources */ = {isa = PBXBuildFile; fileRef = A90BEC0659B6560183DE5269 /* TelemetryQueue.swift */; };
+		48585946511C9D5D5223E846 /* TicketPickerSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8B422259755C2045FB8FA649 /* TicketPickerSheet.swift */; };
 		4A3E8D24E65F4FC92A145E37 /* PersonalityTaggingView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 873E049D1811D83AC1D46271 /* PersonalityTaggingView.swift */; };
 		4A68B024FDEF49BCAA019EDD /* ActivityShareSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3C7452B96DAD3F83C3B030DB /* ActivityShareSheet.swift */; };
 		4B24696C76DA27D9F45A29E6 /* GroupAvatarView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 856572EA2FE8C0C700768A86 /* GroupAvatarView.swift */; };
@@ -120,6 +121,7 @@
 		53F5FCFB01AFA350520CE365 /* ConnectionSensorObservation.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4B1703DBBC056D06D6D65B68 /* ConnectionSensorObservation.swift */; };
 		54C1D4956598CBFA3DB13C4A /* SharedContentModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = F6E168B3E644D7A7BDEDF120 /* SharedContentModel.swift */; };
 		5644CD79052856D5EBB5002A /* ClickCryptoV1.swift in Sources */ = {isa = PBXBuildFile; fileRef = DF1EEA7316772A0B9800A223 /* ClickCryptoV1.swift */; };
+		56AD721B2A4834BED3D4D7FE /* TicketButton.swift in Sources */ = {isa = PBXBuildFile; fileRef = EDE1AC99E7A5E0B6EDF8ED58 /* TicketButton.swift */; };
 		589076A2B6B4BD6C55F5EF65 /* ConnectionFlowTelemetry.swift in Sources */ = {isa = PBXBuildFile; fileRef = FD5B79848C6B2337EA8CD816 /* ConnectionFlowTelemetry.swift */; };
 		589EAB6A4BADAE6F53FA105B /* JournalEditor.swift in Sources */ = {isa = PBXBuildFile; fileRef = 17FB03068E701F0CD7FE556B /* JournalEditor.swift */; };
 		58E600C718F5334A7DEC9CC3 /* ProductTelemetry.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3C1C0DB6933C4CA15D9EF7D1 /* ProductTelemetry.swift */; };
@@ -276,6 +278,7 @@
 		DA0BE1B2DF1438AE36DEA46C /* ConnectionLocationQuality.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2CE477D57049A35AB27C54D2 /* ConnectionLocationQuality.swift */; };
 		DA3BDB6CF8285305A5A70733 /* ListeningNowTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = B9707587A0701F1884D349C6 /* ListeningNowTests.swift */; };
 		DA964C45F465551076944CB1 /* AudioSessionController.swift in Sources */ = {isa = PBXBuildFile; fileRef = 72D81EDF1823BF01D30A9CE9 /* AudioSessionController.swift */; };
+		DC1260CF6D45108961FF0CBD /* TicketPickerModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = EE1F8A085E5CA64FADC396EF /* TicketPickerModel.swift */; };
 		DC2AB47EF6783198353FD72E /* EventExtrasTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7FB6AAEDF8E503DD7FE18E8E /* EventExtrasTests.swift */; };
 		DCF918349766112AF4A11269 /* PermissionCoordinator.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2C5A7CE7107D552FF7C4C6AC /* PermissionCoordinator.swift */; };
 		DE83893E301F23E142D54F5F /* PlaceCopy.swift in Sources */ = {isa = PBXBuildFile; fileRef = 96701F50D69BDC8C6C0D5929 /* PlaceCopy.swift */; };
@@ -302,6 +305,7 @@
 		EEB8065538F287C6A07B911B /* SoundtrackPresence.swift in Sources */ = {isa = PBXBuildFile; fileRef = E6C70DF08C801BD9CACEF605 /* SoundtrackPresence.swift */; };
 		EF0F90DD03A0C46640DB05AF /* Manrope-ExtraLight.ttf in Resources */ = {isa = PBXBuildFile; fileRef = DBCE1A13DF90B8C97241FE7D /* Manrope-ExtraLight.ttf */; };
 		F0C860E28E13BA865F6E2DDF /* ChatGifTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 652D758D646E67BA10F2B890 /* ChatGifTests.swift */; };
+		F2C862EBFB11665642541BE6 /* TicketPickerTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3566AB2BBAA76CD2B8B169BA /* TicketPickerTests.swift */; };
 		F3058FEA12A67597756F1E14 /* EncounterFollowUp.swift in Sources */ = {isa = PBXBuildFile; fileRef = BAA21ECF5F61FAB0A74ADF33 /* EncounterFollowUp.swift */; };
 		F34E01936B2DCE0A6B40804E /* Place.swift in Sources */ = {isa = PBXBuildFile; fileRef = DE938A53826AA26802D812D3 /* Place.swift */; };
 		F39B3114B360B4DD6482DC0D /* SharedDropsTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8B1BF42ACBAB43B75CA46FAA /* SharedDropsTests.swift */; };
@@ -464,6 +468,7 @@
 		33388B555994FAC30B7DA7C1 /* NearbyMapTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NearbyMapTests.swift; sourceTree = "<group>"; };
 		350AF8FD7B1050A81BD0CBFB /* OnboardingPage.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OnboardingPage.swift; sourceTree = "<group>"; };
 		352CD16A8EB0AD27BC1F46F7 /* AuthView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AuthView.swift; sourceTree = "<group>"; };
+		3566AB2BBAA76CD2B8B169BA /* TicketPickerTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TicketPickerTests.swift; sourceTree = "<group>"; };
 		359FBCFA1E911DF5E558C909 /* PlaceFilterViews.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PlaceFilterViews.swift; sourceTree = "<group>"; };
 		35FA42EC82D7BD78B3083FDE /* MockURLProtocol.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MockURLProtocol.swift; sourceTree = "<group>"; };
 		3768AC3A65EACD0273F1F050 /* Round7Tests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Round7Tests.swift; sourceTree = "<group>"; };
@@ -569,6 +574,7 @@
 		8A25B36F7B43CDA3235FEFDD /* SavedEventsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SavedEventsView.swift; sourceTree = "<group>"; };
 		8B1BF42ACBAB43B75CA46FAA /* SharedDropsTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SharedDropsTests.swift; sourceTree = "<group>"; };
 		8B1EC4A055326A9384062E22 /* NetworkingTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NetworkingTests.swift; sourceTree = "<group>"; };
+		8B422259755C2045FB8FA649 /* TicketPickerSheet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TicketPickerSheet.swift; sourceTree = "<group>"; };
 		8BE0A7042C675D3713023C20 /* HomeFeedModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HomeFeedModel.swift; sourceTree = "<group>"; };
 		8BF0B2661A42F5C41AC15B6F /* EncounterSensorSampler.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = EncounterSensorSampler.swift; sourceTree = "<group>"; };
 		8C61BB3F2BA82EA2E549C314 /* Haptics.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Haptics.swift; sourceTree = "<group>"; };
@@ -687,6 +693,8 @@
 		E976EF8A656006D5B73FFD10 /* ClickMapView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ClickMapView.swift; sourceTree = "<group>"; };
 		EA15F73958EEFED407FE0ABA /* EventHistoryCards.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = EventHistoryCards.swift; sourceTree = "<group>"; };
 		ED9FF6290770C75EBD921B16 /* ProfileView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ProfileView.swift; sourceTree = "<group>"; };
+		EDE1AC99E7A5E0B6EDF8ED58 /* TicketButton.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TicketButton.swift; sourceTree = "<group>"; };
+		EE1F8A085E5CA64FADC396EF /* TicketPickerModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TicketPickerModel.swift; sourceTree = "<group>"; };
 		EEFED58F5E81E796610F3FC7 /* SelfDataStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SelfDataStore.swift; sourceTree = "<group>"; };
 		EF2E9BE12CEFDD962F85E712 /* EventActionTile.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = EventActionTile.swift; sourceTree = "<group>"; };
 		EF48343FFCB7AF1CFFE250C5 /* ActivityStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ActivityStore.swift; sourceTree = "<group>"; };
@@ -925,6 +933,16 @@
 			path = AddClick;
 			sourceTree = "<group>";
 		};
+		4776EB7E17E222A1AD206933 /* Tickets */ = {
+			isa = PBXGroup;
+			children = (
+				EDE1AC99E7A5E0B6EDF8ED58 /* TicketButton.swift */,
+				EE1F8A085E5CA64FADC396EF /* TicketPickerModel.swift */,
+				8B422259755C2045FB8FA649 /* TicketPickerSheet.swift */,
+			);
+			path = Tickets;
+			sourceTree = "<group>";
+		};
 		4907E577393871CB14533954 /* Fonts */ = {
 			isa = PBXGroup;
 			children = (
@@ -1092,6 +1110,7 @@
 				79D81340C370C0FD0A7086EB /* ShellNavigationTests.swift */,
 				24923300FE8FCED3010533B3 /* TelemetryTests.swift */,
 				100423BB9BFCC55F0543F251 /* TicketingTests.swift */,
+				3566AB2BBAA76CD2B8B169BA /* TicketPickerTests.swift */,
 				8853CD19BA8FB7F4C9EC4A95 /* Fixtures */,
 				25F109CDB300B43482942355 /* Support */,
 			);
@@ -1563,6 +1582,7 @@
 				E1092CAB9B81384498B2DC1B /* PassScannerView.swift */,
 				8A25B36F7B43CDA3235FEFDD /* SavedEventsView.swift */,
 				4F2961167D1BBB04E30C2C4B /* SoundtrackPreviewCard.swift */,
+				4776EB7E17E222A1AD206933 /* Tickets */,
 			);
 			path = Events;
 			sourceTree = "<group>";
@@ -1994,6 +2014,9 @@
 				4538B728A68E8E3B3EEA9912 /* TapConnectModel.swift in Sources */,
 				D65F1754EA234A84D1056733 /* TapConnectView.swift in Sources */,
 				4708F31411ACBDD9DC20FFA6 /* TelemetryQueue.swift in Sources */,
+				56AD721B2A4834BED3D4D7FE /* TicketButton.swift in Sources */,
+				DC1260CF6D45108961FF0CBD /* TicketPickerModel.swift in Sources */,
+				48585946511C9D5D5223E846 /* TicketPickerSheet.swift in Sources */,
 				25C646A51A5C5FB833DB07AC /* Ticketing.swift in Sources */,
 				24C8E140210E35D03BD2EBD4 /* TicketingRepository.swift in Sources */,
 				5A024A97C03FD52D04F5BD7A /* TouchRipple.swift in Sources */,
@@ -2082,6 +2105,7 @@
 				F39B3114B360B4DD6482DC0D /* SharedDropsTests.swift in Sources */,
 				1A5711493067F5BC9BDF30F1 /* ShellNavigationTests.swift in Sources */,
 				ADFB16FA877CFBED2013DF5F /* TelemetryTests.swift in Sources */,
+				F2C862EBFB11665642541BE6 /* TicketPickerTests.swift in Sources */,
 				46A59596D6E2E0D84BA0552A /* TicketingTests.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;

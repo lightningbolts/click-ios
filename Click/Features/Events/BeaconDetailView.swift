@@ -37,6 +37,8 @@ struct BeaconDetailView: View {
     @State private var people = ModuleState<EventDirectory>()
     @State private var sharingToChat = false
     @State private var editingBeacon = false
+    @State private var pickingTickets = false
+    @Environment(\.openURL) private var openURL
     /// Readable place for legacy beacons saved with the label "Current location".
     @State private var resolvedPlace: (name: String?, address: String?)?
     @State private var reporting = false
@@ -117,7 +119,11 @@ struct BeaconDetailView: View {
                     hostLine(beacon)
                     if let schedule = beacon.schedule { whenLine(schedule) }
                     if beacon.isEvent, beacon.schedule != nil, !isExpired { calendarButton(beacon) }
-                    if isExpired {
+                    if beacon.ticketing?.cancelled == true {
+                        Label("This event was cancelled. Paid tickets are being refunded.", systemImage: "xmark.circle")
+                            .font(ClickTypography.supporting)
+                            .foregroundStyle(ClickColors.textSecondary)
+                    } else if isExpired {
                         Label("This has ended.", systemImage: "clock.badge.xmark")
                             .font(ClickTypography.supporting)
                             .foregroundStyle(ClickColors.textSecondary)
@@ -126,8 +132,13 @@ struct BeaconDetailView: View {
 
                 if beacon.isEvent {
                     VStack(spacing: 10) {
-                        if beacon.rsvpEnabled != false, !isExpired { rsvpButton(beacon) }
-                        if rsvp.value?.isGoing == true, !isExpired { passCard(beacon) }
+                        if let ticketing = beacon.ticketing {
+                            if !isExpired { TicketButton(ticketing: ticketing) { pickingTickets = true } }
+                            if ticketing.myTicketCount > 0, !isExpired { passCard(beacon, tickets: ticketing.myTicketCount) }
+                        } else {
+                            if beacon.rsvpEnabled != false, !isExpired { rsvpButton(beacon) }
+                            if rsvp.value?.isGoing == true, !isExpired { passCard(beacon) }
+                        }
                         eventActionRow(beacon)
                     }
                     LocationNudgeCard(
@@ -237,6 +248,17 @@ struct BeaconDetailView: View {
         }
         .mapsDialog($mapsTarget, onClickMap: clickMapAction(beacon))
         .calendarEditorSheet(calendar)
+        .sheet(isPresented: $pickingTickets) {
+            TicketPickerSheet(beaconID: beacon.id, client: env.ticketing) { start in
+                switch start {
+                case .fulfilled:
+                    pickingTickets = false
+                    Task { await refreshBeacon() }
+                case .checkout(_, let url):
+                    openURL(url)
+                }
+            }
+        }
         .sheet(isPresented: $editingBeacon) {
             CreateBeaconSheet(fallback: nil, editing: beacon) { updated in
                 self.beacon.succeed(updated)
@@ -351,8 +373,8 @@ struct BeaconDetailView: View {
         .accessibilityHint(isActive ? "Double-tap to cancel" : "")
     }
 
-    /// Once you're going: the way to your Click Pass (the QR for the door, Wallet, directions).
-    private func passCard(_ beacon: MapBeacon) -> some View {
+    /// Once you're going: the way to your Click Pass, or your tickets (the QR for the door, Wallet, directions).
+    private func passCard(_ beacon: MapBeacon, tickets: Int? = nil) -> some View {
         let checkedIn = engagement.value?.checkedIn == true || env.events.cachedPass(beaconID: beacon.id)?.checkedInAt != nil
         return NavigationLink(value: AppRoute.eventPass(beaconID: beacon.id)) {
             HStack(spacing: 14) {
@@ -363,7 +385,7 @@ struct BeaconDetailView: View {
                     .background(checkedIn ? ClickColors.online : ClickColors.primaryActionFill,
                                 in: RoundedRectangle(cornerRadius: 12, style: .continuous))
                 VStack(alignment: .leading, spacing: 2) {
-                    Text("Your Click Pass")
+                    Text(tickets.map { "Your tickets · \($0)" } ?? "Your Click Pass")
                         .font(ClickTypography.bodyEmphasized)
                         .foregroundStyle(ClickColors.textPrimary)
                     Text(checkedIn ? "You're checked in" : "Show it at the door · Add to Wallet")
@@ -783,6 +805,12 @@ struct BeaconDetailView: View {
         }
         await engagementTask
         if cached?.beacon.isEvent != true, beacon.value?.isEvent == true { await loadEngagement() }
+    }
+
+    /// After a purchase: the event's ticket count and the pass card come from the server.
+    private func refreshBeacon() async {
+        guard let result = try? await env.beacons.beacon(id: beaconID) else { return }
+        beacon.succeed(result.beacon)
     }
 
     private func loadEngagement() async {
