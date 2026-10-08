@@ -605,6 +605,7 @@
 		9BAD1003CE806C76C1303920 /* FindFriendsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FindFriendsView.swift; sourceTree = "<group>"; };
 		9D2D9ED70D8F0E818A971FD2 /* ClickPassView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ClickPassView.swift; sourceTree = "<group>"; };
 		9E1DF371E97CE2C8CBF99560 /* MeTabAvatarModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MeTabAvatarModel.swift; sourceTree = "<group>"; };
+		9E7E1E468DA17B4A8510F9B0 /* ClickWidgets.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = ClickWidgets.entitlements; sourceTree = "<group>"; };
 		9EBF4466B0B0D33E0C41E59A /* MarkdownText.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MarkdownText.swift; sourceTree = "<group>"; };
 		9EC3E795338EF9A3A50DDC38 /* PlaceRepository.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PlaceRepository.swift; sourceTree = "<group>"; };
 		9F622E14222722E2ACC13BEF /* KeychainSessionVault.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = KeychainSessionVault.swift; sourceTree = "<group>"; };
@@ -818,6 +819,7 @@
 		1A34D51A6B7F25E34C2AC70A /* ClickWidgets */ = {
 			isa = PBXGroup;
 			children = (
+				9E7E1E468DA17B4A8510F9B0 /* ClickWidgets.entitlements */,
 				17DD87850499A0E125E16A10 /* ClickWidgetsBundle.swift */,
 				24A99E3CC3A54140B31C25F1 /* EventLiveActivity.swift */,
 				FB1BDF67F19241BDE727AF1B /* Info.plist */,
@@ -2262,6 +2264,7 @@
 			isa = XCBuildConfiguration;
 			baseConfigurationReference = 5CE872BED60D02250BA16BD1 /* Debug.xcconfig */;
 			buildSettings = {
+				CODE_SIGN_ENTITLEMENTS = ClickWidgets/ClickWidgets.entitlements;
 				CODE_SIGN_STYLE = Automatic;
 				DEVELOPMENT_TEAM = W4C3V9Z2N4;
 				INFOPLIST_FILE = ClickWidgets/Info.plist;
@@ -2316,12 +2319,12 @@
 				INFOPLIST_KEY_CADisableMinimumFrameDurationOnPhone = YES;
 				INFOPLIST_KEY_CFBundleDisplayName = Click;
 				INFOPLIST_KEY_ITSAppUsesNonExemptEncryption = NO;
-				INFOPLIST_KEY_NSFaceIDUsageDescription = "Click uses Face ID to confirm that you authorize sharing encrypted message history with another device.";
 				INFOPLIST_KEY_NSBluetoothAlwaysUsageDescription = "Click uses Bluetooth for Tap to Connect when you meet someone nearby.";
 				INFOPLIST_KEY_NSCalendarsFullAccessUsageDescription = "Click checks your calendar on this iPhone to show whether you're free for plans and events. It reads only busy times, and only adds events you ask it to.";
 				INFOPLIST_KEY_NSCalendarsUsageDescription = "Click checks your calendar on this iPhone to show whether you're free for plans and events. It reads only busy times, and only adds events you ask it to.";
 				INFOPLIST_KEY_NSCameraUsageDescription = "Click uses your camera to scan QR codes and capture photos.";
 				INFOPLIST_KEY_NSContactsUsageDescription = "Click hashes phone numbers and emails on this device to find people you already know. Your address book never leaves your phone.";
+				INFOPLIST_KEY_NSFaceIDUsageDescription = "Click uses Face ID to confirm that you authorize sharing encrypted message history with another device.";
 				INFOPLIST_KEY_NSLocationAlwaysAndWhenInUseUsageDescription = "If you turn on Past meeting spots, Click is told when you arrive somewhere so it can remind you of a Click you met there. Your location is never stored or shown to anyone.";
 				INFOPLIST_KEY_NSLocationWhenInUseUsageDescription = "Click uses your location to show the map, find people and events near you, and remember where you met someone when you connect.";
 				INFOPLIST_KEY_NSMicrophoneUsageDescription = "Click uses your microphone for Tap to Connect ultrasonic sensing and voice notes.";
@@ -2470,6 +2473,7 @@
 			isa = XCBuildConfiguration;
 			baseConfigurationReference = FC2D8FD2E9A926E650F8748C /* Release.xcconfig */;
 			buildSettings = {
+				CODE_SIGN_ENTITLEMENTS = ClickWidgets/ClickWidgets.entitlements;
 				CODE_SIGN_STYLE = Automatic;
 				DEVELOPMENT_TEAM = W4C3V9Z2N4;
 				INFOPLIST_FILE = ClickWidgets/Info.plist;
@@ -2524,12 +2528,12 @@
 				INFOPLIST_KEY_CADisableMinimumFrameDurationOnPhone = YES;
 				INFOPLIST_KEY_CFBundleDisplayName = Click;
 				INFOPLIST_KEY_ITSAppUsesNonExemptEncryption = NO;
-				INFOPLIST_KEY_NSFaceIDUsageDescription = "Click uses Face ID to confirm that you authorize sharing encrypted message history with another device.";
 				INFOPLIST_KEY_NSBluetoothAlwaysUsageDescription = "Click uses Bluetooth for Tap to Connect when you meet someone nearby.";
 				INFOPLIST_KEY_NSCalendarsFullAccessUsageDescription = "Click checks your calendar on this iPhone to show whether you're free for plans and events. It reads only busy times, and only adds events you ask it to.";
 				INFOPLIST_KEY_NSCalendarsUsageDescription = "Click checks your calendar on this iPhone to show whether you're free for plans and events. It reads only busy times, and only adds events you ask it to.";
 				INFOPLIST_KEY_NSCameraUsageDescription = "Click uses your camera to scan QR codes and capture photos.";
 				INFOPLIST_KEY_NSContactsUsageDescription = "Click hashes phone numbers and emails on this device to find people you already know. Your address book never leaves your phone.";
+				INFOPLIST_KEY_NSFaceIDUsageDescription = "Click uses Face ID to confirm that you authorize sharing encrypted message history with another device.";
 				INFOPLIST_KEY_NSLocationAlwaysAndWhenInUseUsageDescription = "If you turn on Past meeting spots, Click is told when you arrive somewhere so it can remind you of a Click you met there. Your location is never stored or shown to anyone.";
 				INFOPLIST_KEY_NSLocationWhenInUseUsageDescription = "Click uses your location to show the map, find people and events near you, and remember where you met someone when you connect.";
 				INFOPLIST_KEY_NSMicrophoneUsageDescription = "Click uses your microphone for Tap to Connect ultrasonic sensing and voice notes.";

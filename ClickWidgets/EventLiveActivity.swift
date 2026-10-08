@@ -15,7 +15,7 @@ struct EventLiveActivity: Widget {
         } dynamicIsland: { context in
             DynamicIsland {
                 DynamicIslandExpandedRegion(.leading) {
-                    EventBadge(attributes: context.attributes, checkedIn: context.state.checkedIn, size: 44)
+                    EventBadge(attributes: context.attributes, state: context.state, size: 44)
                         .padding(.leading, 4)
                 }
                 DynamicIslandExpandedRegion(.trailing) {
@@ -41,12 +41,12 @@ struct EventLiveActivity: Widget {
                         .padding(.horizontal, 4)
                 }
             } compactLeading: {
-                EventBadge(attributes: context.attributes, checkedIn: context.state.checkedIn, size: 22)
+                EventBadge(attributes: context.attributes, state: context.state, size: 22)
             } compactTrailing: {
                 CompactTime(state: context.state, isStale: context.isStale)
                     .foregroundStyle(Palette(context.attributes.gradient).accent)
             } minimal: {
-                EventBadge(attributes: context.attributes, checkedIn: context.state.checkedIn, size: 22)
+                EventBadge(attributes: context.attributes, state: context.state, size: 22)
             }
             .widgetURL(context.attributes.eventURL)
             .keylineTint(Palette(context.attributes.gradient).accent)
@@ -75,7 +75,7 @@ private struct LockScreenView: View {
 
     var body: some View {
         HStack(alignment: .center, spacing: 14) {
-            EventBadge(attributes: context.attributes, checkedIn: context.state.checkedIn, size: 52)
+            EventBadge(attributes: context.attributes, state: context.state, size: 52)
             VStack(alignment: .leading, spacing: 4) {
                 Text(context.attributes.title)
                     .font(.headline)
@@ -159,21 +159,35 @@ private struct CompactTime: View {
     }
 }
 
-/// The event's colors in a rounded square, with its state on top.
+/// The event's picture (else its colors and a calendar) in a rounded square, with a check once
+/// you're in.
 private struct EventBadge: View {
     let attributes: EventActivityAttributes
-    let checkedIn: Bool
+    let state: EventActivityAttributes.ContentState
     let size: CGFloat
 
     var body: some View {
-        RoundedRectangle(cornerRadius: size * 0.28, style: .continuous)
-            .fill(LinearGradient(colors: Palette(attributes.gradient).colors, startPoint: .topLeading, endPoint: .bottomTrailing))
-            .frame(width: size, height: size)
-            .overlay {
-                Image(systemName: checkedIn ? "checkmark" : "calendar")
+        let shape = RoundedRectangle(cornerRadius: size * 0.28, style: .continuous)
+        let artwork = EventActivityAttributes.artwork(named: state.artwork)
+        ZStack {
+            if let artwork {
+                Image(uiImage: artwork)
+                    .resizable()
+                    .scaledToFill()
+                if state.checkedIn { Color.black.opacity(0.45) }
+            } else {
+                LinearGradient(colors: Palette(attributes.gradient).colors, startPoint: .topLeading, endPoint: .bottomTrailing)
+            }
+            if state.checkedIn || artwork == nil {
+                Image(systemName: state.checkedIn ? "checkmark" : "calendar")
                     .font(.system(size: size * 0.42, weight: .semibold))
                     .foregroundStyle(.white)
             }
+        }
+        .frame(width: size, height: size)
+        .clipShape(shape)
+        // Keeps a dark picture's edge on the dark activity background.
+        .overlay { if artwork != nil { shape.strokeBorder(.white.opacity(0.14), lineWidth: 0.5) } }
     }
 }
 
