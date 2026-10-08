@@ -62,6 +62,7 @@ struct ClickApp: App {
                     }
 
                     await ClickNotificationCoordinator.shared.sessionDidChange()
+                    await ClickNotificationCoordinator.shared.reconcileDeviceApprovalNotifications()
                 }
                 .onChange(of: environment.session.state) { _, _ in
                     Task {
@@ -111,6 +112,9 @@ final class ClickAppDelegate: NSObject, UIApplicationDelegate, UNUserNotificatio
         let payload = ClickNotificationCoordinator.stringPayload(notification.request.content.userInfo)
         let isOnScreen = await ClickNotificationCoordinator.shared.isForVisibleConversation(payload)
         await ClickNotificationCoordinator.shared.noteArrival(payload)
+        if payload["type"] == "device_approval" {
+            await ClickNotificationCoordinator.shared.reconcileDeviceApprovalNotifications()
+        }
         return isOnScreen ? [] : [.banner, .sound, .badge]
     }
 
@@ -327,6 +331,25 @@ final class ClickNotificationCoordinator {
     /// True when the push is about the conversation currently on screen in the active app.
     func isForVisibleConversation(_ payload: [String: String]) -> Bool {
         UIApplication.shared.applicationState == .active && isForOpenConversation(payload)
+    }
+
+    /// Repeated APNs deliveries of a single approval request should not stack in Notification Center.
+    /// Keep the newest banner for each request; never conflate distinct sign-ins.
+    func reconcileDeviceApprovalNotifications(completedRequestID: String? = nil) async {
+        let center = UNUserNotificationCenter.current()
+        let delivered = await center.deliveredNotifications()
+            .filter { Self.stringPayload($0.request.content.userInfo)["type"] == "device_approval" }
+            .sorted { $0.date > $1.date }
+        var seen = Set<String>()
+        var remove: [String] = []
+        for notification in delivered {
+            let payload = Self.stringPayload(notification.request.content.userInfo)
+            guard let requestID = payload["request_id"], !requestID.isEmpty else { continue }
+            if requestID == completedRequestID || !seen.insert(requestID).inserted {
+                remove.append(notification.request.identifier)
+            }
+        }
+        if !remove.isEmpty { center.removeDeliveredNotifications(withIdentifiers: remove) }
     }
 
     /// Opening a conversation reads it: drop its delivered pushes from Notification Center.
