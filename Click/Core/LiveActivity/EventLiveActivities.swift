@@ -164,13 +164,23 @@ private enum Artwork {
 
 /// Events whose activity this device started and hasn't ended itself. One that's gone from
 /// `Activity.activities` while still listed here was swiped away (or timed out), so it isn't
-/// started again. UserDefaults is thread-safe, so this is usable off the main actor.
+/// started again. iOS ends every activity when Click is updated, so a list written by another
+/// build means nothing was swiped away: it reads as empty and those events start again.
+/// UserDefaults is thread-safe, so this is usable off the main actor.
 private enum Started {
     private static let key = "events.liveActivity.started"
+    private static let buildKey = "events.liveActivity.startedBuild"
+    private static let build = Bundle.main.object(forInfoDictionaryKey: "CFBundleVersion") as? String ?? ""
 
     private static var ids: Set<String> {
-        get { Set(UserDefaults.standard.stringArray(forKey: key) ?? []) }
-        set { UserDefaults.standard.set(Array(newValue), forKey: key) }
+        get {
+            guard UserDefaults.standard.string(forKey: buildKey) == build else { return [] }
+            return Set(UserDefaults.standard.stringArray(forKey: key) ?? [])
+        }
+        set {
+            UserDefaults.standard.set(Array(newValue), forKey: key)
+            UserDefaults.standard.set(build, forKey: buildKey)
+        }
     }
 
     static func contains(_ beaconID: String) -> Bool { ids.contains(beaconID) }
