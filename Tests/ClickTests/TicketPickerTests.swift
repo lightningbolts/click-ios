@@ -10,6 +10,7 @@ struct TicketPickerTests {
         var offeringsQueue: [[TicketOffering]]
         var checkout: Result<CheckoutStart, Error> = .success(.fulfilled(orderID: "o1"))
         var checkoutCalls = 0
+        var released: [String] = []
         var gate: CheckedContinuation<Void, Never>?
         var holdCheckout = false
 
@@ -28,6 +29,11 @@ struct TicketPickerTests {
         func order(id: String) async throws -> TicketOrder {
             TicketOrder(id: id, beaconID: "b1", outcome: .confirmed, ticketCount: 1)
         }
+
+        func releaseOrder(id: String) async throws {
+            released.append(id)
+            throw TicketingError(code: "order_not_cancelable")
+        }
     }
 
     static func tier(_ id: String, price: Int = 1200, availability: TicketOffering.Availability = .onSale, max: Int = 4) -> TicketOffering {
@@ -39,6 +45,17 @@ struct TicketPickerTests {
         let model = TicketPickerModel(beaconID: "b1", client: client)
         await model.load()
         return model
+    }
+
+    @Test("Closing Stripe's sheet frees the held tickets and shows fresh stock; the pick stays")
+    func checkoutClosed() async {
+        let client = StubClient([Self.tier("ga", availability: .soldOut)], [Self.tier("ga")])
+        let model = await loaded(client)
+        #expect(model.offerings.first?.availability == .soldOut)
+        await model.checkoutClosed(orderID: "o9")
+        #expect(client.released == ["o9"])
+        #expect(model.offerings.first?.availability == .onSale)
+        #expect(model.phase == .ready)
     }
 
     @Test("Increments stop at what the buyer may take")

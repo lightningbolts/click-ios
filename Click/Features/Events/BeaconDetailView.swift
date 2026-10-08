@@ -133,7 +133,12 @@ struct BeaconDetailView: View {
                     VStack(spacing: 10) {
                         if let ticketing = beacon.ticketing {
                             if !isExpired { TicketButton(ticketing: ticketing) { pickingTickets = true } }
-                            if ticketing.myTicketCount > 0, !isExpired { passCard(beacon, tickets: ticketing.myTicketCount) }
+                            if ticketing.myTicketCount > 0, !isExpired {
+                                passCard(beacon, tickets: ticketing.myTicketCount)
+                            } else if rsvp.value?.isGoing == true, !isExpired {
+                                // An RSVP from before tickets went on sale keeps its pass.
+                                passCard(beacon)
+                            }
                         } else {
                             if beacon.rsvpEnabled != false, !isExpired { rsvpButton(beacon) }
                             if rsvp.value?.isGoing == true, !isExpired { passCard(beacon) }

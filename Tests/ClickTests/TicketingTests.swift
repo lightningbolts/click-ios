@@ -125,6 +125,15 @@ struct TicketingTests {
         #expect(items.first?["quantity"] as? Int == 2)
     }
 
+    @Test("Leaving checkout releases the order")
+    func release() async throws {
+        TicketingMockURLProtocol.handler = { _ in (200, #"{"order_state":"canceled"}"#) }
+        try await repository().releaseOrder(id: "o2")
+        let request = try #require(TicketingMockURLProtocol.requests.last)
+        #expect(request.httpMethod == "DELETE")
+        #expect(request.url?.path == "/api/orders/o2")
+    }
+
     @Test("A paid order returns Stripe's page to open")
     func checkoutPaid() async throws {
         TicketingMockURLProtocol.handler = { _ in (200, #"{"order_id":"o2","checkout_url":"https://checkout.stripe.com/c/abc"}"#) }

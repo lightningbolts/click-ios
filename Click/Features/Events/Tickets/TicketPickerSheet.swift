@@ -222,10 +222,13 @@ struct TicketPickerSheet: View {
         switch start {
         case .fulfilled(let orderID):
             withAnimation(ClickMotion.content) { confirmation = OrderConfirmationModel(confirmedTicketCount: count, orderID: orderID) }
-        case .checkout(_, let url):
+        case .checkout(let orderID, let url):
             do {
-                if case .completed(let orderID) = try await TicketCheckout.run(url: url, beaconID: model.beaconID) {
+                switch try await TicketCheckout.run(url: url, beaconID: model.beaconID) {
+                case .completed(let orderID):
                     withAnimation(ClickMotion.content) { confirmation = OrderConfirmationModel(orderID: orderID, fetch: client.order) }
+                case .canceled:
+                    await model.checkoutClosed(orderID: orderID)
                 }
             } catch {
                 model.report(error)

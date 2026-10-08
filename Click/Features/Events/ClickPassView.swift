@@ -29,11 +29,32 @@ struct ClickPassView: View {
 
     private var isTicketed: Bool { beacon?.ticketing != nil }
 
+    enum Screen: Equatable { case tickets, pass, noTickets, noPass, failed, loading }
+
+    /// Tickets win; with none, an RSVP pass from before tickets went on sale still admits you.
+    static func screen(ticketed: Bool, ticketCount: Int?, hasPass: Bool, notGoing: Bool, failed: Bool) -> Screen {
+        if let ticketCount, ticketCount > 0 { return .tickets }
+        if hasPass { return .pass }
+        if notGoing { return ticketed ? .noTickets : .noPass }
+        return failed ? .failed : .loading
+    }
+
+    private var screen: Screen {
+        Self.screen(ticketed: isTicketed, ticketCount: tickets?.tickets.count, hasPass: pass != nil,
+                    notGoing: isNotGoing, failed: loadError != nil)
+    }
+
+    /// An RSVP pass (not a ticket) waiting at the door: watch for the host's scan.
+    private var watchesDoor: Bool {
+        screen == .pass && pass?.checkedInAt == nil && isAtTheDoor
+    }
+
     var body: some View {
         Group {
-            if isTicketed, let tickets, !tickets.tickets.isEmpty {
-                ticketContent(tickets.tickets, fetchedAt: tickets.fetchedAt)
-            } else if isTicketed, tickets != nil {
+            switch screen {
+            case .tickets:
+                if let tickets { ticketContent(tickets.tickets, fetchedAt: tickets.fetchedAt) }
+            case .noTickets:
                 ContentUnavailableView {
                     Label("No tickets yet", systemImage: "ticket")
                 } description: {
@@ -43,9 +64,9 @@ struct ClickPassView: View {
                         .buttonStyle(.borderedProminent)
                         .tint(ClickColors.primaryActionFill)
                 }
-            } else if !isTicketed, let pass {
-                content(pass)
-            } else if isNotGoing {
+            case .pass:
+                if let pass { content(pass) }
+            case .noPass:
                 ContentUnavailableView {
                     Label("No pass yet", systemImage: "ticket")
                 } description: {
@@ -55,26 +76,26 @@ struct ClickPassView: View {
                         .buttonStyle(.borderedProminent)
                         .tint(ClickColors.primaryActionFill)
                 }
-            } else if let loadError {
+            case .failed:
                 ContentUnavailableView {
                     Label("Couldn't load your pass", systemImage: "ticket")
                 } description: {
-                    Text(loadError)
+                    Text(loadError ?? "")
                 } actions: {
                     Button("Try Again") { Task { await load() } }
                         .buttonStyle(.borderedProminent)
                         .tint(ClickColors.primaryActionFill)
                 }
-            } else {
+            case .loading:
                 ClickLoadingView()
             }
         }
         .background(ClickColors.background.ignoresSafeArea())
-        .navigationTitle(isTicketed ? (tickets?.tickets.count == 1 ? "Your Ticket" : "Your Tickets") : "Click Pass")
+        .navigationTitle(screen == .pass || screen == .noPass ? "Click Pass" : tickets?.tickets.count == 1 ? "Your Ticket" : "Your Tickets")
         .navigationBarTitleDisplayMode(.inline)
         .onAppear(perform: seed)
         .task { await load() }
-        .task(id: pass?.checkedInAt == nil && isAtTheDoor) { await watchForCheckIn() }
+        .task(id: watchesDoor) { await watchForCheckIn() }
         .onChange(of: scenePhase) { _, phase in
             if phase == .active, isTicketed { Task { await loadTickets() } }
         }
@@ -271,7 +292,8 @@ struct ClickPassView: View {
         if beacon == nil, let fetched = await fetchBeaconIfNeeded() { beacon = fetched }
         if isTicketed {
             await loadTickets()
-            return
+            // Tickets to show, or none could be loaded: nothing more to ask for.
+            guard tickets?.tickets.isEmpty == true else { return }
         }
         async let beaconTask = fetchBeaconIfNeeded()
         do {
@@ -279,6 +301,11 @@ struct ClickPassView: View {
             isNotGoing = false
         } catch APIError.forbidden {
             pass = nil
+            // A beacon cached before tickets went on sale: a buyer's pass is their ticket.
+            if !isTicketed, let fresh = try? await env.beacons.beacon(id: beaconID).beacon, fresh.ticketing != nil {
+                beacon = fresh
+                await loadTickets()
+            }
             isNotGoing = true
         } catch {
             // A pass already on the device stays usable offline.
@@ -304,7 +331,7 @@ struct ClickPassView: View {
     }
 
     private func watchForCheckIn() async {
-        guard !isTicketed, pass?.checkedInAt == nil, isAtTheDoor else { return }
+        guard watchesDoor else { return }
         while !Task.isCancelled {
             try? await Task.sleep(for: .seconds(4))
             guard !Task.isCancelled, let fresh = try? await env.events.pass(beaconID: beaconID) else { continue }

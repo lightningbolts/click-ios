@@ -6,6 +6,8 @@ public protocol TicketingClient: Sendable {
     func offerings(beaconID: String) async throws -> [TicketOffering]
     func startCheckout(beaconID: String, items: [(tierID: String, quantity: Int)]) async throws -> CheckoutStart
     func order(id: String) async throws -> TicketOrder
+    /// The buyer left checkout: free the order's held tickets. A paid order refuses and stays.
+    func releaseOrder(id: String) async throws
 }
 
 /// Buying and holding tickets. Web owns ticketing; this client lists, buys and shows them.
@@ -87,6 +89,10 @@ public actor TicketingRepository: TicketingClient {
             return .checkout(orderID: orderID, url: url)
         }
         return .fulfilled(orderID: orderID)
+    }
+
+    public func releaseOrder(id: String) async throws {
+        _ = try await object(APIRequest(path: "/api/orders/\(id)", method: .delete))
     }
 
     public func order(id: String) async throws -> TicketOrder {

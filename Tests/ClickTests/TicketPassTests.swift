@@ -39,4 +39,14 @@ struct TicketPassTests {
         let now = Date(timeIntervalSince1970: 1_800_000_000)
         #expect(TicketPassContent.updatedLine(fetchedAt: now.addingTimeInterval(-age), now: now) == expected)
     }
+
+    @Test("Tickets win; with none, an RSVP from before tickets went on sale still shows its pass")
+    func screen() {
+        #expect(ClickPassView.screen(ticketed: true, ticketCount: 2, hasPass: true, notGoing: false, failed: false) == .tickets)
+        #expect(ClickPassView.screen(ticketed: true, ticketCount: 0, hasPass: true, notGoing: false, failed: false) == .pass)
+        #expect(ClickPassView.screen(ticketed: true, ticketCount: 0, hasPass: false, notGoing: true, failed: false) == .noTickets)
+        #expect(ClickPassView.screen(ticketed: false, ticketCount: nil, hasPass: false, notGoing: true, failed: false) == .noPass)
+        #expect(ClickPassView.screen(ticketed: true, ticketCount: nil, hasPass: false, notGoing: false, failed: true) == .failed)
+        #expect(ClickPassView.screen(ticketed: true, ticketCount: nil, hasPass: false, notGoing: false, failed: false) == .loading)
+    }
 }

@@ -93,6 +93,13 @@ final class TicketPickerModel {
 
     // MARK: - Checkout
 
+    /// The buyer closed Stripe's sheet: free the held tickets (a paid order refuses and stays),
+    /// then show what's on sale now. The selection stays for another try.
+    func checkoutClosed(orderID: String) async {
+        try? await client.releaseOrder(id: orderID)
+        try? await refresh()
+    }
+
     /// Checkout couldn't be shown; the selection stays for another try.
     func report(_ error: Error) {
         phase = .failed(error.localizedDescription)
