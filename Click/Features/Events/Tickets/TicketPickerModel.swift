@@ -93,6 +93,11 @@ final class TicketPickerModel {
 
     // MARK: - Checkout
 
+    /// Checkout couldn't be shown; the selection stays for another try.
+    func report(_ error: Error) {
+        phase = .failed(error.localizedDescription)
+    }
+
     /// Starts the order. On a refusal the picker refreshes, clamps and says why; a failure to
     /// reach Click keeps the selection for another try. Ignored while one is in flight.
     func submit() async -> CheckoutStart? {

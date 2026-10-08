@@ -1,37 +1,36 @@
 import SwiftUI
 
-/// Choose tickets for an event, then claim them or go to checkout.
+/// Choose tickets for an event, claim them or pay in Stripe's sheet, then wait in place for
+/// Click to confirm the order.
 struct TicketPickerSheet: View {
     @State private var model: TicketPickerModel
-    /// Called with the order once Click has started it.
-    let onStart: (CheckoutStart) -> Void
+    @State private var confirmation: OrderConfirmationModel?
+    private let client: any TicketingClient
+    /// Once Click confirms the order (refresh what the event shows).
+    let onConfirmed: () -> Void
+    /// "See your tickets".
+    let onSeeTickets: () -> Void
     @Environment(\.dismiss) private var dismiss
 
-    init(beaconID: String, client: any TicketingClient, onStart: @escaping (CheckoutStart) -> Void) {
+    init(beaconID: String, client: any TicketingClient, onConfirmed: @escaping () -> Void, onSeeTickets: @escaping () -> Void) {
         _model = State(initialValue: TicketPickerModel(beaconID: beaconID, client: client))
-        self.onStart = onStart
+        self.client = client
+        self.onConfirmed = onConfirmed
+        self.onSeeTickets = onSeeTickets
     }
 
     var body: some View {
         NavigationStack {
             Group {
-                switch model.phase {
-                case .loading where model.offerings.isEmpty:
-                    ProgressView().frame(maxWidth: .infinity, maxHeight: .infinity)
-                case .failed(let message) where model.offerings.isEmpty:
-                    ContentUnavailableView {
-                        Label("Tickets didn’t load", systemImage: "ticket")
-                    } description: {
-                        Text(message)
-                    } actions: {
-                        Button("Try again") { Task { await model.load() } }
-                    }
-                default:
+                if let confirmation {
+                    OrderConfirmationView(model: confirmation, onDone: onSeeTickets) { self.confirmation = nil }
+                        .transition(.opacity)
+                } else {
                     picker
                 }
             }
             .background(ClickColors.surface)
-            .navigationTitle("Tickets")
+            .navigationTitle(confirmation == nil ? "Tickets" : "")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
@@ -42,10 +41,30 @@ struct TicketPickerSheet: View {
         .presentationDetents([.medium, .large])
         .presentationDragIndicator(.visible)
         .sensoryFeedback(.selection, trigger: model.selection)
+        .onChange(of: confirmation?.state.isConfirmed == true) { _, confirmed in
+            if confirmed { onConfirmed() }
+        }
         .task { await model.load() }
     }
 
-    private var picker: some View {
+    @ViewBuilder private var picker: some View {
+        switch model.phase {
+        case .loading where model.offerings.isEmpty:
+            ProgressView().frame(maxWidth: .infinity, maxHeight: .infinity)
+        case .failed(let message) where model.offerings.isEmpty:
+            ContentUnavailableView {
+                Label("Tickets didn’t load", systemImage: "ticket")
+            } description: {
+                Text(message)
+            } actions: {
+                Button("Try again") { Task { await model.load() } }
+            }
+        default:
+            list
+        }
+    }
+
+    private var list: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 16) {
                 VStack(spacing: 0) {
@@ -179,7 +198,7 @@ struct TicketPickerSheet: View {
     private var cta: some View {
         let submitting = model.phase == .submitting
         return Button {
-            Task { if let start = await model.submit() { onStart(start) } }
+            Task { await checkout() }
         } label: {
             HStack(spacing: 8) {
                 if submitting { ProgressView().tint(ClickColors.primaryActionForeground) }
@@ -193,5 +212,24 @@ struct TicketPickerSheet: View {
         }
         .buttonStyle(.plain)
         .disabled(model.count == 0 || submitting)
+    }
+
+    /// Free tickets are issued on the spot; paid ones go through Stripe's sheet. Closing that
+    /// sheet keeps the selection.
+    private func checkout() async {
+        let count = model.count
+        guard let start = await model.submit() else { return }
+        switch start {
+        case .fulfilled(let orderID):
+            withAnimation(ClickMotion.content) { confirmation = OrderConfirmationModel(confirmedTicketCount: count, orderID: orderID) }
+        case .checkout(_, let url):
+            do {
+                if case .completed(let orderID) = try await TicketCheckout.run(url: url, beaconID: model.beaconID) {
+                    withAnimation(ClickMotion.content) { confirmation = OrderConfirmationModel(orderID: orderID, fetch: client.order) }
+                }
+            } catch {
+                model.report(error)
+            }
+        }
     }
 }

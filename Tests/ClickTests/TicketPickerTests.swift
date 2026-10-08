@@ -24,6 +24,10 @@ struct TicketPickerTests {
             if holdCheckout { await withCheckedContinuation { gate = $0 } }
             return try checkout.get()
         }
+
+        func order(id: String) async throws -> TicketOrder {
+            TicketOrder(id: id, beaconID: "b1", outcome: .confirmed, ticketCount: 1)
+        }
     }
 
     static func tier(_ id: String, price: Int = 1200, availability: TicketOffering.Availability = .onSale, max: Int = 4) -> TicketOffering {

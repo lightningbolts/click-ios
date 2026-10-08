@@ -5,6 +5,7 @@ import Synchronization
 public protocol TicketingClient: Sendable {
     func offerings(beaconID: String) async throws -> [TicketOffering]
     func startCheckout(beaconID: String, items: [(tierID: String, quantity: Int)]) async throws -> CheckoutStart
+    func order(id: String) async throws -> TicketOrder
 }
 
 /// Buying and holding tickets. Web owns ticketing; this client lists, buys and shows them.

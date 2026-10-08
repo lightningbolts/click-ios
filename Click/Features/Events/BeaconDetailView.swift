@@ -38,7 +38,6 @@ struct BeaconDetailView: View {
     @State private var sharingToChat = false
     @State private var editingBeacon = false
     @State private var pickingTickets = false
-    @Environment(\.openURL) private var openURL
     /// Readable place for legacy beacons saved with the label "Current location".
     @State private var resolvedPlace: (name: String?, address: String?)?
     @State private var reporting = false
@@ -249,14 +248,15 @@ struct BeaconDetailView: View {
         .mapsDialog($mapsTarget, onClickMap: clickMapAction(beacon))
         .calendarEditorSheet(calendar)
         .sheet(isPresented: $pickingTickets) {
-            TicketPickerSheet(beaconID: beacon.id, client: env.ticketing) { start in
-                switch start {
-                case .fulfilled:
-                    pickingTickets = false
-                    Task { await refreshBeacon() }
-                case .checkout(_, let url):
-                    openURL(url)
+            TicketPickerSheet(beaconID: beacon.id, client: env.ticketing) {
+                Task {
+                    async let tickets = try? env.ticketing.eventTickets(beaconID: beacon.id)
+                    await refreshBeacon()
+                    _ = await tickets
                 }
+            } onSeeTickets: {
+                pickingTickets = false
+                env.router.navigate(to: .eventPass(beaconID: beacon.id))
             }
         }
         .sheet(isPresented: $editingBeacon) {
