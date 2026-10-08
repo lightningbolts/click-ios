@@ -142,6 +142,7 @@ struct DeviceApprovalSheet: View {
             withAnimation(ClickMotion.content) { phase = approve ? .approved : .denied }
             approve ? ClickHaptics.success() : ClickHaptics.impact(.medium)
             env.deviceApprovalDecided(approval.id)
+            await ClickNotificationCoordinator.shared.reconcileDeviceApprovalNotifications(completedRequestID: approval.id)
         } catch {
             guard !error.isCancellation else { phase = .asking; return }
             withAnimation(ClickMotion.content) {
