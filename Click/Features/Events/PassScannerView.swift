@@ -70,11 +70,19 @@ struct PassScannerView: View {
             if let holder {
                 HStack(spacing: 14) {
                     AvatarView(imageURL: holder.avatarURL, seed: holder.userID, initials: Phase3Repository.initials(from: holder.name), size: 64)
-                    Text(holder.name)
-                        .font(ClickTypography.sectionTitle)
-                        .foregroundStyle(ClickColors.textPrimary)
-                        .lineLimit(2)
-                        .minimumScaleFactor(0.8)
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text(holder.name)
+                            .font(ClickTypography.sectionTitle)
+                            .foregroundStyle(ClickColors.textPrimary)
+                            .lineLimit(2)
+                            .minimumScaleFactor(0.8)
+                        if case .scan(let scan) = outcome, let tier = scan.tierName {
+                            Text(tier)
+                                .font(ClickTypography.supporting)
+                                .foregroundStyle(ClickColors.textSecondary)
+                                .lineLimit(1)
+                        }
+                    }
                     Spacer(minLength: 0)
                 }
             }
@@ -132,6 +140,12 @@ struct PassScannerView: View {
                             detail: "Their RSVP isn't active for this event.")
             case .wrongEvent:
                 return Look(symbol: "calendar.badge.exclamationmark", tint: ClickColors.warning, title: "Pass for another event", detail: nil)
+            case .refunded:
+                return Look(symbol: "arrow.uturn.backward.circle.fill", tint: ClickColors.destructive, title: "Refunded",
+                            detail: "This ticket was refunded.")
+            case .eventCancelled:
+                return Look(symbol: "xmark.octagon.fill", tint: ClickColors.destructive, title: "Event cancelled",
+                            detail: "Tickets for this event no longer admit anyone.")
             case .invalid:
                 return Look(symbol: "qrcode", tint: ClickColors.destructive, title: "Not a Click Pass", detail: nil)
             }
@@ -158,7 +172,7 @@ struct PassScannerView: View {
             switch scan.result {
             case .checkedIn: ClickHaptics.success()
             case .alreadyCheckedIn, .wrongEvent: ClickHaptics.warning()
-            case .notGoing, .invalid: ClickHaptics.error()
+            case .notGoing, .invalid, .refunded, .eventCancelled: ClickHaptics.error()
             }
             outcome = .scan(scan)
         } catch {

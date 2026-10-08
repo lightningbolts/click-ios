@@ -4,6 +4,16 @@ import Foundation
 
 @Suite("Event engagement")
 struct EventDetailTests {
+    @Test("Ticket scans decode refunds, cancellations and the ticket type; anything unknown is invalid", arguments: [
+        ("refunded", PassScan.Result.refunded), ("event_cancelled", .eventCancelled), ("checked_in", .checkedIn), ("something_new", .invalid),
+    ])
+    func ticketScan(raw: String, expected: PassScan.Result) {
+        let scan = PassScan.decode(["result": raw, "tier_name": "VIP", "attendee": ["user_id": "u1", "name": "Alex Chen"]])
+        #expect(scan.result == expected)
+        #expect(scan.tierName == "VIP")
+        #expect(scan.holder?.name == "Alex Chen")
+    }
+
     @Test("Check-in failures keep the server's reason")
     func checkInReasons() {
         #expect(EventEngagementRepository.checkInError(APIError.validation(code: "400", message: nil)) as? CheckInError == .locationRequired)

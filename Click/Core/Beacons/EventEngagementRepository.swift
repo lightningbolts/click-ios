@@ -49,6 +49,9 @@ public struct PassScan: Equatable, Sendable {
         case alreadyCheckedIn = "already_checked_in"
         case notGoing = "not_going"
         case wrongEvent = "wrong_event"
+        /// Tickets: refunded, or the event was cancelled.
+        case refunded
+        case eventCancelled = "event_cancelled"
         case invalid
     }
 
@@ -62,6 +65,19 @@ public struct PassScan: Equatable, Sendable {
     public let holder: Holder?
     public let checkedInAt: Date?
     public let checkInCount: Int?
+    /// Tickets: which ticket type the holder bought.
+    public var tierName: String? = nil
+
+    /// A result this build doesn't know reads as invalid (it never admits anyone).
+    static func decode(_ root: [String: Any]) -> PassScan {
+        let holder = JSONFields.dictionary(root["attendee"]).flatMap { row -> Holder? in
+            guard let id = JSONFields.string(row["user_id"]) else { return nil }
+            return Holder(userID: id, name: JSONFields.string(row["name"]) ?? "Guest", avatarURL: JSONFields.string(row["avatar_url"]))
+        }
+        return PassScan(result: JSONFields.string(root["result"]).flatMap(Result.init(rawValue:)) ?? .invalid,
+                        holder: holder, checkedInAt: JSONFields.date(root["checked_in_at"]),
+                        checkInCount: JSONFields.int(root["check_in_count"]), tierName: JSONFields.string(root["tier_name"]))
+    }
 }
 
 public struct DirectoryAttendee: Identifiable, Equatable, Sendable {
@@ -296,14 +312,7 @@ public actor EventEngagementRepository {
     /// Host only (the server checks): checks the pass's holder in, or says why not.
     public func scanPass(beaconID: String, credential: String) async throws -> PassScan {
         let body = try JSONSerialization.data(withJSONObject: ["credential": credential])
-        let root = try await object("/api/beacons/\(beaconID)/pass/scan", .post, body: body)
-        guard let result = JSONFields.string(root["result"]).flatMap(PassScan.Result.init(rawValue:)) else { throw APIError.decoding }
-        let holder = JSONFields.dictionary(root["attendee"]).flatMap { row -> PassScan.Holder? in
-            guard let id = JSONFields.string(row["user_id"]) else { return nil }
-            return PassScan.Holder(userID: id, name: JSONFields.string(row["name"]) ?? "Guest", avatarURL: JSONFields.string(row["avatar_url"]))
-        }
-        return PassScan(result: result, holder: holder, checkedInAt: JSONFields.date(root["checked_in_at"]),
-                        checkInCount: JSONFields.int(root["check_in_count"]))
+        return PassScan.decode(try await object("/api/beacons/\(beaconID)/pass/scan", .post, body: body))
     }
 
     public func engagement(beaconID: String) async throws -> EventEngagement {
