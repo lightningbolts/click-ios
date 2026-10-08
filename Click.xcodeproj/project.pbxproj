@@ -120,6 +120,7 @@
 		4FF734BB5DB5B1FDAB2EDFAA /* ChatMedia.swift in Sources */ = {isa = PBXBuildFile; fileRef = DC15CEB319B08A9727F91D25 /* ChatMedia.swift */; };
 		50024DD402AC701EE16BDD1C /* JSONFields.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7B2A63B6D14A5828F75C3A23 /* JSONFields.swift */; };
 		5094E547C42358782606FB48 /* ConnectionCaptureSession.swift in Sources */ = {isa = PBXBuildFile; fileRef = D6ACE3EBCDA49970B567EBB0 /* ConnectionCaptureSession.swift */; };
+		53AF7C9B1278E5CB43F64FB0 /* TicketPassContent.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2A0F4D5E26638BFB8C8E7540 /* TicketPassContent.swift */; };
 		53F5FCFB01AFA350520CE365 /* ConnectionSensorObservation.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4B1703DBBC056D06D6D65B68 /* ConnectionSensorObservation.swift */; };
 		54C1D4956598CBFA3DB13C4A /* SharedContentModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = F6E168B3E644D7A7BDEDF120 /* SharedContentModel.swift */; };
 		5644CD79052856D5EBB5002A /* ClickCryptoV1.swift in Sources */ = {isa = PBXBuildFile; fileRef = DF1EEA7316772A0B9800A223 /* ClickCryptoV1.swift */; };
@@ -252,6 +253,7 @@
 		BDB0DBE5CABFF9561C37905D /* MyPhoneEditor.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0525887058DEEA1A3BC4B5E1 /* MyPhoneEditor.swift */; };
 		BDB785940F57442D091078B6 /* HomeFeedTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = F7E185BE4051D3D0888112E1 /* HomeFeedTests.swift */; };
 		BE3AB54FA800C115DED3B3CE /* ProximityRepository.swift in Sources */ = {isa = PBXBuildFile; fileRef = CAC6727608A5C61CD9DC9BCD /* ProximityRepository.swift */; };
+		C068B514243EC8A55492B666 /* TicketPassTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 056F92A0BC7208DA53769213 /* TicketPassTests.swift */; };
 		C1328F19E4F4F96C6F0A6E4C /* LocationObservation.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4E0AA62B3BE27CDFCD7C35DB /* LocationObservation.swift */; };
 		C13ECD3297594A3A79DED444 /* ChatConversationTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 06A226829E2A5C6E96399ECB /* ChatConversationTests.swift */; };
 		C34273FC85E7FDFE6D205211 /* ChatMediaViews.swift in Sources */ = {isa = PBXBuildFile; fileRef = B22B0A3012F4CC56A01188C7 /* ChatMediaViews.swift */; };
@@ -403,6 +405,7 @@
 		04976593E2AA9C9465B4BBB8 /* TabBarTransitionFader.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TabBarTransitionFader.swift; sourceTree = "<group>"; };
 		0525887058DEEA1A3BC4B5E1 /* MyPhoneEditor.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MyPhoneEditor.swift; sourceTree = "<group>"; };
 		054022733B04F229E07BA230 /* TouchRipple.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TouchRipple.swift; sourceTree = "<group>"; };
+		056F92A0BC7208DA53769213 /* TicketPassTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TicketPassTests.swift; sourceTree = "<group>"; };
 		059E174F6A0ABD87301344BE /* MessageBubbleView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MessageBubbleView.swift; sourceTree = "<group>"; };
 		05BFAB76DC5E32C164D4C1F8 /* GuestListView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GuestListView.swift; sourceTree = "<group>"; };
 		060946110A08603E44DA7EE0 /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist; path = Info.plist; sourceTree = "<group>"; };
@@ -453,6 +456,7 @@
 		29444CD0166FFB4024B29FB4 /* PlacePinView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PlacePinView.swift; sourceTree = "<group>"; };
 		29EBB7C286167B5DB91976F5 /* TapConnectView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TapConnectView.swift; sourceTree = "<group>"; };
 		29FFA9A94BF9230BBA3BD1B7 /* ReactionBar.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ReactionBar.swift; sourceTree = "<group>"; };
+		2A0F4D5E26638BFB8C8E7540 /* TicketPassContent.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TicketPassContent.swift; sourceTree = "<group>"; };
 		2AD5FF3EB16F83E96A974A83 /* AppConfig.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppConfig.swift; sourceTree = "<group>"; };
 		2AEC3B2ABCA6FD192389609D /* Manrope-Medium.ttf */ = {isa = PBXFileReference; lastKnownFileType = file; path = "Manrope-Medium.ttf"; sourceTree = "<group>"; };
 		2C12F5C06BB5F4AD618B53D7 /* MeRepository.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MeRepository.swift; sourceTree = "<group>"; };
@@ -947,6 +951,7 @@
 				52D38905589865BEAAF9ADD7 /* OrderConfirmationView.swift */,
 				EDE1AC99E7A5E0B6EDF8ED58 /* TicketButton.swift */,
 				9B812BF74CE981CB6D0D18F5 /* TicketCheckout.swift */,
+				2A0F4D5E26638BFB8C8E7540 /* TicketPassContent.swift */,
 				EE1F8A085E5CA64FADC396EF /* TicketPickerModel.swift */,
 				8B422259755C2045FB8FA649 /* TicketPickerSheet.swift */,
 			);
@@ -1121,6 +1126,7 @@
 				24923300FE8FCED3010533B3 /* TelemetryTests.swift */,
 				D765F78715B2AA58CCE99354 /* TicketCheckoutTests.swift */,
 				100423BB9BFCC55F0543F251 /* TicketingTests.swift */,
+				056F92A0BC7208DA53769213 /* TicketPassTests.swift */,
 				3566AB2BBAA76CD2B8B169BA /* TicketPickerTests.swift */,
 				8853CD19BA8FB7F4C9EC4A95 /* Fixtures */,
 				25F109CDB300B43482942355 /* Support */,
@@ -2029,6 +2035,7 @@
 				4708F31411ACBDD9DC20FFA6 /* TelemetryQueue.swift in Sources */,
 				56AD721B2A4834BED3D4D7FE /* TicketButton.swift in Sources */,
 				CA98E36EA7F390747C70CBDA /* TicketCheckout.swift in Sources */,
+				53AF7C9B1278E5CB43F64FB0 /* TicketPassContent.swift in Sources */,
 				DC1260CF6D45108961FF0CBD /* TicketPickerModel.swift in Sources */,
 				48585946511C9D5D5223E846 /* TicketPickerSheet.swift in Sources */,
 				25C646A51A5C5FB833DB07AC /* Ticketing.swift in Sources */,
@@ -2121,6 +2128,7 @@
 				1A5711493067F5BC9BDF30F1 /* ShellNavigationTests.swift in Sources */,
 				ADFB16FA877CFBED2013DF5F /* TelemetryTests.swift in Sources */,
 				A8068EE78DE86B4E42742119 /* TicketCheckoutTests.swift in Sources */,
+				C068B514243EC8A55492B666 /* TicketPassTests.swift in Sources */,
 				F2C862EBFB11665642541BE6 /* TicketPickerTests.swift in Sources */,
 				46A59596D6E2E0D84BA0552A /* TicketingTests.swift in Sources */,
 			);

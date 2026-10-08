@@ -101,6 +101,12 @@ public actor TicketingRepository: TicketingClient {
         return tickets
     }
 
+    /// One ticket's signed Apple Wallet pass (`.pkpass` bytes).
+    public func walletPass(beaconID: String, ticketID: String) async throws -> Data {
+        try await api.executeRaw(APIRequest(path: "/api/beacons/\(beaconID)/pass/wallet",
+                                             queryItems: [URLQueryItem(name: "ticket", value: ticketID)])).0
+    }
+
     /// The wallet, grouped by event.
     public func myTickets(scope: TicketScope) async throws -> [MyTicketsGroup] {
         let root = try await object(APIRequest(path: "/api/me/tickets", queryItems: [URLQueryItem(name: "scope", value: scope.rawValue)]))

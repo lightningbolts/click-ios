@@ -198,6 +198,16 @@ struct TicketingTests {
         #expect(query.contains("scope=past"))
     }
 
+    @Test("A ticket's Wallet pass is its own")
+    func walletPass() async throws {
+        TicketingMockURLProtocol.handler = { _ in (200, "PKPASS") }
+        let data = try await repository().walletPass(beaconID: "b1", ticketID: "t1")
+        #expect(data == Data("PKPASS".utf8))
+        let url = try #require(TicketingMockURLProtocol.requests.last?.url)
+        #expect(url.path == "/api/beacons/b1/pass/wallet")
+        #expect(url.query == "ticket=t1")
+    }
+
     // MARK: - Cache
 
     @Test("Your tickets survive a relaunch for you and never show for someone else")
