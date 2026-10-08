@@ -424,7 +424,7 @@ public actor ChatRepository: ChatRepositoryProtocol {
 
         do {
             _ = try await apiClient.executeRaw(request)
-        } catch APIError.conflict(_) {
+        } catch APIError.conflict {
             // Registration is idempotent from the client's perspective.
         }
         deviceRegistered = true
@@ -734,7 +734,7 @@ public actor ChatRepository: ChatRepositoryProtocol {
             guard allowUpgrade, allParticipantsHaveV2Devices else { return nil }
             do {
                 try await createEpoch(scope, identity: identity, devices: devices, epoch: 1)
-            } catch APIError.conflict(_) {
+            } catch APIError.conflict {
                 // Another active device may have created epoch 1 concurrently.
             }
             state = try await fetchEpochState(scope, deviceID: identity.info.deviceID)
@@ -756,7 +756,7 @@ public actor ChatRepository: ChatRepositoryProtocol {
                 do {
                     try await createEpoch(scope, identity: identity, devices: devices, epoch: currentEpoch + 1)
                     state = try await fetchEpochState(scope, deviceID: identity.info.deviceID)
-                } catch APIError.conflict(_) {
+                } catch APIError.conflict {
                     // A peer device can rotate first; fresh state is authoritative.
                     state = try await fetchEpochState(scope, deviceID: identity.info.deviceID)
                 } catch {

@@ -138,6 +138,8 @@ public struct MapBeacon: Codable, Identifiable, Hashable, Sendable {
     public var place: MapBeaconPlace? = nil
     /// Events: people going (Click RSVPs plus guests), as of the fetch; older servers omit it.
     public var rsvpCount: Int? = nil
+    /// Present on ticketed events; a ticket replaces the RSVP.
+    public var ticketing: EventTicketing? = nil
 
     public var coordinate: CLLocationCoordinate2D {
         CLLocationCoordinate2D(latitude: latitude, longitude: longitude)
@@ -210,7 +212,8 @@ public struct MapBeacon: Codable, Identifiable, Hashable, Sendable {
             albumArtURL: SoundtrackResolver.artwork(JSONFields.string(meta, "album_art_url", "artworkUrl100", "artwork_url")),
             venueID: JSONFields.string(row["venue_id"]),
             place: MapBeaconPlace.decode(JSONFields.dictionary(row["place"])),
-            rsvpCount: JSONFields.int(row["rsvp_count"])
+            rsvpCount: JSONFields.int(row["rsvp_count"]),
+            ticketing: EventTicketing.decode(JSONFields.dictionary(row["ticketing"]))
         )
     }
 

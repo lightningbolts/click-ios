@@ -29,9 +29,6 @@ enum GoogleSignIn {
         }
     }
 
-    /// Held while the sign-in sheet is up (the session must be retained until it finishes).
-    private static var activeSession: ASWebAuthenticationSession?
-
     /// Throws `CancellationError` when the user closes the sheet.
     static func signIn(bundle: Bundle = .main) async throws -> Credential {
         guard let clientID = bundle.object(forInfoDictionaryKey: "GIDClientID") as? String,
@@ -92,24 +89,11 @@ enum GoogleSignIn {
     }
 
     private static func present(_ url: URL, scheme: String) async throws -> URL {
-        try await withCheckedThrowingContinuation { continuation in
-            let session = ASWebAuthenticationSession(url: url, callbackURLScheme: scheme) { callback, error in
-                activeSession = nil
-                if let callback {
-                    continuation.resume(returning: callback)
-                } else if (error as? ASWebAuthenticationSessionError)?.code == .canceledLogin {
-                    continuation.resume(throwing: CancellationError())
-                } else {
-                    continuation.resume(throwing: error ?? CancellationError())
-                }
-            }
-            session.presentationContextProvider = AuthContextProvider.shared
-            activeSession = session
-            if !session.start() {
-                activeSession = nil
-                continuation.resume(throwing: APIError.validation(code: "google_start", message: "Unable to start Google sign-in."))
-            }
-        }
+        try await WebAuthPresenter.present(
+            url,
+            callback: .customScheme(scheme),
+            startFailure: APIError.validation(code: "google_start", message: "Unable to start Google sign-in.")
+        )
     }
 
     private static func formEncode(_ value: String) -> String {
@@ -137,18 +121,5 @@ enum AuthCrypto {
             .replacingOccurrences(of: "+", with: "-")
             .replacingOccurrences(of: "/", with: "_")
             .replacingOccurrences(of: "=", with: "")
-    }
-}
-
-/// Anchors web authentication sheets to the key window.
-final class AuthContextProvider: NSObject, ASWebAuthenticationPresentationContextProviding {
-    static let shared = AuthContextProvider()
-
-    func presentationAnchor(for session: ASWebAuthenticationSession) -> ASPresentationAnchor {
-        guard let windowScene = UIApplication.shared.connectedScenes.first as? UIWindowScene,
-              let window = windowScene.windows.first(where: { $0.isKeyWindow }) else {
-            return ASPresentationAnchor()
-        }
-        return window
     }
 }

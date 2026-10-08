@@ -23,12 +23,50 @@ struct ClickPassView: View {
     @State private var walletUnavailable = false
     @State private var directions: MapsDestination?
     @State private var calendar = CalendarButtonModel()
+    /// Ticketed events: your tickets and when they were fetched.
+    @State private var tickets: (tickets: [OwnedTicket], fetchedAt: Date)?
+    @Environment(\.scenePhase) private var scenePhase
+
+    private var isTicketed: Bool { beacon?.ticketing != nil }
+
+    enum Screen: Equatable { case tickets, pass, noTickets, noPass, failed, loading }
+
+    /// Tickets win; with none, an RSVP pass from before tickets went on sale still admits you.
+    static func screen(ticketed: Bool, ticketCount: Int?, hasPass: Bool, notGoing: Bool, failed: Bool) -> Screen {
+        if let ticketCount, ticketCount > 0 { return .tickets }
+        if hasPass { return .pass }
+        if notGoing { return ticketed ? .noTickets : .noPass }
+        return failed ? .failed : .loading
+    }
+
+    private var screen: Screen {
+        Self.screen(ticketed: isTicketed, ticketCount: tickets?.tickets.count, hasPass: pass != nil,
+                    notGoing: isNotGoing, failed: loadError != nil)
+    }
+
+    /// An RSVP pass (not a ticket) waiting at the door: watch for the host's scan.
+    private var watchesDoor: Bool {
+        screen == .pass && pass?.checkedInAt == nil && isAtTheDoor
+    }
 
     var body: some View {
         Group {
-            if let pass {
-                content(pass)
-            } else if isNotGoing {
+            switch screen {
+            case .tickets:
+                if let tickets { ticketContent(tickets.tickets, fetchedAt: tickets.fetchedAt) }
+            case .noTickets:
+                ContentUnavailableView {
+                    Label("No tickets yet", systemImage: "ticket")
+                } description: {
+                    Text("Get tickets on the event page and they show up here.")
+                } actions: {
+                    Button("View Event") { env.router.navigate(to: .event(beaconID: beaconID)) }
+                        .buttonStyle(.borderedProminent)
+                        .tint(ClickColors.primaryActionFill)
+                }
+            case .pass:
+                if let pass { content(pass) }
+            case .noPass:
                 ContentUnavailableView {
                     Label("No pass yet", systemImage: "ticket")
                 } description: {
@@ -38,31 +76,56 @@ struct ClickPassView: View {
                         .buttonStyle(.borderedProminent)
                         .tint(ClickColors.primaryActionFill)
                 }
-            } else if let loadError {
+            case .failed:
                 ContentUnavailableView {
                     Label("Couldn't load your pass", systemImage: "ticket")
                 } description: {
-                    Text(loadError)
+                    Text(loadError ?? "")
                 } actions: {
                     Button("Try Again") { Task { await load() } }
                         .buttonStyle(.borderedProminent)
                         .tint(ClickColors.primaryActionFill)
                 }
-            } else {
+            case .loading:
                 ClickLoadingView()
             }
         }
         .background(ClickColors.background.ignoresSafeArea())
-        .navigationTitle("Click Pass")
+        .navigationTitle(screen == .pass || screen == .noPass ? "Click Pass" : tickets?.tickets.count == 1 ? "Your Ticket" : "Your Tickets")
         .navigationBarTitleDisplayMode(.inline)
         .onAppear(perform: seed)
         .task { await load() }
-        .task(id: pass?.checkedInAt == nil && isAtTheDoor) { await watchForCheckIn() }
+        .task(id: watchesDoor) { await watchForCheckIn() }
+        .onChange(of: scenePhase) { _, phase in
+            if phase == .active, isTicketed { Task { await loadTickets() } }
+        }
         .mapsDialog($directions)
         .calendarEditorSheet(calendar)
     }
 
     // MARK: - Ticket
+
+    private func ticketContent(_ tickets: [OwnedTicket], fetchedAt: Date) -> some View {
+        ScrollView {
+            VStack(spacing: 20) {
+                TicketPassContent(beacon: beacon, beaconID: beaconID, tickets: tickets, fetchedAt: fetchedAt,
+                                  cancelled: beacon?.ticketing?.cancelled == true)
+                eventActions
+                Text("Your host scans this at the door. Each ticket admits one person.")
+                    .font(ClickTypography.metadata)
+                    .foregroundStyle(ClickColors.textTertiary)
+                    .multilineTextAlignment(.center)
+                    .padding(.horizontal, 12)
+            }
+            .frame(maxWidth: 440)
+            .frame(maxWidth: .infinity)
+            .padding(.horizontal, ClickSpacing.screenGutter)
+            .padding(.top, 8)
+            .padding(.bottom, 32)
+        }
+        .boostsScreenBrightness()
+        .keepsScreenAwake()
+    }
 
     private func content(_ pass: ClickPass) -> some View {
         ScrollView {
@@ -88,54 +151,22 @@ struct ClickPassView: View {
 
     private func ticket(_ pass: ClickPass) -> some View {
         VStack(spacing: 0) {
-            EventVisual(seed: beaconID, imageURL: beacon?.imageURL, symbol: "calendar", cornerRadius: 0)
-                .aspectRatio(2, contentMode: .fit)
-                .frame(maxWidth: .infinity)
-
-            VStack(alignment: .leading, spacing: 8) {
-                Text(beacon?.title ?? " ")
-                    .font(ClickTypography.sectionTitle)
-                    .foregroundStyle(ClickColors.textPrimary)
-                    .fixedSize(horizontal: false, vertical: true)
-                if let schedule = beacon?.schedule {
-                    Label(EventFormatting.when(schedule), systemImage: "calendar")
-                }
-                if let place = beacon.flatMap({ $0.locationName ?? $0.formattedAddress }) {
-                    Label(place, systemImage: "mappin.and.ellipse")
-                        .lineLimit(2)
-                }
-            }
-            .font(ClickTypography.supporting)
-            .foregroundStyle(ClickColors.textSecondary)
-            .frame(maxWidth: .infinity, alignment: .leading)
-            .padding(20)
+            PassHeader(beacon: beacon, beaconID: beaconID)
 
             PerforatedDivider()
 
             VStack(spacing: 14) {
-                ZStack {
-                    RoundedRectangle(cornerRadius: 20, style: .continuous).fill(.white)
-                    if let qrImage {
-                        Image(uiImage: qrImage)
-                            .interpolation(.none)
-                            .resizable()
-                            .scaledToFit()
-                            .padding(16)
-                            .accessibilityLabel("Click Pass QR code, \(pass.code)")
+                PassQRTile(image: qrImage, label: "Click Pass QR code, \(pass.code)", maxWidth: 260)
+                    .opacity(pass.checkedInAt == nil ? 1 : 0.35)
+                    .overlay {
+                        if pass.checkedInAt != nil {
+                            Image(systemName: "checkmark.circle.fill")
+                                .font(.system(size: 64, weight: .semibold))
+                                .symbolRenderingMode(.palette)
+                                .foregroundStyle(.white, ClickColors.online)
+                                .transition(.scale.combined(with: .opacity))
+                        }
                     }
-                }
-                .aspectRatio(1, contentMode: .fit)
-                .frame(maxWidth: 260)
-                .opacity(pass.checkedInAt == nil ? 1 : 0.35)
-                .overlay {
-                    if pass.checkedInAt != nil {
-                        Image(systemName: "checkmark.circle.fill")
-                            .font(.system(size: 64, weight: .semibold))
-                            .symbolRenderingMode(.palette)
-                            .foregroundStyle(.white, ClickColors.online)
-                            .transition(.scale.combined(with: .opacity))
-                    }
-                }
 
                 Text(pass.code)
                     .font(.system(.title3, design: .monospaced).weight(.semibold))
@@ -205,6 +236,11 @@ struct ClickPassView: View {
             }
             .task { await loadWalletPass() }
         }
+        eventActions
+    }
+
+    @ViewBuilder
+    private var eventActions: some View {
         if let beacon {
             HStack(spacing: 10) {
                 if beacon.schedule != nil {
@@ -235,6 +271,7 @@ struct ClickPassView: View {
 
     private func seed() {
         if beacon == nil { beacon = env.beacons.cachedBeacon(id: beaconID)?.beacon }
+        if tickets == nil { tickets = env.ticketing.cachedEventTickets(beaconID: beaconID) }
         if pass == nil, let cached = env.events.cachedPass(beaconID: beaconID) { show(cached) }
     }
 
@@ -251,12 +288,24 @@ struct ClickPassView: View {
     private func load() async {
         seed()
         loadError = nil
+        // Whether this is a ticket or an RSVP pass depends on the event.
+        if beacon == nil, let fetched = await fetchBeaconIfNeeded() { beacon = fetched }
+        if isTicketed {
+            await loadTickets()
+            // Tickets to show, or none could be loaded: nothing more to ask for.
+            guard tickets?.tickets.isEmpty == true else { return }
+        }
         async let beaconTask = fetchBeaconIfNeeded()
         do {
             show(try await env.events.pass(beaconID: beaconID))
             isNotGoing = false
         } catch APIError.forbidden {
             pass = nil
+            // A beacon cached before tickets went on sale: a buyer's pass is their ticket.
+            if !isTicketed, let fresh = try? await env.beacons.beacon(id: beaconID).beacon, fresh.ticketing != nil {
+                beacon = fresh
+                await loadTickets()
+            }
             isNotGoing = true
         } catch {
             // A pass already on the device stays usable offline.
@@ -271,8 +320,18 @@ struct ClickPassView: View {
         return try? await env.beacons.beacon(id: beaconID).beacon
     }
 
+    /// Tickets already on the device stay usable offline; the card then says how old they are.
+    private func loadTickets() async {
+        do {
+            let fresh = try await env.ticketing.eventTickets(beaconID: beaconID)
+            tickets = (fresh, .now)
+        } catch {
+            if tickets == nil, !error.isCancellation { loadError = error.localizedDescription }
+        }
+    }
+
     private func watchForCheckIn() async {
-        guard pass?.checkedInAt == nil, isAtTheDoor else { return }
+        guard watchesDoor else { return }
         while !Task.isCancelled {
             try? await Task.sleep(for: .seconds(4))
             guard !Task.isCancelled, let fresh = try? await env.events.pass(beaconID: beaconID) else { continue }
@@ -299,8 +358,64 @@ struct ClickPassView: View {
     }
 }
 
+/// The top of a pass: the event's picture, title, time and place.
+struct PassHeader: View {
+    let beacon: MapBeacon?
+    let beaconID: String
+
+    var body: some View {
+        VStack(spacing: 0) {
+            EventVisual(seed: beaconID, imageURL: beacon?.imageURL, symbol: "calendar", cornerRadius: 0)
+                .aspectRatio(2, contentMode: .fit)
+                .frame(maxWidth: .infinity)
+
+            VStack(alignment: .leading, spacing: 8) {
+                Text(beacon?.title ?? " ")
+                    .font(ClickTypography.sectionTitle)
+                    .foregroundStyle(ClickColors.textPrimary)
+                    .fixedSize(horizontal: false, vertical: true)
+                if let schedule = beacon?.schedule {
+                    Label(EventFormatting.when(schedule), systemImage: "calendar")
+                }
+                if let place = beacon.flatMap({ $0.locationName ?? $0.formattedAddress }) {
+                    Label(place, systemImage: "mappin.and.ellipse")
+                        .lineLimit(2)
+                }
+            }
+            .font(ClickTypography.supporting)
+            .foregroundStyle(ClickColors.textSecondary)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .padding(20)
+        }
+    }
+}
+
+/// A door code: black modules on white in every appearance, with a quiet zone scanners can read.
+struct PassQRTile: View {
+    let image: UIImage?
+    let label: String
+    let maxWidth: CGFloat
+
+    var body: some View {
+        ZStack {
+            RoundedRectangle(cornerRadius: 20, style: .continuous).fill(Color.white)
+            if let image {
+                Image(uiImage: image)
+                    .interpolation(.none)
+                    .resizable()
+                    .scaledToFit()
+                    .padding(16)
+                    .accessibilityLabel(label)
+            }
+        }
+        .aspectRatio(1, contentMode: .fit)
+        .frame(maxWidth: maxWidth)
+        .environment(\.colorScheme, .light)
+    }
+}
+
 /// The ticket's tear line: a dashed rule between two notches cut into the card's edges.
-private struct PerforatedDivider: View {
+struct PerforatedDivider: View {
     private static let notch: CGFloat = 22
 
     var body: some View {
@@ -368,7 +483,7 @@ extension MapBeacon {
 /// Apple's "Add to Apple Wallet" button. Wallet's own sheet is presented from the top-most view
 /// controller as a standard page sheet: SwiftUI's `AddPassToWalletButton`, inside the event
 /// sheet, laid it out in that sheet's frame (square top edge, the screen showing at the bottom).
-private struct AddToWalletButton: UIViewRepresentable {
+struct AddToWalletButton: UIViewRepresentable {
     let pass: PKPass
     /// Whether the pass is in Wallet once its sheet closes.
     let onFinish: (Bool) -> Void

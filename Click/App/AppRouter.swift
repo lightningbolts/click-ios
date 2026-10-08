@@ -120,6 +120,8 @@ public enum AppRoute: Hashable, Sendable {
     /// People you already know who are on Click, matched from hashed device contacts.
     case findFriends
     case savedEvents
+    /// Me: every ticket you hold, by event.
+    case tickets
     /// Every event you host, are going to or saved that hasn't ended (Home's "View all").
     case upcomingEvents
     /// An event's Click Drops recap (spec F1).
@@ -146,7 +148,7 @@ public enum AppRoute: Hashable, Sendable {
             .map
         case .myQR, .scanQR, .tapConnect, .findFriends, .connectionInvocation:
             .addClick
-        case .savedEvents, .settings, .history, .myPlaces:
+        case .savedEvents, .tickets, .settings, .history, .myPlaces:
             .settings
         case .activity, .dropsArchive, .upcomingEvents:
             .home

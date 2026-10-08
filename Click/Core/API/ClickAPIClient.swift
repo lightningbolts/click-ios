@@ -289,7 +289,8 @@ public actor ClickAPIClient {
         case 404:
             throw APIError.notFound
         case 409:
-            throw APIError.conflict(code: nil)
+            let fields = try? JSONFields.object(data)
+            throw APIError.conflict(code: JSONFields.string(fields?["code"]), body: String(data: data, encoding: .utf8))
         case 429:
             let retryAfter = response.value(forHTTPHeaderField: "Retry-After").flatMap(Double.init)
             throw APIError.rateLimited(retryAfter: retryAfter)

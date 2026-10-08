@@ -18,6 +18,7 @@ public final class AppEnvironment {
     public let chat: ChatRepository
     public let beacons: BeaconRepository
     public let events: EventEngagementRepository
+    public let ticketing: TicketingRepository
     public let me: MeRepository
     public let location: LocationProvider
     public let proximity: ProximityRepository
@@ -235,6 +236,7 @@ public final class AppEnvironment {
         )
         self.beacons = BeaconRepository(api: resolvedAPI)
         self.events = EventEngagementRepository(api: resolvedAPI)
+        self.ticketing = TicketingRepository(api: resolvedAPI)
         self.hubs = HubRepository(
             api: resolvedAPI,
             supabaseURL: AppConfig.shared.supabaseURL,
@@ -276,6 +278,7 @@ public final class AppEnvironment {
         deferredDeviceApprovals.removeAll()
         await places.clearCache()
         events.clear()
+        ticketing.clear()
         sharedDropsStore = SharedDropsStore()
         homeFeed = HomeFeedModel()
         ConversationListModel.forgetRestored()
@@ -302,6 +305,7 @@ public final class AppEnvironment {
         // is read from disk now, so it opens whole rather than landing in pieces after launch.
         selfData.restoreNow(userID: userId)
         events.restore(userID: userId)
+        ticketing.restore(userID: userId)
         homeFeed.restore(self, userID: userId)
         sharedDropsStore.restore(userID: userId)
         if let cached = settings.onboardingState(for: userId) {

@@ -13,6 +13,8 @@
 		<string>applinks:joinclick.co</string>
 		<string>applinks:www.joinclick.co</string>
 		<string>applinks:click-us.vercel.app</string>
+		<!-- Lets the ticket checkout sheet close itself on joinclick.co's return page. -->
+		<string>webcredentials:joinclick.co</string>
 	</array>
 	<key>keychain-access-groups</key>
 	<array>

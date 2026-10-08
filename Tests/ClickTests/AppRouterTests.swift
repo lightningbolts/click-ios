@@ -7,6 +7,11 @@ import Foundation
 struct AppRouterTests {
     let router = AppRouter()
 
+    @Test("Tickets live on the Me tab")
+    func ticketsTab() {
+        #expect(AppRoute.tickets.canonicalTab == .settings)
+    }
+
     @Test("With a sheet open, everything pushes inside it; outside arrivals close it")
     func sheetsHostPushes() {
         router.selectedTab = .map

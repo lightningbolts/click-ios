@@ -58,6 +58,8 @@ struct AppRouteDestination: View {
                 ConnectionInvocationView(invocation: invocation)
             case .savedEvents:
                 SavedEventsView()
+            case .tickets:
+                TicketsView()
             case .upcomingEvents:
                 UpcomingEventsView()
             case .eventRecap(let beaconID):
