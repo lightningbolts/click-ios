@@ -7,7 +7,8 @@ public enum APIError: Error, LocalizedError, Equatable, Sendable {
     case unauthorized
     case forbidden
     case notFound
-    case conflict(code: String?)
+    /// `body` is the server's raw response, for callers that read more than its `code`.
+    case conflict(code: String?, body: String? = nil)
     case rateLimited(retryAfter: TimeInterval?)
     case validation(code: String?, message: String?)
     case server(status: Int, code: String?, message: String?)
@@ -27,7 +28,7 @@ public enum APIError: Error, LocalizedError, Equatable, Sendable {
             return "You do not have permission to perform this action."
         case .notFound:
             return "The requested resource was not found."
-        case .conflict(let code):
+        case .conflict(let code, _):
             return "A conflict occurred (\(code ?? "unknown"))."
         case .rateLimited:
             return "Too many requests. Please wait a moment and try again."
