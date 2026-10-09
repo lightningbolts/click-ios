@@ -12,6 +12,8 @@ struct DeviceApprovalSheet: View {
     @Environment(AppEnvironment.self) private var env
     @Environment(\.dismiss) private var dismiss
     let approval: ChatRepository.DeviceApproval
+    /// Told once the decision is saved (true when approved).
+    var onDecided: ((Bool) -> Void)? = nil
 
     private enum Phase: Equatable { case asking, approving, denying, approved, denied, failed(String) }
     @State private var phase: Phase = .asking
@@ -23,8 +25,11 @@ struct DeviceApprovalSheet: View {
         return label == "Web browser" || label.contains(" on ")
     }
 
-    private var symbol: String {
-        let label = approval.deviceLabel?.lowercased() ?? ""
+    private var symbol: String { Self.symbol(for: approval.deviceLabel) }
+
+    /// What kind of device a label names, as a symbol.
+    static func symbol(for label: String?) -> String {
+        let label = label?.lowercased() ?? ""
         if label == "ipad" { return "ipad" }
         // Browsers say what they are ("Chrome on Mac"); a phone's browser still shows a phone.
         if label == "web browser" || label.contains(" on ") {
@@ -155,6 +160,7 @@ struct DeviceApprovalSheet: View {
             withAnimation(ClickMotion.content) { phase = approve ? .approved : .denied }
             approve ? ClickHaptics.success() : ClickHaptics.impact(.medium)
             env.deviceApprovalDecided(approval.id, approved: approve)
+            onDecided?(approve)
             await ClickNotificationCoordinator.shared.reconcileDeviceApprovalNotifications(completedRequestID: approval.id)
         } catch {
             if let authError = error as? LAError,

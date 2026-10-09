@@ -320,6 +320,9 @@ public struct MeView: View {
             NavigationLink(value: AppRoute.settings(.privacy)) {
                 SettingsRowLabel(title: "Privacy & data", systemImage: "hand.raised") { EmptyView() }
             }
+            NavigationLink(value: AppRoute.settings(.devices)) {
+                SettingsRowLabel(title: "Devices", systemImage: "laptopcomputer.and.iphone") { EmptyView() }
+            }
             NavigationLink(value: AppRoute.settings(.permissions)) {
                 SettingsRowLabel(title: "Permissions", systemImage: "checkmark.shield") { EmptyView() }
             }

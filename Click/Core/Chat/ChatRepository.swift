@@ -541,6 +541,42 @@ public actor ChatRepository: ChatRepositoryProtocol {
         return shared
     }
 
+    // MARK: - This account's chat devices (Settings › Devices)
+
+    /// A device holding its own key to this account's chats.
+    public struct ChatDevice: Sendable, Equatable, Identifiable {
+        public let id: String
+        public let label: String?
+        public let createdAt: Date?
+        public let lastSeenAt: Date?
+
+        static func parse(_ row: [String: Any]) -> ChatDevice? {
+            guard let id = JSONFields.string(row["device_id"]) else { return nil }
+            return ChatDevice(id: id, label: JSONFields.string(row["label"]),
+                              createdAt: JSONFields.date(row["created_at"]), lastSeenAt: JSONFields.date(row["last_seen_at"]))
+        }
+    }
+
+    /// This device's ID among `chatDevices()`.
+    public var currentDeviceID: String? { try? vault.loadOrCreate().info.deviceID }
+
+    /// The account's active chat devices, most recently seen first.
+    public func chatDevices() async throws -> [ChatDevice] {
+        let (data, _) = try await apiClient.executeRaw(APIRequest(path: "/api/me/devices"))
+        return JSONFields.rows(try JSONFields.object(data)["devices"]).compactMap(ChatDevice.parse)
+    }
+
+    /// Stops another device reading new messages: the server stops wrapping chat keys for it. Its
+    /// sign-in is untouched (that's signing out there), and it can ask to be approved again. Never
+    /// this device, whose key the app is using.
+    public func removeChatDevice(_ deviceID: String) async throws {
+        guard deviceID != currentDeviceID else { throw APIError.forbidden }
+        _ = try await apiClient.executeRaw(APIRequest(
+            path: "/api/chat/devices", method: .delete,
+            queryItems: [URLQueryItem(name: "device_id", value: deviceID)]
+        ))
+    }
+
     // MARK: - Approving new devices (on a device already in use; the emailed link is the fallback)
 
     /// "iPhone" / "iPad": what kind of device this is, never its name.
