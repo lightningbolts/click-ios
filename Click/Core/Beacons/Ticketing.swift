@@ -203,7 +203,11 @@ public struct TicketingError: LocalizedError, Equatable, Sendable {
         "event_cancelled": "This event was cancelled.",
         "organizer_not_ready": "Tickets aren’t on sale yet.",
         "mixed_order": "Get free and paid tickets in separate orders.",
+        "ticketing_disabled": "Tickets aren’t available right now.",
     ]
+
+    /// Ticketing is off on this server (dark: 404, or `ticketing_disabled`): nothing to show, not a failure.
+    public var isUnavailable: Bool { code == "not_found" || code == "ticketing_disabled" }
 
     public var errorDescription: String? {
         if code == "insufficient_inventory" {
@@ -226,6 +230,9 @@ public struct TicketingError: LocalizedError, Equatable, Sendable {
             return TicketingError(code: nil, signedOut: true)
         case .notFound:
             return TicketingError(code: "not_found")
+        case .forbidden:
+            // The only refusal a buyer gets from ticketing routes.
+            return TicketingError(code: "ticketing_disabled")
         case .conflict(let code, let body):
             let fields = body.flatMap { try? JSONFields.object(Data($0.utf8)) } ?? [:]
             return TicketingError(code: code ?? JSONFields.string(fields["code"]), remaining: JSONFields.int(fields["remaining"]),

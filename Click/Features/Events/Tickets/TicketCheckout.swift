@@ -81,7 +81,7 @@ final class OrderConfirmationModel {
                     state = ending
                     return
                 }
-            } catch let error as TicketingError where error.code == "not_found" {
+            } catch let error as TicketingError where error.isUnavailable {
                 break // not this buyer's order (or gone): waiting won't change that
             } catch {
                 // A dropped poll: try again.
