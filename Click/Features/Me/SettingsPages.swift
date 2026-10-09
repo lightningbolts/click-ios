@@ -9,6 +9,7 @@ struct SettingsPageView: View {
         switch page {
         case .alerts: AlertsSettingsView()
         case .privacy: PrivacySettingsView()
+        case .devices: DevicesSettingsView()
         case .permissions: PermissionsSettingsView()
         case .blocked: BlockedUsersView()
         // Profile editors open filled from the shared copy, never a loading frame first.

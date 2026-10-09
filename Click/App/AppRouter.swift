@@ -182,6 +182,7 @@ extension AppRoute {
 public enum SettingsRoute: Hashable, Sendable {
     case alerts
     case privacy
+    case devices
     case permissions
     case blocked
     case interests
