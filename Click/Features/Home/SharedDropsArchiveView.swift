@@ -1,7 +1,8 @@
 import SwiftUI
 
 /// Home's "View all": every shared Click Drop you can see, newest first, in a photo grid under
-/// day headers (like Activity). It opens on the first page the strip already loaded behind it,
+/// day headers (like Activity), including the ones Home leaves out (past a day, or past
+/// someone's newest five). It opens on the first page the strip already loaded behind it,
 /// tiles decode a few rows ahead of the scroll, and a tile opens the story viewer, which plays on
 /// through the archive in grid order.
 struct SharedDropsArchiveView: View {
@@ -20,7 +21,9 @@ struct SharedDropsArchiveView: View {
 
     var body: some View {
         ScrollView {
-            LazyVGrid(columns: columns, alignment: .leading, spacing: Self.spacing, pinnedViews: [.sectionHeaders]) {
+            // Headers scroll with the photos, like Activity's: pinned, they'd need an opaque band
+            // under the translucent navigation bar.
+            LazyVGrid(columns: columns, alignment: .leading, spacing: Self.spacing) {
                 ForEach(Self.sections(drops), id: \.title) { section in
                     Section {
                         ForEach(section.drops) { drop in
@@ -35,7 +38,6 @@ struct SharedDropsArchiveView: View {
                             .padding(.horizontal, 4)
                             .padding(.top, 12)
                             .padding(.bottom, 6)
-                            .background(ClickColors.background)
                             .accessibilityAddTraits(.isHeader)
                     }
                 }
