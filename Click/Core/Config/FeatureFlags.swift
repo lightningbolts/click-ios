@@ -17,6 +17,8 @@ public final class FeatureFlags {
         case sharedDrops = "shared_drops"
         case reconnectNearby = "reconnect_nearby"
         case clickPlaces = "click_places"
+        /// Your own tickets. Separate from sales, so a held ticket stays reachable while sales are off.
+        case ticketWallet = "ticket_wallet"
     }
 
     private struct Resolved: Decodable {

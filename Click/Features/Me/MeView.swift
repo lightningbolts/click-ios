@@ -277,8 +277,10 @@ public struct MeView: View {
                 }
             }
 
-            NavigationLink(value: AppRoute.tickets) {
-                SettingsRowLabel(title: "Tickets", systemImage: "ticket") { EmptyView() }
+            if env.features.isEnabled(.ticketWallet) {
+                NavigationLink(value: AppRoute.tickets) {
+                    SettingsRowLabel(title: "Tickets", systemImage: "ticket") { EmptyView() }
+                }
             }
 
             if env.features.isEnabled(.clickPlaces) {

@@ -80,9 +80,10 @@ struct TicketsView: View {
         loadError = nil
         do {
             groups[scope] = try await env.ticketing.myTickets(scope: scope)
-        } catch let error as TicketingError where error.code == "not_found" {
-            // Ticketing is off on this server: nothing to show.
+        } catch let error as TicketingError where error.isUnavailable {
+            // Ticketing is off for this account: nothing to show, and Me stops offering it.
             groups[scope] = []
+            await env.features.refresh()
         } catch {
             if !error.isCancellation, groups[scope] == nil { loadError = error.localizedDescription }
         }

@@ -159,6 +159,7 @@ struct TicketingTests {
         (401, "{}", "Sign in to continue."),
         (400, #"{"error":"Pick at least one ticket."}"#, "Pick at least one ticket."),
         (500, "{}", "Something went wrong. Try again."),
+        (403, #"{"error":"Ticketing is not enabled","code":"ticketing_disabled"}"#, "Tickets aren’t available right now."),
     ])
     func messages(status: Int, body: String, expected: String) async {
         TicketingMockURLProtocol.handler = { _ in (status, body) }
@@ -166,6 +167,17 @@ struct TicketingTests {
             try await repository().startCheckout(beaconID: "b1", items: [(tierID: "g", quantity: 1)])
         }
         #expect(error?.errorDescription == expected)
+    }
+
+    @Test("Dark ticketing reads as unavailable, not as a failure")
+    func unavailable() async {
+        TicketingMockURLProtocol.handler = { _ in (403, #"{"error":"Ticketing is not enabled","code":"ticketing_disabled"}"#) }
+        let error = await #expect(throws: TicketingError.self) {
+            try await repository().myTickets(scope: .upcoming)
+        }
+        #expect(error?.isUnavailable == true)
+        #expect(TicketingError(code: "not_found").isUnavailable)
+        #expect(!TicketingError(code: "network").isUnavailable)
     }
 
     @Test("A 409 keeps the server's code for every caller")
