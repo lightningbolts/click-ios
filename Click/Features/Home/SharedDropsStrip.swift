@@ -158,15 +158,15 @@ struct SharedDropsStrip: View {
 
     private static let tileSize = CGSize(width: 104, height: 140)
 
-    /// One person: their cover photo (the drop the story opens on), a ring while any is ready to
-    /// develop, and how many they shared when it's more than one.
+    /// One person: their newest drop (pixelated, counting down, until it develops), a ring while
+    /// any is ready to develop, and how many they shared when it's more than one.
     private func tile(_ group: SharedDropGroup) -> some View {
         let drop = group.cover
         let state = drop.state()
         let developing = store.developing.contains(drop.id)
         let ready = group.hasUnwatched
         return Button {
-            if let start = group.start { ViewerStart.open(start.id, in: $viewing) }
+            ViewerStart.open(group.start.id, in: $viewing)
         } label: {
             // A fixed frame with overlays: a filling photo never pushes the labels out of the tile.
             Group {
@@ -209,7 +209,6 @@ struct SharedDropsStrip: View {
             .dropTileSource(group.userID, in: tileFrames)
         }
         .buttonStyle(.plain)
-        .disabled(group.start == nil)
         .accessibilityLabel(accessibility(group, state: ready ? .ready : state))
     }
 
@@ -246,7 +245,7 @@ struct SharedDropsStrip: View {
         let count = group.drops.count > 1 ? ", \(group.drops.count) drops" : ""
         let who = (drop.isMine ? "Your drops" : "Drops from \(drop.userName)") + count
         switch state {
-        case .pending(let reveal): return "\(who), develops \(reveal.formatted(.relative(presentation: .named)))"
+        case .pending(let reveal): return "\(who), develops \(reveal.formatted(.relative(presentation: .named))). Opens them."
         case .ready: return "\(who), ready to develop. Opens them."
         case .developed: return "\(who). Opens them."
         }

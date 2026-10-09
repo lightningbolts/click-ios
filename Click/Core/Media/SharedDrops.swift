@@ -67,17 +67,13 @@ struct SharedDropGroup: Identifiable, Equatable {
     var id: String { userID }
     var isMine: Bool { drops.first?.isMine ?? false }
     var newest: SharedDrop { drops[drops.count - 1] }
-    var viewable: [SharedDrop] { drops.filter { !$0.state().isPending } }
 
-    /// Where the story starts: the first drop still to develop (unseen), else the first one.
-    var start: SharedDrop? {
-        let viewable = viewable
-        return viewable.first { $0.state() == .ready } ?? viewable.first
-    }
+    /// The tile's face: the newest drop, still pixelated while it waits to develop.
+    var cover: SharedDrop { newest }
 
-    /// The tile's face: the drop the story opens on, so the tile zooms straight into it (the
-    /// newest drop, a countdown, while nothing can be opened yet).
-    var cover: SharedDrop { start ?? newest }
+    /// Where the story starts: the first drop ready to develop (unseen), else the cover, so the
+    /// tile zooms straight into it. Every drop plays, a pending one as its pixels and countdown.
+    var start: SharedDrop { drops.first { $0.state() == .ready } ?? cover }
 
     /// Has a developed drop you haven't watched yet (the tile's ready ring).
     var hasUnwatched: Bool { drops.contains { $0.state() == .ready } }

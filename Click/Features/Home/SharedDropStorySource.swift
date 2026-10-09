@@ -39,9 +39,11 @@ final class SharedDropStorySource: DropStorySource {
         switch playlist {
         case .people: peopleOrder
         // Append-only as pages load, so it's read live.
-        case .archive: store.archiveViewable.map(\.id)
+        case .archive: archiveIDs
         }
     }
+
+    private var archiveIDs: [String] { (store.archive.value?.drops ?? []).map(\.id) }
 
     func chapterKey(of id: String) -> String? {
         guard let drop = store.drop(id) else { return nil }
@@ -50,14 +52,14 @@ final class SharedDropStorySource: DropStorySource {
 
     func chapter(_ key: String) -> [String] {
         switch playlist {
-        case .people: person(key)?.viewable.map(\.id) ?? []
-        case .archive: store.drop(key).map { $0.state().isPending ? [] : [$0.id] } ?? []
+        case .people: person(key)?.drops.map(\.id) ?? []
+        case .archive: store.drop(key).map { [$0.id] } ?? []
         }
     }
 
     func chapterStart(_ key: String) -> String? {
         switch playlist {
-        case .people: person(key)?.start?.id
+        case .people: person(key)?.start.id
         case .archive: chapter(key).first
         }
     }
@@ -87,20 +89,31 @@ final class SharedDropStorySource: DropStorySource {
 
     func isDeveloped(_ id: String) -> Bool { store.drop(id)?.state() == .developed }
 
-    func status(_ id: String) -> (title: String, systemImage: String) {
-        (store.developing.contains(id) || store.drop(id)?.state() == .ready ? "Developing…" : "Opening…", "sparkles")
+    func developsAt(_ id: String) -> Date? {
+        if case .pending(let reveal) = store.drop(id)?.state() { reveal } else { nil }
     }
 
-    /// A ready drop develops the moment it's seen.
+    func status(_ id: String) -> (title: String, systemImage: String) {
+        if let reveal = developsAt(id) { return ("Develops \(reveal.formatted(.relative(presentation: .named)))", "hourglass") }
+        return (store.developing.contains(id) || store.drop(id)?.state() == .ready ? "Developing…" : "Opening…", "sparkles")
+    }
+
+    /// A ready drop develops the moment it's seen; a pending one waits on screen for its time
+    /// (nothing is asked of the server before then), then develops the same way.
     func open(_ id: String) async {
+        if let reveal = developsAt(id) {
+            // Just past the reveal, like the strip's live develop, so the server agrees it's time.
+            try? await Task.sleep(for: .seconds(max(0, reveal.timeIntervalSinceNow) + 0.5))
+            guard !Task.isCancelled else { return }
+        }
         if let drop = store.drop(id), drop.state() == .ready { await store.develop([drop], fresh: true, env: env) }
     }
 
     /// Near the end of what the archive has loaded, its next page follows.
     func prepare(_ ids: [String]) {
+        let loaded = archiveIDs
         guard playlist == .archive, let id = ids.first,
-              let index = store.archiveViewable.firstIndex(where: { $0.id == id }),
-              index >= store.archiveViewable.count - 5 else { return }
+              let index = loaded.firstIndex(of: id), index >= loaded.count - 5 else { return }
         Task { await store.loadMoreArchive(env: env) }
     }
 
@@ -190,7 +203,9 @@ private struct SharedDropFooter: View {
                             reactable: shown, composing: live && interaction.composing) { emoji in
                     interaction.toast = source.send(emoji, about: drop, reaction: true)
                 } accessory: {
-                    if !drop.isMine, drop.connectionID != nil {
+                    // A reply carries the drop into the chat, which shows its photo: only once it's
+                    // developed, never asking for it early.
+                    if !drop.isMine, drop.connectionID != nil, !drop.state().isPending {
                         replyField(drop)
                     }
                 }

@@ -38,9 +38,13 @@ protocol DropStorySource: AnyObject, Observable {
     func page(_ id: String) -> DropStoryPage?
     /// Developed for this viewer, so its photo may be shown (it may still be on its way).
     func isDeveloped(_ id: String) -> Bool
+    /// When a drop that can't develop yet will: its page counts down over the pixels and holds
+    /// there (taps still move on) until then.
+    func developsAt(_ id: String) -> Date?
     /// What sits over the pixels until the photo shows.
     func status(_ id: String) -> (title: String, systemImage: String)
-    /// A page opening: Home develops a ready drop on sight. Returns once that's done.
+    /// A page opening: Home develops a ready drop on sight (a pending one once its time comes).
+    /// Returns once that's done.
     func open(_ id: String) async
     /// These pages are next: anything slow about them (an undeveloped photo, a next page) starts now.
     func prepare(_ ids: [String])
@@ -65,6 +69,10 @@ protocol DropStorySource: AnyObject, Observable {
     /// Below the photo, the same height on every page (it may grow up over the photo, outside its
     /// layout); only the `live` page takes input, and `shown` once its photo is unveiled.
     @ViewBuilder func footer(_ id: String, live: Bool, shown: Bool, interaction: DropStoryInteraction) -> Footer
+}
+
+extension DropStorySource {
+    func developsAt(_ id: String) -> Date? { nil }
 }
 
 /// What a page's footer shares with the viewer while a story plays.
@@ -237,7 +245,9 @@ struct DropStoryViewer<Source: DropStorySource>: View {
         // Follows the zoom, so the status bar fades back as the card shrinks, not after.
         .statusBarHidden(presented)
         .clickToast($interaction.toast, edge: .top)
-        .task(id: currentID) { await open(currentID) }
+        // Again once the drop develops, wherever that happened (the strip's live develop, say), so
+        // the page unveils.
+        .task(id: "\(currentID)|\(source.isDeveloped(currentID))") { await open(currentID) }
         .task(id: "\(currentID)|\(isPaused)") { await runTimer() }
         .onChange(of: current == nil) { _, gone in if gone { close() } }
         .confirmation("Delete this drop?", isPresented: $confirmDelete, keep: "Keep It", message: source.deleteMessage) {
@@ -374,7 +384,7 @@ struct DropStoryViewer<Source: DropStorySource>: View {
 
     private func statusLabel(_ id: String) -> some View {
         let status = source.status(id)
-        return Label(status.title, systemImage: status.systemImage)
+        return Label { statusTitle(id, fallback: status.title) } icon: { Image(systemName: status.systemImage) }
             .font(ClickTypography.supportingEmphasized)
             .foregroundStyle(.white)
             .padding(.horizontal, 14)
@@ -383,6 +393,13 @@ struct DropStoryViewer<Source: DropStorySource>: View {
             // Glass flickers under a fade, so the label comes and goes at once.
             .transition(.identity)
             .allowsHitTesting(false)
+    }
+
+    /// A pending drop's countdown ticks by itself, without redrawing the viewer.
+    private func statusTitle(_ id: String, fallback: String) -> Text {
+        let now = Date.now
+        guard let reveal = source.developsAt(id), reveal > now else { return Text(fallback) }
+        return Text("Develops in \(Text(timerInterval: now...reveal, countsDown: true).monospacedDigit())")
     }
 
     /// A quick tap on the left third goes back, anywhere else forward (or develops a drop that
@@ -466,7 +483,7 @@ struct DropStoryViewer<Source: DropStorySource>: View {
         if isShown(id) { unveiled.insert(id) }
         source.prepare([id] + upcoming(after: id, count: Self.prefetchCount))
         await source.open(id)
-        guard source.isDeveloped(id) else { return }
+        guard !Task.isCancelled, source.isDeveloped(id) else { return }
         // Unveil as soon as any copy is here; the full-size one swaps in without a second animation.
         reveal(id)
         if full[id] == nil, let photo = await source.fullPhoto(id) {
