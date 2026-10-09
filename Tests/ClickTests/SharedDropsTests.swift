@@ -61,32 +61,73 @@ struct SharedDropsTests {
         #expect(drops[0].audience == nil)
     }
 
-    @Test("The strip groups by person: yours first, then unwatched, then by newest drop; a story starts at the first unseen")
-    func groupsByPerson() async throws {
-        let past = "2000-01-01T00:00:00Z", seen = "\"2000-01-02T00:00:00Z\""
-        func row(_ id: String, _ user: String, mine: Bool = false, developed: String = "null", reveal: String = past) -> String {
-            #"{"id":"\#(id)","user":{"id":"\#(user)","name":"\#(user)"},"is_mine":\#(mine),"reveal_at":"\#(reveal)","developed_at":\#(developed)}"#
-        }
-        // Newest first, as the server sends them.
-        let rows = [
-            row("m3", "maya", developed: seen),
-            row("j2", "jo", developed: seen),
-            row("me1", "me", mine: true, reveal: "2999-01-01T00:00:00Z"),
-            row("m2", "maya"),
-            row("m1", "maya", developed: seen),
-            row("j1", "jo", developed: seen),
-            row("k1", "kai")
-        ]
-        SharedDropsMockURLProtocol.handler = { _ in (200, #"{"drops":[\#(rows.joined(separator: ","))]}"#) }
-        let groups = SharedDropGroup.group(try await service().sharedDrops())
-        // Unwatched people (maya, kai) come before jo, even though jo posted after kai.
-        #expect(groups.map(\.userID) == ["me", "maya", "kai", "jo"])
-        #expect(groups[1].drops.map(\.id) == ["m1", "m2", "m3"])
-        #expect(groups[1].start?.id == "m2")
-        #expect(groups[1].cover.id == "m2")
-        #expect(groups[3].start?.id == "j1")
-        #expect(groups[0].start == nil)
-        #expect(groups[0].cover.id == "me1")
+    /// Today, since a drop's develop state reads the real clock.
+    private static let now = Date.now
+
+    /// A drop `hoursAgo` old, developed (seen) unless `ready` or `pending`.
+    private func drop(_ id: String, _ user: String, hoursAgo: Double, mine: Bool = false, ready: Bool = false, pending: Bool = false) -> SharedDrop {
+        let created = Self.now.addingTimeInterval(-hoursAgo * 3600)
+        return SharedDrop(
+            id: id, userID: user, userName: user, avatarURL: nil, isMine: mine, audience: nil, connectionID: nil,
+            createdAt: created,
+            revealAt: pending ? Self.now.addingTimeInterval(600) : created.addingTimeInterval(60),
+            developedAt: ready || pending ? nil : Self.now,
+            previewURL: nil
+        )
+    }
+
+    @Test("No drops in the last day: no stacks")
+    func groupsNothing() {
+        #expect(SharedDropGroup.group([], now: Self.now).isEmpty)
+        #expect(SharedDropGroup.group([drop("old", "maya", hoursAgo: 30)], now: Self.now).isEmpty)
+        #expect(SharedDropGroup.nextExpiry([]) == nil)
+    }
+
+    @Test("A rolling 24 hours by when each drop was created")
+    func groupsWindow() throws {
+        let groups = SharedDropGroup.group([
+            drop("in", "maya", hoursAgo: 23.99),
+            drop("edge", "maya", hoursAgo: 24),
+            drop("out", "maya", hoursAgo: 24.01),
+        ], now: Self.now)
+        #expect(groups.map(\.userID) == ["maya"])
+        #expect(groups[0].drops.map(\.id) == ["in"])
+        let expiry = try #require(SharedDropGroup.nextExpiry(groups))
+        #expect(abs(expiry.timeIntervalSince(Self.now) - 36) < 0.001)
+    }
+
+    @Test("One, five, and more than five drops: one stack each, holding the newest five")
+    func groupsPerPerson() {
+        let one = SharedDropGroup.group([drop("a1", "ari", hoursAgo: 1)], now: Self.now)
+        #expect(one.count == 1 && one[0].drops.count == 1)
+
+        let five = (1...5).map { drop("f\($0)", "fay", hoursAgo: Double($0)) }
+        #expect(SharedDropGroup.group(five, now: Self.now).map { $0.drops.map(\.id) } == [["f5", "f4", "f3", "f2", "f1"]])
+
+        let seven = (1...7).map { drop("s\($0)", "sam", hoursAgo: Double($0)) }
+        let groups = SharedDropGroup.group(seven.shuffled(), now: Self.now)
+        // No second stack for the extra two: they're the oldest, and live in the archive.
+        #expect(groups.count == 1)
+        #expect(groups[0].drops.map(\.id) == ["s5", "s4", "s3", "s2", "s1"])
+    }
+
+    @Test("Stacks are ordered by their newest drop, newest first, yours included; a story starts at the first unseen")
+    func groupsOrder() {
+        let groups = SharedDropGroup.group([
+            drop("me1", "me", hoursAgo: 5, mine: true, pending: true),
+            drop("m1", "maya", hoursAgo: 4),
+            drop("m2", "maya", hoursAgo: 3, ready: true),
+            drop("j1", "jo", hoursAgo: 1),
+            drop("k1", "kai", hoursAgo: 2, ready: true),
+        ], now: Self.now)
+        #expect(groups.map(\.userID) == ["jo", "kai", "maya", "me"])
+        #expect(groups[2].drops.map(\.id) == ["m1", "m2"])
+        #expect(groups[2].start?.id == "m2")
+        #expect(groups[2].cover.id == "m2")
+        #expect(groups[2].hasUnwatched)
+        #expect(groups[0].start?.id == "j1")
+        #expect(groups[3].start == nil)
+        #expect(groups[3].cover.id == "me1")
     }
 
     @Test("The archive pages with its cursor")

@@ -82,20 +82,32 @@ struct SharedDropGroup: Identifiable, Equatable {
     /// Has a developed drop you haven't watched yet (the tile's ready ring).
     var hasUnwatched: Bool { drops.contains { $0.state() == .ready } }
 
-    /// Yours first, then people with drops you haven't watched, then everyone else, each by their
-    /// newest drop. The viewer snapshots this order when it opens, so watching never reshuffles
-    /// what plays next.
-    static func group(_ list: [SharedDrop]) -> [SharedDropGroup] {
+    /// Home shows a rolling day of drops, at most this many per person.
+    static let window: TimeInterval = 24 * 60 * 60
+    static let perPerson = 5
+
+    /// The Home strip: drops created in the last 24 hours, each person's newest five as one stack,
+    /// stacks ordered by their newest drop, newest first. Anything older, or past someone's five,
+    /// is in the archive. The viewer snapshots this when it opens, so the window moving on (or
+    /// watching) never changes what plays next.
+    static func group(_ list: [SharedDrop], now: Date = .now) -> [SharedDropGroup] {
+        let cutoff = now.addingTimeInterval(-window)
         var order: [String] = []
         var byUser: [String: [SharedDrop]] = [:]
-        // The strip is newest first, so a person's first appearance is their newest drop.
-        for drop in list {
-            if byUser[drop.userID] == nil { order.append(drop.userID) }
-            byUser[drop.userID, default: []].append(drop)
+        // Newest first, so a person's first appearance is their newest drop and their first five
+        // are the five newest.
+        for drop in list.sorted(by: { ($0.createdAt ?? .distantPast) > ($1.createdAt ?? .distantPast) }) {
+            guard let created = drop.createdAt, created > cutoff else { continue }
+            let kept = byUser[drop.userID]?.count ?? 0
+            if kept == 0 { order.append(drop.userID) }
+            if kept < perPerson { byUser[drop.userID, default: []].append(drop) }
         }
-        let groups = order.map { SharedDropGroup(userID: $0, drops: byUser[$0]!.reversed()) }
-        let others = groups.filter { !$0.isMine }
-        return groups.filter(\.isMine) + others.filter(\.hasUnwatched) + others.filter { !$0.hasUnwatched }
+        return order.map { SharedDropGroup(userID: $0, drops: byUser[$0]!.reversed()) }
+    }
+
+    /// When the oldest drop in `groups` leaves the window (the strip redraws then).
+    static func nextExpiry(_ groups: [SharedDropGroup]) -> Date? {
+        groups.flatMap(\.drops).compactMap(\.createdAt).min()?.addingTimeInterval(window)
     }
 }
 
