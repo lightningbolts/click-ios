@@ -1,9 +1,9 @@
 import SwiftUI
 
-/// Shared Click Drops on Home (spec F3): one bounded strip — the last day's drops, or the newest
-/// 25 on a quieter day — one tile per person, Instagram-style. No likes, views or counts. A tile
+/// Shared Click Drops on Home (spec F3): one bounded strip — the last 24 hours, each person's
+/// newest five as one tile, newest first — Instagram-style. No likes, views or counts. A tile
 /// opens the story viewer on that person's drops, then carries on to the next person; replies and
-/// reactions go to your chat with the poster. Everything older is in the archive ("View all").
+/// reactions go to your chat with the poster. Everything else is in the archive ("View all").
 struct SharedDropsStrip: View {
     @Environment(AppEnvironment.self) private var env
 
@@ -12,6 +12,8 @@ struct SharedDropsStrip: View {
     @State private var viewing: ViewerStart?
     /// The story opens out of (and closes back into) the tapped tile.
     @State private var tileFrames = DropTileFrames()
+    /// Bumped when the oldest drop on the strip leaves the 24-hour window, so it redraws without it.
+    @State private var expiryTick = 0
     private var store: SharedDropsStore { env.sharedDropsStore }
 
     struct CapturedPhoto: Identifiable {
@@ -63,6 +65,11 @@ struct SharedDropsStrip: View {
             let justReady = (store.drops.value ?? []).filter { $0.state() == .ready && ($0.revealAt.map { Date().timeIntervalSince($0) < 5 } ?? false) }
             await store.develop(justReady, env: env)
         }
+        .task(id: nextExpiry) {
+            guard let next = nextExpiry else { return }
+            try? await Task.sleep(for: .seconds(max(0, next.timeIntervalSinceNow) + 0.5))
+            if !Task.isCancelled { expiryTick += 1 }
+        }
         .fullScreenCover(isPresented: $showingCamera) {
             ClickDropCameraView { draft in captured = CapturedPhoto(jpeg: draft.data) }
         }
@@ -112,11 +119,18 @@ struct SharedDropsStrip: View {
         guard let id = env.pendingSharedDropID, viewing == nil,
               store.drops.value?.first(where: { $0.id == id }).map({ !$0.state().isPending }) == true else { return }
         env.pendingSharedDropID = nil
-        ViewerStart.open(id, in: $viewing)
+        // Past someone's newest five, it plays from the archive, where every drop is.
+        let onStrip = store.groups.contains { $0.drops.contains { $0.id == id } }
+        ViewerStart.open(id, playlist: onStrip ? .people : .archive, in: $viewing)
     }
 
     private var nextReveal: Date? {
         (store.drops.value ?? []).compactMap { drop in drop.state().isPending ? drop.revealAt : nil }.min()
+    }
+
+    private var nextExpiry: Date? {
+        _ = expiryTick
+        return SharedDropGroup.nextExpiry(store.groups)
     }
 
     // MARK: - Tiles

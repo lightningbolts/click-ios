@@ -63,9 +63,10 @@ struct SharedDropStoryViewer: View {
     @State private var dragAxis: Axis?
     /// The progress bar on the incoming face: its current segment sits empty.
     @State private var idleClock = StoryClock()
-    /// The people in the order they were when the viewer opened, so watching (which can move a
-    /// tile) never changes what comes next.
+    /// The people, and each one's drops, as they were when the viewer opened: Home's day of drops
+    /// rolls on and refreshes underneath, but what plays next never changes while you watch.
     @State private var peopleOrder: [String]?
+    @State private var peopleDrops: [String: [String]] = [:]
     private let sources: DropTileFrames?
     private let playlist: StoryPlaylist
 
@@ -111,16 +112,22 @@ struct SharedDropStoryViewer: View {
     /// A chapter's drops that can be opened, in play order.
     private func chapter(_ key: String) -> [SharedDrop] {
         switch playlist {
-        case .people: store.group(key)?.viewable ?? []
+        case .people: person(key)?.viewable ?? []
         case .archive: store.drop(key).map { $0.state().isPending ? [] : [$0] } ?? []
         }
     }
 
     private func chapterStart(_ key: String) -> String? {
         switch playlist {
-        case .people: store.group(key)?.start?.id
+        case .people: person(key)?.start?.id
         case .archive: chapter(key).first?.id
         }
+    }
+
+    /// A person's stack as it was when the viewer opened, each drop read live (a develop shows).
+    private func person(_ key: String) -> SharedDropGroup? {
+        let drops = (peopleDrops[key] ?? store.group(key)?.drops.map(\.id) ?? []).compactMap(store.drop)
+        return drops.isEmpty ? nil : SharedDropGroup(userID: key, drops: drops)
     }
 
     /// The current chapter: what the progress bar shows and taps move through.
@@ -189,7 +196,11 @@ struct SharedDropStoryViewer: View {
         .statusBarHidden(presented)
         .clickToast($toast, edge: .top)
         .task(id: currentID) { await open(currentID) }
-        .onAppear { if playlist == .people, peopleOrder == nil { peopleOrder = store.groups.map(\.userID) } }
+        .onAppear {
+            guard playlist == .people, peopleOrder == nil else { return }
+            peopleOrder = store.groups.map(\.userID)
+            peopleDrops = Dictionary(uniqueKeysWithValues: store.groups.map { ($0.userID, $0.drops.map(\.id)) })
+        }
         .task(id: "\(currentID)|\(isPaused)") { await runTimer() }
         .onChange(of: current == nil) { _, gone in if gone { close() } }
         .confirmation("Delete this drop?", isPresented: $confirmDelete, keep: "Keep It",
