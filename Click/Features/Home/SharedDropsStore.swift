@@ -29,6 +29,9 @@ final class SharedDropsStore {
     var developing: Set<String> = []
     /// Developed in the viewer just now: it plays the unveil once.
     var freshlyDeveloped: Set<String> = []
+    /// Opened in the viewer while developing: it unveils once developed, whoever asked first (the
+    /// strip's live develop and the viewer reach a pending drop's reveal together).
+    @ObservationIgnored private var unveilWhenDeveloped: Set<String> = []
     var uploads: [PendingShare] = []
     var message: String?
     var fetchedAt: Date?
@@ -46,9 +49,6 @@ final class SharedDropsStore {
     /// The strip, one tile per person.
     var groups: [SharedDropGroup] { SharedDropGroup.group(drops.value ?? []) }
     func group(_ userID: String) -> SharedDropGroup? { groups.first { $0.userID == userID } }
-
-    /// Archive drops that can be opened (developed or ready), in grid order.
-    var archiveViewable: [SharedDrop] { (archive.value?.drops ?? []).filter { !$0.state().isPending } }
 
     /// The strip's copy first (it's the fresher one), else the archive's.
     func drop(_ id: String) -> SharedDrop? {
@@ -336,6 +336,7 @@ final class SharedDropsStore {
     /// Develops ready drops (idempotent on the server) and fetches their originals.
     /// `fresh`: opened in the viewer, which plays the unveil.
     func develop(_ targets: [SharedDrop], fresh: Bool = false, env: AppEnvironment) async {
+        if fresh { unveilWhenDeveloped.formUnion(targets.filter { $0.state() == .ready }.map(\.id)) }
         let ready = targets.filter { $0.state() == .ready && !developing.contains($0.id) }
         guard !ready.isEmpty else { return }
         developing.formUnion(ready.map(\.id))
@@ -355,7 +356,7 @@ final class SharedDropsStore {
                 let at = result.developedAt ?? .now
                 if let index = updated.firstIndex(where: { $0.id == result.ref.id }) { updated[index].developedAt = at }
                 if let index = archived?.drops.firstIndex(where: { $0.id == result.ref.id }) { archived?.drops[index].developedAt = at }
-                if fresh { freshlyDeveloped.insert(result.ref.id) }
+                if unveilWhenDeveloped.remove(result.ref.id) != nil { freshlyDeveloped.insert(result.ref.id) }
             }
             withAnimation(ClickMotion.subtleFade) {
                 if drops.value != nil { commit(updated, env: env) }
@@ -372,6 +373,7 @@ final class SharedDropsStore {
                 }
             }
         } catch {
+            unveilWhenDeveloped.subtract(ready.map(\.id))
             if !error.isCancellation { message = "Couldn't develop right now. Try again in a moment." }
         }
     }
@@ -389,13 +391,18 @@ final class SharedDropsStore {
     func share(_ upload: PendingShare, env: AppEnvironment) async {
         do {
             let drop = try await env.drops.shareDrop(upload.jpeg, audience: upload.audience, caption: upload.caption, clientDropID: upload.id)
-            uploads.removeAll { $0.id == upload.id }
-            commit([drop] + (drops.value ?? []).filter { $0.id != drop.id }, env: env)
-            if var page = archive.value {
-                page.drops = [drop] + page.drops.filter { $0.id != drop.id }
-                commitArchive(page, env: env)
+            // Its preview is here before the uploading tile turns into it: your stack's new cover
+            // paints on its first frame, with no blank tile between them.
+            await PixelatedPreview.prefetch(drop.previewURL)
+            withAnimation(ClickMotion.content) {
+                uploads.removeAll { $0.id == upload.id }
+                commit([drop] + (drops.value ?? []).filter { $0.id != drop.id }, env: env)
+                if var page = archive.value {
+                    page.drops = [drop] + page.drops.filter { $0.id != drop.id }
+                    commitArchive(page, env: env)
+                }
+                message = nil
             }
-            message = nil
             ClickHaptics.success()
         } catch let refusal as SharedDropPostError {
             uploads.removeAll { $0.id == upload.id }

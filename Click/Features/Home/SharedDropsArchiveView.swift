@@ -118,7 +118,7 @@ struct SharedDropsArchiveView: View {
         let state = drop.state()
         let photo = store.thumbs[drop.id] ?? store.originals[drop.id]
         return Button {
-            if !state.isPending { SharedDropsStrip.ViewerStart.open(drop.id, playlist: .archive, in: $viewing) }
+            SharedDropsStrip.ViewerStart.open(drop.id, playlist: .archive, in: $viewing)
         } label: {
             Color.clear
                 .aspectRatio(3 / 4, contentMode: .fit)
@@ -148,7 +148,6 @@ struct SharedDropsArchiveView: View {
                 .dropTileSource(drop.id, in: tileFrames)
         }
         .buttonStyle(.plain)
-        .disabled(state.isPending)
         .task(id: state == .developed) { await store.loadThumb(drop, env: env) }
         .accessibilityLabel(accessibility(drop, state: state))
     }
@@ -179,7 +178,7 @@ struct SharedDropsArchiveView: View {
         let who = drop.isMine ? "Your drop" : "Drop from \(drop.userName)"
         let when = drop.createdAt.map { ", \($0.formatted(.relative(presentation: .named)))" } ?? ""
         switch state {
-        case .pending(let reveal): return "\(who)\(when), develops \(reveal.formatted(.relative(presentation: .named)))"
+        case .pending(let reveal): return "\(who)\(when), develops \(reveal.formatted(.relative(presentation: .named))). Opens it."
         case .ready: return "\(who)\(when), ready to develop. Opens it."
         case .developed: return "\(who)\(when). Opens it."
         }

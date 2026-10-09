@@ -122,12 +122,33 @@ struct SharedDropsTests {
         ], now: Self.now)
         #expect(groups.map(\.userID) == ["jo", "kai", "maya", "me"])
         #expect(groups[2].drops.map(\.id) == ["m1", "m2"])
-        #expect(groups[2].start?.id == "m2")
+        #expect(groups[2].start.id == "m2")
         #expect(groups[2].cover.id == "m2")
         #expect(groups[2].hasUnwatched)
-        #expect(groups[0].start?.id == "j1")
-        #expect(groups[3].start == nil)
+        #expect(groups[0].start.id == "j1")
+        // A stack of only pending drops still opens, on its newest.
+        #expect(groups[3].start.id == "me1")
         #expect(groups[3].cover.id == "me1")
+    }
+
+    @Test("A new pending drop is its stack's cover; the story starts at the first unseen, else the cover")
+    func groupsPendingCover() {
+        let mixed = SharedDropGroup.group([
+            drop("z1", "zoe", hoursAgo: 3),
+            drop("z2", "zoe", hoursAgo: 2, ready: true),
+            drop("z3", "zoe", hoursAgo: 0.1, pending: true),
+        ], now: Self.now)[0]
+        #expect(mixed.drops.map(\.id) == ["z1", "z2", "z3"])
+        #expect(mixed.cover.id == "z3")
+        #expect(mixed.start.id == "z2")
+
+        let watched = SharedDropGroup.group([
+            drop("w1", "wes", hoursAgo: 3),
+            drop("w2", "wes", hoursAgo: 0.1, pending: true),
+        ], now: Self.now)[0]
+        #expect(watched.cover.id == "w2")
+        #expect(watched.start.id == "w2")
+        #expect(!watched.hasUnwatched)
     }
 
     @Test("The archive pages with its cursor")
