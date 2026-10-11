@@ -322,7 +322,7 @@ public actor ChatRepository: ChatRepositoryProtocol {
     private var v1KeyCache: [String: ClickCryptoV1.DerivedKeys] = [:]
     private var groupMasterCache: [String: Data] = [:]
     private var v2SessionCache: [String: V2Session] = [:]
-    /// When each cached session was resolved; writes reuse one for `sendSessionReuse` seconds.
+    /// When a write last checked each cached session; writes reuse it for `sendSessionReuse` seconds.
     private var v2SessionResolvedAt: [String: Date] = [:]
     private static let sendSessionReuse: TimeInterval = 60
     /// Canonical chat UUIDs for connections resolved this install (never changes once created).
@@ -745,8 +745,8 @@ public actor ChatRepository: ChatRepositoryProtocol {
         didRetryDiscovery: Bool = false
     ) async throws -> V2Session? {
         if let cached = v2SessionCache[scope.cacheKey] {
-            // Reads always reuse; writes reuse a recent session (direct chats and freshly
-            // opened groups/hubs), otherwise re-check membership and rotation. A message from
+            // Reads always reuse; writes reuse one a recent write checked, otherwise re-check
+            // membership and rotation (a session resolved for reading never did). A message from
             // an epoch newer than the cached one means a peer rotated since: re-read the epoch
             // state, or it would read as "unavailable" until the app restarts.
             let fresh = v2SessionResolvedAt[scope.cacheKey].map { Date().timeIntervalSince($0) < Self.sendSessionReuse } ?? false
@@ -865,7 +865,10 @@ public actor ChatRepository: ChatRepositoryProtocol {
             epochKeys: epochKeys
         )
         v2SessionCache[scope.cacheKey] = session
-        v2SessionResolvedAt[scope.cacheKey] = Date()
+        // Only a write's check (devices compared, rotated if they changed) vouches for sends: a
+        // read that re-resolves every few seconds (locked history) must not, or a send keeps an
+        // epoch the server refuses (E2EE_V2_REQUIRED) after a device joins or is removed.
+        if allowUpgrade { v2SessionResolvedAt[scope.cacheKey] = Date() }
         shareEpochKeysForPreviews(session, scope: scope)
         return session
     }
