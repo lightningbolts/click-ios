@@ -68,6 +68,17 @@ struct RemovedDeviceTests {
         #expect(try vault.loadOrCreate().info.deviceID == fresh.info.deviceID)
     }
 
+    @Test func makesOneNewKeyPerAttemptWhenThatIsTurnedAwayToo() async throws {
+        let vault = DeviceIdentityVault(account: "tests.removed-device.\(UUID().uuidString)")
+        _ = try vault.loadOrCreate()
+        defer { try? vault.discard(try vault.loadOrCreate()) }
+        RemovedDeviceMockURLProtocol.registered = []
+        RemovedDeviceMockURLProtocol.handler = { _ in (409, #"{"error":"This device was removed from your account","code":"DEVICE_REVOKED"}"#) }
+
+        await #expect(throws: ChatRepositoryError.currentDeviceNotRegistered) { try await repository(vault).registerDevice() }
+        #expect(RemovedDeviceMockURLProtocol.registered.count == 2)
+    }
+
     @Test func anAlreadyRegisteredDeviceKeepsItsKey() async throws {
         let vault = DeviceIdentityVault(account: "tests.removed-device.\(UUID().uuidString)")
         let identity = try vault.loadOrCreate()

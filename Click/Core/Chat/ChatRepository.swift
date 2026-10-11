@@ -394,6 +394,10 @@ public actor ChatRepository: ChatRepositoryProtocol {
     static func registeredKey(_ deviceID: String) -> String { "click.v2.registered.2.\(deviceID)" }
 
     public func registerDevice() async throws {
+        try await registerDevice(replaced: false)
+    }
+
+    private func registerDevice(replaced: Bool) async throws {
         guard !deviceRegistered else { return }
         let identity = try vault.loadOrCreate()
         // Registered on an earlier launch: skip the round trip. Discovery re-registers if the
@@ -424,16 +428,19 @@ public actor ChatRepository: ChatRepositoryProtocol {
 
         do {
             _ = try await apiClient.executeRaw(request)
-        } catch APIError.conflict(let code, _) where code == "DEVICE_REVOKED" {
+        } catch APIError.conflict(let code, _) where code == "DEVICE_REVOKED" && !replaced {
             // Removed from the account (Settings › Devices): its key can't come back, so this
             // device starts over with a new one, which asks to be approved like any new device.
+            // Once per call: a new key turned away too is the server's answer, not a loop to run.
             try vault.discard(identity)
             v2SessionCache.removeAll()
             v2SessionResolvedAt.removeAll()
             guard try vault.loadOrCreate().info.deviceID != identity.info.deviceID else {
                 throw ChatRepositoryError.currentDeviceNotRegistered
             }
-            return try await registerDevice()
+            return try await registerDevice(replaced: true)
+        } catch APIError.conflict(let code, _) where code == "DEVICE_REVOKED" {
+            throw ChatRepositoryError.currentDeviceNotRegistered
         } catch APIError.conflict {
             // Registration is idempotent from the client's perspective.
         }
