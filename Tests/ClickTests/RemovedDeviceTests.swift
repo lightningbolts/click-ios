@@ -1,4 +1,5 @@
 import Foundation
+import Security
 import Testing
 @testable import Click
 
@@ -35,7 +36,17 @@ final class RemovedDeviceMockURLProtocol: URLProtocol, @unchecked Sendable {
     override func stopLoading() {}
 }
 
-@Suite("Removed device", .serialized)
+/// Unsigned CI test hosts have no Keychain entitlement (-34018); the vault has no fallback.
+private let keychainAvailable: Bool = {
+    let query: [String: Any] = [
+        kSecClass as String: kSecClassGenericPassword,
+        kSecAttrService as String: "tests.removed-device.probe",
+        kSecMatchLimit as String: kSecMatchLimitOne,
+    ]
+    return SecItemCopyMatching(query as CFDictionary, nil) != errSecMissingEntitlement
+}()
+
+@Suite("Removed device", .serialized, .enabled(if: keychainAvailable, "needs the Keychain"))
 struct RemovedDeviceTests {
     private func repository(_ vault: DeviceIdentityVault) -> ChatRepository {
         let config = URLSessionConfiguration.ephemeral
