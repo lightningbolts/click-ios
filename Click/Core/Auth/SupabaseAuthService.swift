@@ -253,10 +253,12 @@ public actor SupabaseAuthService {
         )
     }
 
-    /// Signs out the active user session on the server.
+    /// Ends this device's session on the server. The account's other phones and browsers stay
+    /// signed in: Supabase's default scope (`global`) would revoke all of them.
     public func signOut(jwt: String) async {
-        let url = baseURL.appendingPathComponent("/auth/v1/logout")
-        var request = URLRequest(url: url)
+        var components = URLComponents(url: baseURL.appendingPathComponent("/auth/v1/logout"), resolvingAgainstBaseURL: false)!
+        components.queryItems = [URLQueryItem(name: "scope", value: "local")]
+        var request = URLRequest(url: components.url!)
         request.httpMethod = "POST"
         request.setValue(anonKey, forHTTPHeaderField: "apikey")
         request.setValue("Bearer \(jwt)", forHTTPHeaderField: "Authorization")

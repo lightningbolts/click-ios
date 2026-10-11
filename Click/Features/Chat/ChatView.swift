@@ -995,21 +995,23 @@ public struct ChatView: View {
                         .foregroundStyle(ClickColors.textPrimary)
                         .lineLimit(1)
 
-                    Text(statusText)
-                        .font(ClickTypography.caption)
-                        .foregroundStyle(
-                            model.isPeerTyping
-                                ? ClickColors.accentForeground
-                                : (model.identity.isOnline && model.identity.isDirect ? ClickColors.online : ClickColors.textSecondary)
-                        )
-                        .lineLimit(1)
-                        .animation(.none, value: statusText)
+                    if !statusText.isEmpty {
+                        Text(statusText)
+                            .font(ClickTypography.caption)
+                            .foregroundStyle(
+                                model.isPeerTyping
+                                    ? ClickColors.accentForeground
+                                    : (peerIsOnline && model.identity.isDirect ? ClickColors.online : ClickColors.textSecondary)
+                            )
+                            .lineLimit(1)
+                            .animation(.none, value: statusText)
+                    }
                 }
             }
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
-        .accessibilityLabel("\(model.identity.peerDisplayName), \(statusText)")
+        .accessibilityLabel(statusText.isEmpty ? model.identity.peerDisplayName : "\(model.identity.peerDisplayName), \(statusText)")
     }
 
     private var statusText: String {
@@ -1027,17 +1029,24 @@ public struct ChatView: View {
         case .direct:
             break
         }
-        if model.identity.isOnline {
+        if peerIsOnline {
             return "Online"
         }
-        if !model.identity.lastActiveText.isEmpty {
-            return model.identity.lastActiveText
+        if let lastActive = peer?.lastActiveRelative, !lastActive.isEmpty {
+            return lastActive
         }
-        if !model.identity.peerHandle.isEmpty {
-            return model.identity.peerHandle
-        }
-        return "Click"
+        return model.identity.lastActiveText.isEmpty ? model.identity.peerHandle : model.identity.lastActiveText
     }
+
+    /// This person's inbox entry. Presence comes from there, not the route: several ways into a
+    /// chat (a notification, a profile, search) open it without knowing when they were last active.
+    private var peer: ConnectionItem? {
+        guard model.identity.isDirect, !model.identity.peerUserID.isEmpty, let conversations else { return nil }
+        let peerUserID = model.identity.peerUserID
+        return conversations.active.first { $0.userID == peerUserID } ?? conversations.archived.first { $0.userID == peerUserID }
+    }
+
+    private var peerIsOnline: Bool { peer?.isOnline ?? model.identity.isOnline }
 
     private var loadingState: some View {
         ClickLoadingView("Loading conversation…")

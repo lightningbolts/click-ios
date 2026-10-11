@@ -199,6 +199,22 @@ struct MessageOperationsTests {
         #expect(model1 === model2)
     }
 
+    @Test("A chat opened while signed out isn't reused once signed in")
+    func conversationModelBelongsToItsAccount() {
+        let vault = KeychainSessionVault(account: "test_\(UUID().uuidString)")
+        defer { vault.deleteSession() }
+        let session = SessionController(vault: vault)
+        let env = AppEnvironment(session: session, network: NetworkMonitor(start: false))
+        // The open thread re-renders after the session ends and makes a model with no user.
+        let signedOut = env.conversationModel(for: identity)
+        vault.saveSession(SessionSnapshot(userId: "user-a", jwt: "jwt", refreshToken: "refresh"))
+        session.requireProfileBasics(userId: "user-a")
+
+        let signedIn = env.conversationModel(for: identity)
+        #expect(signedIn !== signedOut)
+        #expect(signedIn.currentUserID == "user-a")
+    }
+
     @Test("isEmoji recognizes all keyboard emojis and rejects non-emojis")
     func isEmojiRecognition() {
         #expect(EmojiKeyboardPicker.isEmoji("👍"))
