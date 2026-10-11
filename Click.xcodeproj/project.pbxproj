@@ -226,6 +226,7 @@
 		9E2076DD9D531A1C096BC3C9 /* AlertConfirmationTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 01E41A22521ABAE888EEBCDF /* AlertConfirmationTests.swift */; };
 		9F184F28B19FCC0C302F582A /* LiveUpdates.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6FBDA21D67D9C5188405F9BA /* LiveUpdates.swift */; };
 		9F990A7BA45B050C9B85AD6C /* ClipModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = 002CFEA32E7459B5D7AC4BAA /* ClipModel.swift */; };
+		9FBB0B00532CF2B8D039E283 /* RemovedDeviceTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = BD0602B141870A60DB477BB6 /* RemovedDeviceTests.swift */; };
 		9FFE49B750AFD7B106E7F990 /* CreateBeaconSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1704BBFEC1035AD1234E1B8D /* CreateBeaconSheet.swift */; };
 		A08898F5B6D91DED2768116E /* SharedDropsStrip.swift in Sources */ = {isa = PBXBuildFile; fileRef = F98A417595AD773FE33925C7 /* SharedDropsStrip.swift */; };
 		A30461AB84F2BAE2A8A57572 /* EventEngagementRepository.swift in Sources */ = {isa = PBXBuildFile; fileRef = AC24CFA0E6E02114CAA8699B /* EventEngagementRepository.swift */; };
@@ -656,6 +657,7 @@
 		BC148FF19C5BC80D4271B273 /* OnboardingState.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OnboardingState.swift; sourceTree = "<group>"; };
 		BC196177165E6C102B1932B4 /* SessionController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SessionController.swift; sourceTree = "<group>"; };
 		BCD0D8EDB023F061F30D41FC /* EventActivityAttributes.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = EventActivityAttributes.swift; sourceTree = "<group>"; };
+		BD0602B141870A60DB477BB6 /* RemovedDeviceTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RemovedDeviceTests.swift; sourceTree = "<group>"; };
 		BEC22CD1ECDF9E342ACCC942 /* ChatMessage.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ChatMessage.swift; sourceTree = "<group>"; };
 		C04BB0EDB80B1C58203CF1B1 /* UserProfileSnapshot.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = UserProfileSnapshot.swift; sourceTree = "<group>"; };
 		C08BEC2498706BAFA7106F16 /* PlanViews.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PlanViews.swift; sourceTree = "<group>"; };
@@ -1142,6 +1144,7 @@
 				64D57A357CB1E1867A6ACB9C /* ProductTelemetryTests.swift */,
 				7CB3BD1B60178FAB0356E7F1 /* ProximityCodecTests.swift */,
 				249A21200E0C4184F6CE567E /* ReconnectNearbyTests.swift */,
+				BD0602B141870A60DB477BB6 /* RemovedDeviceTests.swift */,
 				30DD4C9A7E9B5D5321C8F98A /* RevisionTests.swift */,
 				3768AC3A65EACD0273F1F050 /* Round7Tests.swift */,
 				F7952CF4B73D0A54B59F8315 /* Round8Tests.swift */,
@@ -2154,6 +2157,7 @@
 				738C6D466FF75ACD1B630F64 /* ProductTelemetryTests.swift in Sources */,
 				03B037B570CBC883E6BEB1A7 /* ProximityCodecTests.swift in Sources */,
 				08C081B65D049D493CB2C9AD /* ReconnectNearbyTests.swift in Sources */,
+				9FBB0B00532CF2B8D039E283 /* RemovedDeviceTests.swift in Sources */,
 				C7E3044705CB8DDF9A10AF7D /* RevisionTests.swift in Sources */,
 				1BB1A6936D5CD5CA154FE1B0 /* Round7Tests.swift in Sources */,
 				CFD3788C048BFEAEDD9C8FAE /* Round8Tests.swift in Sources */,

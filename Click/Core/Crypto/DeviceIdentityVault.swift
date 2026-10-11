@@ -30,8 +30,12 @@ public final class DeviceIdentityVault: @unchecked Sendable {
 
     private let lock = NSLock()
     private var cachedIdentity: DeviceIdentity?
+    private let account: String
 
-    public init() {}
+    /// [account] is the Keychain item; tests pass their own so they never touch the app's.
+    public init(account: String = DeviceIdentityVault.keychainAccount) {
+        self.account = account
+    }
 
     /// Loads the existing device identity from Keychain or generates and persists a new one.
     public func loadOrCreate() throws -> DeviceIdentity {
@@ -56,6 +60,20 @@ public final class DeviceIdentityVault: @unchecked Sendable {
         return identity
     }
 
+    /// Forgets [identity] (this device was removed from the account), so the next `loadOrCreate`
+    /// makes a new one. A no-op when the vault already holds another identity.
+    public func discard(_ identity: DeviceIdentity) throws {
+        lock.lock()
+        defer { lock.unlock() }
+        let current = try cachedIdentity?.privateKey.rawRepresentation ?? readFromKeychain()
+        guard current == identity.privateKey.rawRepresentation else { return }
+        let status = SecItemDelete(baseQuery as CFDictionary)
+        guard status == errSecSuccess || status == errSecItemNotFound else {
+            throw VaultError.keychainWriteFailed(status: status)
+        }
+        cachedIdentity = nil
+    }
+
     /// Clears cached in-memory identity (for tests).
     public func clearCache() {
         lock.lock()
@@ -65,14 +83,19 @@ public final class DeviceIdentityVault: @unchecked Sendable {
 
     // MARK: - Keychain Access
 
-    private func readFromKeychain() throws -> Data? {
-        let query: [String: Any] = [
+    private var baseQuery: [String: Any] {
+        [
             kSecClass as String: kSecClassGenericPassword,
             kSecAttrService as String: Self.keychainService,
-            kSecAttrAccount as String: Self.keychainAccount,
+            kSecAttrAccount as String: account,
+        ]
+    }
+
+    private func readFromKeychain() throws -> Data? {
+        let query = baseQuery.merging([
             kSecReturnData as String: true,
             kSecMatchLimit as String: kSecMatchLimitOne
-        ]
+        ]) { _, new in new }
 
         var item: CFTypeRef?
         let status = SecItemCopyMatching(query as CFDictionary, &item)
@@ -91,12 +114,6 @@ public final class DeviceIdentityVault: @unchecked Sendable {
     }
 
     private func saveToKeychain(rawPrivateKey: Data) throws {
-        let baseQuery: [String: Any] = [
-            kSecClass as String: kSecClassGenericPassword,
-            kSecAttrService as String: Self.keychainService,
-            kSecAttrAccount as String: Self.keychainAccount,
-        ]
-
         let attributes: [String: Any] = [
             kSecValueData as String: rawPrivateKey,
             kSecAttrAccessible as String: kSecAttrAccessibleWhenUnlockedThisDeviceOnly

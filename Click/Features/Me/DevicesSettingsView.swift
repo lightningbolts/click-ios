@@ -52,7 +52,7 @@ struct DevicesSettingsView: View {
         .confirmation(removing.map { "Remove \($0.label ?? "this device")?" } ?? "",
                       isPresented: Binding(get: { removing != nil }, set: { if !$0 { removing = nil } }),
                       keep: "Keep Device",
-                      message: "It stops getting new messages until it's approved again. It stays signed in until it signs out.") {
+                      message: "It stops getting new messages. If it's opened again while signed in, it comes back as a new device, and your earlier messages need your approval.") {
             Button("Remove", role: .destructive) { if let device = removing { Task { await remove(device) } } }
         }
     }

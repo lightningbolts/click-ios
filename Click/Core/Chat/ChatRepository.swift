@@ -424,6 +424,16 @@ public actor ChatRepository: ChatRepositoryProtocol {
 
         do {
             _ = try await apiClient.executeRaw(request)
+        } catch APIError.conflict(let code, _) where code == "DEVICE_REVOKED" {
+            // Removed from the account (Settings › Devices): its key can't come back, so this
+            // device starts over with a new one, which asks to be approved like any new device.
+            try vault.discard(identity)
+            v2SessionCache.removeAll()
+            v2SessionResolvedAt.removeAll()
+            guard try vault.loadOrCreate().info.deviceID != identity.info.deviceID else {
+                throw ChatRepositoryError.currentDeviceNotRegistered
+            }
+            return try await registerDevice()
         } catch APIError.conflict {
             // Registration is idempotent from the client's perspective.
         }
@@ -493,8 +503,9 @@ public actor ChatRepository: ChatRepositoryProtocol {
     /// newer devices whose history sharing was approved by email, and uploads them. The server
     /// only relays envelopes and enforces own-devices + approval (`approve_chat_key_transfer`).
     public func shareHistoryWithApprovedDevices(currentUserID: String) async -> Int {
-        guard !currentUserID.isEmpty, let identity = try? vault.loadOrCreate() else { return 0 }
+        guard !currentUserID.isEmpty else { return 0 }
         try? await registerDevice()
+        guard let identity = try? vault.loadOrCreate() else { return 0 }
         let lookup = APIRequest(
             path: "/api/chat/devices/history-backfill",
             method: .get,
@@ -567,7 +578,7 @@ public actor ChatRepository: ChatRepositoryProtocol {
     }
 
     /// Stops another device reading new messages: the server stops wrapping chat keys for it. Its
-    /// sign-in is untouched (that's signing out there), and it can ask to be approved again. Never
+    /// sign-in is untouched (that's signing out there); opened again, it starts over as a new device. Never
     /// this device, whose key the app is using.
     public func removeChatDevice(_ deviceID: String) async throws {
         guard deviceID != currentDeviceID else { throw APIError.forbidden }
@@ -618,8 +629,8 @@ public actor ChatRepository: ChatRepositoryProtocol {
     /// `reopen` asks again after a denial.
     @discardableResult
     public func askForHistory(reopen: Bool = false) async throws -> DeviceApproval? {
-        let identity = try vault.loadOrCreate()
         try await registerDevice()
+        let identity = try vault.loadOrCreate()
         var body: [String: Any] = ["device_id": identity.info.deviceID]
         if reopen { body["reopen"] = true }
         let (data, _) = try await apiClient.executeRaw(APIRequest(
@@ -642,8 +653,8 @@ public actor ChatRepository: ChatRepositoryProtocol {
     /// so its round trip overlaps the system prompt; nothing is sent unless `authorize` succeeds.
     /// Sharing history with the approved device is the caller's to start, off this critical path.
     public func decideDeviceApproval(id: String, approve: Bool, authorize: (@Sendable () async throws -> Void)? = nil) async throws {
-        let identity = try vault.loadOrCreate()
         try await registerDevice()
+        let identity = try vault.loadOrCreate()
         let base = "/api/chat/devices/history-requests/\(id)"
         let challengeRequest = APIRequest(
             path: base + "/challenge", method: .post,
@@ -736,8 +747,9 @@ public actor ChatRepository: ChatRepositoryProtocol {
             if (!allowUpgrade || fresh), !rotatedSince { return cached }
         }
 
-        let identity = try vault.loadOrCreate()
+        // Registering first: a device removed from the account gets its new key here.
         try await registerDevice()
+        let identity = try vault.loadOrCreate()
 
         // Independent reads: fetch the device list and this device's epoch envelopes together.
         async let devicesTask = discoverDevices(scope)
