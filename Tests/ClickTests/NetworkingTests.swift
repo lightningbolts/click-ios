@@ -208,6 +208,24 @@ extension ClickAPIClientTests {
     }
 }
 
+extension ClickAPIClientTests {
+    @Test("Signing out ends this device's session only")
+    func signOutIsLocal() async {
+        let logouts = Counter()
+        MockURLProtocol.requestHandler = { request in
+            // Supabase's default scope is global: every browser and phone on the account signed out.
+            let query = URLComponents(url: request.url!, resolvingAgainstBaseURL: false)?.queryItems
+            if request.url?.path == "/auth/v1/logout", query == [URLQueryItem(name: "scope", value: "local")] {
+                logouts.increment()
+            }
+            return response(request, 204, "")
+        }
+        await SupabaseAuthService(baseURL: URL(string: "https://sb.example.com")!, anonKey: "anon", session: makeMockSession())
+            .signOut(jwt: "jwt")
+        #expect(logouts.count == 1)
+    }
+}
+
 @Suite("Transport retry policy")
 struct TransportRetryTests {
     final class Counter: @unchecked Sendable { var calls = 0 }

@@ -82,6 +82,12 @@ public final class AppEnvironment {
     private var conversationModels: [String: ConversationModel] = [:]
 
     public func conversationModel(for identity: ConversationIdentity) -> ConversationModel {
+        // Models belong to one account. A thread still on screen as the session ends makes one with
+        // no user; reused after signing back in, every send failed until the app was relaunched.
+        let userID = session.currentSession?.userId ?? ""
+        if conversationModels.values.contains(where: { $0.currentUserID != userID }) {
+            conversationModels.removeAll()
+        }
         if let hubID = identity.hubID, let existing = conversationModels[hubID] {
             return existing
         }
@@ -104,7 +110,7 @@ public final class AppEnvironment {
         let model = ConversationModel(
             identity: identity,
             chatRepository: chat,
-            currentUserID: session.currentSession?.userId ?? "",
+            currentUserID: userID,
             currentUserName: "You",
             timelineCache: timelineCache,
             pendingSends: pendingSends,

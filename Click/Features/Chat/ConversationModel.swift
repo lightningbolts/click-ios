@@ -48,7 +48,7 @@ public final class ConversationModel {
     /// On-device timeline (nil in tests and previews).
     private let store: LocalStore?
     private let realtimeManager: ChatRealtimeManager
-    private let currentUserID: String
+    let currentUserID: String
     private let currentUserName: String
     private let identities: IdentityCache?
     /// Decrypted media locations by message ID (this conversation only).
