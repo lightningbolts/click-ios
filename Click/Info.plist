@@ -52,9 +52,6 @@
 	<key>UIBackgroundModes</key>
 	<array>
 		<string>remote-notification</string>
-		<string>bluetooth-central</string>
-		<string>bluetooth-peripheral</string>
-		<string>audio</string>
 	</array>
 	<key>UIAppFonts</key>
 	<array>
