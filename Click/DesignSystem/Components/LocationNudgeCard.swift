@@ -1,6 +1,6 @@
 import SwiftUI
 
-/// A `LocationNudge` as an inline card: what you get, Turn on and Not now side by side. Hides
+/// A `LocationNudge` as an inline card: what you get, Continue and Not now side by side. Hides
 /// itself when the nudge isn't due, and after either answer.
 struct LocationNudgeCard: View {
     @Environment(AppEnvironment.self) private var env
@@ -8,7 +8,7 @@ struct LocationNudgeCard: View {
     let systemImage: String
     let title: String
     let message: String
-    var acceptTitle = "Turn on"
+    var acceptTitle = "Continue"
     /// Extra condition from the host, e.g. "some encounters have no place".
     var isRelevant = true
 
@@ -62,7 +62,7 @@ struct LocationNudgeCard: View {
                     .foregroundStyle(ClickColors.destructive)
             case nil:
                 HStack(spacing: 10) {
-                    Button(isSaving ? "Turning on…" : acceptTitle) {
+                    Button(isSaving ? "Saving…" : acceptTitle) {
                         Task { await accept() }
                     }
                     .buttonStyle(.bordered)

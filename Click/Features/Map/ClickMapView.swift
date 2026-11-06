@@ -150,6 +150,12 @@ public struct ClickMapView: View {
                 Task { await env.friction.endSession() }
             }
         }
+        .alert("Location is off for Click", isPresented: $model.showsLocationOffNotice) {
+            Button("Open Settings") { env.permissions.openSystemSettings() }
+            Button("Not Now", role: .cancel) {}
+        } message: {
+            Text("The map works without it. To center the map on you and see what's nearby, you can allow location for Click in Settings.")
+        }
         .sheet(isPresented: $model.isNearbyPresented, onDismiss: {
             if let queuedStack {
                 self.queuedStack = nil

@@ -24,7 +24,7 @@ struct NearbyLip: View {
                 }
                 Spacer(minLength: 8)
                 if model.locationState == .notDetermined {
-                    Button("Turn on") { Task { await model.requestLocation() } }
+                    Button("Continue") { Task { await model.requestLocation() } }
                         .font(ClickTypography.supportingEmphasized)
                         .foregroundStyle(ClickColors.accentForeground)
                 } else {

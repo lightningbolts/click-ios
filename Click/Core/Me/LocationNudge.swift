@@ -63,7 +63,7 @@ enum LocationNudge: String, CaseIterable {
         guard self != .businessInsights else { return nil }
         let status = env.permissions.status(for: .locationWhenInUse)
         let resolved = status == .notDetermined ? await env.permissions.requestPermission(for: .locationWhenInUse) : status
-        return resolved == .authorized ? nil : "It's on, but Click can't use your location. Allow it in Settings."
+        return resolved == .authorized ? nil : "Saved. Location access is off for Click, so no place is recorded. That's fine; you can change it anytime in Settings."
     }
 
     private func key(_ field: String, _ userID: String) -> String { "locationNudge.\(rawValue).\(field).\(userID)" }

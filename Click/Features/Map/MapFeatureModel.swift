@@ -209,6 +209,10 @@ final class MapFeatureModel {
     /// Where Nearby measures distance from: the user's location, moved only after a real move.
     private(set) var origin: CLLocationCoordinate2D?
     private(set) var locationState: LocationState = .notDetermined
+    /// Shown when the user asks to center on themselves while location is already off: explains
+    /// why it can't, with a Settings link they choose to follow. Never shown right after the
+    /// system prompt, so "Don't Allow" is always the end of it.
+    var showsLocationOffNotice = false
     private(set) var discovery = ModuleState<NearbyDiscovery>() { didSet { sourceRevision &+= 1 } }
     /// Beacons fetched individually for a focus intent (e.g. an event outside the fetched radius).
     private(set) var focusedBeacons: [MapBeacon] = [] { didSet { sourceRevision &+= 1 } }
@@ -451,7 +455,7 @@ final class MapFeatureModel {
 
     func summary(pins: [ConnectionPin]) -> String {
         if locationState == .notDetermined || (locationState == .denied && discovery.value == nil) {
-            return "Turn on location to see what's around you"
+            return "Use your location to see what's around you"
         }
         if discovery.value == nil {
             return discovery.errorMessage != nil ? "Couldn't load what's nearby" : "Looking around you…"
@@ -495,15 +499,18 @@ final class MapFeatureModel {
         locationTask = nil
     }
 
-    /// Explicit user intent (recenter / "Turn on location").
+    /// Explicit user intent (recenter / "Continue" on the Nearby lip). Asks iOS only if it was never
+    /// asked. A "Don't Allow" answer is respected: the map keeps working without location and
+    /// nothing opens Settings. Only a later tap, with location already off, explains how to allow it.
     func requestLocation() async {
         guard let environment else { return }
-        if environment.permissions.status(for: .locationWhenInUse) == .notDetermined {
+        let wasUndecided = environment.permissions.status(for: .locationWhenInUse) == .notDetermined
+        if wasUndecided {
             _ = await environment.permissions.requestPermission(for: .locationWhenInUse)
         }
         refreshLocationState()
         if locationState == .denied {
-            environment.permissions.openSystemSettings()
+            if !wasUndecided { showsLocationOffNotice = true }
             return
         }
         startLocationIfAllowed()
